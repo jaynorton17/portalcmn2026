@@ -1,0 +1,25 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env / secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Build artifacts
+node_modules/
+dist/
+build/
+*.log
+
+# Archives
+*.zip
+*.tar.gz
+
+# WordPress / runtime
+wp-config.php
+wp-content/uploads/
