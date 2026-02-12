@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CV Converter</title>
+  <script type="module" crossorigin src="./js/index-LWpJsR1B.js"></script>
+  <link rel="stylesheet" crossorigin href="./css/index-DrNw1wVY.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="top">
+      <h1 id="app-title">CV Converter</h1>
+      <p id="app-subtitle">Upload CV -> convert -> click to edit -> drag sections -> export.</p>
+    </header>
+
+    <section class="panel">
+      <form id="convert-form" class="upload-form">
+        <label>
+          CV File (PDF, DOCX, TXT)
+          <input type="file" name="cv" id="cv-input" accept=".pdf,.docx,.txt" required />
+        </label>
+
+        <label>
+          Logo Override (optional)
+          <input type="file" name="logo" id="logo-input" accept=".png,.jpg,.jpeg" />
+        </label>
+
+        <button type="submit" id="convert-btn">Convert CV</button>
+      </form>
+
+      <p id="status" class="status">Waiting for upload.</p>
+      <div id="portal-result" class="portal-result hidden"></div>
+
+      <div id="result-meta" class="meta hidden">
+        <p><strong>Name:</strong> <span id="meta-name">-</span></p>
+        <p><strong>Title:</strong> <span id="meta-title">-</span></p>
+        <p><strong>Confidence:</strong> <span id="meta-confidence">-</span></p>
+        <p><strong>Warnings:</strong> <span id="meta-warnings">None</span></p>
+      </div>
+
+      <div id="editor-tools" class="toolbar hidden">
+        <button id="export-pdf-btn" type="button">Export Edited PDF</button>
+        <button id="download-html-btn" type="button">Download Edited HTML</button>
+        <button id="place-profile-btn" type="button" class="hidden">Place on candidate profile</button>
+        <button id="reset-btn" type="button">Reset to Converted</button>
+        <button id="add-role-btn" type="button">Add role</button>
+        <button id="summarize-older-btn" type="button">Auto-summarise older roles</button>
+        <div class="format-group" role="group" aria-label="Text format controls">
+          <button id="fmt-bold" class="format-btn" type="button" title="Bold selected text">B</button>
+          <button id="fmt-italic" class="format-btn" type="button" title="Italic selected text">I</button>
+          <button id="fmt-underline" class="format-btn" type="button" title="Underline selected text">U</button>
+        </div>
+        <label class="select-control" for="page-font">
+          Page font
+          <select id="page-font">
+            <option value="&quot;Helvetica Neue&quot;, Helvetica, Arial, sans-serif">Helvetica</option>
+            <option value="'Arial', sans-serif">Arial</option>
+            <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+            <option value="'Georgia', serif">Georgia</option>
+            <option value="'Garamond', serif">Garamond</option>
+            <option value="'Times New Roman', serif">Times New Roman</option>
+          </select>
+        </label>
+        <label class="select-control" for="text-font">
+          Selected font
+          <select id="text-font">
+            <option value="">Auto</option>
+            <option value="&quot;Helvetica Neue&quot;, Helvetica, Arial, sans-serif">Helvetica</option>
+            <option value="'Arial', sans-serif">Arial</option>
+            <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+            <option value="'Georgia', serif">Georgia</option>
+            <option value="'Garamond', serif">Garamond</option>
+            <option value="'Times New Roman', serif">Times New Roman</option>
+          </select>
+        </label>
+        <label class="range-control" for="text-size">
+          Selected text size
+          <input id="text-size" type="range" min="8" max="48" step="1" value="14" />
+          <span id="text-size-value">Auto</span>
+        </label>
+        <label class="range-control" for="header-shift">
+          Move top name/title
+          <input id="header-shift" type="range" min="-30" max="30" step="1" value="0" />
+          <span id="header-shift-value">0 mm</span>
+        </label>
+      </div>
+
+      <p id="tips" class="tips hidden">
+        Click text to edit, use B/I/U for formatting, drag sections with <code>::</code>, and use Summarise for older roles.
+      </p>
+
+      <div id="downloads" class="downloads hidden">
+        <a id="download-pdf-link" href="#" target="_blank" rel="noopener">Download latest PDF</a>
+        <a id="download-html-link" href="#" target="_blank" rel="noopener">Download latest HTML</a>
+      </div>
+    </section>
+
+    <section id="preview-wrap" class="preview-wrap hidden">
+      <div id="template-style-host"></div>
+      <div id="preview"></div>
+    </section>
+  </main>
+
+</body>
+</html>

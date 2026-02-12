@@ -44,6 +44,105 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var staffNav = document.querySelector('[data-staff-nav]');
+  if (staffNav) {
+    var staffNavUserId = staffNav.getAttribute('data-user-id') || '0';
+    var staffNavStorageKey = 'cmn_staff_nav_state_v1_' + staffNavUserId;
+    var readServerStaffNavState = function () {
+      var raw = staffNav.getAttribute('data-nav-state') || '';
+      if (!raw) {
+        return {};
+      }
+      try {
+        var parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    };
+    var readStaffNavState = function () {
+      try {
+        var raw = window.localStorage.getItem(staffNavStorageKey);
+        if (!raw) {
+          return {};
+        }
+        var parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    };
+    var writeStaffNavState = function (state) {
+      try {
+        window.localStorage.setItem(staffNavStorageKey, JSON.stringify(state || {}));
+      } catch (e) {
+        // Ignore localStorage failures.
+      }
+    };
+    var persistStaffNavState = function (state) {
+      writeStaffNavState(state);
+      if (!(window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.staffNavNonce)) {
+        return;
+      }
+      var fd = new FormData();
+      fd.append('action', 'cmn_save_staff_nav_state');
+      fd.append('nonce', window.cmnPortal.staffNavNonce);
+      fd.append('state', JSON.stringify(state || {}));
+      fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      }).catch(function () {
+        // Keep local state even if server sync fails.
+      });
+    };
+    var setStaffGroupState = function (groupEl, isOpen) {
+      if (!groupEl) {
+        return;
+      }
+      groupEl.classList.toggle('is-open', !!isOpen);
+      var toggle = groupEl.querySelector('[data-staff-nav-toggle]');
+      if (toggle) {
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      }
+    };
+    var navState = readStaffNavState();
+    var serverNavState = readServerStaffNavState();
+    Object.keys(serverNavState).forEach(function (key) {
+      if (!Object.prototype.hasOwnProperty.call(navState, key)) {
+        navState[key] = !!serverNavState[key] ? 1 : 0;
+      }
+    });
+    staffNav.querySelectorAll('[data-staff-nav-group]').forEach(function (groupEl) {
+      var key = groupEl.getAttribute('data-staff-nav-group') || '';
+      var hasActive = !!groupEl.querySelector('.cmn-school-nav-link.is-active');
+      if (hasActive) {
+        setStaffGroupState(groupEl, true);
+        navState[key] = 1;
+        return;
+      }
+      if (Object.prototype.hasOwnProperty.call(navState, key)) {
+        setStaffGroupState(groupEl, !!navState[key]);
+      } else {
+        setStaffGroupState(groupEl, true);
+      }
+    });
+    persistStaffNavState(navState);
+    staffNav.querySelectorAll('[data-staff-nav-toggle]').forEach(function (toggleBtn) {
+      toggleBtn.addEventListener('click', function () {
+        var key = toggleBtn.getAttribute('data-staff-nav-toggle') || '';
+        var groupEl = staffNav.querySelector('[data-staff-nav-group="' + key + '"]');
+        if (!groupEl) {
+          return;
+        }
+        var willOpen = !groupEl.classList.contains('is-open');
+        setStaffGroupState(groupEl, willOpen);
+        navState[key] = willOpen ? 1 : 0;
+        persistStaffNavState(navState);
+      });
+    });
+  }
+
   var actionMenus = document.querySelectorAll('[data-action-menu]');
   if (actionMenus.length) {
     var closeMenus = function () {
@@ -205,134 +304,161 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var cleanupStaleTourElements = function () {
+    var activeTourRoot = document.querySelector('[data-candidate-tour="1"]');
+    if (activeTourRoot) {
+      return;
+    }
+    document.querySelectorAll('.cmn-tour-overlay, .cmn-tour-popover, .cmn-tour-highlight').forEach(function (el) {
+      if (el.classList && el.classList.contains('cmn-tour-highlight')) {
+        el.classList.remove('cmn-tour-highlight');
+        return;
+      }
+      if (el && el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    });
+  };
+  cleanupStaleTourElements();
+
   var availabilityButton = document.querySelector('[data-availability-button]');
-  if (availabilityButton && window.cmnPortal && window.cmnPortal.ajaxUrl) {
-    var availabilityMessage = document.querySelector('[data-availability-message]');
-    var availabilityCard = document.querySelector('[data-availability-card]');
-    var availabilityHelper = document.querySelector('[data-availability-helper]');
-    var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
-    var unlockAtRaw = availabilityButton.getAttribute('data-availability-unlock-at') || '';
-    var unlockAtTs = unlockAtRaw ? Date.parse(unlockAtRaw) : NaN;
-    var availabilityUnlockTimer = null;
-    availabilityButton.style.pointerEvents = 'auto';
-    var maybeUnlockAvailabilityButton = function () {
-      if (!availabilityButton.disabled || calendarBlocked || Number.isNaN(unlockAtTs)) {
-        return;
+  if (availabilityButton) {
+    var availabilityAjaxUrl = (window.cmnPortal && window.cmnPortal.ajaxUrl) || availabilityButton.getAttribute('data-availability-ajax-url') || '';
+    var availabilityNonce = (window.cmnPortal && window.cmnPortal.availabilityNonce) || availabilityButton.getAttribute('data-availability-nonce') || '';
+    if (!availabilityAjaxUrl || !availabilityNonce) {
+      if (window.console && typeof window.console.warn === 'function') {
+        window.console.warn('CMN availability button is missing ajax url/nonce config.');
       }
-      if (Date.now() < unlockAtTs) {
-        return;
-      }
-      availabilityButton.disabled = false;
-      availabilityButton.removeAttribute('data-availability-unlock-at');
-      unlockAtTs = NaN;
-      if (availabilityHelper) {
-        availabilityHelper.textContent = '';
-      }
-      if (availabilityMessage && availabilityMessage.textContent.trim().toLowerCase() === 'not confirmed yet.') {
-        availabilityMessage.textContent = 'Not confirmed yet.';
-      }
-      if (availabilityUnlockTimer) {
-        window.clearInterval(availabilityUnlockTimer);
-        availabilityUnlockTimer = null;
-      }
-    };
-    maybeUnlockAvailabilityButton();
-    if (availabilityButton.disabled && !calendarBlocked) {
-      var nowHour = (new Date()).getHours();
-      // Fail-open in UI when stale disabled state is rendered; server still enforces availability rules.
-      if (nowHour >= 19 || nowHour < 8) {
+    } else {
+      var availabilityMessage = document.querySelector('[data-availability-message]');
+      var availabilityCard = document.querySelector('[data-availability-card]');
+      var availabilityHelper = document.querySelector('[data-availability-helper]');
+      var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
+      var unlockAtRaw = availabilityButton.getAttribute('data-availability-unlock-at') || '';
+      var unlockAtTs = unlockAtRaw ? Date.parse(unlockAtRaw) : NaN;
+      var availabilityUnlockTimer = null;
+      availabilityButton.style.pointerEvents = 'auto';
+      var maybeUnlockAvailabilityButton = function () {
+        if (!availabilityButton.disabled || calendarBlocked || Number.isNaN(unlockAtTs)) {
+          return;
+        }
+        if (Date.now() < unlockAtTs) {
+          return;
+        }
         availabilityButton.disabled = false;
-      } else if (availabilityHelper && !availabilityHelper.textContent.trim()) {
-        availabilityHelper.textContent = 'You can confirm availability from 7pm until 8am.';
-      }
-    }
-    if (availabilityButton.disabled && !Number.isNaN(unlockAtTs)) {
-      availabilityUnlockTimer = window.setInterval(maybeUnlockAvailabilityButton, 30000);
-    }
-    var setAvailabilityVisualState = function (isAvailable) {
-      availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
-      availabilityButton.textContent = isAvailable ? 'I’m NOT available tomorrow morning' : 'I’m available tomorrow morning';
-      if (availabilityCard) {
-        availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
-        if (!isAvailable) {
-          availabilityCard.classList.remove('is-blocked');
+        availabilityButton.removeAttribute('data-availability-unlock-at');
+        unlockAtTs = NaN;
+        if (availabilityHelper) {
+          availabilityHelper.textContent = '';
+        }
+        if (availabilityMessage && availabilityMessage.textContent.trim().toLowerCase() === 'not confirmed yet.') {
+          availabilityMessage.textContent = 'Not confirmed yet.';
+        }
+        if (availabilityUnlockTimer) {
+          window.clearInterval(availabilityUnlockTimer);
+          availabilityUnlockTimer = null;
+        }
+      };
+      maybeUnlockAvailabilityButton();
+      if (availabilityButton.disabled && !calendarBlocked) {
+        var now = new Date();
+        var nowHour = now.getHours();
+        var nowMinute = now.getMinutes();
+        // Fail-open in UI when stale disabled state is rendered; server still enforces availability rules.
+        if (nowHour >= 19 || nowHour < 8 || (nowHour === 8 && nowMinute === 0)) {
+          availabilityButton.disabled = false;
+        } else if (availabilityHelper && !availabilityHelper.textContent.trim()) {
+          availabilityHelper.textContent = 'You can confirm availability from 7pm until 8:00am.';
         }
       }
-    };
-    availabilityButton.addEventListener('click', function () {
-      if (availabilityButton.disabled) {
-        if (availabilityHelper && availabilityHelper.textContent.trim()) {
-          availabilityMessage.textContent = availabilityHelper.textContent.trim();
-        }
-        return;
+      if (availabilityButton.disabled && !Number.isNaN(unlockAtTs)) {
+        availabilityUnlockTimer = window.setInterval(maybeUnlockAvailabilityButton, 30000);
       }
-      availabilityButton.disabled = true;
-      var formData = new FormData();
-      formData.append('action', 'cmn_mark_available');
-      formData.append('nonce', window.cmnPortal.availabilityNonce || '');
-      fetch(window.cmnPortal.ajaxUrl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        body: formData,
-      })
-        .then(function (response) {
-          return response.json();
+      var setAvailabilityVisualState = function (isAvailable) {
+        availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
+        availabilityButton.textContent = isAvailable ? 'I’m NOT available tomorrow morning' : 'I’m available tomorrow morning';
+        if (availabilityCard) {
+          availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
+          if (!isAvailable) {
+            availabilityCard.classList.remove('is-blocked');
+          }
+        }
+      };
+      availabilityButton.addEventListener('click', function () {
+        if (availabilityButton.disabled) {
+          if (availabilityHelper && availabilityHelper.textContent.trim()) {
+            availabilityMessage.textContent = availabilityHelper.textContent.trim();
+          }
+          return;
+        }
+        availabilityButton.disabled = true;
+        var formData = new FormData();
+        formData.append('action', 'cmn_mark_available');
+        formData.append('nonce', availabilityNonce);
+        fetch(availabilityAjaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: formData,
         })
-        .then(function (data) {
-          if (data && data.success) {
-            if (availabilityMessage) {
-              var successMsg = data.data && data.data.message ? data.data.message : 'Availability updated.';
-              availabilityMessage.textContent = successMsg;
-            }
-            if (data.data && typeof data.data.status_text === 'string' && availabilityMessage) {
-              availabilityMessage.textContent = data.data.status_text;
-            }
-            if (data.data && typeof data.data.available !== 'undefined') {
-              setAvailabilityVisualState(!!data.data.available);
-            } else {
-              setAvailabilityVisualState(true);
-            }
-            if (data.data && typeof data.data.button_text === 'string') {
-              availabilityButton.textContent = data.data.button_text;
-            }
-            if (data.data && typeof data.data.button_enabled !== 'undefined') {
-              availabilityButton.disabled = !data.data.button_enabled;
+          .then(function (response) {
+            return response.json();
+          })
+          .then(function (data) {
+            if (data && data.success) {
+              if (availabilityMessage) {
+                var successMsg = data.data && data.data.message ? data.data.message : 'Availability updated.';
+                availabilityMessage.textContent = successMsg;
+              }
+              if (data.data && typeof data.data.status_text === 'string' && availabilityMessage) {
+                availabilityMessage.textContent = data.data.status_text;
+              }
+              if (data.data && typeof data.data.available !== 'undefined') {
+                setAvailabilityVisualState(!!data.data.available);
+              } else {
+                setAvailabilityVisualState(true);
+              }
+              if (data.data && typeof data.data.button_text === 'string') {
+                availabilityButton.textContent = data.data.button_text;
+              }
+              if (data.data && typeof data.data.button_enabled !== 'undefined') {
+                availabilityButton.disabled = !data.data.button_enabled;
+              } else {
+                availabilityButton.disabled = false;
+              }
+              if (!availabilityButton.disabled && availabilityUnlockTimer) {
+                window.clearInterval(availabilityUnlockTimer);
+                availabilityUnlockTimer = null;
+              }
+              if (availabilityHelper) {
+                availabilityHelper.textContent = '';
+              }
             } else {
               availabilityButton.disabled = false;
+              if (availabilityMessage) {
+                availabilityMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to save availability.';
+              }
+              if (data && data.data && typeof data.data.button_enabled !== 'undefined') {
+                availabilityButton.disabled = !data.data.button_enabled;
+              }
+              if (data && data.data && typeof data.data.button_text === 'string') {
+                availabilityButton.textContent = data.data.button_text;
+              }
+              if (availabilityHelper && data && data.data && data.data.message) {
+                availabilityHelper.textContent = data.data.message;
+              }
+              if (availabilityCard && data && data.data && data.data.message && data.data.message.toLowerCase().indexOf('unavailable') !== -1) {
+                availabilityCard.classList.add('is-blocked');
+              }
             }
-            if (!availabilityButton.disabled && availabilityUnlockTimer) {
-              window.clearInterval(availabilityUnlockTimer);
-              availabilityUnlockTimer = null;
-            }
-            if (availabilityHelper) {
-              availabilityHelper.textContent = '';
-            }
-          } else {
+          })
+          .catch(function () {
             availabilityButton.disabled = false;
             if (availabilityMessage) {
-              availabilityMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to save availability.';
+              availabilityMessage.textContent = 'Unable to save availability.';
             }
-            if (data && data.data && typeof data.data.button_enabled !== 'undefined') {
-              availabilityButton.disabled = !data.data.button_enabled;
-            }
-            if (data && data.data && typeof data.data.button_text === 'string') {
-              availabilityButton.textContent = data.data.button_text;
-            }
-            if (availabilityHelper && data && data.data && data.data.message) {
-              availabilityHelper.textContent = data.data.message;
-            }
-            if (availabilityCard && data && data.data && data.data.message && data.data.message.toLowerCase().indexOf('unavailable') !== -1) {
-              availabilityCard.classList.add('is-blocked');
-            }
-          }
-        })
-        .catch(function () {
-          availabilityButton.disabled = false;
-          if (availabilityMessage) {
-            availabilityMessage.textContent = 'Unable to save availability.';
-          }
-        });
-    });
+          });
+      });
+    }
   }
 
   var warRoomRoot = document.querySelector('[data-war-room-root]');
@@ -1161,7 +1287,8 @@ document.addEventListener('DOMContentLoaded', function () {
       var supportRole = root.getAttribute('data-support-role') || 'user';
       var activeTicketId = null;
       var activeTicket = null;
-      var filter = mode === 'admin' ? 'active' : 'all';
+      var initialSupportFilter = (new URLSearchParams(window.location.search).get('support_filter') || '').toLowerCase();
+      var filter = initialSupportFilter || (mode === 'admin' ? 'active' : 'all');
       var dashboard = root.querySelector('[data-support-dashboard]');
       var feedbackModal = root.parentElement.querySelector('[data-support-feedback-modal]') || root.querySelector('[data-support-feedback-modal]');
       var feedbackModalForm = feedbackModal ? feedbackModal.querySelector('[data-support-feedback-modal-form]') : null;
@@ -1173,6 +1300,8 @@ document.addEventListener('DOMContentLoaded', function () {
       var isInsightsModalOpen = false;
       var feedbackSubmitInFlight = false;
       var feedbackSubmittedTicketIds = {};
+      var feedbackCacheByTicket = {};
+      var feedbackSuppressUntilByTicket = {};
       var dashboardData = { counts: {}, recent_feedback: [], recent_feedback_avg: 0 };
       var insightsFilter = 'recent';
 
@@ -1224,10 +1353,20 @@ document.addEventListener('DOMContentLoaded', function () {
       var forceCloseFeedbackModals = function () {
         document.querySelectorAll('[data-support-feedback-modal]').forEach(function (modalEl) {
           modalEl.hidden = true;
+          modalEl.classList.remove('is-open');
         });
         document.querySelectorAll('[data-support-root]').forEach(function (rootEl) {
           rootEl.classList.remove('is-feedback-modal-open');
         });
+        if (feedbackModalMsg) {
+          feedbackModalMsg.textContent = '';
+        }
+        if (typeof resetFeedbackModal === 'function') {
+          resetFeedbackModal();
+        }
+        if (typeof setFeedbackModalOpen === 'function') {
+          setFeedbackModalOpen(false);
+        }
         isFeedbackModalOpen = false;
         syncSupportModalLock();
       };
@@ -1350,8 +1489,15 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         var ticketKey = ticket && ticket.id ? String(ticket.id) : '';
-        if (feedback || (ticketKey && feedbackSubmittedTicketIds[ticketKey])) {
+        if (ticketKey && feedbackSuppressUntilByTicket[ticketKey] && Date.now() < feedbackSuppressUntilByTicket[ticketKey]) {
           setFeedbackModalOpen(false);
+          return;
+        }
+        if (feedback || (ticketKey && feedbackSubmittedTicketIds[ticketKey]) || (ticketKey && feedbackCacheByTicket[ticketKey])) {
+          setFeedbackModalOpen(false);
+          return;
+        }
+        if (feedbackSubmitInFlight) {
           return;
         }
         initStarPicker('support_rating');
@@ -1405,6 +1551,16 @@ document.addEventListener('DOMContentLoaded', function () {
           if (value === '' || value === 'open') {
             return 'active';
           }
+          if (['active', 'new', 'open', 'closed', 'new_open', 'all', 'needs_feedback'].indexOf(value) === -1) {
+            return 'active';
+          }
+          return value;
+        }
+        if (value === '' || value === 'active' || value === 'new_open' || value === 'new') {
+          return 'all';
+        }
+        if (['all', 'open', 'closed', 'needs_feedback'].indexOf(value) === -1) {
+          return 'all';
         }
         if (value === '') {
           return mode === 'admin' ? 'active' : 'all';
@@ -1506,7 +1662,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         if (!tickets.length) {
-          listEl.innerHTML = hasPendingSelection ? '<div class="cmn-empty">Loading selected ticket...</div>' : '<div class="cmn-empty">No tickets found.</div>';
+          listEl.innerHTML = hasPendingSelection ? '<div class="cmn-empty">Loading selected ticket...</div>' : '<div class="cmn-empty">No tickets in this filter.</div>';
           return;
         }
         var ul = document.createElement('div');
@@ -1609,6 +1765,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var feedbackBadge = root.querySelector('[data-support-feedback-badge]');
         if (ticket && feedback && ticket.id) {
           feedbackSubmittedTicketIds[String(ticket.id)] = true;
+          feedbackCacheByTicket[String(ticket.id)] = feedback;
         }
         if (feedbackBadge) {
           feedbackBadge.hidden = !(feedback && ticket && ticket.status === 'closed');
@@ -1712,9 +1869,24 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             var returnedFeedback = data.data && data.data.feedback ? data.data.feedback : null;
             var feedbackTicketId = returnedFeedback && returnedFeedback.ticket_id ? parseInt(returnedFeedback.ticket_id, 10) : submittingTicketId;
+            var localFeedback = returnedFeedback || {
+              ticket_id: feedbackTicketId,
+              support_rating: supportRating,
+              response_time_rating: responseRating,
+              overall_satisfaction: overallRating,
+              issue_resolved: resolvedValue === '1' ? 1 : 0,
+              comments: String((feedbackModalForm.querySelector('textarea[name="comments"]') || {}).value || '')
+            };
             if (feedbackTicketId > 0) {
               feedbackSubmittedTicketIds[String(feedbackTicketId)] = true;
+              feedbackCacheByTicket[String(feedbackTicketId)] = localFeedback;
+              feedbackSuppressUntilByTicket[String(feedbackTicketId)] = Date.now() + 15000;
             }
+            feedbackSubmitInFlight = false;
+            if (feedbackSubmitBtn) {
+              feedbackSubmitBtn.disabled = true;
+            }
+            setFeedbackModalOpen(false);
             forceCloseFeedbackModals();
             if (feedbackModalMsg) {
               feedbackModalMsg.textContent = '';
@@ -1722,14 +1894,13 @@ document.addEventListener('DOMContentLoaded', function () {
             if (activeTicket && feedbackTicketId > 0 && parseInt(activeTicket.id || '0', 10) === feedbackTicketId) {
               activeTicket.feedback_count = 1;
             }
-            renderFeedback(activeTicket, returnedFeedback);
+            renderFeedback(activeTicket, localFeedback);
             loadTickets();
             if (feedbackTicketId > 0) {
               loadTicket(feedbackTicketId);
             } else if (activeTicketId) {
               loadTicket(activeTicketId);
             }
-            feedbackSubmitInFlight = false;
           }).catch(function () {
             if (feedbackModalMsg) {
               feedbackModalMsg.textContent = 'Unable to submit feedback.';
@@ -1788,7 +1959,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
           }
           renderMessages(ticket, data.data.messages || []);
-          renderFeedback(ticket, data.data.feedback || null);
+          var ticketFeedback = data.data.feedback || (ticket && ticket.id ? feedbackCacheByTicket[String(ticket.id)] : null) || null;
+          renderFeedback(ticket, ticketFeedback);
           if (listEl && activeTicketId) {
             var selectedRow = listEl.querySelector('.cmn-support-ticket[data-ticket-id="' + String(activeTicketId) + '"]');
             if (!selectedRow) {
@@ -1844,13 +2016,21 @@ document.addEventListener('DOMContentLoaded', function () {
           if (data.data && data.data.selected_ticket_id) {
             activeTicketId = parseInt(data.data.selected_ticket_id, 10) || activeTicketId;
           }
-          renderList(data.data.tickets || [], !!deepTicket);
+          var ticketsPayload = Array.isArray(data.data.tickets) ? data.data.tickets : [];
+          var allCount = (data.data && data.data.dashboard && data.data.dashboard.counts) ? parseInt(data.data.dashboard.counts.all || '0', 10) : 0;
+          if (!deepTicket && mode !== 'admin' && ticketsPayload.length === 0 && allCount > 0 && normalizeSupportFilterForMode(filter) !== 'all') {
+            filter = 'all';
+            syncFilterUiState();
+            loadTickets();
+            return;
+          }
+          renderList(ticketsPayload, !!deepTicket);
           if (deepTicket) {
             loadTicket(deepTicket);
-          } else if (mode === 'admin' && data.data.tickets && data.data.tickets.length) {
-            loadTicket(data.data.tickets[0].id);
-          } else if (mode !== 'admin' && data.data.tickets && data.data.tickets.length) {
-            loadTicket(data.data.tickets[0].id);
+          } else if (mode === 'admin' && ticketsPayload.length) {
+            loadTicket(ticketsPayload[0].id);
+          } else if (mode !== 'admin' && ticketsPayload.length) {
+            loadTicket(ticketsPayload[0].id);
           } else {
             forceCloseFeedbackModals();
             activeTicketId = null;
@@ -2076,6 +2256,790 @@ document.addEventListener('DOMContentLoaded', function () {
       syncFilterUiState();
       loadTickets();
     });
+  }
+
+  var staffLoungeRoots = document.querySelectorAll('[data-staff-lounge]');
+  if (staffLoungeRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.staffLoungeNonce) {
+    staffLoungeRoots.forEach(function (root) {
+      var threadType = root.getAttribute('data-thread-type') || 'staff_lounge';
+      var listEl = root.querySelector('[data-staff-lounge-messages]');
+      var formEl = root.querySelector('[data-staff-lounge-form]');
+      var msgEl = root.querySelector('[data-staff-lounge-message]');
+      var inFlight = false;
+
+      var setMsg = function (text, isError) {
+        if (!msgEl) {
+          return;
+        }
+        msgEl.textContent = text || '';
+        msgEl.style.color = isError ? '#ef4444' : '';
+      };
+
+      var renderRows = function (rows) {
+        if (!listEl) {
+          return;
+        }
+        listEl.innerHTML = '';
+        if (!Array.isArray(rows) || !rows.length) {
+          listEl.innerHTML = '<div class="cmn-empty">No messages yet.</div>';
+          return;
+        }
+        rows.forEach(function (row) {
+          var senderRole = String(row.sender_role || 'staff').toLowerCase();
+          var bubbleClass = 'is-admin';
+          if (senderRole === 'account_manager') {
+            bubbleClass = 'is-user is-school';
+          } else if (senderRole === 'staff') {
+            bubbleClass = 'is-user is-candidate';
+          }
+          var bubble = document.createElement('div');
+          bubble.className = 'cmn-support-bubble cmn-staff-lounge-bubble ' + bubbleClass;
+          var meta = document.createElement('div');
+          meta.className = 'cmn-support-meta';
+          meta.textContent = (row.sender_name || 'Staff') + ' · ' + (row.created_at || '');
+          var text = document.createElement('div');
+          text.className = 'cmn-support-text';
+          text.textContent = row.message || '';
+          bubble.appendChild(meta);
+          bubble.appendChild(text);
+          listEl.appendChild(bubble);
+        });
+        listEl.scrollTop = listEl.scrollHeight;
+      };
+
+      var fetchRows = function () {
+        var fd = new FormData();
+        fd.append('action', 'cmn_staff_lounge_fetch');
+        fd.append('nonce', window.cmnPortal.staffLoungeNonce || '');
+        fd.append('thread_type', threadType);
+        return fetch(window.cmnPortal.ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (response) {
+          return response.json();
+        }).then(function (data) {
+          if (!data || !data.success) {
+            return;
+          }
+          renderRows((data.data && data.data.messages) || []);
+        }).catch(function () {
+          return null;
+        });
+      };
+
+      if (formEl) {
+        formEl.addEventListener('submit', function (event) {
+          event.preventDefault();
+          if (inFlight) {
+            return;
+          }
+          var input = formEl.querySelector('textarea[name="message"]');
+          var text = input ? input.value.trim() : '';
+          if (!text) {
+            setMsg('Message is required.', true);
+            return;
+          }
+          inFlight = true;
+          var submitBtn = formEl.querySelector('button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.disabled = true;
+          }
+          setMsg('Sending...', false);
+          var fd = new FormData();
+          fd.append('action', 'cmn_staff_lounge_post');
+          fd.append('nonce', window.cmnPortal.staffLoungeNonce || '');
+          fd.append('thread_type', threadType);
+          fd.append('message', text);
+          fetch(window.cmnPortal.ajaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: fd
+          }).then(function (response) {
+            return response.json();
+          }).then(function (data) {
+            if (!data || !data.success) {
+              setMsg((data && data.data && data.data.message) ? data.data.message : 'Unable to send message.', true);
+              return;
+            }
+            renderRows((data.data && data.data.messages) || []);
+            if (input) {
+              input.value = '';
+            }
+            setMsg((data.data && data.data.message) ? data.data.message : 'Message sent.', false);
+          }).catch(function () {
+            setMsg('Unable to send message.', true);
+          }).finally(function () {
+            inFlight = false;
+            if (submitBtn) {
+              submitBtn.disabled = false;
+            }
+          });
+        });
+      }
+
+      fetchRows();
+      window.setInterval(fetchRows, 5000);
+    });
+  }
+
+  var marketingRoot = document.querySelector('[data-marketing-root]');
+  if (marketingRoot && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.staffNonce) {
+    var marketingState = {
+      rows: [],
+      selectedIds: {},
+      activeCampaignId: 0
+    };
+    var activeTab = 'lead_finder';
+    var resultBody = marketingRoot.querySelector('[data-marketing-results]');
+    var listBody = marketingRoot.querySelector('[data-marketing-lists]');
+    var campaignsBody = marketingRoot.querySelector('[data-marketing-campaigns]');
+    var queueBody = marketingRoot.querySelector('[data-marketing-queue]');
+    var repliesBody = marketingRoot.querySelector('[data-marketing-replies]');
+    var leadMsg = marketingRoot.querySelector('[data-marketing-message]');
+    var listsMsg = marketingRoot.querySelector('[data-marketing-lists-message]');
+    var campaignMsg = marketingRoot.querySelector('[data-marketing-campaign-message]');
+    var queueSummary = marketingRoot.querySelector('[data-marketing-queue-summary]');
+    var repliesSummary = marketingRoot.querySelector('[data-marketing-replies-summary]');
+    var previewSubject = marketingRoot.querySelector('[data-marketing-preview-subject]');
+    var previewBody = marketingRoot.querySelector('[data-marketing-preview-body]');
+    var previewMissing = marketingRoot.querySelector('[data-marketing-preview-missing]');
+
+    var mFetch = function (action, payload) {
+      var fd = new FormData();
+      fd.append('action', action);
+      fd.append('nonce', window.cmnPortal.staffNonce || '');
+      Object.keys(payload || {}).forEach(function (key) {
+        var value = payload[key];
+        if (Array.isArray(value)) {
+          value.forEach(function (item) {
+            fd.append(key + '[]', item);
+          });
+          return;
+        }
+        if (typeof value !== 'undefined' && value !== null) {
+          fd.append(key, value);
+        }
+      });
+      return fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      }).then(function (response) {
+        return response.json();
+      });
+    };
+
+    var setTab = function (tab) {
+      activeTab = tab;
+      marketingRoot.querySelectorAll('[data-marketing-tab]').forEach(function (btn) {
+        btn.classList.toggle('is-active', btn.getAttribute('data-marketing-tab') === tab);
+      });
+      marketingRoot.querySelectorAll('[data-marketing-panel]').forEach(function (panel) {
+        panel.hidden = panel.getAttribute('data-marketing-panel') !== tab;
+      });
+    };
+
+    marketingRoot.querySelectorAll('[data-marketing-tab]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setTab(btn.getAttribute('data-marketing-tab') || 'lead_finder');
+      });
+    });
+
+    var readLeadFilters = function () {
+      var get = function (key, fallback) {
+        var el = marketingRoot.querySelector('[data-marketing-filter="' + key + '"]');
+        return el ? el.value : (fallback || '');
+      };
+      return {
+        status: get('status', 'lead'),
+        stage: get('stage', ''),
+        contacting: get('contacting', ''),
+        days: parseInt(get('days', '14'), 10) || 14,
+        location: get('location', ''),
+        radius_center: get('radius_center', ''),
+        radius_miles: parseInt(get('radius_miles', '0'), 10) || 0,
+        manager: get('manager', ''),
+        completeness: get('completeness', ''),
+        exclude_campaign_id: parseInt(get('exclude_campaign_id', '0'), 10) || 0,
+        q: get('q', '')
+      };
+    };
+
+    var renderLeadRows = function (rows) {
+      if (!resultBody) {
+        return;
+      }
+      resultBody.innerHTML = '';
+      if (!rows.length) {
+        resultBody.innerHTML = '<tr><td colspan="10">No schools matched.</td></tr>';
+        return;
+      }
+      rows.forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '' +
+          '<td><input type="checkbox" data-marketing-row-select value="' + row.school_id + '"' + (marketingState.selectedIds[row.school_id] ? ' checked' : '') + '></td>' +
+          '<td>' + (row.school_name || '') + '</td>' +
+          '<td>' + (row.location || '') + '</td>' +
+          '<td>' + (row.school_email || '') + '</td>' +
+          '<td>' + (row.status || '') + '</td>' +
+          '<td>' + (row.pipeline_stage || '') + '</td>' +
+          '<td>' + (row.account_manager_name || '—') + '</td>' +
+          '<td>' + (row.last_contacted || '—') + '</td>' +
+          '<td>' + (row.last_replied || '—') + '</td>' +
+          '<td>' + (row.distance_miles || '—') + '</td>';
+        resultBody.appendChild(tr);
+      });
+      resultBody.querySelectorAll('[data-marketing-row-select]').forEach(function (checkbox) {
+        checkbox.addEventListener('change', function () {
+          var id = parseInt(checkbox.value || '0', 10);
+          if (!id) {
+            return;
+          }
+          if (checkbox.checked) {
+            marketingState.selectedIds[id] = 1;
+          } else {
+            delete marketingState.selectedIds[id];
+          }
+        });
+      });
+    };
+
+    var refreshLeadRows = function () {
+      if (leadMsg) {
+        leadMsg.textContent = 'Loading...';
+      }
+      return mFetch('cmn_marketing_lead_finder', readLeadFilters()).then(function (data) {
+        if (!data || !data.success) {
+          if (leadMsg) {
+            leadMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to load leads.';
+          }
+          renderLeadRows([]);
+          return;
+        }
+        marketingState.rows = data.data.rows || [];
+        renderLeadRows(marketingState.rows);
+        if (leadMsg) {
+          var base = String(data.data.count || marketingState.rows.length) + ' school(s) found.';
+          var warning = data.data.warning ? (' ' + data.data.warning) : '';
+          leadMsg.textContent = base + warning;
+        }
+      }).catch(function () {
+        if (leadMsg) {
+          leadMsg.textContent = 'Unable to load leads.';
+        }
+      });
+    };
+
+    var syncCampaignListOptions = function (lists) {
+      var select = marketingRoot.querySelector('[data-marketing-campaign="list_id"]');
+      if (!select) {
+        return;
+      }
+      var previous = select.value;
+      select.innerHTML = '<option value="">Select list</option>';
+      (lists || []).forEach(function (list) {
+        var option = document.createElement('option');
+        option.value = String(list.id || 0);
+        option.textContent = list.name || ('List ' + String(list.id || 0));
+        select.appendChild(option);
+      });
+      if (previous && select.querySelector('option[value="' + previous + '"]')) {
+        select.value = previous;
+      }
+    };
+
+    var listAction = function (action, listId, confirmText) {
+      if (!listId) {
+        return;
+      }
+      if (confirmText && !window.confirm(confirmText)) {
+        return;
+      }
+      if (listsMsg) {
+        listsMsg.textContent = 'Working...';
+      }
+      mFetch(action, { list_id: listId }).then(function (data) {
+        if (!data || !data.success || !data.data) {
+          if (listsMsg) {
+            listsMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to update list.';
+          }
+          return;
+        }
+        if (listsMsg) {
+          listsMsg.textContent = data.data.message || 'Saved.';
+        }
+        var lists = data.data.lists || [];
+        renderLists(lists);
+        syncCampaignListOptions(lists);
+      }).catch(function () {
+        if (listsMsg) {
+          listsMsg.textContent = 'Unable to update list.';
+        }
+      });
+    };
+
+    var renderLists = function (lists) {
+      if (!listBody) {
+        return;
+      }
+      listBody.innerHTML = '';
+      if (!lists.length) {
+        listBody.innerHTML = '<tr><td colspan="5">No lists yet.</td></tr>';
+        return;
+      }
+      lists.forEach(function (list) {
+        var tr = document.createElement('tr');
+        tr.setAttribute('data-marketing-list-id', String(list.id || 0));
+        tr.innerHTML = '' +
+          '<td>' + (list.name || '') + '</td>' +
+          '<td>' + (list.type || 'dynamic') + '</td>' +
+          '<td>' + String(list.member_count || 0) + '</td>' +
+          '<td>' + (list.updated_at || '') + '</td>' +
+          '<td class="cmn-marketing-list-actions">' +
+            '<button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-use-list="' + String(list.id || 0) + '">Use in campaign</button>' +
+            '<button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-refresh-list="' + String(list.id || 0) + '">Refresh</button>' +
+            '<button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-duplicate-list="' + String(list.id || 0) + '">Duplicate</button>' +
+            '<button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-delete-list="' + String(list.id || 0) + '">Delete</button>' +
+          '</td>';
+        listBody.appendChild(tr);
+      });
+      listBody.querySelectorAll('[data-marketing-use-list]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var listId = btn.getAttribute('data-marketing-use-list') || '';
+          var select = marketingRoot.querySelector('[data-marketing-campaign="list_id"]');
+          if (select) {
+            select.value = listId;
+          }
+          setTab('campaigns');
+        });
+      });
+      listBody.querySelectorAll('[data-marketing-refresh-list]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var listId = parseInt(btn.getAttribute('data-marketing-refresh-list') || '0', 10);
+          listAction('cmn_marketing_refresh_list', listId);
+        });
+      });
+      listBody.querySelectorAll('[data-marketing-duplicate-list]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var listId = parseInt(btn.getAttribute('data-marketing-duplicate-list') || '0', 10);
+          listAction('cmn_marketing_duplicate_list', listId);
+        });
+      });
+      listBody.querySelectorAll('[data-marketing-delete-list]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var listId = parseInt(btn.getAttribute('data-marketing-delete-list') || '0', 10);
+          listAction('cmn_marketing_delete_list', listId, 'Delete this list? This cannot be undone.');
+        });
+      });
+    };
+
+    var refreshLists = function () {
+      return mFetch('cmn_marketing_get_lists', {}).then(function (data) {
+        if (data && data.success && data.data) {
+          var lists = data.data.lists || [];
+          renderLists(lists);
+          syncCampaignListOptions(lists);
+        }
+      });
+    };
+
+    var renderCampaigns = function (campaigns) {
+      if (!campaignsBody) {
+        return;
+      }
+      campaignsBody.innerHTML = '';
+      if (!campaigns.length) {
+        campaignsBody.innerHTML = '<tr><td colspan="5">No campaigns yet.</td></tr>';
+        return;
+      }
+      campaigns.forEach(function (campaign) {
+        var tr = document.createElement('tr');
+        tr.setAttribute('data-campaign-id', String(campaign.id || 0));
+        var campaignStatus = campaign.status || 'draft';
+        var actionButton = campaignStatus === 'paused'
+          ? '<button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-campaign-action="resume" data-marketing-campaign-id="' + String(campaign.id || 0) + '">Resume</button>'
+          : '<button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-campaign-action="pause" data-marketing-campaign-id="' + String(campaign.id || 0) + '">Pause</button>';
+        tr.innerHTML = '' +
+          '<td>' + (campaign.name || '') + '</td>' +
+          '<td>' + campaignStatus + '</td>' +
+          '<td>' + (campaign.subject || '') + '</td>' +
+          '<td>' + (campaign.created_at || '') + '</td>' +
+          '<td>' + actionButton + '</td>';
+        tr.addEventListener('click', function () {
+          marketingState.activeCampaignId = parseInt(campaign.id || '0', 10) || 0;
+        });
+        campaignsBody.appendChild(tr);
+      });
+      campaignsBody.querySelectorAll('[data-marketing-campaign-action]').forEach(function (btn) {
+        btn.addEventListener('click', function (event) {
+          event.stopPropagation();
+          var campaignId = parseInt(btn.getAttribute('data-marketing-campaign-id') || '0', 10);
+          var action = btn.getAttribute('data-marketing-campaign-action') || '';
+          if (!campaignId || (action !== 'pause' && action !== 'resume')) {
+            return;
+          }
+          var ajaxAction = action === 'pause' ? 'cmn_marketing_pause_campaign' : 'cmn_marketing_resume_campaign';
+          if (campaignMsg) {
+            campaignMsg.textContent = action === 'pause' ? 'Pausing campaign...' : 'Resuming campaign...';
+          }
+          mFetch(ajaxAction, { campaign_id: campaignId }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (campaignMsg) {
+                campaignMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to update campaign.';
+              }
+              return;
+            }
+            if (campaignMsg) {
+              campaignMsg.textContent = data.data.message || 'Campaign updated.';
+            }
+            renderCampaigns(data.data.campaigns || []);
+            if (data.data.queue) {
+              renderQueue(data.data.queue);
+            } else {
+              refreshQueue();
+            }
+          }).catch(function () {
+            if (campaignMsg) {
+              campaignMsg.textContent = 'Unable to update campaign.';
+            }
+          });
+        });
+      });
+    };
+
+    var refreshCampaigns = function () {
+      return mFetch('cmn_marketing_get_campaigns', {}).then(function (data) {
+        if (data && data.success && data.data) {
+          renderCampaigns(data.data.campaigns || []);
+        }
+      });
+    };
+
+    var renderQueue = function (queue) {
+      if (!queueBody) {
+        return;
+      }
+      if (queueSummary) {
+        queueSummary.textContent = 'Queued: ' + String(queue.queued || 0) + ' · Sent: ' + String(queue.sent || 0) + ' · Failed: ' + String(queue.failed || 0);
+      }
+      queueBody.innerHTML = '';
+      var rows = queue.rows || [];
+      if (!rows.length) {
+        queueBody.innerHTML = '<tr><td colspan="6">Queue is empty.</td></tr>';
+        return;
+      }
+      rows.forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '' +
+          '<td>' + (row.campaign_name || '') + '</td>' +
+          '<td>' + (row.school_name || '') + '</td>' +
+          '<td>' + (row.to_email || '') + '</td>' +
+          '<td>' + (row.status || 'queued') + '</td>' +
+          '<td>' + (row.sent_at || '') + '</td>' +
+          '<td>' + (row.failure_reason || '') + '</td>';
+        queueBody.appendChild(tr);
+      });
+    };
+
+    var refreshQueue = function () {
+      return mFetch('cmn_marketing_get_queue', {}).then(function (data) {
+        if (data && data.success && data.data && data.data.queue) {
+          renderQueue(data.data.queue);
+        }
+      });
+    };
+
+    var renderReplies = function (payload) {
+      if (!repliesBody) {
+        return;
+      }
+      var rows = payload && payload.rows ? payload.rows : [];
+      var counts = payload && payload.counts ? payload.counts : { total: 0, matched: 0, unmatched: 0 };
+      if (repliesSummary) {
+        repliesSummary.textContent = 'Replies: ' + String(counts.total || 0) + ' · Matched: ' + String(counts.matched || 0) + ' · Unmatched: ' + String(counts.unmatched || 0);
+      }
+      repliesBody.innerHTML = '';
+      if (!rows.length) {
+        repliesBody.innerHTML = '<tr><td colspan="6">No replies yet.</td></tr>';
+        return;
+      }
+      rows.forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '' +
+          '<td>' + (row.received_at_label || row.received_at || '—') + '</td>' +
+          '<td>' + (row.school_name || 'Unmatched') + '</td>' +
+          '<td>' + (row.from_email || '—') + '</td>' +
+          '<td>' + (row.subject || '—') + '</td>' +
+          '<td>' + (row.snippet || '—') + '</td>' +
+          '<td>' + (row.campaign_id ? ('#' + row.campaign_id) : '—') + '</td>';
+        repliesBody.appendChild(tr);
+      });
+    };
+
+    var refreshReplies = function () {
+      return mFetch('cmn_marketing_get_replies', { limit: 120 }).then(function (data) {
+        if (!data || !data.success || !data.data) {
+          if (repliesSummary) {
+            repliesSummary.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to load replies.';
+          }
+          renderReplies({ rows: [], counts: { total: 0, matched: 0, unmatched: 0 } });
+          return;
+        }
+        renderReplies(data.data.replies || { rows: [], counts: { total: 0, matched: 0, unmatched: 0 } });
+      }).catch(function () {
+        if (repliesSummary) {
+          repliesSummary.textContent = 'Unable to load replies.';
+        }
+      });
+    };
+
+    marketingRoot.querySelectorAll('[data-marketing-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var action = btn.getAttribute('data-marketing-action') || '';
+        if (action === 'search') {
+          refreshLeadRows();
+          return;
+        }
+        if (action === 'save-dynamic') {
+          var listName = window.prompt('List name');
+          if (!listName) {
+            return;
+          }
+          var payload = {
+            name: listName,
+            type: 'dynamic',
+            criteria_json: JSON.stringify(readLeadFilters())
+          };
+          mFetch('cmn_marketing_save_list', payload).then(function (data) {
+            if (!data || !data.success) {
+              if (leadMsg) {
+                leadMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to save list.';
+              }
+              return;
+            }
+            if (leadMsg) {
+              leadMsg.textContent = data.data.message || 'List saved.';
+            }
+            var lists = (data.data && data.data.lists) || [];
+            renderLists(lists);
+            syncCampaignListOptions(lists);
+          });
+          return;
+        }
+        if (action === 'save-campaign') {
+          var getCampaignField = function (key) {
+            var el = marketingRoot.querySelector('[data-marketing-campaign="' + key + '"]');
+            return el ? el.value : '';
+          };
+          var payloadCampaign = {
+            campaign_id: marketingState.activeCampaignId || 0,
+            name: getCampaignField('name'),
+            from_context: getCampaignField('from_context'),
+            subject: getCampaignField('subject'),
+            html_body: getCampaignField('html_body'),
+            text_body: ''
+          };
+          mFetch('cmn_marketing_save_campaign', payloadCampaign).then(function (data) {
+            if (!data || !data.success) {
+              if (campaignMsg) {
+                campaignMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to save campaign.';
+              }
+              return;
+            }
+            marketingState.activeCampaignId = parseInt((data.data && data.data.campaign_id) || '0', 10) || marketingState.activeCampaignId;
+            if (campaignMsg) {
+              campaignMsg.textContent = data.data.message || 'Campaign saved.';
+            }
+            renderCampaigns((data.data && data.data.campaigns) || []);
+          });
+          return;
+        }
+        if (action === 'insert-tag') {
+          var tagSelect = marketingRoot.querySelector('[data-marketing-tag-select]');
+          var tagValue = tagSelect ? (tagSelect.value || '') : '';
+          var bodyArea = marketingRoot.querySelector('[data-marketing-campaign="html_body"]');
+          if (!tagValue || !bodyArea) {
+            return;
+          }
+          var startPos = bodyArea.selectionStart || 0;
+          var endPos = bodyArea.selectionEnd || 0;
+          var current = bodyArea.value || '';
+          bodyArea.value = current.slice(0, startPos) + tagValue + current.slice(endPos);
+          bodyArea.focus();
+          var nextPos = startPos + tagValue.length;
+          bodyArea.setSelectionRange(nextPos, nextPos);
+          return;
+        }
+        if (action === 'preview-campaign') {
+          var previewSchoolSelect = marketingRoot.querySelector('[data-marketing-preview-school]');
+          var previewSchoolId = previewSchoolSelect ? parseInt(previewSchoolSelect.value || '0', 10) : 0;
+          var previewSubjectInput = marketingRoot.querySelector('[data-marketing-campaign="subject"]');
+          var previewBodyInput = marketingRoot.querySelector('[data-marketing-campaign="html_body"]');
+          if (!previewSchoolId) {
+            if (campaignMsg) {
+              campaignMsg.textContent = 'Choose a school to preview.';
+            }
+            return;
+          }
+          if (previewSubject) {
+            previewSubject.textContent = 'Rendering preview...';
+          }
+          if (previewBody) {
+            previewBody.textContent = '';
+          }
+          if (previewMissing) {
+            previewMissing.textContent = '';
+          }
+          mFetch('cmn_marketing_preview_campaign', {
+            school_id: previewSchoolId,
+            subject: previewSubjectInput ? previewSubjectInput.value : '',
+            html_body: previewBodyInput ? previewBodyInput.value : '',
+            text_body: ''
+          }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (campaignMsg) {
+                campaignMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to render preview.';
+              }
+              return;
+            }
+            if (previewSubject) {
+              previewSubject.textContent = data.data.subject || '(No subject)';
+            }
+            if (previewBody) {
+              previewBody.innerHTML = data.data.body_html || '<em>No body content.</em>';
+            }
+            if (previewMissing) {
+              var missing = data.data.missing_counts || {};
+              var keys = Object.keys(missing);
+              if (keys.length) {
+                previewMissing.textContent = 'Missing values: ' + keys.map(function (key) {
+                  return key + ' (' + missing[key] + ')';
+                }).join(', ');
+              } else {
+                previewMissing.textContent = 'All merge fields resolved for this preview.';
+              }
+            }
+          }).catch(function () {
+            if (campaignMsg) {
+              campaignMsg.textContent = 'Unable to render preview.';
+            }
+          });
+          return;
+        }
+        if (action === 'queue-campaign') {
+          var listSelect = marketingRoot.querySelector('[data-marketing-campaign="list_id"]');
+          var listId = listSelect ? parseInt(listSelect.value || '0', 10) : 0;
+          if (!marketingState.activeCampaignId) {
+            if (campaignMsg) {
+              campaignMsg.textContent = 'Save/select a campaign first.';
+            }
+            return;
+          }
+          if (!listId) {
+            if (campaignMsg) {
+              campaignMsg.textContent = 'Select a target list.';
+            }
+            return;
+          }
+          mFetch('cmn_marketing_queue_campaign', {
+            campaign_id: marketingState.activeCampaignId,
+            list_id: listId
+          }).then(function (data) {
+            if (!data || !data.success) {
+              if (campaignMsg) {
+                campaignMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to queue campaign.';
+              }
+              return;
+            }
+            if (campaignMsg) {
+              campaignMsg.textContent = data.data.message || 'Campaign queued.';
+            }
+            if (data.data && data.data.queue) {
+              renderQueue(data.data.queue);
+            }
+            setTab('queue');
+          });
+          return;
+        }
+        if (action === 'process-queue') {
+          mFetch('cmn_marketing_process_queue', {
+            campaign_id: marketingState.activeCampaignId || 0,
+            limit: 30
+          }).then(function (data) {
+            if (!data || !data.success) {
+              if (campaignMsg) {
+                campaignMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to process queue.';
+              }
+              return;
+            }
+            if (campaignMsg) {
+              campaignMsg.textContent = (data.data && data.data.message) ? data.data.message : 'Queue processed.';
+            }
+            if (data.data && data.data.queue) {
+              renderQueue(data.data.queue);
+            } else {
+              refreshQueue();
+            }
+            setTab('queue');
+          });
+          return;
+        }
+        if (action === 'refresh-replies') {
+          if (repliesSummary) {
+            repliesSummary.textContent = 'Refreshing...';
+          }
+          refreshReplies();
+          return;
+        }
+        if (action === 'poll-replies') {
+          if (repliesSummary) {
+            repliesSummary.textContent = 'Polling inbox...';
+          }
+          mFetch('cmn_marketing_poll_replies', { limit: 40 }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (repliesSummary) {
+                repliesSummary.textContent = (data && data.data && data.data.message) ? data.data.message : 'Inbox poll failed.';
+              }
+              return;
+            }
+            if (repliesSummary && data.data.message) {
+              repliesSummary.textContent = data.data.message;
+            }
+            renderReplies(data.data.replies || { rows: [], counts: { total: 0, matched: 0, unmatched: 0 } });
+          }).catch(function () {
+            if (repliesSummary) {
+              repliesSummary.textContent = 'Inbox poll failed.';
+            }
+          });
+        }
+      });
+    });
+
+    var selectAll = marketingRoot.querySelector('[data-marketing-select-all]');
+    if (selectAll) {
+      selectAll.addEventListener('change', function () {
+        var checked = !!selectAll.checked;
+        resultBody.querySelectorAll('[data-marketing-row-select]').forEach(function (checkbox) {
+          checkbox.checked = checked;
+          var id = parseInt(checkbox.value || '0', 10);
+          if (!id) {
+            return;
+          }
+          if (checked) {
+            marketingState.selectedIds[id] = 1;
+          } else {
+            delete marketingState.selectedIds[id];
+          }
+        });
+      });
+    }
+
+    refreshLeadRows();
+    refreshLists();
+    refreshCampaigns();
+    refreshQueue();
+    refreshReplies();
   }
 
   var bookingChatRoots = document.querySelectorAll('[data-booking-chat]');
@@ -3133,12 +4097,18 @@ document.addEventListener('DOMContentLoaded', function () {
         button.disabled = true;
         setCvRowMessage(candidateId, 'Opening converter...', false);
         requestCvConverterToken(candidateId).then(function (data) {
-          if (!data || !data.success || !data.data || !data.data.converter_url) {
+          if (!data || !data.success || !data.data) {
             setCvRowMessage(candidateId, (data && data.data && data.data.message) ? data.data.message : 'Unable to open converter.', true);
             button.disabled = false;
             return;
           }
-          window.open(data.data.converter_url, '_blank', 'noopener,noreferrer');
+          var targetUrl = data.data.portal_url || data.data.converter_url || '';
+          if (!targetUrl) {
+            setCvRowMessage(candidateId, 'Unable to open converter.', true);
+            button.disabled = false;
+            return;
+          }
+          window.location.href = targetUrl;
           setCvRowMessage(candidateId, '', false);
           button.disabled = false;
         }).catch(function () {
@@ -3170,6 +4140,24 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       });
     });
+  }
+
+  var converterFrame = document.querySelector('[data-cmn-converter-frame]');
+  var converterFallback = document.querySelector('[data-cmn-converter-fallback]');
+  if (converterFrame && converterFallback) {
+    var converterLoaded = false;
+    var showConverterFallback = function () {
+      if (converterLoaded) {
+        return;
+      }
+      converterFallback.hidden = false;
+    };
+    converterFrame.addEventListener('load', function () {
+      converterLoaded = true;
+      converterFallback.hidden = true;
+    });
+    converterFrame.addEventListener('error', showConverterFallback);
+    window.setTimeout(showConverterFallback, 9000);
   }
 
   var candidateDocsRoot = document.querySelector('[data-candidate-docs]');
@@ -3220,11 +4208,19 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         return document.querySelector('[data-profile-form="role"] [name="' + field + '"]');
       };
-      ['first_name', 'last_name', 'phone', 'role_type', 'travel_radius'].forEach(function (field) {
+      ['email', 'first_name', 'last_name', 'phone', 'role_type', 'roles_other', 'travel_radius', 'location', 'driving_licence', 'car_owner', 'no_dbs', 'dbs_update_service', 'house_number', 'address_line1', 'address_line2', 'address_line3', 'town', 'county', 'postcode', 'notes'].forEach(function (field) {
         var input = sectionForm.querySelector('[name="' + field + '"]') || getFieldInput(field);
         if (input) {
           fd.append(field, input.value.trim());
         }
+      });
+      var roleInputs = document.querySelectorAll('[data-profile-form="role"] input[name="roles[]"]:checked');
+      roleInputs.forEach(function (input) {
+        fd.append('roles[]', input.value);
+      });
+      var dayInputs = document.querySelectorAll('[data-profile-form="role"] input[name="availability_days[]"]:checked');
+      dayInputs.forEach(function (input) {
+        fd.append('availability_days[]', input.value);
       });
       setProfileMessage('Saving...');
       fetch(window.cmnPortal.ajaxUrl, {
@@ -3241,11 +4237,24 @@ document.addEventListener('DOMContentLoaded', function () {
         var profile = data.data && data.data.profile ? data.data.profile : {};
         var fullName = (profile.full_name || '').trim();
         var fullNameEl = document.querySelector('[data-profile-full-name]');
+        var emailEl = document.querySelector('[data-profile-email]');
         var phoneEl = document.querySelector('[data-profile-phone]');
         var roleEl = document.querySelector('[data-profile-role]');
+        var rolesEl = document.querySelector('[data-profile-roles]');
+        var rolesOtherEl = document.querySelector('[data-profile-roles-other]');
         var travelEl = document.querySelector('[data-profile-travel]');
+        var locationEl = document.querySelector('[data-profile-location]');
+        var drivingEl = document.querySelector('[data-profile-driving]');
+        var carEl = document.querySelector('[data-profile-car]');
+        var hasDbsEl = document.querySelector('[data-profile-has-dbs]');
+        var dbsUpdateEl = document.querySelector('[data-profile-dbs-update]');
+        var daysEl = document.querySelector('[data-profile-days]');
+        var addressEl = document.querySelector('[data-profile-address]');
         if (fullNameEl) {
           fullNameEl.textContent = fullName || 'Candidate';
+        }
+        if (emailEl) {
+          emailEl.textContent = profile.email || 'Not set';
         }
         if (phoneEl) {
           phoneEl.textContent = profile.phone || 'Not set';
@@ -3253,8 +4262,35 @@ document.addEventListener('DOMContentLoaded', function () {
         if (roleEl) {
           roleEl.textContent = profile.role_type || 'Not set';
         }
+        if (rolesEl) {
+          rolesEl.textContent = profile.roles_label || 'Not set';
+        }
+        if (rolesOtherEl) {
+          rolesOtherEl.textContent = profile.roles_other || 'Not set';
+        }
         if (travelEl) {
           travelEl.textContent = profile.travel_radius || 'Not set';
+        }
+        if (locationEl) {
+          locationEl.textContent = profile.location || 'Not set';
+        }
+        if (drivingEl) {
+          drivingEl.textContent = profile.driving_licence_label || 'Not set';
+        }
+        if (carEl) {
+          carEl.textContent = profile.car_owner_label || 'Not set';
+        }
+        if (hasDbsEl) {
+          hasDbsEl.textContent = profile.no_dbs_label || 'Not set';
+        }
+        if (dbsUpdateEl) {
+          dbsUpdateEl.textContent = profile.dbs_update_service_label || 'Not set';
+        }
+        if (daysEl) {
+          daysEl.textContent = profile.availability_days_label || 'Not set';
+        }
+        if (addressEl) {
+          addressEl.textContent = profile.address_display || 'Not set';
         }
         var completionText = document.querySelector('[data-profile-completion-text]');
         var completionBar = document.querySelector('[data-profile-completion-bar]');
@@ -3293,6 +4329,9 @@ document.addEventListener('DOMContentLoaded', function () {
     var completionBar = document.querySelector('[data-profile-completion-bar]');
     var complianceScoreText = document.querySelector('[data-compliance-score-text]');
     var complianceScoreBar = document.querySelector('[data-compliance-score-bar]');
+    var complianceRiskBadge = document.querySelector('[data-compliance-risk-badge]');
+    var complianceRiskText = document.querySelector('[data-compliance-risk-text]');
+    var complianceBreakdown = document.querySelector('[data-compliance-breakdown]');
     var setDocMessage = function (text) {
       if (docMessage) {
         docMessage.textContent = text || '';
@@ -3383,6 +4422,36 @@ document.addEventListener('DOMContentLoaded', function () {
         score = Math.max(0, Math.min(100, score));
         complianceScoreText.textContent = score + '%';
         complianceScoreBar.style.width = score + '%';
+      }
+      if (complianceRiskBadge && complianceRiskText) {
+        var riskLevel = String(payload.risk_level || 'Medium');
+        complianceRiskText.textContent = riskLevel;
+        complianceRiskBadge.classList.remove('is-pending', 'is-declined', 'is-verified');
+        if (riskLevel === 'Low') {
+          complianceRiskBadge.classList.add('is-verified');
+        } else if (riskLevel === 'High') {
+          complianceRiskBadge.classList.add('is-declined');
+        } else {
+          complianceRiskBadge.classList.add('is-pending');
+        }
+      }
+      if (complianceBreakdown && Array.isArray(payload.breakdown)) {
+        complianceBreakdown.innerHTML = '';
+        payload.breakdown.forEach(function (item) {
+          var li = document.createElement('li');
+          var label = String((item && item.label) || 'Item');
+          var value = String((item && item.value) || '');
+          var points = parseInt((item && item.points) || 0, 10);
+          var maxPoints = parseInt((item && item.max_points) || 0, 10);
+          if (Number.isNaN(points)) {
+            points = 0;
+          }
+          if (Number.isNaN(maxPoints)) {
+            maxPoints = 0;
+          }
+          li.textContent = label + ': ' + value + ' (' + points + '/' + maxPoints + ')';
+          complianceBreakdown.appendChild(li);
+        });
       }
     };
     var applyDocStatus = function (docType, status) {
@@ -3685,6 +4754,663 @@ document.addEventListener('DOMContentLoaded', function () {
     window.setInterval(updateCountdowns, 1000);
   }
 
+  var healthRoot = document.querySelector('[data-system-health-root]');
+  if (healthRoot && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.systemHealthNonce) {
+    var healthState = {
+      runId: healthRoot.getAttribute('data-last-run-id') || '',
+      page: 1,
+      perPage: 25,
+      severity: '',
+      entityType: '',
+      issueCode: '',
+      search: '',
+      showIgnored: false,
+      sortBy: 'created_at',
+      sortDir: 'DESC'
+    };
+    var activeIssueId = 0;
+
+    var tabButtons = Array.prototype.slice.call(healthRoot.querySelectorAll('[data-health-tab]'));
+    var panels = Array.prototype.slice.call(healthRoot.querySelectorAll('[data-health-panel]'));
+    var runButton = healthRoot.querySelector('[data-system-health-run]');
+    var runMsg = healthRoot.querySelector('[data-system-health-run-msg]');
+    var issuesBody = healthRoot.querySelector('[data-health-issues-body]');
+    var runsBody = healthRoot.querySelector('[data-health-runs-body]');
+    var fixesBody = healthRoot.querySelector('[data-health-fixes-body]');
+    var pageLabel = healthRoot.querySelector('[data-health-page-label]');
+    var pagePrev = healthRoot.querySelector('[data-health-page=\"prev\"]');
+    var pageNext = healthRoot.querySelector('[data-health-page=\"next\"]');
+    var severityFilter = healthRoot.querySelector('[data-health-filter=\"severity\"]');
+    var entityFilter = healthRoot.querySelector('[data-health-filter=\"entity_type\"]');
+    var issueCodeFilter = healthRoot.querySelector('[data-health-filter=\"issue_code\"]');
+    var searchFilter = healthRoot.querySelector('[data-health-filter=\"search\"]');
+    var showIgnoredFilter = healthRoot.querySelector('[data-health-filter=\"show_ignored\"]');
+    var modal = healthRoot.querySelector('[data-health-issue-modal]');
+    var modalClose = healthRoot.querySelector('[data-health-issue-modal-close]');
+    var modalTitle = healthRoot.querySelector('[data-health-modal-title]');
+    var modalDescription = healthRoot.querySelector('[data-health-modal-description]');
+    var modalActionText = healthRoot.querySelector('[data-health-modal-action]');
+    var modalMeta = healthRoot.querySelector('[data-health-modal-meta]');
+    var modalActionButtons = Array.prototype.slice.call(healthRoot.querySelectorAll('[data-health-issue-action]'));
+    var repairWrap = healthRoot.querySelector('[data-health-repair-wrap]');
+    var repairSummary = healthRoot.querySelector('[data-health-repair-summary]');
+    var repairPreview = healthRoot.querySelector('[data-health-repair-preview]');
+    var repairDryRun = healthRoot.querySelector('[data-health-repair-dry-run]');
+    var repairConfirmWrap = healthRoot.querySelector('[data-health-repair-confirm-wrap]');
+    var repairConfirmInput = healthRoot.querySelector('[data-health-repair-confirm-input]');
+    var repairPreviewBtn = healthRoot.querySelector('[data-health-repair-preview-btn]');
+    var repairApplyBtn = healthRoot.querySelector('[data-health-repair-apply-btn]');
+    var repairMessage = healthRoot.querySelector('[data-health-repair-message]');
+    var activeIssueRepairPreview = null;
+    var summaryFields = {
+      lastRun: healthRoot.querySelector('[data-health-last-run]'),
+      lastDuration: healthRoot.querySelector('[data-health-last-duration]'),
+      total: healthRoot.querySelector('[data-health-last-total]'),
+      critical: healthRoot.querySelector('[data-health-last-critical]'),
+      warning: healthRoot.querySelector('[data-health-last-warning]'),
+      info: healthRoot.querySelector('[data-health-last-info]'),
+      criticalCount: healthRoot.querySelector('[data-health-critical-count]'),
+      warningCount: healthRoot.querySelector('[data-health-warning-count]'),
+      infoCount: healthRoot.querySelector('[data-health-info-count]'),
+      criticalPct: healthRoot.querySelector('[data-health-critical-pct]'),
+      warningPct: healthRoot.querySelector('[data-health-warning-pct]'),
+      infoPct: healthRoot.querySelector('[data-health-info-pct]'),
+      healthyCount: healthRoot.querySelector('[data-health-healthy-count]')
+    };
+
+    var api = function (action, payload) {
+      var fd = new FormData();
+      fd.append('action', action);
+      fd.append('nonce', window.cmnPortal.systemHealthNonce);
+      Object.keys(payload || {}).forEach(function (key) {
+        if (payload[key] === undefined || payload[key] === null) {
+          return;
+        }
+        fd.append(key, payload[key]);
+      });
+      return fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      }).then(function (res) { return res.json(); });
+    };
+
+    var formatNumber = function (num) {
+      return String(parseInt(num || 0, 10));
+    };
+
+    var formatPct = function (count, total) {
+      if (!total) {
+        return '0%';
+      }
+      return Math.round((count / total) * 100) + '%';
+    };
+
+    var setMessage = function (text, isError) {
+      if (!runMsg) {
+        return;
+      }
+      runMsg.textContent = text || '';
+      runMsg.classList.toggle('is-error', !!isError);
+    };
+
+    var setSummary = function (run) {
+      if (!run) {
+        return;
+      }
+      var total = parseInt(run.total_issues_found || 0, 10);
+      var critical = parseInt(run.critical_count || 0, 10);
+      var warning = parseInt(run.warning_count || 0, 10);
+      var info = parseInt(run.info_count || 0, 10);
+      if (summaryFields.lastRun) summaryFields.lastRun.textContent = run.started_at || '—';
+      if (summaryFields.lastDuration) summaryFields.lastDuration.textContent = run.duration_ms ? (Math.round((run.duration_ms / 1000) * 100) / 100) + 's' : '—';
+      if (summaryFields.total) summaryFields.total.textContent = formatNumber(total);
+      if (summaryFields.critical) summaryFields.critical.textContent = formatNumber(critical);
+      if (summaryFields.warning) summaryFields.warning.textContent = formatNumber(warning);
+      if (summaryFields.info) summaryFields.info.textContent = formatNumber(info);
+      if (summaryFields.criticalCount) summaryFields.criticalCount.textContent = formatNumber(critical);
+      if (summaryFields.warningCount) summaryFields.warningCount.textContent = formatNumber(warning);
+      if (summaryFields.infoCount) summaryFields.infoCount.textContent = formatNumber(info);
+      if (summaryFields.criticalPct) summaryFields.criticalPct.textContent = formatPct(critical, total);
+      if (summaryFields.warningPct) summaryFields.warningPct.textContent = formatPct(warning, total);
+      if (summaryFields.infoPct) summaryFields.infoPct.textContent = formatPct(info, total);
+      if (summaryFields.healthyCount) summaryFields.healthyCount.textContent = critical === 0 ? '1' : '0';
+    };
+
+    var renderIssueRows = function (issues) {
+      if (!issuesBody) {
+        return;
+      }
+      if (!issues || !issues.length) {
+        issuesBody.innerHTML = '<tr><td colspan="7">No issues found for this filter.</td></tr>';
+        return;
+      }
+      issuesBody.innerHTML = issues.map(function (issue) {
+        var sev = String(issue.severity || 'info').toLowerCase();
+        var entityId = issue.entity_id ? String(issue.entity_id) : '—';
+        var entityCell = issue.entity_url ? '<a href="' + issue.entity_url + '" target="_blank" rel="noopener noreferrer">' + entityId + '</a>' : entityId;
+        var flagBits = [];
+        if (parseInt(issue.reviewed || 0, 10) === 1) {
+          flagBits.push('<span class="cmn-status-chip is-verified">Reviewed</span>');
+        }
+        if (parseInt(issue.ignored || 0, 10) === 1) {
+          flagBits.push('<span class="cmn-status-chip is-muted">Ignored</span>');
+        }
+        return [
+          '<tr data-health-issue-row data-issue-id="' + issue.id + '">',
+          '<td><span class="cmn-status-chip is-' + sev + '">' + sev.toUpperCase() + '</span></td>',
+          '<td>' + (issue.entity_type || 'system') + '</td>',
+          '<td>' + entityCell + '</td>',
+          '<td>' + (issue.issue_code || '') + '</td>',
+          '<td>' + (issue.description || '') + (flagBits.length ? '<div class="cmn-system-health-flags">' + flagBits.join(' ') + '</div>' : '') + '</td>',
+          '<td>' + (issue.recommended_action || '') + '</td>',
+          '<td>' + (issue.created_at || '') + '</td>',
+          '</tr>'
+        ].join('');
+      }).join('');
+    };
+
+    var renderRunRows = function (runs) {
+      if (!runsBody) {
+        return;
+      }
+      if (!runs || !runs.length) {
+        runsBody.innerHTML = '<tr><td colspan="9">No scan history available yet.</td></tr>';
+        return;
+      }
+      runsBody.innerHTML = runs.map(function (run) {
+        return [
+          '<tr>',
+          '<td>' + (run.run_id || '') + '</td>',
+          '<td>' + (run.started_at || '') + '</td>',
+          '<td>' + (run.duration_ms ? (Math.round((run.duration_ms / 1000) * 100) / 100) + 's' : '—') + '</td>',
+          '<td>' + formatNumber(run.total_issues_found) + '</td>',
+          '<td>' + formatNumber(run.critical_count) + '</td>',
+          '<td>' + formatNumber(run.warning_count) + '</td>',
+          '<td>' + formatNumber(run.info_count) + '</td>',
+          '<td>' + (run.status || '') + '</td>',
+          '<td><button type="button" class="cmn-ghost cmn-btn-mini" data-health-view-run="' + run.run_id + '">View Results</button></td>',
+          '</tr>'
+        ].join('');
+      }).join('');
+    };
+
+    var renderFixRows = function (fixes) {
+      if (!fixesBody) {
+        return;
+      }
+      if (!fixes || !fixes.length) {
+        fixesBody.innerHTML = '<tr><td colspan="9">No fix log entries yet.</td></tr>';
+        return;
+      }
+      fixesBody.innerHTML = fixes.map(function (row) {
+        return [
+          '<tr>',
+          '<td>' + (row.performed_at || '') + '</td>',
+          '<td>' + (row.fix_code || '') + '</td>',
+          '<td>' + (row.entity_type || '') + '</td>',
+          '<td>' + (row.entity_id ? String(row.entity_id) : '—') + '</td>',
+          '<td>' + (row.issue_id ? String(row.issue_id) : '—') + '</td>',
+          '<td>' + (row.performed_by ? String(row.performed_by) : '—') + '</td>',
+          '<td>' + (parseInt(row.dry_run || 0, 10) === 1 ? 'Yes' : 'No') + '</td>',
+          '<td>' + (row.status || '') + '</td>',
+          '<td>' + (row.notes || '—') + '</td>',
+          '</tr>'
+        ].join('');
+      }).join('');
+    };
+
+    var setIssueOptions = function (selectEl, values, currentValue) {
+      if (!selectEl) {
+        return;
+      }
+      var baseLabel = selectEl.getAttribute('data-health-filter') === 'entity_type' ? 'All entities' : 'All issue codes';
+      var html = ['<option value="">' + baseLabel + '</option>'];
+      (values || []).forEach(function (val) {
+        var selected = currentValue && currentValue === val ? ' selected' : '';
+        html.push('<option value="' + val + '"' + selected + '>' + val + '</option>');
+      });
+      selectEl.innerHTML = html.join('');
+    };
+
+    var loadIssues = function () {
+      return api('cmn_get_system_health_issues', {
+        run_id: healthState.runId,
+        page: healthState.page,
+        per_page: healthState.perPage,
+        severity: healthState.severity,
+        entity_type: healthState.entityType,
+        issue_code: healthState.issueCode,
+        search: healthState.search,
+        show_ignored: healthState.showIgnored ? 1 : 0,
+        sort_by: healthState.sortBy,
+        sort_dir: healthState.sortDir
+      }).then(function (data) {
+        if (!data || !data.success) {
+          throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to load issues.');
+        }
+        var payload = data.data || {};
+        if (payload.run_id) {
+          healthState.runId = payload.run_id;
+        }
+        renderIssueRows(payload.issues || []);
+        setSummary(payload.run || null);
+        setIssueOptions(entityFilter, payload.entity_types || [], healthState.entityType);
+        setIssueOptions(issueCodeFilter, payload.issue_codes || [], healthState.issueCode);
+        var pagination = payload.pagination || {};
+        var page = parseInt(pagination.page || 1, 10);
+        var totalPages = parseInt(pagination.total_pages || 1, 10);
+        if (pageLabel) {
+          pageLabel.textContent = 'Page ' + page + ' of ' + totalPages;
+        }
+        if (pagePrev) {
+          pagePrev.disabled = page <= 1;
+        }
+        if (pageNext) {
+          pageNext.disabled = page >= totalPages;
+        }
+      }).catch(function (err) {
+        setMessage(err.message || 'Unable to load system health issues.', true);
+      });
+    };
+
+    var loadRuns = function () {
+      return api('cmn_get_system_health_runs', { limit: 100 }).then(function (data) {
+        if (!data || !data.success) {
+          throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to load run history.');
+        }
+        var payload = data.data || {};
+        renderRunRows(payload.runs || []);
+        if (!healthState.runId && payload.latest && payload.latest.run_id) {
+          healthState.runId = payload.latest.run_id;
+        }
+      }).catch(function () {
+        // Keep UI stable if history fetch fails.
+      });
+    };
+
+    var loadFixes = function (forIssueId) {
+      var payload = { limit: 200 };
+      if (forIssueId) {
+        payload.issue_id = forIssueId;
+      }
+      return api('cmn_get_system_health_fixes', payload).then(function (data) {
+        if (!data || !data.success) {
+          throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to load fix log.');
+        }
+        renderFixRows((data.data && data.data.fixes) ? data.data.fixes : []);
+      }).catch(function () {
+        // Keep UI stable on fix-log failures.
+      });
+    };
+
+    var resetRepairUi = function () {
+      activeIssueRepairPreview = null;
+      if (repairWrap) {
+        repairWrap.hidden = true;
+      }
+      if (repairSummary) {
+        repairSummary.textContent = '';
+      }
+      if (repairPreview) {
+        repairPreview.textContent = '{}';
+      }
+      if (repairDryRun) {
+        repairDryRun.checked = true;
+      }
+      if (repairConfirmWrap) {
+        repairConfirmWrap.hidden = true;
+      }
+      if (repairConfirmInput) {
+        repairConfirmInput.value = '';
+      }
+      if (repairApplyBtn) {
+        repairApplyBtn.hidden = true;
+      }
+      if (repairMessage) {
+        repairMessage.textContent = '';
+      }
+    };
+
+    var openModal = function () {
+      if (!modal) {
+        return;
+      }
+      modal.hidden = false;
+      modal.classList.add('is-open');
+      document.body.classList.add('cmn-support-modal-lock');
+    };
+    var closeModal = function () {
+      if (!modal) {
+        return;
+      }
+      modal.hidden = true;
+      modal.classList.remove('is-open');
+      document.body.classList.remove('cmn-support-modal-lock');
+      activeIssueId = 0;
+    };
+
+    var loadIssueDetail = function (issueId) {
+      activeIssueId = issueId;
+      resetRepairUi();
+      return api('cmn_get_system_health_issue_detail', { issue_id: issueId }).then(function (data) {
+        if (!data || !data.success || !data.data || !data.data.issue) {
+          throw new Error((data && data.data && data.data.message) ? data.data.message : 'Issue detail unavailable.');
+        }
+        var issue = data.data.issue;
+        if (modalTitle) {
+          modalTitle.textContent = (issue.issue_code || 'Issue') + ' · ' + (issue.severity || '').toUpperCase();
+        }
+        if (modalDescription) {
+          modalDescription.textContent = issue.description || '';
+        }
+        if (modalActionText) {
+          modalActionText.textContent = issue.recommended_action || '';
+        }
+        if (modalMeta) {
+          var pretty = '{}';
+          try {
+            pretty = JSON.stringify(issue.meta || {}, null, 2);
+          } catch (e) {
+            pretty = '{}';
+          }
+          modalMeta.textContent = pretty;
+        }
+        if (repairWrap && repairPreviewBtn) {
+          repairWrap.hidden = false;
+          repairPreviewBtn.hidden = false;
+          repairApplyBtn.hidden = true;
+        }
+        openModal();
+      }).catch(function (err) {
+        setMessage(err.message || 'Unable to load issue detail.', true);
+      });
+    };
+
+    tabButtons.forEach(function (tabBtn) {
+      tabBtn.addEventListener('click', function () {
+        var target = tabBtn.getAttribute('data-health-tab');
+        tabButtons.forEach(function (btn) { btn.classList.toggle('is-active', btn === tabBtn); });
+        panels.forEach(function (panel) {
+          panel.classList.toggle('is-active', panel.getAttribute('data-health-panel') === target);
+        });
+        if (target === 'fix-log') {
+          loadFixes();
+        }
+      });
+    });
+
+    if (runButton) {
+      runButton.addEventListener('click', function () {
+        runButton.disabled = true;
+        setMessage('Running scan...', false);
+        api('cmn_run_system_health', {}).then(function (data) {
+          if (!data || !data.success) {
+            throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to run system scan.');
+          }
+          var summary = (data.data && data.data.summary) ? data.data.summary : null;
+          if (summary && summary.run_id) {
+            healthState.runId = summary.run_id;
+            healthState.page = 1;
+          }
+          setMessage('System health scan completed.', false);
+          return Promise.all([loadRuns(), loadIssues()]);
+        }).catch(function (err) {
+          setMessage(err.message || 'System health scan failed.', true);
+        }).finally(function () {
+          runButton.disabled = false;
+        });
+      });
+    }
+
+    if (severityFilter) {
+      severityFilter.addEventListener('change', function () {
+        healthState.severity = severityFilter.value || '';
+        healthState.page = 1;
+        loadIssues();
+      });
+    }
+    if (entityFilter) {
+      entityFilter.addEventListener('change', function () {
+        healthState.entityType = entityFilter.value || '';
+        healthState.page = 1;
+        loadIssues();
+      });
+    }
+    if (issueCodeFilter) {
+      issueCodeFilter.addEventListener('change', function () {
+        healthState.issueCode = issueCodeFilter.value || '';
+        healthState.page = 1;
+        loadIssues();
+      });
+    }
+    if (showIgnoredFilter) {
+      showIgnoredFilter.addEventListener('change', function () {
+        healthState.showIgnored = !!showIgnoredFilter.checked;
+        healthState.page = 1;
+        loadIssues();
+      });
+    }
+    var searchTimer = null;
+    if (searchFilter) {
+      searchFilter.addEventListener('input', function () {
+        if (searchTimer) {
+          window.clearTimeout(searchTimer);
+        }
+        searchTimer = window.setTimeout(function () {
+          healthState.search = (searchFilter.value || '').trim();
+          healthState.page = 1;
+          loadIssues();
+        }, 280);
+      });
+    }
+    Array.prototype.slice.call(healthRoot.querySelectorAll('[data-health-severity-filter]')).forEach(function (tileBtn) {
+      tileBtn.addEventListener('click', function () {
+        var target = tileBtn.getAttribute('data-health-severity-filter') || '';
+        healthState.severity = target === 'all' ? '' : target;
+        healthState.page = 1;
+        if (severityFilter) {
+          severityFilter.value = healthState.severity;
+        }
+        loadIssues();
+      });
+    });
+    if (pagePrev) {
+      pagePrev.addEventListener('click', function () {
+        if (healthState.page > 1) {
+          healthState.page -= 1;
+          loadIssues();
+        }
+      });
+    }
+    if (pageNext) {
+      pageNext.addEventListener('click', function () {
+        healthState.page += 1;
+        loadIssues();
+      });
+    }
+
+    if (issuesBody) {
+      issuesBody.addEventListener('click', function (event) {
+        var row = event.target.closest('[data-health-issue-row]');
+        if (!row) {
+          return;
+        }
+        var issueId = parseInt(row.getAttribute('data-issue-id') || '0', 10);
+        if (issueId > 0) {
+          loadIssueDetail(issueId);
+        }
+      });
+    }
+
+    if (runsBody) {
+      runsBody.addEventListener('click', function (event) {
+        var btn = event.target.closest('[data-health-view-run]');
+        if (!btn) {
+          return;
+        }
+        var runId = btn.getAttribute('data-health-view-run') || '';
+        if (!runId) {
+          return;
+        }
+        healthState.runId = runId;
+        healthState.page = 1;
+        tabButtons.forEach(function (b) { b.classList.toggle('is-active', b.getAttribute('data-health-tab') === 'issues'); });
+        panels.forEach(function (p) { p.classList.toggle('is-active', p.getAttribute('data-health-panel') === 'issues'); });
+        loadIssues();
+      });
+    }
+
+    if (modalClose) {
+      modalClose.addEventListener('click', closeModal);
+    }
+    if (modal) {
+      modal.addEventListener('click', function (event) {
+        if (event.target === modal) {
+          closeModal();
+        }
+      });
+    }
+
+    if (repairPreviewBtn) {
+      repairPreviewBtn.addEventListener('click', function () {
+        if (activeIssueId < 1) {
+          return;
+        }
+        repairPreviewBtn.disabled = true;
+        if (repairMessage) {
+          repairMessage.textContent = 'Loading repair preview...';
+        }
+        api('cmn_system_health_preview_fix', { issue_id: activeIssueId }).then(function (data) {
+          if (!data || !data.success || !data.data || !data.data.preview) {
+            throw new Error((data && data.data && data.data.message) ? data.data.message : 'Repair preview unavailable.');
+          }
+          activeIssueRepairPreview = data.data.preview;
+          if (repairSummary) {
+            repairSummary.textContent = data.data.preview.impact_summary || '';
+          }
+          if (repairPreview) {
+            repairPreview.textContent = JSON.stringify(data.data.preview.changes_preview || {}, null, 2);
+          }
+          if (repairConfirmWrap) {
+            repairConfirmWrap.hidden = !(data.data.preview.requires_confirmation && !(repairDryRun && repairDryRun.checked));
+          }
+          if (repairApplyBtn) {
+            repairApplyBtn.hidden = false;
+          }
+          if (repairMessage) {
+            repairMessage.textContent = '';
+          }
+        }).catch(function (err) {
+          if (repairMessage) {
+            repairMessage.textContent = err.message || 'Unable to preview repair.';
+          }
+        }).finally(function () {
+          repairPreviewBtn.disabled = false;
+        });
+      });
+    }
+
+    if (repairDryRun) {
+      repairDryRun.addEventListener('change', function () {
+        if (!repairConfirmWrap) {
+          return;
+        }
+        var needsConfirm = !!(activeIssueRepairPreview && activeIssueRepairPreview.requires_confirmation);
+        repairConfirmWrap.hidden = !needsConfirm || !!repairDryRun.checked;
+      });
+    }
+
+    if (repairApplyBtn) {
+      repairApplyBtn.addEventListener('click', function () {
+        if (activeIssueId < 1 || !activeIssueRepairPreview) {
+          return;
+        }
+        var wantsDryRun = !!(repairDryRun && repairDryRun.checked);
+        var needsConfirm = !!activeIssueRepairPreview.requires_confirmation && !wantsDryRun;
+        var confirmText = repairConfirmInput ? String(repairConfirmInput.value || '').trim() : '';
+        if (needsConfirm && confirmText.toUpperCase() !== 'CONFIRM') {
+          if (repairMessage) {
+            repairMessage.textContent = 'Type CONFIRM to apply this repair.';
+          }
+          return;
+        }
+        repairApplyBtn.disabled = true;
+        if (repairMessage) {
+          repairMessage.textContent = wantsDryRun ? 'Running dry run...' : 'Applying repair...';
+        }
+        api('cmn_system_health_apply_fix', {
+          issue_id: activeIssueId,
+          dry_run: wantsDryRun ? 1 : 0,
+          confirm_text: confirmText
+        }).then(function (data) {
+          if (!data || !data.success) {
+            throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to apply repair.');
+          }
+          if (repairMessage) {
+            repairMessage.textContent = (data.data && data.data.result && data.data.result.message) ? data.data.result.message : 'Repair completed.';
+          }
+          loadIssues();
+          loadFixes(activeIssueId);
+          if (!wantsDryRun) {
+            window.setTimeout(closeModal, 500);
+          }
+        }).catch(function (err) {
+          if (repairMessage) {
+            repairMessage.textContent = err.message || 'Unable to apply repair.';
+          }
+        }).finally(function () {
+          repairApplyBtn.disabled = false;
+        });
+      });
+    }
+
+    modalActionButtons.forEach(function (actionBtn) {
+      actionBtn.addEventListener('click', function () {
+        var action = actionBtn.getAttribute('data-health-issue-action');
+        if (!action || activeIssueId < 1) {
+          return;
+        }
+        if (action === 'export') {
+          var exportPayload = {
+            issue_id: activeIssueId,
+            exported_at: new Date().toISOString()
+          };
+          var blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = 'system-health-issue-' + activeIssueId + '.json';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          return;
+        }
+        var updateAction = action === 'ignore' ? 'ignore' : 'review';
+        actionBtn.disabled = true;
+        api('cmn_update_system_health_issue', {
+          issue_id: activeIssueId,
+          update_action: updateAction
+        }).then(function (data) {
+          if (!data || !data.success) {
+            throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to update issue.');
+          }
+          closeModal();
+          loadIssues();
+        }).catch(function (err) {
+          setMessage(err.message || 'Unable to update issue.', true);
+        }).finally(function () {
+          actionBtn.disabled = false;
+        });
+      });
+    });
+
+    Promise.all([loadRuns(), loadIssues(), loadFixes()]).catch(function () {
+      setMessage('Unable to load system health data.', true);
+    });
+  }
+
   var candidateTourRoot = document.querySelector('[data-candidate-tour]');
   if (candidateTourRoot && candidateTourRoot.getAttribute('data-candidate-tour') === '1' && window.cmnPortal && window.cmnPortal.ajaxUrl) {
     var createTourElements = function () {
@@ -3722,7 +5448,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var steps = [
       { key: 'bell', title: 'Notifications', text: 'Check this bell for updates and booking messages.' },
       { key: 'logout-top', title: 'Logout', text: 'Use this to safely sign out of your account.' },
-      { key: 'availability-button', title: 'Availability Button', text: 'This is the most important action. Confirm your morning availability from 7pm until 8am.' },
+      { key: 'availability-button', title: 'Availability Button', text: 'This is the most important action. Confirm your morning availability from 7pm until 8:00am.' },
       { key: 'upcoming-bookings', title: 'Upcoming Booking', text: 'Your next confirmed booking appears here.' },
       { key: 'booking-history', title: 'Booking History', text: 'Review your recent bookings quickly.' },
       { key: 'availability-planner', title: 'Availability Planner', text: 'Set Mon-Fri availability and use bulk range tools.' },
