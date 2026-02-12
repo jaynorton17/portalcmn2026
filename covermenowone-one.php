@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.15
+ * Version: 0.1.16
  * Author: CoverMeNow
  */
 
@@ -529,7 +529,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.15';
+    const VERSION = '0.1.16';
     const SCHEMA_VERSION = 23;
     const EMAIL_CANDIDATE_DECLINED = false;
     const AUTOMATION_DEFAULT_COOLDOWN_HOURS = 24;
@@ -546,13 +546,14 @@ final class CMN_One_Plugin {
         add_action('init', [$this, 'register_shortcodes']);
         add_action('init', [$this, 'ensure_required_pages']);
         add_action('init', [$this, 'maybe_upgrade_schema']);
-        add_action('init', [$this, 'maybe_auto_bump_portal_release_version'], 15);
+        add_action('init', [$this, 'initialize_release_version_option'], 2);
         add_action('init', [$this, 'migrate_candidate_statuses_to_approved'], 20);
         add_action('init', [$this, 'configure_candidate_upload_runtime_limits'], 1);
         add_action('add_meta_boxes', [$this, 'register_meta_boxes']);
         add_action('save_post_cmn_school', [$this, 'save_school_meta']);
         add_action('save_post_cmn_candidate', [$this, 'save_candidate_meta']);
         add_action('admin_menu', [$this, 'register_admin_menu']);
+        add_action('admin_notices', [$this, 'render_release_version_standardized_admin_notice']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_assets']);
         add_filter('body_class', [$this, 'add_portal_body_class']);
@@ -633,6 +634,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_update_status', [$this, 'handle_update_status']);
         add_action('admin_post_cmn_add_candidate_internal_note', [$this, 'handle_add_candidate_internal_note']);
         add_action('admin_post_cmn_staff_candidate_compliance_decision', [$this, 'handle_staff_candidate_compliance_decision']);
+        add_action('admin_post_cmn_save_release_version', [$this, 'handle_save_release_version']);
         add_action('admin_post_cmn_save_converter_settings', [$this, 'handle_save_converter_settings']);
         add_action('admin_post_cmn_regenerate_marketing_runner_token', [$this, 'handle_regenerate_marketing_runner_token']);
         add_action('admin_post_nopriv_cmn_marketing_runner', [$this, 'handle_marketing_runner']);
@@ -728,6 +730,7 @@ final class CMN_One_Plugin {
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
         add_action('template_redirect', [$this, 'redirect_legacy_portal_paths']);
         add_action('template_redirect', [$this, 'handle_marketing_unsubscribe'], 2);
+        add_action('template_redirect', [$this, 'handle_automation_runner_endpoint'], 3);
         add_action('template_redirect', [$this, 'protect_candidate_doc_attachment_access'], 1);
         add_action('init', [$this, 'schedule_compliance_reminders']);
         add_action('init', [$this, 'maybe_run_compliance_reminders_fallback'], 20);
@@ -784,108 +787,61 @@ final class CMN_One_Plugin {
         }
     }
 
-    public function maybe_auto_bump_portal_release_version() {
-        if (!$this->should_auto_bump_release_version()) {
+    public function initialize_release_version_option() {
+        $current = get_option('cmn_release_version', null);
+        $current = is_string($current) ? trim($current) : '';
+        if (preg_match('/^\d+\.\d+\.\d+$/', $current)) {
             return;
         }
-        $current_fingerprint = $this->get_release_fingerprint();
-        if ($current_fingerprint === '') {
-            return;
+
+        $legacy = trim((string) get_option('cmn_portal_release_version', ''));
+        $value = preg_match('/^\d+\.\d+\.\d+$/', $legacy) ? $legacy : '0.0.1';
+        update_option('cmn_release_version', $value, false);
+
+        if ((string) get_option('cmn_release_version_standardized_notice', '') !== '1') {
+            update_option('cmn_release_version_standardized_notice', '1', false);
         }
-        $stored_fingerprint = (string) get_option('cmn_portal_release_fingerprint', '');
-        if ($stored_fingerprint === '') {
-            update_option('cmn_portal_release_fingerprint', $current_fingerprint, false);
-            if ((string) get_option('cmn_portal_release_version', '') === '') {
-                update_option('cmn_portal_release_version', '0.0.1', false);
-            }
-            return;
-        }
-        if ($stored_fingerprint === $current_fingerprint) {
-            return;
-        }
-        $current_version = $this->get_portal_release_version();
-        $next_version = $this->increment_patch_version($current_version);
-        update_option('cmn_portal_release_version', $next_version, false);
-        update_option('cmn_portal_release_fingerprint', $current_fingerprint, false);
     }
 
-    private function should_auto_bump_release_version() {
-        if (defined('CMN_RELEASE_AUTO_BUMP')) {
-            return (bool) CMN_RELEASE_AUTO_BUMP;
-        }
-        if (defined('WP_ENVIRONMENT_TYPE')) {
-            $env = strtolower((string) WP_ENVIRONMENT_TYPE);
-            if (in_array($env, ['local', 'development'], true)) {
-                return false;
-            }
-        }
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            return false;
-        }
-        $home = home_url('/');
-        $host = strtolower((string) wp_parse_url($home, PHP_URL_HOST));
-        if ($host === '') {
-            return false;
-        }
-        $is_local_tld = (strlen($host) >= 6 && substr($host, -6) === '.local');
-        $is_staging = strpos($host, 'staging') !== false;
-        if ($host === 'localhost' || $host === '127.0.0.1' || $is_local_tld || $is_staging) {
-            return false;
-        }
-        return true;
-    }
-
-    private function get_release_fingerprint() {
-        $paths = [
-            plugin_dir_path(__FILE__) . 'covermenowone-one.php',
-            plugin_dir_path(__FILE__) . 'frontend.js',
-            plugin_dir_path(__FILE__) . 'frontend.css',
-            plugin_dir_path(__FILE__) . 'admin.css',
-        ];
-        $parts = [];
-        foreach ($paths as $path) {
-            if (!file_exists($path)) {
-                continue;
-            }
-            $hash = md5_file($path);
-            if ($hash === false) {
-                continue;
-            }
-            $parts[] = basename($path) . ':' . $hash;
-        }
-        if (!$parts) {
-            return '';
-        }
-        return md5(implode('|', $parts));
-    }
-
-    private function increment_patch_version($version) {
-        $version = trim((string) $version);
-        if (!preg_match('/^(\d+)\.(\d+)\.(\d+)$/', $version, $matches)) {
-            return '0.0.1';
-        }
-        $major = (int) $matches[1];
-        $minor = (int) $matches[2];
-        $patch = (int) $matches[3] + 1;
-        return $major . '.' . $minor . '.' . $patch;
-    }
-
-    private function get_portal_release_version() {
-        $version = (string) get_option('cmn_portal_release_version', '');
+    public function get_release_version() {
+        $this->initialize_release_version_option();
+        $version = trim((string) get_option('cmn_release_version', '0.0.1'));
         if (!preg_match('/^\d+\.\d+\.\d+$/', $version)) {
             $version = '0.0.1';
-            update_option('cmn_portal_release_version', $version, false);
+            update_option('cmn_release_version', $version, false);
         }
         return $version;
     }
 
+    public function set_release_version($v) {
+        if (!is_user_logged_in() || !$this->is_admin_user()) {
+            return;
+        }
+        $v = trim((string) $v);
+        if (!preg_match('/^\d+\.\d+\.\d+$/', $v)) {
+            return;
+        }
+        update_option('cmn_release_version', $v, false);
+    }
+
+    public function render_release_version_standardized_admin_notice() {
+        if (!is_admin() || !is_user_logged_in() || !$this->is_admin_user()) {
+            return;
+        }
+        if ((string) get_option('cmn_release_version_standardized_notice', '') !== '1') {
+            return;
+        }
+        echo '<div class="notice notice-success is-dismissible"><p>Portal version source standardized to Release Version.</p></div>';
+        update_option('cmn_release_version_standardized_notice', '0', false);
+    }
+
     private function render_portal_branding() {
-        $version = $this->get_portal_release_version();
+        $version = $this->get_release_version();
         ob_start();
         ?>
         <div class="cmn-brand-block">
             <div class="cmn-brand-title">CoverMeNow <span class="cmn-topbar-accent">ONE</span></div>
-            <div class="cmn-brand-version">Version V<?php echo esc_html($version); ?></div>
+            <div class="cmn-brand-version">V<?php echo esc_html($version); ?></div>
         </div>
         <?php
         return ob_get_clean();
@@ -1991,7 +1947,7 @@ final class CMN_One_Plugin {
 
     public function schedule_automation_runner() {
         if (!wp_next_scheduled('cmn_automation_runner')) {
-            wp_schedule_event(time() + 1800, 'daily', 'cmn_automation_runner');
+            wp_schedule_event(time() + 1800, 'cmn_hourly', 'cmn_automation_runner');
         }
     }
 
@@ -2006,7 +1962,7 @@ final class CMN_One_Plugin {
             return;
         }
         $last_run = (int) get_option('cmn_automation_runner_last_run_ts', 0);
-        if ((time() - $last_run) < DAY_IN_SECONDS) {
+        if ((time() - $last_run) < HOUR_IN_SECONDS) {
             return;
         }
         $this->run_automation_runner();
@@ -2014,19 +1970,106 @@ final class CMN_One_Plugin {
 
     public function run_automation_runner() {
         if (get_transient('cmn_automation_runner_lock')) {
-            return;
+            return [
+                'ok' => false,
+                'message' => 'Automation runner is already in progress.',
+            ];
         }
         set_transient('cmn_automation_runner_lock', 1, 600);
+        $result = [
+            'ok' => false,
+            'message' => 'Automation runner did not execute.',
+        ];
         try {
-            $result = $this->get_automation_engine()->run_scheduled_no_activity([
+            $summary = $this->get_automation_engine()->run_scheduled_no_activity([
                 'batch_size' => 80,
                 'max_entities' => 800,
             ]);
             update_option('cmn_automation_runner_last_run_ts', time(), false);
-            update_option('cmn_automation_runner_last_result', wp_json_encode($result), false);
+            update_option('cmn_automation_runner_last_result', wp_json_encode($summary), false);
+            $result = [
+                'ok' => true,
+                'summary' => $summary,
+            ];
+        } catch (Throwable $e) {
+            $result = [
+                'ok' => false,
+                'message' => 'Automation runner failed: ' . $e->getMessage(),
+            ];
         } finally {
             delete_transient('cmn_automation_runner_lock');
         }
+        return $result;
+    }
+
+    private function get_automation_runner_token() {
+        if (defined('CMN_AUTOMATION_CRON_TOKEN')) {
+            $token = trim((string) CMN_AUTOMATION_CRON_TOKEN);
+            if ($token !== '') {
+                return $token;
+            }
+        }
+        $token = trim((string) get_option('cmn_automation_runner_token', ''));
+        if ($token === '') {
+            $token = wp_generate_password(48, false, false);
+            update_option('cmn_automation_runner_token', $token, false);
+        }
+        return $token;
+    }
+
+    public function handle_automation_runner_endpoint() {
+        if (!isset($_GET['cmn_run_automation'])) {
+            return;
+        }
+        $run_flag = trim((string) wp_unslash($_GET['cmn_run_automation']));
+        if (!in_array($run_flag, ['1', 'true', 'yes'], true)) {
+            return;
+        }
+
+        $provided = trim((string) ($_REQUEST['token'] ?? $_REQUEST['cmn_runner_token'] ?? ''));
+        $expected = $this->get_automation_runner_token();
+        $as_json = strtolower(trim((string) ($_REQUEST['format'] ?? 'json'))) === 'json';
+        if ($provided === '' || !hash_equals($expected, $provided)) {
+            status_header(403);
+            if ($as_json) {
+                wp_send_json_error(['message' => 'Invalid automation runner token.'], 403);
+            }
+            header('Content-Type: text/plain; charset=utf-8');
+            echo 'Invalid automation runner token.';
+            exit;
+        }
+
+        $run = $this->run_automation_runner();
+        if ($as_json) {
+            if (!empty($run['ok'])) {
+                wp_send_json_success([
+                    'ok' => true,
+                    'at' => gmdate('c'),
+                    'result' => $run,
+                ]);
+            }
+            wp_send_json_error([
+                'ok' => false,
+                'at' => gmdate('c'),
+                'result' => $run,
+            ], 500);
+        }
+
+        header('Content-Type: text/plain; charset=utf-8');
+        if (!empty($run['ok'])) {
+            echo "ok\n";
+            echo 'at=' . gmdate('c') . "\n";
+            $summary = is_array($run['summary'] ?? null) ? $run['summary'] : [];
+            echo 'rules_processed=' . (int) ($summary['rules_processed'] ?? 0) . "\n";
+            echo 'entities_checked=' . (int) ($summary['entities_checked'] ?? 0) . "\n";
+            echo 'success=' . (int) ($summary['success'] ?? 0) . "\n";
+            echo 'skipped=' . (int) ($summary['skipped'] ?? 0) . "\n";
+            echo 'failed=' . (int) ($summary['failed'] ?? 0) . "\n";
+            exit;
+        }
+        status_header(500);
+        echo 'error=' . (string) ($run['message'] ?? 'Automation runner failed.') . "\n";
+        exit;
     }
 
     public function handle_automation_realtime($trigger_event, $entity_context = [], $options = []) {
@@ -11027,6 +11070,11 @@ final class CMN_One_Plugin {
         $marketing_runner_msg = isset($_GET['cmn_marketing_runner_msg']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_marketing_runner_msg'])) : '';
         $marketing_runner_token = $this->get_marketing_runner_token();
         $marketing_runner_url = $this->build_marketing_runner_url($marketing_runner_token);
+        $can_edit_release_version = $this->is_admin_user();
+        $release_version = $this->get_release_version();
+        $release_status = sanitize_key((string) ($_GET['cmn_release_version_status'] ?? ''));
+        $release_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_release_version_msg'] ?? '')));
+        $release_standardized_notice = (string) get_option('cmn_release_version_standardized_notice', '') === '1';
 
         ob_start();
         ?>
@@ -11049,6 +11097,29 @@ final class CMN_One_Plugin {
                     <button class="cmn-primary" type="button" data-theme-save>Save scheme</button>
                     <span class="cmn-muted" data-theme-message></span>
                 </div>
+            </div>
+            <div class="cmn-dashboard-card">
+                <h3>Release Version</h3>
+                <?php if ($release_standardized_notice && $can_edit_release_version) : ?>
+                    <p class="cmn-register-success">Portal version source standardized to Release Version.</p>
+                <?php endif; ?>
+                <?php if ($release_msg !== '') : ?>
+                    <p class="<?php echo $release_status === 'success' ? 'cmn-register-success' : 'cmn-register-error'; ?>"><?php echo esc_html($release_msg); ?></p>
+                <?php endif; ?>
+                <form class="cmn-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <?php wp_nonce_field('cmn_save_release_version', 'cmn_save_release_version_nonce'); ?>
+                    <input type="hidden" name="action" value="cmn_save_release_version">
+                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url(add_query_arg(['view' => 'settings'], $this->get_portal_base_url())); ?>">
+                    <label>Version
+                        <input type="text" name="cmn_release_version" value="<?php echo esc_attr($release_version); ?>" pattern="\d+\.\d+\.\d+"<?php echo $can_edit_release_version ? '' : ' readonly'; ?>>
+                    </label>
+                    <p class="cmn-muted">Set this to your latest git tag (e.g. v0.0.2).</p>
+                    <?php if ($can_edit_release_version) : ?>
+                        <button class="cmn-primary" type="submit">Save Version</button>
+                    <?php else : ?>
+                        <p class="cmn-muted">Admin only.</p>
+                    <?php endif; ?>
+                </form>
             </div>
             <?php if ($can_manage_admin_tools) : ?>
             <?php if ($upload_limit_warning !== '') : ?>
@@ -11136,8 +11207,48 @@ final class CMN_One_Plugin {
         </div>
         <?php endif; ?>
         <?php
+        if ($release_standardized_notice && $can_edit_release_version) {
+            update_option('cmn_release_version_standardized_notice', '0', false);
+        }
         $inner = ob_get_clean();
         return $this->render_staff_shell('settings', $inner);
+    }
+
+    public function handle_save_release_version() {
+        if (!is_user_logged_in() || !$this->is_staff_user()) {
+            wp_die('Unauthorized', 403);
+        }
+        if (
+            !isset($_POST['cmn_save_release_version_nonce']) ||
+            !wp_verify_nonce((string) $_POST['cmn_save_release_version_nonce'], 'cmn_save_release_version')
+        ) {
+            wp_die('Invalid request', 403);
+        }
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        if ($redirect === '') {
+            $redirect = add_query_arg(['view' => 'settings'], $this->get_portal_base_url());
+        }
+        if (!$this->is_admin_user()) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_release_version_status' => 'error',
+                'cmn_release_version_msg' => rawurlencode('Only admins can change the release version.'),
+            ], $redirect));
+            exit;
+        }
+        $raw = trim((string) wp_unslash($_POST['cmn_release_version'] ?? ''));
+        if (!preg_match('/^\d+\.\d+\.\d+$/', $raw)) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_release_version_status' => 'error',
+                'cmn_release_version_msg' => rawurlencode('Invalid version format. Use digits.digits.digits, for example 0.0.2.'),
+            ], $redirect));
+            exit;
+        }
+        $this->set_release_version($raw);
+        wp_safe_redirect(add_query_arg([
+            'cmn_release_version_status' => 'success',
+            'cmn_release_version_msg' => rawurlencode('Release version saved.'),
+        ], $redirect));
+        exit;
     }
 
     public function handle_save_converter_settings() {
@@ -26591,7 +26702,7 @@ final class CMN_One_Plugin {
             }
             $this->upsert_school_index($post_id);
 
-            $this->trigger_automation_event('lead_created', 'lead', (int) $post_id, [
+            $this->trigger_automation_event('lead_created', 'school', (int) $post_id, [
                 'status' => 'lead',
                 'pipeline_stage' => 'new_lead',
                 'automation_meta' => ['source' => 'school_create'],
