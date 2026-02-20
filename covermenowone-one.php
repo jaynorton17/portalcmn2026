@@ -27,6 +27,7 @@ final class CmnRateEngine {
         $candidate_pay = round((float) $candidate_pay, 2);
         $amount = round($school_rate - $candidate_pay, 2);
         $percent = $school_rate > 0 ? round(($amount / $school_rate) * 100, 2) : 0.0;
+
         return [
             'amount' => $amount,
             'percent' => $percent,
@@ -529,9 +530,9 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.18';
+    const VERSION = '0.1.19';
     const SCHEMA_BASE_VERSION = 38;
-    const SCHEMA_VERSION = 62;
+    const SCHEMA_VERSION = 73;
     const EMAIL_CANDIDATE_DECLINED = false;
     const AUTOMATION_DEFAULT_COOLDOWN_HOURS = 24;
     const AUTOMATION_MAX_RECURSION_DEPTH = 3;
@@ -581,12 +582,15 @@ final class CMN_One_Plugin {
         'elite' => 120,
     ];
     const CANDIDATE_REWARDS_CYCLE_TARGET = 30;
+    const SUPPORT_FEEDBACK_REQUEST_WINDOW_HOURS = 48;
 
     private $automation_engine = null;
     private $rate_engine = null;
     private $vetting_engine = null;
     private $feedback_insights = null;
     private $training_mode_state_cache = null;
+    private $email_log_runtime_token_map = [];
+    private $email_log_runtime_bypass = false;
 
     public function __construct() {
         add_action('init', [$this, 'register_post_types']);
@@ -607,6 +611,8 @@ final class CMN_One_Plugin {
         add_action('admin_notices', [$this, 'render_release_version_standardized_admin_notice']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_assets']);
+        add_action('wp_enqueue_scripts', [$this, 'enqueue_livechat_contact_assets'], 30);
+        add_action('wp_footer', [$this, 'render_public_livechat_widget_shell'], 80);
         add_filter('body_class', [$this, 'add_portal_body_class']);
         add_action('admin_post_cmn_add_activity', [$this, 'handle_add_activity']);
         add_action('admin_post_cmn_complete_activity', [$this, 'handle_complete_activity']);
@@ -616,6 +622,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_approve_school_request', [$this, 'handle_approve_school_request']);
         add_action('admin_post_cmn_reject_school_request', [$this, 'handle_reject_school_request']);
         add_action('cmn_send_school_registration_emails', [$this, 'handle_deferred_school_registration_emails'], 10, 3);
+        add_action('cmn_process_school_registration_side_effects', [$this, 'handle_school_registration_side_effects'], 10, 4);
         add_action('admin_post_nopriv_cmn_register_candidate', [$this, 'handle_register_candidate']);
         add_action('admin_post_cmn_register_candidate', [$this, 'handle_register_candidate']);
         add_action('admin_post_cmn_import_schools', [$this, 'handle_import_schools_portal']);
@@ -624,6 +631,9 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_add_staff', [$this, 'handle_add_staff_portal']);
         add_action('admin_post_cmn_assign_account_manager', [$this, 'handle_assign_account_manager']);
         add_action('admin_post_cmn_school_rebook_candidate', [$this, 'handle_school_rebook_candidate']);
+        add_action('admin_post_cmn_priority_allocation_send', [$this, 'handle_priority_allocation_send']);
+        add_action('admin_post_cmn_priority_interest_register', [$this, 'handle_priority_interest_register']);
+        add_action('admin_post_nopriv_cmn_priority_interest_register', [$this, 'handle_priority_interest_register']);
         add_action('admin_post_cmn_send_emergency_broadcast', [$this, 'handle_send_emergency_broadcast']);
         add_action('admin_post_cmn_add_contact', [$this, 'handle_add_contact_portal']);
         add_action('admin_post_cmn_update_contact', [$this, 'handle_update_contact_portal']);
@@ -664,6 +674,8 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_dismiss_candidate_tour', [$this, 'handle_dismiss_candidate_tour']);
         add_action('wp_ajax_cmn_get_candidate_settings', [$this, 'handle_get_candidate_settings']);
         add_action('wp_ajax_cmn_save_candidate_settings', [$this, 'handle_save_candidate_settings']);
+        add_action('wp_ajax_cmn_get_notification_preferences', [$this, 'handle_get_notification_preferences']);
+        add_action('wp_ajax_cmn_save_notification_preferences', [$this, 'handle_save_notification_preferences']);
         add_action('wp_ajax_cmn_get_theme_settings', [$this, 'handle_get_theme_settings']);
         add_action('wp_ajax_cmn_save_theme_settings', [$this, 'handle_save_theme_settings']);
         add_action('wp_ajax_cmn_candidate_request_delete_account', [$this, 'handle_candidate_request_delete_account']);
@@ -673,6 +685,8 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_notifications_mark_all_read', [$this, 'handle_notifications_mark_all_read']);
         add_action('wp_ajax_cmn_notifications_clear_all', [$this, 'handle_notifications_clear_all']);
         add_action('wp_ajax_cmn_notifications_mark_read', [$this, 'handle_notifications_mark_read']);
+        add_action('wp_ajax_cmn_notifications_mark_selected_read', [$this, 'handle_notifications_mark_selected_read']);
+        add_action('wp_ajax_cmn_notifications_delete_selected', [$this, 'handle_notifications_delete_selected']);
         add_action('wp_ajax_cmn_notifications_poll', [$this, 'handle_notifications_poll']);
         add_action('wp_ajax_cmn_thread_get', [$this, 'handle_thread_get']);
         add_action('wp_ajax_nopriv_cmn_thread_get', [$this, 'handle_thread_get']);
@@ -710,6 +724,8 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_staff_lounge_post', [$this, 'handle_staff_lounge_post']);
         add_action('wp_ajax_cmn_booking_feedback_fetch', [$this, 'handle_booking_feedback_fetch']);
         add_action('wp_ajax_cmn_booking_feedback_submit', [$this, 'handle_booking_feedback_submit']);
+        add_action('wp_ajax_cmn_email_template_preview', [$this, 'handle_email_template_preview']);
+        add_action('wp_ajax_cmn_email_template_send_test', [$this, 'handle_email_template_send_test']);
         add_action('admin_post_cmn_staff_update_candidate_pay', [$this, 'handle_staff_update_candidate_pay']);
         add_action('admin_post_cmn_open_booking_thread', [$this, 'handle_open_booking_thread']);
         add_action('admin_post_cmn_set_booking_thread_status', [$this, 'handle_set_booking_thread_status']);
@@ -727,6 +743,12 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_save_release_version', [$this, 'handle_save_release_version']);
         add_action('admin_post_cmn_save_staff_availability_settings', [$this, 'handle_save_staff_availability_settings']);
         add_action('admin_post_cmn_save_converter_settings', [$this, 'handle_save_converter_settings']);
+        add_action('admin_post_cmn_email_sender_add', [$this, 'handle_email_sender_add']);
+        add_action('admin_post_cmn_email_sender_toggle', [$this, 'handle_email_sender_toggle']);
+        add_action('admin_post_cmn_email_template_assign_sender', [$this, 'handle_email_template_assign_sender']);
+        add_action('admin_post_cmn_email_template_save', [$this, 'handle_email_template_save']);
+        add_action('admin_post_cmn_email_centre_send_test', [$this, 'handle_email_centre_send_test']);
+        add_action('admin_post_cmn_email_log_resend', [$this, 'handle_email_log_resend']);
         add_action('admin_post_cmn_regenerate_marketing_runner_token', [$this, 'handle_regenerate_marketing_runner_token']);
         add_action('admin_post_nopriv_cmn_marketing_runner', [$this, 'handle_marketing_runner']);
         add_action('admin_post_cmn_marketing_runner', [$this, 'handle_marketing_runner']);
@@ -759,6 +781,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_school_partner_admin_adjust_days', [$this, 'handle_school_partner_admin_adjust_days']);
         add_action('admin_post_cmn_school_partner_admin_create_credit', [$this, 'handle_school_partner_admin_create_credit']);
         add_action('admin_post_cmn_school_partner_admin_void_credit', [$this, 'handle_school_partner_admin_void_credit']);
+        add_action('admin_post_cmn_reconcile_school_lists', [$this, 'handle_reconcile_school_lists']);
         add_action('admin_post_cmn_staff_candidate_rewards_recalculate', [$this, 'handle_staff_candidate_rewards_recalculate']);
         add_action('admin_post_cmn_staff_candidate_rewards_flag_review', [$this, 'handle_staff_candidate_rewards_flag_review']);
         add_action('admin_post_cmn_staff_candidate_rewards_terminate', [$this, 'handle_staff_candidate_rewards_terminate']);
@@ -799,10 +822,19 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_support_get_ticket', [$this, 'handle_support_get_ticket']);
         add_action('wp_ajax_cmn_support_post_message', [$this, 'handle_support_post_message']);
         add_action('wp_ajax_cmn_support_close_ticket', [$this, 'handle_support_close_ticket']);
+        add_action('wp_ajax_cmn_support_request_feedback', [$this, 'handle_support_request_feedback']);
         add_action('wp_ajax_cmn_support_submit_feedback', [$this, 'handle_support_submit_feedback']);
         add_action('wp_ajax_cmn_support_save_transcript', [$this, 'handle_support_save_transcript']);
         add_action('wp_ajax_cmn_support_email_transcript', [$this, 'handle_support_email_transcript']);
         add_action('wp_ajax_cmn_candidate_submit_payroll_query', [$this, 'handle_candidate_submit_payroll_query']);
+        add_action('wp_ajax_cmn_livechat_start', [$this, 'handle_livechat_start']);
+        add_action('wp_ajax_nopriv_cmn_livechat_start', [$this, 'handle_livechat_start']);
+        add_action('wp_ajax_cmn_livechat_send', [$this, 'handle_livechat_send']);
+        add_action('wp_ajax_nopriv_cmn_livechat_send', [$this, 'handle_livechat_send']);
+        add_action('wp_ajax_cmn_livechat_poll', [$this, 'handle_livechat_poll']);
+        add_action('wp_ajax_nopriv_cmn_livechat_poll', [$this, 'handle_livechat_poll']);
+        add_action('wp_ajax_cmn_livechat_feedback_submit', [$this, 'handle_livechat_feedback_submit']);
+        add_action('wp_ajax_nopriv_cmn_livechat_feedback_submit', [$this, 'handle_livechat_feedback_submit']);
         add_action('wp_ajax_cmn_candidate_upload_doc', [$this, 'handle_candidate_upload_doc']);
         add_action('wp_ajax_cmn_candidate_delete_doc', [$this, 'handle_candidate_delete_doc']);
         add_action('wp_ajax_cmn_candidate_remove_doc', [$this, 'handle_candidate_delete_doc']);
@@ -866,6 +898,9 @@ final class CMN_One_Plugin {
         add_action('phpmailer_init', [$this, 'configure_candidate_smtp']);
         add_action('wp_mail_failed', [$this, 'handle_candidate_mail_failed']);
         add_action('wp_mail_succeeded', [$this, 'handle_candidate_mail_succeeded']);
+        add_filter('wp_mail', [$this, 'capture_wp_mail_log_pre_send'], 1000, 1);
+        add_action('wp_mail_succeeded', [$this, 'capture_wp_mail_log_success'], 20, 1);
+        add_action('wp_mail_failed', [$this, 'capture_wp_mail_log_failure'], 20, 1);
         add_filter('wp_mail_from', [$this, 'filter_mail_from']);
         add_filter('wp_mail_from_name', [$this, 'filter_mail_from_name']);
         add_filter('retrieve_password_message', [$this, 'flag_candidate_password_reset'], 10, 4);
@@ -919,8 +954,10 @@ final class CMN_One_Plugin {
     public static function activate() {
         self::create_page_if_missing('Login', '[cmn_login]');
         self::create_page_if_missing('Portal', '[cmn_portal]');
+        self::create_page_if_missing('CoverMeNow ONE', '[cmn_portal]');
         self::create_page_if_missing('School Registration', '[cmn_register_school]');
         self::create_page_if_missing('Candidate Registration', '[cmn_register_candidate]');
+        self::create_page_if_missing('Request Received', '[cmn_request_received]');
         self::create_page_if_missing('CoverMeNow ONE for Schools', '[cmn_school_landing]');
         self::create_page_if_missing('CoverMeNow ONE for Candidates', '[cmn_candidate_landing]');
         self::create_page_if_missing('School Dashboard', '[cmn_school_dashboard]');
@@ -1016,14 +1053,157 @@ final class CMN_One_Plugin {
 
     public function ensure_required_pages() {
         $portal_route_changed = $this->ensure_portal_page_route();
+        $covermenow_one_route_changed = $this->ensure_covermenow_one_portal_page_route();
+        $registration_routes_changed = $this->ensure_registration_pages_routes();
         self::create_page_if_missing('Login', '[cmn_login]');
         self::create_page_if_missing('School Registration', '[cmn_register_school]');
         self::create_page_if_missing('Candidate Registration', '[cmn_register_candidate]');
+        self::create_page_if_missing('Request Received', '[cmn_request_received]');
         self::create_page_if_missing('CoverMeNow ONE for Schools', '[cmn_school_landing]');
         self::create_page_if_missing('CoverMeNow ONE for Candidates', '[cmn_candidate_landing]');
-        if ($portal_route_changed) {
+        if ($portal_route_changed || $covermenow_one_route_changed || $registration_routes_changed) {
             flush_rewrite_rules(false);
         }
+    }
+
+    private function ensure_registration_pages_routes() {
+        $school_changed = $this->ensure_named_shortcode_page_route(
+            'school-registration',
+            'School Registration',
+            '[cmn_register_school]',
+            'cmn_register_school'
+        );
+        $candidate_changed = $this->ensure_named_shortcode_page_route(
+            'candidate-registration',
+            'Candidate Registration',
+            '[cmn_register_candidate]',
+            'cmn_register_candidate'
+        );
+        $request_received_changed = $this->ensure_named_shortcode_page_route(
+            'request-received',
+            'Request Received',
+            '[cmn_request_received]',
+            'cmn_request_received'
+        );
+        return $school_changed || $candidate_changed || $request_received_changed;
+    }
+
+    private function ensure_named_shortcode_page_route($slug, $title, $shortcode, $shortcode_tag) {
+        $slug = sanitize_title((string) $slug);
+        $title = sanitize_text_field((string) $title);
+        $shortcode = (string) $shortcode;
+        $shortcode_tag = sanitize_key((string) $shortcode_tag);
+        if ($slug === '' || $title === '' || $shortcode === '' || $shortcode_tag === '') {
+            return false;
+        }
+
+        $by_path = get_page_by_path($slug, OBJECT, 'page');
+        if ($by_path instanceof WP_Post) {
+            $updates = ['ID' => (int) $by_path->ID];
+            $changed = false;
+            if ($by_path->post_status !== 'publish') {
+                $updates['post_status'] = 'publish';
+                $changed = true;
+            }
+            if (!has_shortcode((string) $by_path->post_content, $shortcode_tag)) {
+                $updates['post_content'] = $shortcode;
+                $changed = true;
+            }
+            if ($changed) {
+                wp_update_post($updates);
+            }
+            return $changed;
+        }
+
+        $by_title = get_page_by_title($title, OBJECT, 'page');
+        if ($by_title instanceof WP_Post) {
+            $updates = ['ID' => (int) $by_title->ID];
+            $changed = false;
+            if ($by_title->post_status !== 'publish') {
+                $updates['post_status'] = 'publish';
+                $changed = true;
+            }
+            if ($by_title->post_name !== $slug && !get_page_by_path($slug, OBJECT, 'page')) {
+                $unique_slug = wp_unique_post_slug($slug, (int) $by_title->ID, (string) $by_title->post_status, 'page', (int) $by_title->post_parent);
+                if ($unique_slug === $slug) {
+                    $updates['post_name'] = $slug;
+                    $changed = true;
+                }
+            }
+            if (!has_shortcode((string) $by_title->post_content, $shortcode_tag)) {
+                $updates['post_content'] = $shortcode;
+                $changed = true;
+            }
+            if ($changed) {
+                wp_update_post($updates);
+            }
+            return $changed;
+        }
+
+        $inserted = wp_insert_post([
+            'post_type' => 'page',
+            'post_title' => $title,
+            'post_name' => $slug,
+            'post_status' => 'publish',
+            'post_content' => $shortcode,
+        ], true);
+        return !is_wp_error($inserted) && (int) $inserted > 0;
+    }
+
+    private function ensure_covermenow_one_portal_page_route() {
+        $shortcode = '[cmn_portal]';
+        $covermenow_page = get_page_by_path('covermenow-one', OBJECT, 'page');
+        if ($covermenow_page instanceof WP_Post) {
+            $updates = ['ID' => (int) $covermenow_page->ID];
+            $changed = false;
+            if ($covermenow_page->post_status !== 'publish') {
+                $updates['post_status'] = 'publish';
+                $changed = true;
+            }
+            if (!has_shortcode((string) $covermenow_page->post_content, 'cmn_portal')) {
+                $updates['post_content'] = $shortcode;
+                $changed = true;
+            }
+            if ($changed) {
+                wp_update_post($updates);
+            }
+            return $changed;
+        }
+
+        $covermenow_by_title = get_page_by_title('CoverMeNow ONE', OBJECT, 'page');
+        if ($covermenow_by_title instanceof WP_Post) {
+            $updates = ['ID' => (int) $covermenow_by_title->ID];
+            $changed = false;
+            if ($covermenow_by_title->post_status !== 'publish') {
+                $updates['post_status'] = 'publish';
+                $changed = true;
+            }
+            if ($covermenow_by_title->post_name !== 'covermenow-one' && !get_page_by_path('covermenow-one', OBJECT, 'page')) {
+                $unique_slug = wp_unique_post_slug('covermenow-one', (int) $covermenow_by_title->ID, (string) $covermenow_by_title->post_status, 'page', (int) $covermenow_by_title->post_parent);
+                if ($unique_slug === 'covermenow-one') {
+                    $updates['post_name'] = 'covermenow-one';
+                    $changed = true;
+                }
+            }
+            if (!has_shortcode((string) $covermenow_by_title->post_content, 'cmn_portal')) {
+                $updates['post_content'] = $shortcode;
+                $changed = true;
+            }
+            if ($changed) {
+                wp_update_post($updates);
+            }
+            return $changed;
+        }
+
+        $inserted = wp_insert_post([
+            'post_type' => 'page',
+            'post_title' => 'CoverMeNow ONE',
+            'post_name' => 'covermenow-one',
+            'post_status' => 'publish',
+            'post_content' => $shortcode,
+        ], true);
+
+        return !is_wp_error($inserted) && (int) $inserted > 0;
     }
 
     private function ensure_portal_page_route() {
@@ -1084,6 +1264,18 @@ final class CMN_One_Plugin {
         static $cached = null;
         if ($cached !== null) {
             return $cached ?: null;
+        }
+
+        $by_path = get_page_by_path('covermenow-one', OBJECT, 'page');
+        if ($by_path instanceof WP_Post) {
+            $cached = $by_path;
+            return $by_path;
+        }
+
+        $by_title = get_page_by_title('CoverMeNow ONE', OBJECT, 'page');
+        if ($by_title instanceof WP_Post) {
+            $cached = $by_title;
+            return $by_title;
         }
 
         $by_path = get_page_by_path('portal', OBJECT, 'page');
@@ -1277,7 +1469,61 @@ final class CMN_One_Plugin {
             $installed = 62;
             update_option('cmn_schema_version', $installed, false);
         }
-
+        if ($installed < 63) {
+            self::migrate_schema_v63_email_template_storage();
+            $installed = 63;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 64) {
+            self::migrate_schema_v64_email_sender_directory();
+            $installed = 64;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 65) {
+            self::migrate_schema_v65_email_log_rendering_and_resend();
+            $installed = 65;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 66) {
+            self::migrate_schema_v66_email_logs_table_hardening();
+            $installed = 66;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 67) {
+            self::migrate_schema_v67_email_sender_table_normalization();
+            $installed = 67;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 68) {
+            self::migrate_schema_v68_email_logs_canonical_backfill();
+            $installed = 68;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 69) {
+            self::migrate_schema_v69_priority_allocation();
+            $installed = 69;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 70) {
+            self::migrate_schema_v70_candidate_feedback_system();
+            $installed = 70;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 71) {
+            self::migrate_schema_v71_livechat_support_threads();
+            $installed = 71;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 72) {
+            self::migrate_schema_v72_notification_preferences_centre();
+            $installed = 72;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 73) {
+            self::migrate_schema_v73_support_feedback_request_lifecycle();
+            $installed = 73;
+            update_option('cmn_schema_version', $installed, false);
+        }
         if ($installed < self::SCHEMA_VERSION) {
             update_option('cmn_schema_version', self::SCHEMA_VERSION, false);
         }
@@ -1765,10 +2011,12 @@ final class CMN_One_Plugin {
             message longtext NULL,
             link_url varchar(255) NULL,
             is_read tinyint(1) NOT NULL DEFAULT 0,
+            available_at datetime NULL,
             created_at datetime NOT NULL,
             PRIMARY KEY (id),
             KEY user_id (user_id),
             KEY is_read (is_read),
+            KEY available_at (available_at),
             KEY type (type)
         ) {$charset};
 
@@ -1879,6 +2127,9 @@ final class CMN_One_Plugin {
             priority varchar(20) NOT NULL DEFAULT 'normal',
             status varchar(20) NOT NULL DEFAULT 'new',
             is_new_for_admin tinyint(1) NOT NULL DEFAULT 1,
+            feedback_request_status varchar(20) NOT NULL DEFAULT 'none',
+            feedback_requested_at datetime NULL,
+            feedback_request_expires_at datetime NULL,
             created_at datetime NOT NULL,
             updated_at datetime NOT NULL,
             closed_at datetime NULL,
@@ -1889,7 +2140,9 @@ final class CMN_One_Plugin {
             KEY assigned_to_user_id (assigned_to_user_id),
             KEY priority (priority),
             KEY status (status),
-            KEY is_new_for_admin (is_new_for_admin)
+            KEY is_new_for_admin (is_new_for_admin),
+            KEY feedback_request_status (feedback_request_status),
+            KEY feedback_request_expires_at (feedback_request_expires_at)
         ) {$charset};
 
         CREATE TABLE {$support_messages} (
@@ -4062,6 +4315,1340 @@ final class CMN_One_Plugin {
         self::maybe_add_missing_index($adjustments_table, 'is_training', "KEY is_training (is_training)");
     }
 
+    /*
+     * Prompt 2 acceptance checks:
+     * 1) Email template storage table supports editable template metadata and publish/draft status.
+     * 2) Template versions table supports per-template version history and rollback lineage.
+     * 3) Structured email logs table exists independently from legacy send logging table.
+     */
+    private static function migrate_schema_v63_email_template_storage() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $charset = $wpdb->get_charset_collate();
+        $templates_table = self::get_email_templates_table_name();
+        $versions_table = self::get_email_template_versions_table_name();
+        $logs_table = self::get_email_logs_table_name();
+
+        $sql = "CREATE TABLE {$templates_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            template_key varchar(120) NOT NULL,
+            subject varchar(255) NOT NULL,
+            html_body longtext NULL,
+            text_body longtext NULL,
+            from_email varchar(190) NULL,
+            from_name varchar(190) NULL,
+            reply_to_email varchar(190) NULL,
+            module varchar(50) NOT NULL,
+            recipient_role varchar(40) NOT NULL,
+            status varchar(20) NOT NULL DEFAULT 'draft',
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY template_key (template_key),
+            KEY module (module),
+            KEY recipient_role (recipient_role),
+            KEY status (status)
+        ) {$charset};
+
+        CREATE TABLE {$versions_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            template_id bigint(20) unsigned NOT NULL,
+            subject varchar(255) NOT NULL,
+            html_body longtext NULL,
+            text_body longtext NULL,
+            version_number int NOT NULL,
+            created_by bigint(20) unsigned NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY template_version (template_id, version_number),
+            KEY template_id (template_id),
+            KEY created_by (created_by),
+            KEY created_at (created_at)
+        ) {$charset};
+
+        CREATE TABLE {$logs_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            template_key varchar(120) NOT NULL,
+            recipient_email varchar(190) NOT NULL,
+            recipient_role varchar(40) NOT NULL,
+            from_email varchar(190) NULL,
+            subject varchar(255) NOT NULL,
+            send_status varchar(20) NOT NULL DEFAULT 'sent',
+            error_message longtext NULL,
+            related_entity_type varchar(40) NULL,
+            related_entity_id bigint(20) unsigned NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY template_key (template_key),
+            KEY recipient_email (recipient_email),
+            KEY send_status (send_status),
+            KEY related_entity_lookup (related_entity_type, related_entity_id),
+            KEY created_at (created_at)
+        ) {$charset};";
+        dbDelta($sql);
+
+        self::maybe_add_missing_column($templates_table, 'template_key', "varchar(120) NOT NULL");
+        self::maybe_add_missing_column($templates_table, 'subject', "varchar(255) NOT NULL");
+        self::maybe_add_missing_column($templates_table, 'html_body', "longtext NULL");
+        self::maybe_add_missing_column($templates_table, 'text_body', "longtext NULL");
+        self::maybe_add_missing_column($templates_table, 'from_email', "varchar(190) NULL");
+        self::maybe_add_missing_column($templates_table, 'from_name', "varchar(190) NULL");
+        self::maybe_add_missing_column($templates_table, 'reply_to_email', "varchar(190) NULL");
+        self::maybe_add_missing_column($templates_table, 'module', "varchar(50) NOT NULL");
+        self::maybe_add_missing_column($templates_table, 'recipient_role', "varchar(40) NOT NULL");
+        self::maybe_add_missing_column($templates_table, 'status', "varchar(20) NOT NULL DEFAULT 'draft'");
+        self::maybe_add_missing_column($templates_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($templates_table, 'updated_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($templates_table, 'template_key', "UNIQUE KEY template_key (template_key)");
+        self::maybe_add_missing_index($templates_table, 'module', "KEY module (module)");
+        self::maybe_add_missing_index($templates_table, 'recipient_role', "KEY recipient_role (recipient_role)");
+        self::maybe_add_missing_index($templates_table, 'status', "KEY status (status)");
+
+        self::maybe_add_missing_column($versions_table, 'template_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($versions_table, 'subject', "varchar(255) NOT NULL");
+        self::maybe_add_missing_column($versions_table, 'html_body', "longtext NULL");
+        self::maybe_add_missing_column($versions_table, 'text_body', "longtext NULL");
+        self::maybe_add_missing_column($versions_table, 'version_number', "int NOT NULL");
+        self::maybe_add_missing_column($versions_table, 'created_by', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($versions_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($versions_table, 'template_version', "UNIQUE KEY template_version (template_id, version_number)");
+        self::maybe_add_missing_index($versions_table, 'template_id', "KEY template_id (template_id)");
+        self::maybe_add_missing_index($versions_table, 'created_by', "KEY created_by (created_by)");
+        self::maybe_add_missing_index($versions_table, 'created_at', "KEY created_at (created_at)");
+
+        self::maybe_add_missing_column($logs_table, 'template_key', "varchar(120) NOT NULL");
+        self::maybe_add_missing_column($logs_table, 'recipient_email', "varchar(190) NOT NULL");
+        self::maybe_add_missing_column($logs_table, 'recipient_role', "varchar(40) NOT NULL");
+        self::maybe_add_missing_column($logs_table, 'from_email', "varchar(190) NULL");
+        self::maybe_add_missing_column($logs_table, 'subject', "varchar(255) NOT NULL");
+        self::maybe_add_missing_column($logs_table, 'send_status', "varchar(20) NOT NULL DEFAULT 'sent'");
+        self::maybe_add_missing_column($logs_table, 'error_message', "longtext NULL");
+        self::maybe_add_missing_column($logs_table, 'related_entity_type', "varchar(40) NULL");
+        self::maybe_add_missing_column($logs_table, 'related_entity_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($logs_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($logs_table, 'template_key', "KEY template_key (template_key)");
+        self::maybe_add_missing_index($logs_table, 'recipient_email', "KEY recipient_email (recipient_email)");
+        self::maybe_add_missing_index($logs_table, 'send_status', "KEY send_status (send_status)");
+        self::maybe_add_missing_index($logs_table, 'related_entity_lookup', "KEY related_entity_lookup (related_entity_type, related_entity_id)");
+        self::maybe_add_missing_index($logs_table, 'created_at', "KEY created_at (created_at)");
+    }
+
+    /*
+     * Prompt 4 acceptance checks:
+     * 1) Sender directory table exists and supports active/inactive sender addresses.
+     * 2) Sender addresses are unique and indexed for lookup.
+     * 3) Email templates support default sender assignment linkage.
+     */
+    private static function migrate_schema_v64_email_sender_directory() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $charset = $wpdb->get_charset_collate();
+        $senders_table = self::get_email_senders_table_name();
+        $templates_table = self::get_email_templates_table_name();
+
+        $sql = "CREATE TABLE {$senders_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            email_address varchar(190) NOT NULL,
+            display_name varchar(190) NOT NULL,
+            is_active tinyint(1) NOT NULL DEFAULT 1,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY email_address (email_address),
+            KEY is_active (is_active),
+            KEY created_at (created_at)
+        ) {$charset};";
+        dbDelta($sql);
+
+        self::maybe_add_missing_column($senders_table, 'email_address', "varchar(190) NOT NULL");
+        self::maybe_add_missing_column($senders_table, 'display_name', "varchar(190) NOT NULL");
+        self::maybe_add_missing_column($senders_table, 'is_active', "tinyint(1) NOT NULL DEFAULT 1");
+        self::maybe_add_missing_column($senders_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($senders_table, 'email_address', "UNIQUE KEY email_address (email_address)");
+        self::maybe_add_missing_index($senders_table, 'is_active', "KEY is_active (is_active)");
+        self::maybe_add_missing_index($senders_table, 'created_at', "KEY created_at (created_at)");
+
+        self::maybe_add_missing_column($templates_table, 'default_sender_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_index($templates_table, 'default_sender_id', "KEY default_sender_id (default_sender_id)");
+    }
+
+    /*
+     * Prompt 13 acceptance checks:
+     * 1) Email logs capture rendered subject/body and smart-tag payload snapshot.
+     * 2) Email logs support resend lineage without mutating original workflow entities.
+     * 3) Migration remains idempotent for existing installations.
+     */
+    private static function migrate_schema_v65_email_log_rendering_and_resend() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $logs_table = self::get_email_logs_table_name();
+
+        self::maybe_add_missing_column($logs_table, 'rendered_html_body', "longtext NULL");
+        self::maybe_add_missing_column($logs_table, 'rendered_text_body', "longtext NULL");
+        self::maybe_add_missing_column($logs_table, 'render_data_json', "longtext NULL");
+        self::maybe_add_missing_column($logs_table, 'context_meta_json', "longtext NULL");
+        self::maybe_add_missing_column($logs_table, 'resent_from_log_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_index($logs_table, 'resent_from_log_id', "KEY resent_from_log_id (resent_from_log_id)");
+    }
+
+    /*
+     * Prompt acceptance checks:
+     * 1) cmn_email_logs stores queued/sent/failed lifecycle rows with sender + recipient details.
+     * 2) Optional metadata stays structured and indexed fields support Email Centre filters.
+     * 3) Migration is idempotent and safe on existing installs.
+     */
+    private static function migrate_schema_v66_email_logs_table_hardening() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $charset = $wpdb->get_charset_collate();
+        $logs_table = self::get_email_logs_table_name();
+        $table_sql = self::quote_sql_identifier($logs_table);
+
+        $sql = "CREATE TABLE {$logs_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            template_key varchar(120) NULL,
+            recipient_email varchar(190) NOT NULL,
+            recipient_user_id bigint(20) unsigned NULL,
+            recipient_role varchar(60) NULL,
+            from_email varchar(190) NOT NULL,
+            from_name varchar(190) NULL,
+            subject varchar(255) NOT NULL,
+            status varchar(30) NOT NULL DEFAULT 'queued',
+            error_message text NULL,
+            related_entity_type varchar(40) NULL,
+            related_entity_id bigint(20) unsigned NULL,
+            metadata longtext NULL,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY template_key (template_key),
+            KEY recipient_email (recipient_email),
+            KEY status (status),
+            KEY created_at (created_at)
+        ) {$charset};";
+        dbDelta($sql);
+
+        self::maybe_add_missing_column($logs_table, 'template_key', "varchar(120) NULL");
+        self::maybe_add_missing_column($logs_table, 'recipient_email', "varchar(190) NOT NULL");
+        self::maybe_add_missing_column($logs_table, 'recipient_user_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($logs_table, 'recipient_role', "varchar(60) NULL");
+        self::maybe_add_missing_column($logs_table, 'from_email', "varchar(190) NOT NULL");
+        self::maybe_add_missing_column($logs_table, 'from_name', "varchar(190) NULL");
+        self::maybe_add_missing_column($logs_table, 'subject', "varchar(255) NOT NULL");
+        self::maybe_add_missing_column($logs_table, 'status', "varchar(30) NOT NULL DEFAULT 'queued'");
+        self::maybe_add_missing_column($logs_table, 'error_message', "text NULL");
+        self::maybe_add_missing_column($logs_table, 'related_entity_type', "varchar(40) NULL");
+        self::maybe_add_missing_column($logs_table, 'related_entity_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($logs_table, 'metadata', "longtext NULL");
+        self::maybe_add_missing_column($logs_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($logs_table, 'updated_at', "datetime NOT NULL");
+
+        self::maybe_add_missing_index($logs_table, 'template_key', "KEY template_key (template_key)");
+        self::maybe_add_missing_index($logs_table, 'recipient_email', "KEY recipient_email (recipient_email)");
+        self::maybe_add_missing_index($logs_table, 'status', "KEY status (status)");
+        self::maybe_add_missing_index($logs_table, 'created_at', "KEY created_at (created_at)");
+
+        if (self::table_has_column($logs_table, 'send_status')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET status = CASE
+                     WHEN send_status IN ('queued', 'sent', 'failed') THEN send_status
+                     ELSE status
+                 END
+                 WHERE (status IS NULL OR status = '')"
+            );
+        }
+
+        $wpdb->query(
+            "UPDATE {$table_sql}
+             SET status = 'queued'
+             WHERE status IS NULL OR status = ''"
+        );
+        if (self::table_has_column($logs_table, 'send_status')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET send_status = status
+                 WHERE send_status IS NULL OR send_status = ''"
+            );
+        }
+    }
+
+    /*
+     * Prompt acceptance checks:
+     * 1) Sender table supports canonical email/status fields while remaining compatible with legacy email_address/is_active installs.
+     * 2) Existing sender rows are normalized idempotently for status + timestamp fields.
+     * 3) Schema migration is safe to run repeatedly on production databases.
+     */
+    private static function migrate_schema_v67_email_sender_table_normalization() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $charset = $wpdb->get_charset_collate();
+        $senders_table = self::get_email_senders_table_name();
+        $table_sql = self::quote_sql_identifier($senders_table);
+
+        $sql = "CREATE TABLE {$senders_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            email varchar(190) NULL,
+            email_address varchar(190) NULL,
+            display_name varchar(190) NULL,
+            status varchar(20) NOT NULL DEFAULT 'active',
+            is_active tinyint(1) NOT NULL DEFAULT 1,
+            source varchar(30) NOT NULL DEFAULT 'manual',
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY email (email),
+            UNIQUE KEY email_address (email_address),
+            KEY status (status),
+            KEY is_active (is_active),
+            KEY created_at (created_at),
+            KEY updated_at (updated_at)
+        ) {$charset};";
+        dbDelta($sql);
+
+        self::maybe_add_missing_column($senders_table, 'email', "varchar(190) NULL");
+        self::maybe_add_missing_column($senders_table, 'email_address', "varchar(190) NULL");
+        self::maybe_add_missing_column($senders_table, 'display_name', "varchar(190) NULL");
+        self::maybe_add_missing_column($senders_table, 'status', "varchar(20) NOT NULL DEFAULT 'active'");
+        self::maybe_add_missing_column($senders_table, 'is_active', "tinyint(1) NOT NULL DEFAULT 1");
+        self::maybe_add_missing_column($senders_table, 'source', "varchar(30) NOT NULL DEFAULT 'manual'");
+        self::maybe_add_missing_column($senders_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($senders_table, 'updated_at', "datetime NOT NULL");
+
+        if (self::table_has_column($senders_table, 'email') && self::table_has_column($senders_table, 'email_address')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET email = email_address
+                 WHERE (email IS NULL OR email = '')
+                   AND email_address IS NOT NULL
+                   AND email_address <> ''"
+            );
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET email_address = email
+                 WHERE (email_address IS NULL OR email_address = '')
+                   AND email IS NOT NULL
+                   AND email <> ''"
+            );
+        }
+
+        if (self::table_has_column($senders_table, 'status')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET status = 'active'
+                 WHERE status IS NULL
+                    OR status = ''
+                    OR LOWER(status) IN ('enabled', 'on', '1', 'true', 'yes')"
+            );
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET status = 'disabled'
+                 WHERE LOWER(status) IN ('inactive', 'off', '0', 'false', 'no')"
+            );
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET status = 'active'
+                 WHERE LOWER(status) NOT IN ('active', 'disabled')"
+            );
+        }
+
+        if (self::table_has_column($senders_table, 'is_active') && self::table_has_column($senders_table, 'status')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET is_active = CASE WHEN LOWER(status) = 'active' THEN 1 ELSE 0 END"
+            );
+        }
+
+        if (self::table_has_column($senders_table, 'created_at')) {
+            $now_mysql = current_time('mysql');
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$table_sql}
+                 SET created_at = %s
+                 WHERE created_at IS NULL
+                    OR created_at = ''
+                    OR created_at = '0000-00-00 00:00:00'",
+                $now_mysql
+            ));
+        }
+        if (self::table_has_column($senders_table, 'updated_at') && self::table_has_column($senders_table, 'created_at')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET updated_at = created_at
+                 WHERE updated_at IS NULL
+                    OR updated_at = ''
+                    OR updated_at = '0000-00-00 00:00:00'"
+            );
+        }
+        if (self::table_has_column($senders_table, 'source')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET source = 'manual'
+                 WHERE source IS NULL OR source = ''"
+            );
+        }
+
+        self::maybe_add_missing_index($senders_table, 'email', "UNIQUE KEY email (email)");
+        self::maybe_add_missing_index($senders_table, 'email_address', "UNIQUE KEY email_address (email_address)");
+        self::maybe_add_missing_index($senders_table, 'status', "KEY status (status)");
+        self::maybe_add_missing_index($senders_table, 'is_active', "KEY is_active (is_active)");
+        self::maybe_add_missing_index($senders_table, 'created_at', "KEY created_at (created_at)");
+        self::maybe_add_missing_index($senders_table, 'updated_at', "KEY updated_at (updated_at)");
+    }
+
+    /*
+     * Prompt acceptance checks:
+     * 1) cmn_email_logs includes canonical columns for module/sender/meta_json alongside legacy-compatible fields.
+     * 2) Historical rows are backfilled idempotently from legacy email logs and audit events when available.
+     * 3) No message body content is persisted during migration/backfill.
+     */
+    private static function migrate_schema_v68_email_logs_canonical_backfill() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+        self::migrate_schema_v66_email_logs_table_hardening();
+
+        $charset = $wpdb->get_charset_collate();
+        $logs_table = self::get_email_logs_table_name();
+        $table_sql = self::quote_sql_identifier($logs_table);
+
+        $sql = "CREATE TABLE {$logs_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            template_key varchar(120) NULL,
+            module varchar(80) NULL,
+            recipient_email varchar(190) NOT NULL,
+            recipient_user_id bigint(20) unsigned NULL,
+            recipient_role varchar(50) NULL,
+            sender_email varchar(190) NOT NULL,
+            sender_name varchar(190) NULL,
+            from_email varchar(190) NULL,
+            from_name varchar(190) NULL,
+            subject varchar(255) NULL,
+            status varchar(20) NOT NULL DEFAULT 'queued',
+            send_status varchar(20) NULL,
+            error_message text NULL,
+            related_entity_type varchar(40) NULL,
+            related_entity_id bigint(20) unsigned NULL,
+            metadata longtext NULL,
+            meta_json longtext NULL,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY status (status),
+            KEY template_key (template_key),
+            KEY recipient_email (recipient_email),
+            KEY created_at (created_at),
+            KEY module (module)
+        ) {$charset};";
+        dbDelta($sql);
+
+        self::maybe_add_missing_column($logs_table, 'module', "varchar(80) NULL");
+        self::maybe_add_missing_column($logs_table, 'sender_email', "varchar(190) NULL");
+        self::maybe_add_missing_column($logs_table, 'sender_name', "varchar(190) NULL");
+        self::maybe_add_missing_column($logs_table, 'meta_json', "longtext NULL");
+
+        self::maybe_add_missing_index($logs_table, 'module', "KEY module (module)");
+        self::maybe_add_missing_index($logs_table, 'status', "KEY status (status)");
+        self::maybe_add_missing_index($logs_table, 'template_key', "KEY template_key (template_key)");
+        self::maybe_add_missing_index($logs_table, 'recipient_email', "KEY recipient_email (recipient_email)");
+        self::maybe_add_missing_index($logs_table, 'created_at', "KEY created_at (created_at)");
+
+        if (self::table_has_column($logs_table, 'sender_email') && self::table_has_column($logs_table, 'from_email')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET sender_email = from_email
+                 WHERE (sender_email IS NULL OR sender_email = '')
+                   AND from_email IS NOT NULL
+                   AND from_email <> ''"
+            );
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET from_email = sender_email
+                 WHERE (from_email IS NULL OR from_email = '')
+                   AND sender_email IS NOT NULL
+                   AND sender_email <> ''"
+            );
+        }
+        if (self::table_has_column($logs_table, 'sender_name') && self::table_has_column($logs_table, 'from_name')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET sender_name = from_name
+                 WHERE (sender_name IS NULL OR sender_name = '')
+                   AND from_name IS NOT NULL
+                   AND from_name <> ''"
+            );
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET from_name = sender_name
+                 WHERE (from_name IS NULL OR from_name = '')
+                   AND sender_name IS NOT NULL
+                   AND sender_name <> ''"
+            );
+        }
+        if (self::table_has_column($logs_table, 'meta_json') && self::table_has_column($logs_table, 'metadata')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET meta_json = metadata
+                 WHERE (meta_json IS NULL OR meta_json = '')
+                   AND metadata IS NOT NULL
+                   AND metadata <> ''"
+            );
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET metadata = meta_json
+                 WHERE (metadata IS NULL OR metadata = '')
+                   AND meta_json IS NOT NULL
+                   AND meta_json <> ''"
+            );
+        }
+        if (self::table_has_column($logs_table, 'status')) {
+            $wpdb->query(
+                "UPDATE {$table_sql}
+                 SET status = CASE
+                     WHEN LOWER(status) IN ('queued', 'sent', 'failed') THEN LOWER(status)
+                     WHEN LOWER(status) IN ('error', 'failure') THEN 'failed'
+                     WHEN LOWER(status) IN ('pending') THEN 'queued'
+                     ELSE 'sent'
+                 END
+                 WHERE status IS NOT NULL
+                   AND status <> ''"
+            );
+        }
+
+        self::backfill_email_logs_from_legacy_table_v68($logs_table);
+        self::backfill_email_logs_from_audit_events_v68($logs_table);
+    }
+
+    /*
+     * Prompt acceptance checks:
+     * 1) Tier limits are enforced per school/month using cmn_priority_allocations month_key counts.
+     * 2) Duplicate candidate interest is blocked by unique key (allocation_id, candidate_user_id).
+     * 3) Migration remains idempotent and safe for repeated production runs.
+     */
+    private static function migrate_schema_v69_priority_allocation() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $charset = $wpdb->get_charset_collate();
+        $allocations_table = self::get_priority_allocations_table_name();
+        $interest_table = self::get_priority_interest_table_name();
+        $allocations_table_sql = self::quote_sql_identifier($allocations_table);
+
+        $allocations_sql = "CREATE TABLE {$allocations_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            school_user_id bigint(20) unsigned NOT NULL,
+            booking_id bigint(20) unsigned NOT NULL,
+            message varchar(255) NULL,
+            status varchar(20) NOT NULL DEFAULT 'active',
+            month_key varchar(7) NOT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY school_user_id (school_user_id),
+            KEY month_key (month_key),
+            KEY booking_id (booking_id),
+            KEY status (status)
+        ) {$charset};";
+        dbDelta($allocations_sql);
+
+        $interest_sql = "CREATE TABLE {$interest_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            allocation_id bigint(20) unsigned NOT NULL,
+            candidate_user_id bigint(20) unsigned NOT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY allocation_id (allocation_id),
+            UNIQUE KEY allocation_candidate (allocation_id, candidate_user_id)
+        ) {$charset};";
+        dbDelta($interest_sql);
+
+        self::maybe_add_missing_column($allocations_table, 'school_user_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($allocations_table, 'booking_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($allocations_table, 'message', "varchar(255) NULL");
+        self::maybe_add_missing_column($allocations_table, 'status', "varchar(20) NOT NULL DEFAULT 'active'");
+        self::maybe_add_missing_column($allocations_table, 'month_key', "varchar(7) NOT NULL");
+        self::maybe_add_missing_column($allocations_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($allocations_table, 'school_user_id', "KEY school_user_id (school_user_id)");
+        self::maybe_add_missing_index($allocations_table, 'month_key', "KEY month_key (month_key)");
+        self::maybe_add_missing_index($allocations_table, 'booking_id', "KEY booking_id (booking_id)");
+        self::maybe_add_missing_index($allocations_table, 'status', "KEY status (status)");
+
+        self::maybe_add_missing_column($interest_table, 'allocation_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($interest_table, 'candidate_user_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($interest_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($interest_table, 'allocation_id', "KEY allocation_id (allocation_id)");
+        self::maybe_add_missing_index($interest_table, 'allocation_candidate', "UNIQUE KEY allocation_candidate (allocation_id, candidate_user_id)");
+
+        if (self::table_has_column($allocations_table, 'status')) {
+            $wpdb->query(
+                "UPDATE {$allocations_table_sql}
+                 SET status = 'active'
+                 WHERE status IS NULL
+                    OR status = ''
+                    OR LOWER(status) NOT IN ('active', 'closed', 'expired')"
+            );
+        }
+        if (self::table_has_column($allocations_table, 'month_key') && self::table_has_column($allocations_table, 'created_at')) {
+            $wpdb->query(
+                "UPDATE {$allocations_table_sql}
+                 SET month_key = DATE_FORMAT(created_at, '%Y-%m')
+                 WHERE (month_key IS NULL OR month_key = '')
+                   AND created_at IS NOT NULL
+                   AND created_at <> '0000-00-00 00:00:00'"
+            );
+            $wpdb->query(
+                $wpdb->prepare(
+                    "UPDATE {$allocations_table_sql}
+                     SET month_key = %s
+                     WHERE month_key IS NULL OR month_key = ''",
+                    current_time('Y-m')
+                )
+            );
+        }
+    }
+
+    /*
+     * Prompt acceptance checks:
+     * 1) School feedback table enforces one submission per booking/candidate via UNIQUE(booking_id, candidate_user_id).
+     * 2) Candidate rating stats table keeps aggregated avg/count per candidate_user_id.
+     * 3) Migration is idempotent and safe to run repeatedly.
+     */
+    private static function migrate_schema_v70_candidate_feedback_system() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $charset = $wpdb->get_charset_collate();
+        $feedback_table = self::get_candidate_feedback_table_name();
+        $stats_table = self::get_candidate_rating_stats_table_name();
+
+        $feedback_sql = "CREATE TABLE {$feedback_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            booking_id bigint(20) unsigned NOT NULL,
+            school_user_id bigint(20) unsigned NOT NULL,
+            candidate_user_id bigint(20) unsigned NOT NULL,
+            score_punctuality tinyint(1) NOT NULL,
+            score_classroom_management tinyint(1) NOT NULL,
+            score_professionalism tinyint(1) NOT NULL,
+            score_communication tinyint(1) NOT NULL,
+            score_adaptability tinyint(1) NOT NULL,
+            score_lesson_delivery tinyint(1) NOT NULL,
+            score_safeguarding tinyint(1) NOT NULL,
+            average_rating decimal(3,2) NOT NULL,
+            comments text NULL,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY booking_candidate (booking_id, candidate_user_id),
+            KEY candidate_user_id (candidate_user_id),
+            KEY school_user_id (school_user_id),
+            KEY created_at (created_at)
+        ) {$charset};";
+        dbDelta($feedback_sql);
+
+        $stats_sql = "CREATE TABLE {$stats_table} (
+            candidate_user_id bigint(20) unsigned NOT NULL,
+            avg_rating decimal(3,2) NOT NULL DEFAULT 0.00,
+            feedback_count int NOT NULL DEFAULT 0,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (candidate_user_id),
+            KEY updated_at (updated_at),
+            KEY avg_rating (avg_rating),
+            KEY feedback_count (feedback_count)
+        ) {$charset};";
+        dbDelta($stats_sql);
+
+        self::maybe_add_missing_column($feedback_table, 'booking_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'school_user_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'candidate_user_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'score_punctuality', "tinyint(1) NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'score_classroom_management', "tinyint(1) NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'score_professionalism', "tinyint(1) NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'score_communication', "tinyint(1) NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'score_adaptability', "tinyint(1) NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'score_lesson_delivery', "tinyint(1) NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'score_safeguarding', "tinyint(1) NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'average_rating', "decimal(3,2) NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'comments', "text NULL");
+        self::maybe_add_missing_column($feedback_table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($feedback_table, 'updated_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($feedback_table, 'booking_candidate', "UNIQUE KEY booking_candidate (booking_id, candidate_user_id)");
+        self::maybe_add_missing_index($feedback_table, 'candidate_user_id', "KEY candidate_user_id (candidate_user_id)");
+        self::maybe_add_missing_index($feedback_table, 'school_user_id', "KEY school_user_id (school_user_id)");
+        self::maybe_add_missing_index($feedback_table, 'created_at', "KEY created_at (created_at)");
+
+        self::maybe_add_missing_column($stats_table, 'candidate_user_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($stats_table, 'avg_rating', "decimal(3,2) NOT NULL DEFAULT 0.00");
+        self::maybe_add_missing_column($stats_table, 'feedback_count', "int NOT NULL DEFAULT 0");
+        self::maybe_add_missing_column($stats_table, 'updated_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($stats_table, 'updated_at', "KEY updated_at (updated_at)");
+        self::maybe_add_missing_index($stats_table, 'avg_rating', "KEY avg_rating (avg_rating)");
+        self::maybe_add_missing_index($stats_table, 'feedback_count', "KEY feedback_count (feedback_count)");
+
+        if (self::table_exists($feedback_table)) {
+            $rows = (array) $wpdb->get_results(
+                "SELECT candidate_user_id, AVG(average_rating) AS avg_rating, COUNT(*) AS feedback_count
+                 FROM {$feedback_table}
+                 GROUP BY candidate_user_id",
+                ARRAY_A
+            );
+            $now = current_time('mysql');
+            foreach ($rows as $row) {
+                $candidate_user_id = max(0, (int) ($row['candidate_user_id'] ?? 0));
+                if ($candidate_user_id < 1) {
+                    continue;
+                }
+                $wpdb->replace($stats_table, [
+                    'candidate_user_id' => $candidate_user_id,
+                    'avg_rating' => round((float) ($row['avg_rating'] ?? 0), 2),
+                    'feedback_count' => max(0, (int) ($row['feedback_count'] ?? 0)),
+                    'updated_at' => $now,
+                ], ['%d', '%f', '%d', '%s']);
+            }
+        }
+    }
+
+    /*
+     * Live chat acceptance checks:
+     * 1) Guest website chat sessions map 1:1 to support tickets with hashed thread tokens.
+     * 2) Migration is idempotent and safe to run repeatedly on existing installs.
+     * 3) Indexes support secure token lookup and efficient staff/source filtering.
+     */
+    private static function migrate_schema_v71_livechat_support_threads() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $table = self::get_livechat_threads_table_name();
+        $charset = $wpdb->get_charset_collate();
+        $sql = "CREATE TABLE {$table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            ticket_id bigint(20) unsigned NOT NULL,
+            thread_token_hash char(64) NOT NULL,
+            source_key varchar(40) NOT NULL DEFAULT 'website_live_chat',
+            guest_name varchar(120) NOT NULL,
+            guest_email varchar(190) NOT NULL,
+            guest_type varchar(20) NOT NULL DEFAULT 'other',
+            linked_user_id bigint(20) unsigned NULL,
+            status varchar(20) NOT NULL DEFAULT 'open',
+            last_message_id bigint(20) unsigned NULL,
+            last_ip varchar(64) NULL,
+            expires_at datetime NULL,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY ticket_id (ticket_id),
+            UNIQUE KEY thread_token_hash (thread_token_hash),
+            KEY source_key (source_key),
+            KEY guest_email (guest_email),
+            KEY status (status),
+            KEY updated_at (updated_at)
+        ) {$charset};";
+        dbDelta($sql);
+
+        self::maybe_add_missing_column($table, 'ticket_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($table, 'thread_token_hash', "char(64) NOT NULL");
+        self::maybe_add_missing_column($table, 'source_key', "varchar(40) NOT NULL DEFAULT 'website_live_chat'");
+        self::maybe_add_missing_column($table, 'guest_name', "varchar(120) NOT NULL");
+        self::maybe_add_missing_column($table, 'guest_email', "varchar(190) NOT NULL");
+        self::maybe_add_missing_column($table, 'guest_type', "varchar(20) NOT NULL DEFAULT 'other'");
+        self::maybe_add_missing_column($table, 'linked_user_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($table, 'status', "varchar(20) NOT NULL DEFAULT 'open'");
+        self::maybe_add_missing_column($table, 'last_message_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($table, 'last_ip', "varchar(64) NULL");
+        self::maybe_add_missing_column($table, 'expires_at', "datetime NULL");
+        self::maybe_add_missing_column($table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($table, 'updated_at', "datetime NOT NULL");
+
+        self::maybe_add_missing_index($table, 'ticket_id', "UNIQUE KEY ticket_id (ticket_id)");
+        self::maybe_add_missing_index($table, 'thread_token_hash', "UNIQUE KEY thread_token_hash (thread_token_hash)");
+        self::maybe_add_missing_index($table, 'source_key', "KEY source_key (source_key)");
+        self::maybe_add_missing_index($table, 'guest_email', "KEY guest_email (guest_email)");
+        self::maybe_add_missing_index($table, 'status', "KEY status (status)");
+        self::maybe_add_missing_index($table, 'updated_at', "KEY updated_at (updated_at)");
+    }
+
+    /*
+     * Notification Preferences Centre acceptance checks:
+     * 1) Deferred portal notifications are supported via notifications.available_at.
+     * 2) Migration is idempotent and safe to run repeatedly.
+     * 3) Existing notifications remain visible because available_at defaults to NULL.
+     */
+    private static function migrate_schema_v72_notification_preferences_centre() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $table = $wpdb->prefix . 'cmn_notifications';
+        if (!self::table_exists($table)) {
+            return;
+        }
+
+        self::maybe_add_missing_column($table, 'available_at', "datetime NULL");
+        self::maybe_add_missing_index($table, 'available_at', "KEY available_at (available_at)");
+    }
+
+    /*
+     * Support feedback request lifecycle acceptance checks:
+     * 1) Closed tickets do not appear in Needs feedback until support requests feedback.
+     * 2) Requested feedback expires automatically after 48 hours and no longer appears in Needs feedback.
+     * 3) Migration is idempotent and safe on existing installs.
+     */
+    private static function migrate_schema_v73_support_feedback_request_lifecycle() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $table = $wpdb->prefix . 'cmn_support_tickets';
+        if (!self::table_exists($table)) {
+            return;
+        }
+
+        self::maybe_add_missing_column($table, 'feedback_request_status', "varchar(20) NOT NULL DEFAULT 'none'");
+        self::maybe_add_missing_column($table, 'feedback_requested_at', "datetime NULL");
+        self::maybe_add_missing_column($table, 'feedback_request_expires_at', "datetime NULL");
+        self::maybe_add_missing_index($table, 'feedback_request_status', "KEY feedback_request_status (feedback_request_status)");
+        self::maybe_add_missing_index($table, 'feedback_request_expires_at', "KEY feedback_request_expires_at (feedback_request_expires_at)");
+
+        $table_sql = self::quote_sql_identifier($table);
+        $wpdb->query("UPDATE {$table_sql} SET feedback_request_status = 'none' WHERE feedback_request_status IS NULL OR feedback_request_status = ''");
+    }
+
+    private static function table_exists($table_name) {
+        global $wpdb;
+        $table_name = trim((string) $table_name);
+        if ($table_name === '') {
+            return false;
+        }
+        $found = (string) $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+        return $found === $table_name;
+    }
+
+    private static function normalize_email_log_status_static($status, $default = 'queued') {
+        $status = sanitize_key((string) $status);
+        if (in_array($status, ['queued', 'sent', 'failed'], true)) {
+            return $status;
+        }
+        if (in_array($status, ['error', 'failure'], true)) {
+            return 'failed';
+        }
+        if ($status === 'pending') {
+            return 'queued';
+        }
+        $default = sanitize_key((string) $default);
+        if (in_array($default, ['queued', 'sent', 'failed'], true)) {
+            return $default;
+        }
+        return 'queued';
+    }
+
+    private static function infer_email_module_static($raw) {
+        $raw = strtolower((string) $raw);
+        if ($raw === '') {
+            return 'system';
+        }
+        if (strpos($raw, 'payroll') !== false || strpos($raw, 'finance') !== false || strpos($raw, 'invoice') !== false || strpos($raw, 'remittance') !== false) {
+            return 'finance';
+        }
+        if (strpos($raw, 'support') !== false || strpos($raw, 'ticket') !== false) {
+            return 'support';
+        }
+        if (strpos($raw, 'partner') !== false) {
+            return 'partner';
+        }
+        if (strpos($raw, 'reward') !== false) {
+            return 'rewards';
+        }
+        if (strpos($raw, 'book') !== false || strpos($raw, 'shift') !== false || strpos($raw, 'request') !== false) {
+            return 'bookings';
+        }
+        if (strpos($raw, 'onboard') !== false || strpos($raw, 'welcome') !== false || strpos($raw, 'register') !== false || strpos($raw, 'verify') !== false) {
+            return 'onboarding';
+        }
+        if (strpos($raw, 'market') !== false || strpos($raw, 'campaign') !== false) {
+            return 'marketing';
+        }
+        return 'system';
+    }
+
+    private static function infer_recipient_role_static($raw) {
+        $raw = strtolower((string) $raw);
+        if ($raw === '') {
+            return 'unknown';
+        }
+        if (strpos($raw, 'candidate') !== false) {
+            return 'candidate';
+        }
+        if (strpos($raw, 'school') !== false || strpos($raw, 'client') !== false) {
+            return 'school';
+        }
+        if (strpos($raw, 'staff') !== false) {
+            return 'staff';
+        }
+        if (strpos($raw, 'admin') !== false) {
+            return 'admin';
+        }
+        return 'unknown';
+    }
+
+    private static function infer_sender_email_for_role_static($recipient_role) {
+        $recipient_role = sanitize_key((string) $recipient_role);
+        if ($recipient_role === 'candidate') {
+            return 'candidate@covermenow.co.uk';
+        }
+        if ($recipient_role === 'school') {
+            return 'school@covermenow.co.uk';
+        }
+        if ($recipient_role === 'staff' || $recipient_role === 'admin') {
+            return 'support@covermenow.co.uk';
+        }
+        return 'school@covermenow.co.uk';
+    }
+
+    private static function coerce_email_value_static($value) {
+        if (is_array($value)) {
+            foreach ($value as $candidate) {
+                $resolved = self::coerce_email_value_static($candidate);
+                if ($resolved !== '') {
+                    return $resolved;
+                }
+            }
+            return '';
+        }
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return '';
+        }
+        if (strpos($raw, '<') !== false && preg_match('/<([^>]+)>/', $raw, $matches)) {
+            $raw = trim((string) ($matches[1] ?? ''));
+        }
+        $email = sanitize_email($raw);
+        if ($email === '' || !is_email($email)) {
+            return '';
+        }
+        return $email;
+    }
+
+    private static function coerce_datetime_mysql_static($value, $fallback = '') {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return $fallback !== '' ? $fallback : current_time('mysql');
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $raw)) {
+            return $raw;
+        }
+        try {
+            $tz = function_exists('wp_timezone') ? wp_timezone() : new DateTimeZone('UTC');
+            $dt = new DateTimeImmutable($raw, $tz);
+            return $dt->format('Y-m-d H:i:s');
+        } catch (Throwable $e) {
+            return $fallback !== '' ? $fallback : current_time('mysql');
+        }
+    }
+
+    private static function get_email_logs_metadata_column_v68($logs_table) {
+        if (self::table_has_column($logs_table, 'meta_json')) {
+            return 'meta_json';
+        }
+        if (self::table_has_column($logs_table, 'metadata')) {
+            return 'metadata';
+        }
+        return '';
+    }
+
+    private static function email_log_backfill_row_exists_v68($logs_table, $source, $source_id) {
+        global $wpdb;
+        $source = sanitize_key((string) $source);
+        $source_id = (int) $source_id;
+        if ($source === '' || $source_id < 1) {
+            return false;
+        }
+        $metadata_column = self::get_email_logs_metadata_column_v68($logs_table);
+        if ($metadata_column === '') {
+            return false;
+        }
+
+        $source_pattern = '%"source":"' . $wpdb->esc_like($source) . '"%';
+        $source_id_pattern = '%"source_id":' . $source_id . '%';
+        $count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+             FROM {$logs_table}
+             WHERE {$metadata_column} LIKE %s
+               AND {$metadata_column} LIKE %s",
+            $source_pattern,
+            $source_id_pattern
+        ));
+        return $count > 0;
+    }
+
+    private static function insert_backfill_email_log_v68($logs_table, array $entry) {
+        global $wpdb;
+        $recipient_email = self::coerce_email_value_static($entry['recipient_email'] ?? '');
+        if ($recipient_email === '') {
+            return 0;
+        }
+
+        $recipient_role = sanitize_key((string) ($entry['recipient_role'] ?? 'unknown'));
+        if ($recipient_role === '') {
+            $recipient_role = 'unknown';
+        }
+        $sender_email = self::coerce_email_value_static($entry['sender_email'] ?? '');
+        if ($sender_email === '') {
+            $sender_email = self::infer_sender_email_for_role_static($recipient_role);
+        }
+        $sender_name = sanitize_text_field((string) ($entry['sender_name'] ?? ''));
+        if ($sender_name === '') {
+            $sender_name = 'CoverMeNow ONE';
+        }
+        $subject = sanitize_text_field((string) ($entry['subject'] ?? ''));
+        if ($subject === '') {
+            $subject = 'CoverMeNow ONE notification';
+        }
+        $template_key = sanitize_key((string) ($entry['template_key'] ?? ''));
+        $module = sanitize_key((string) ($entry['module'] ?? ''));
+        if ($module === '') {
+            $module = self::infer_email_module_static((string) ($entry['template_key'] ?? ($entry['subject'] ?? '')));
+        }
+        $status = self::normalize_email_log_status_static((string) ($entry['status'] ?? 'queued'), 'queued');
+        $error_message = sanitize_textarea_field((string) ($entry['error_message'] ?? ''));
+        if (strlen($error_message) > 1000) {
+            $error_message = substr($error_message, 0, 1000);
+        }
+        $created_at = self::coerce_datetime_mysql_static((string) ($entry['created_at'] ?? ''), current_time('mysql'));
+        $updated_at = self::coerce_datetime_mysql_static((string) ($entry['updated_at'] ?? ''), $created_at);
+
+        $related_entity_type = sanitize_key((string) ($entry['related_entity_type'] ?? ''));
+        $related_entity_id = max(0, (int) ($entry['related_entity_id'] ?? 0));
+
+        $metadata = is_array($entry['metadata'] ?? null) ? (array) $entry['metadata'] : [];
+        $metadata_json = wp_json_encode($metadata);
+        if (!is_string($metadata_json)) {
+            $metadata_json = '';
+        }
+        if (strlen($metadata_json) > 4096) {
+            $metadata_json = substr($metadata_json, 0, 4096);
+        }
+
+        $insert_data = [
+            'template_key' => $template_key !== '' ? $template_key : null,
+            'recipient_email' => $recipient_email,
+            'subject' => $subject,
+            'error_message' => $error_message !== '' ? $error_message : null,
+        ];
+        $insert_format = ['%s', '%s', '%s', '%s'];
+
+        if (self::table_has_column($logs_table, 'status')) {
+            $insert_data['status'] = $status;
+            $insert_format[] = '%s';
+        } elseif (self::table_has_column($logs_table, 'send_status')) {
+            $insert_data['send_status'] = $status;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'recipient_role')) {
+            $insert_data['recipient_role'] = $recipient_role;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'module')) {
+            $insert_data['module'] = $module;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'from_email')) {
+            $insert_data['from_email'] = $sender_email;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'from_name')) {
+            $insert_data['from_name'] = $sender_name;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'sender_email')) {
+            $insert_data['sender_email'] = $sender_email;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'sender_name')) {
+            $insert_data['sender_name'] = $sender_name;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'related_entity_type')) {
+            $insert_data['related_entity_type'] = $related_entity_type !== '' ? $related_entity_type : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'related_entity_id')) {
+            $insert_data['related_entity_id'] = $related_entity_id > 0 ? $related_entity_id : null;
+            $insert_format[] = '%d';
+        }
+        if (self::table_has_column($logs_table, 'created_at')) {
+            $insert_data['created_at'] = $created_at;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'updated_at')) {
+            $insert_data['updated_at'] = $updated_at;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'metadata')) {
+            $insert_data['metadata'] = $metadata_json !== '' ? $metadata_json : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'meta_json')) {
+            $insert_data['meta_json'] = $metadata_json !== '' ? $metadata_json : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($logs_table, 'send_status') && !isset($insert_data['send_status'])) {
+            $insert_data['send_status'] = $status;
+            $insert_format[] = '%s';
+        }
+
+        $inserted = $wpdb->insert($logs_table, $insert_data, $insert_format);
+        if ($inserted === false) {
+            return 0;
+        }
+        return (int) $wpdb->insert_id;
+    }
+
+    private static function backfill_email_logs_from_legacy_table_v68($logs_table) {
+        global $wpdb;
+        $done_option = 'cmn_email_logs_backfill_legacy_v68_done';
+        if ((string) get_option($done_option, '') === '1') {
+            return;
+        }
+
+        $legacy_table = $wpdb->prefix . 'cmn_email_log';
+        if (!self::table_exists($legacy_table)) {
+            update_option($done_option, '1', false);
+            return;
+        }
+
+        $last_id_option = 'cmn_email_logs_backfill_legacy_v68_last_id';
+        $last_id = max(0, (int) get_option($last_id_option, 0));
+        $batch_size = 250;
+
+        while (true) {
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT id, to_email, subject, type, related_school_domain, related_candidate_id, related_request_id, sent_at, status, error_message
+                 FROM {$legacy_table}
+                 WHERE id > %d
+                 ORDER BY id ASC
+                 LIMIT %d",
+                $last_id,
+                $batch_size
+            ), ARRAY_A);
+
+            if (empty($rows)) {
+                break;
+            }
+
+            foreach ((array) $rows as $row) {
+                $source_id = (int) ($row['id'] ?? 0);
+                if ($source_id < 1) {
+                    continue;
+                }
+                if (self::email_log_backfill_row_exists_v68($logs_table, 'legacy_email_log', $source_id)) {
+                    $last_id = $source_id;
+                    continue;
+                }
+
+                $legacy_type = sanitize_key((string) ($row['type'] ?? ''));
+                $recipient_role = self::infer_recipient_role_static($legacy_type);
+                $related_entity_type = '';
+                $related_entity_id = 0;
+                $related_candidate_id = max(0, (int) ($row['related_candidate_id'] ?? 0));
+                $related_request_id = max(0, (int) ($row['related_request_id'] ?? 0));
+                if ($related_candidate_id > 0) {
+                    $related_entity_type = 'candidate';
+                    $related_entity_id = $related_candidate_id;
+                } elseif ($related_request_id > 0) {
+                    $related_entity_type = 'booking_request';
+                    $related_entity_id = $related_request_id;
+                }
+
+                self::insert_backfill_email_log_v68($logs_table, [
+                    'template_key' => $legacy_type,
+                    'module' => self::infer_email_module_static($legacy_type),
+                    'recipient_email' => (string) ($row['to_email'] ?? ''),
+                    'recipient_role' => $recipient_role,
+                    'sender_email' => self::infer_sender_email_for_role_static($recipient_role),
+                    'sender_name' => 'CoverMeNow ONE',
+                    'subject' => (string) ($row['subject'] ?? ''),
+                    'status' => self::normalize_email_log_status_static((string) ($row['status'] ?? 'sent'), 'sent'),
+                    'error_message' => (string) ($row['error_message'] ?? ''),
+                    'related_entity_type' => $related_entity_type,
+                    'related_entity_id' => $related_entity_id,
+                    'created_at' => (string) ($row['sent_at'] ?? ''),
+                    'updated_at' => (string) ($row['sent_at'] ?? ''),
+                    'metadata' => [
+                        'source' => 'legacy_email_log',
+                        'source_id' => $source_id,
+                        'legacy_type' => $legacy_type,
+                        'legacy_related_school_domain' => sanitize_text_field((string) ($row['related_school_domain'] ?? '')),
+                        'legacy_related_candidate_id' => $related_candidate_id,
+                        'legacy_related_request_id' => $related_request_id,
+                    ],
+                ]);
+
+                $last_id = $source_id;
+            }
+
+            update_option($last_id_option, (string) $last_id, false);
+            if (count($rows) < $batch_size) {
+                break;
+            }
+        }
+
+        update_option($done_option, '1', false);
+    }
+
+    private static function backfill_email_logs_from_audit_events_v68($logs_table) {
+        global $wpdb;
+        $done_option = 'cmn_email_logs_backfill_audit_v68_done';
+        if ((string) get_option($done_option, '') === '1') {
+            return;
+        }
+
+        $audit_table = self::get_audit_events_table_name();
+        if (!self::table_exists($audit_table)) {
+            update_option($done_option, '1', false);
+            return;
+        }
+
+        $last_id_option = 'cmn_email_logs_backfill_audit_v68_last_id';
+        $last_id = max(0, (int) get_option($last_id_option, 0));
+        $batch_size = 250;
+
+        while (true) {
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT id, module, entity_type, entity_id, event_type, metadata, created_at
+                 FROM {$audit_table}
+                 WHERE id > %d
+                   AND (event_type LIKE %s OR module = %s)
+                 ORDER BY id ASC
+                 LIMIT %d",
+                $last_id,
+                '%email%',
+                'email',
+                $batch_size
+            ), ARRAY_A);
+
+            if (empty($rows)) {
+                break;
+            }
+
+            foreach ((array) $rows as $row) {
+                $source_id = (int) ($row['id'] ?? 0);
+                if ($source_id < 1) {
+                    continue;
+                }
+                if (self::email_log_backfill_row_exists_v68($logs_table, 'audit_backfill', $source_id)) {
+                    $last_id = $source_id;
+                    continue;
+                }
+
+                $metadata = [];
+                $metadata_raw = (string) ($row['metadata'] ?? '');
+                if ($metadata_raw !== '') {
+                    $decoded = json_decode($metadata_raw, true);
+                    if (is_array($decoded)) {
+                        $metadata = $decoded;
+                    }
+                }
+
+                $recipient_email = self::coerce_email_value_static(
+                    $metadata['recipient_email']
+                        ?? $metadata['to_email']
+                        ?? $metadata['to']
+                        ?? $metadata['email']
+                        ?? ''
+                );
+                if ($recipient_email === '') {
+                    $last_id = $source_id;
+                    continue;
+                }
+
+                $event_type = sanitize_key((string) ($row['event_type'] ?? ''));
+                $template_key = sanitize_key((string) ($metadata['template_key'] ?? $metadata['template'] ?? ''));
+                $module = sanitize_key((string) ($row['module'] ?? ''));
+                if ($module === '') {
+                    $module = sanitize_key((string) ($metadata['module'] ?? ''));
+                }
+                if ($module === '') {
+                    $module = self::infer_email_module_static($template_key !== '' ? $template_key : $event_type);
+                }
+                $recipient_role = sanitize_key((string) ($metadata['recipient_role'] ?? ''));
+                if ($recipient_role === '') {
+                    $recipient_role = self::infer_recipient_role_static($template_key !== '' ? $template_key : $event_type);
+                }
+                $sender_email = self::coerce_email_value_static($metadata['sender_email'] ?? $metadata['from_email'] ?? '');
+                if ($sender_email === '') {
+                    $sender_email = self::infer_sender_email_for_role_static($recipient_role);
+                }
+                $sender_name = sanitize_text_field((string) ($metadata['sender_name'] ?? $metadata['from_name'] ?? 'CoverMeNow ONE'));
+                $subject = sanitize_text_field((string) ($metadata['subject'] ?? ''));
+                if ($subject === '') {
+                    $subject = 'CoverMeNow ONE email event';
+                }
+
+                $status_raw = sanitize_key((string) ($metadata['send_status'] ?? $metadata['status'] ?? ''));
+                if (in_array($status_raw, ['queued', 'sent', 'failed'], true)) {
+                    $status = $status_raw;
+                } elseif (strpos($event_type, 'failed') !== false || strpos($event_type, 'failure') !== false) {
+                    $status = 'failed';
+                } elseif (strpos($event_type, 'queue') !== false || strpos($event_type, 'queued') !== false) {
+                    $status = 'queued';
+                } else {
+                    $status = 'sent';
+                }
+                $error_message = sanitize_textarea_field((string) ($metadata['error_message'] ?? $metadata['error'] ?? ''));
+
+                self::insert_backfill_email_log_v68($logs_table, [
+                    'template_key' => $template_key,
+                    'module' => $module,
+                    'recipient_email' => $recipient_email,
+                    'recipient_role' => $recipient_role !== '' ? $recipient_role : 'unknown',
+                    'sender_email' => $sender_email,
+                    'sender_name' => $sender_name,
+                    'subject' => $subject,
+                    'status' => $status,
+                    'error_message' => $error_message,
+                    'related_entity_type' => sanitize_key((string) ($row['entity_type'] ?? '')),
+                    'related_entity_id' => max(0, (int) ($row['entity_id'] ?? 0)),
+                    'created_at' => (string) ($row['created_at'] ?? ''),
+                    'updated_at' => (string) ($row['created_at'] ?? ''),
+                    'metadata' => [
+                        'source' => 'audit_backfill',
+                        'source_id' => $source_id,
+                        'event_type' => $event_type,
+                    ],
+                ]);
+
+                $last_id = $source_id;
+            }
+
+            update_option($last_id_option, (string) $last_id, false);
+            if (count($rows) < $batch_size) {
+                break;
+            }
+        }
+
+        update_option($done_option, '1', false);
+    }
+
     private static function get_audit_events_table_name() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_audit_events';
@@ -4137,6 +5724,26 @@ final class CMN_One_Plugin {
         return $wpdb->prefix . 'cmn_candidate_remittance_docs';
     }
 
+    private static function get_email_templates_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_email_templates';
+    }
+
+    private static function get_email_template_versions_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_email_template_versions';
+    }
+
+    private static function get_email_logs_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_email_logs';
+    }
+
+    private static function get_email_senders_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_email_senders';
+    }
+
     private static function get_training_mode_state_table_name() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_training_mode_state';
@@ -4145,6 +5752,11 @@ final class CMN_One_Plugin {
     private static function get_support_payroll_query_table_name() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_support_payroll_queries';
+    }
+
+    private static function get_livechat_threads_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_livechat_threads';
     }
 
     private static function get_payroll_period_locks_table_name() {
@@ -4170,6 +5782,26 @@ final class CMN_One_Plugin {
     private static function get_payroll_adjustments_table_name() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_payroll_adjustments';
+    }
+
+    private static function get_priority_allocations_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_priority_allocations';
+    }
+
+    private static function get_priority_interest_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_priority_interest';
+    }
+
+    private static function get_candidate_feedback_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_candidate_feedback';
+    }
+
+    private static function get_candidate_rating_stats_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_candidate_rating_stats';
     }
 
     private static function get_wp_database_name() {
@@ -4660,6 +6292,7 @@ final class CMN_One_Plugin {
         if (!get_role('cmn_candidate_pending')) {
             add_role('cmn_candidate_pending', 'Candidate (Pending)', ['read' => true]);
         }
+
     }
 
     public function enqueue_admin_assets($hook) {
@@ -4695,6 +6328,7 @@ final class CMN_One_Plugin {
             'supportNonce' => wp_create_nonce('cmn_support'),
             'candidateTourNonce' => wp_create_nonce('cmn_dismiss_candidate_tour'),
             'candidateSettingsNonce' => wp_create_nonce('cmn_candidate_settings'),
+            'notificationPreferencesNonce' => wp_create_nonce('cmn_notification_preferences'),
             'candidateDocNonce' => wp_create_nonce('cmn_candidate_doc'),
             'candidateProfileNonce' => wp_create_nonce('cmn_candidate_profile'),
             'candidateLearningNonce' => wp_create_nonce('cmn_candidate_learning'),
@@ -4713,21 +6347,240 @@ final class CMN_One_Plugin {
         ]);
     }
 
+    private function is_public_contact_page() {
+        if (is_admin() || wp_doing_ajax()) {
+            return false;
+        }
+        if ((defined('REST_REQUEST') && REST_REQUEST) || (defined('XMLRPC_REQUEST') && XMLRPC_REQUEST)) {
+            return false;
+        }
+        if (function_exists('wp_is_json_request') && wp_is_json_request()) {
+            return false;
+        }
+        if (is_feed() || is_trackback() || is_embed()) {
+            return false;
+        }
+
+        $path = parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        $path = strtolower(trim((string) $path, '/'));
+        if (strpos($path, 'wp-admin') === 0 || strpos($path, 'wp-login.php') === 0) {
+            return false;
+        }
+        return true;
+    }
+
+    private function render_topbar_livechat_button() {
+        if (!$this->is_public_contact_page()) {
+            return '';
+        }
+        return '<button class="cmn-topbar-livechat" type="button" data-cmn-livechat-open>Live chat</button>';
+    }
+
+    public function enqueue_livechat_contact_assets() {
+        if (!$this->is_public_contact_page()) {
+            return;
+        }
+
+        $css_path = plugin_dir_path(__FILE__) . 'livechat-widget.css';
+        $js_path = plugin_dir_path(__FILE__) . 'livechat-widget.js';
+        $css_ver = file_exists($css_path) ? (string) filemtime($css_path) : self::VERSION;
+        $js_ver = file_exists($js_path) ? (string) filemtime($js_path) : self::VERSION;
+
+        wp_enqueue_style('cmn-livechat-widget', plugin_dir_url(__FILE__) . 'livechat-widget.css', [], $css_ver);
+        wp_enqueue_script('cmn-livechat-widget', plugin_dir_url(__FILE__) . 'livechat-widget.js', [], $js_ver, true);
+        $user_context = [
+            'isLoggedIn' => 0,
+            'name' => '',
+            'email' => '',
+            'userType' => 'other',
+        ];
+        if (is_user_logged_in()) {
+            $user_id = (int) get_current_user_id();
+            $can_link_livechat = $user_id > 0 && (
+                $this->is_candidate_user($user_id)
+                || $this->is_school_user($user_id)
+                || $this->is_staff_user($user_id)
+            );
+            if ($can_link_livechat) {
+                $user = get_user_by('id', $user_id);
+                if ($user instanceof WP_User) {
+                    $display_name = trim((string) $user->display_name);
+                    if ($display_name === '') {
+                        $display_name = trim((string) get_user_meta($user_id, 'first_name', true) . ' ' . (string) get_user_meta($user_id, 'last_name', true));
+                    }
+                    if ($display_name === '') {
+                        $display_name = (string) $user->user_login;
+                    }
+                    $user_context['isLoggedIn'] = 1;
+                    $user_context['name'] = sanitize_text_field($display_name);
+                    $user_context['email'] = sanitize_email((string) $user->user_email);
+                    if ($this->is_candidate_user($user_id)) {
+                        $user_context['userType'] = 'candidate';
+                    } elseif ($this->is_school_user($user_id)) {
+                        $user_context['userType'] = 'school';
+                    }
+                }
+            }
+        }
+        wp_localize_script('cmn-livechat-widget', 'cmnLiveChat', [
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('cmn_livechat_public'),
+            'pollSeconds' => 3,
+            'contactUrl' => home_url('/contact'),
+            'storageKey' => 'cmn_livechat_thread_token_v1',
+            'userContext' => $user_context,
+        ]);
+    }
+
+    public function render_public_livechat_widget_shell() {
+        if (!$this->is_public_contact_page()) {
+            return;
+        }
+        ?>
+        <div class="cmn-livechat-root" data-cmn-livechat-root>
+            <button class="cmn-livechat-toggle" type="button" data-cmn-livechat-toggle aria-expanded="false" aria-controls="cmn-livechat-panel">
+                <span class="cmn-livechat-toggle__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                        <path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm1 3v7h13V7H6z"></path>
+                    </svg>
+                </span>
+                <span class="cmn-livechat-toggle__label">Live chat</span>
+                <span class="cmn-livechat-toggle__dot" aria-hidden="true"></span>
+            </button>
+
+            <section class="cmn-livechat-panel" id="cmn-livechat-panel" data-cmn-livechat-panel hidden>
+                <header class="cmn-livechat-panel__header">
+                    <div>
+                        <strong>Live chat</strong>
+                        <p>Talk to the CoverMeNow support team.</p>
+                    </div>
+                    <button class="cmn-livechat-close" type="button" data-cmn-livechat-close aria-label="Close live chat">×</button>
+                </header>
+
+                <div class="cmn-livechat-status" data-cmn-livechat-status aria-live="polite"></div>
+
+                <div class="cmn-livechat-prechat" data-cmn-livechat-prechat>
+                    <form class="cmn-livechat-form" data-cmn-livechat-start-form novalidate>
+                        <label>
+                            Full Name
+                            <input type="text" name="name" maxlength="120" required>
+                        </label>
+                        <label>
+                            Email
+                            <input type="email" name="email" maxlength="190" required>
+                        </label>
+                        <label>
+                            I am a:
+                            <select name="user_type" required>
+                                <option value="">Select</option>
+                                <option value="school">School</option>
+                                <option value="candidate">Candidate</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </label>
+                        <label>
+                            Message
+                            <textarea name="message" rows="4" maxlength="1500" required></textarea>
+                        </label>
+                        <button class="cmn-livechat-primary" type="submit">Start chat</button>
+                    </form>
+                </div>
+
+                <div class="cmn-livechat-thread" data-cmn-livechat-thread hidden>
+                    <div class="cmn-livechat-thread__meta">We'll reply here and by email.</div>
+                    <div class="cmn-livechat-messages" data-cmn-livechat-messages></div>
+                    <form class="cmn-livechat-send" data-cmn-livechat-send-form novalidate>
+                        <textarea name="message" rows="3" maxlength="1500" placeholder="Type your message..." required></textarea>
+                        <button class="cmn-livechat-primary" type="submit">Send</button>
+                    </form>
+                    <div class="cmn-livechat-feedback" data-cmn-livechat-feedback hidden>
+                        <strong>Before you go, how was support?</strong>
+                        <p>Your feedback helps us improve response quality.</p>
+                        <form class="cmn-livechat-feedback__form" data-cmn-livechat-feedback-form novalidate>
+                            <div class="cmn-livechat-feedback__grid">
+                                <label>
+                                    Support quality
+                                    <select name="support_rating" required>
+                                        <option value="">Select</option>
+                                        <option value="5">5 - Excellent</option>
+                                        <option value="4">4 - Good</option>
+                                        <option value="3">3 - OK</option>
+                                        <option value="2">2 - Poor</option>
+                                        <option value="1">1 - Very poor</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    Response speed
+                                    <select name="response_time_rating" required>
+                                        <option value="">Select</option>
+                                        <option value="5">5 - Very fast</option>
+                                        <option value="4">4 - Fast</option>
+                                        <option value="3">3 - Acceptable</option>
+                                        <option value="2">2 - Slow</option>
+                                        <option value="1">1 - Very slow</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    Overall experience
+                                    <select name="overall_satisfaction" required>
+                                        <option value="">Select</option>
+                                        <option value="5">5 - Excellent</option>
+                                        <option value="4">4 - Good</option>
+                                        <option value="3">3 - OK</option>
+                                        <option value="2">2 - Poor</option>
+                                        <option value="1">1 - Very poor</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    Issue resolved?
+                                    <select name="issue_resolved" required>
+                                        <option value="">Select</option>
+                                        <option value="1">Yes</option>
+                                        <option value="0">No</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <label>
+                                Additional comments (optional)
+                                <textarea name="comments" rows="3" maxlength="1000" placeholder="Share anything else..."></textarea>
+                            </label>
+                            <div class="cmn-livechat-feedback__actions">
+                                <button class="cmn-livechat-primary" type="submit">Submit feedback</button>
+                                <div class="cmn-livechat-feedback__msg" data-cmn-livechat-feedback-msg aria-live="polite"></div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+        </div>
+        <?php
+    }
+
     public function add_portal_body_class($classes) {
+        $portal_view = '';
+        if (isset($_GET['view'])) {
+            $portal_view = sanitize_key((string) wp_unslash($_GET['view']));
+        }
+        $is_register_portal_view = $this->is_portal_page()
+            && !is_user_logged_in()
+            && in_array($portal_view, ['register-school', 'register-candidate'], true);
+        $is_register_surface = $this->is_registration_page() || $is_register_portal_view;
+
         if ($this->is_portal_page()) {
             $classes[] = 'cmn-portal-page';
         }
         if ($this->is_portal_page() && !is_user_logged_in()) {
-            $view = isset($_GET['view']) ? sanitize_text_field($_GET['view']) : '';
+            $view = isset($_GET['view']) ? sanitize_text_field((string) wp_unslash($_GET['view'])) : '';
             if (in_array($view, ['forgot-password', 'reset-password', 'set-password', 'candidate-verify'], true)) {
                 $classes[] = 'cmn-portal-auth';
                 $classes[] = 'cmn-portal-bg';
             }
         }
-        if ($this->is_registration_page()) {
+        if ($is_register_surface) {
             $classes[] = 'cmn-portal-bg';
+            $classes[] = 'cmn-register-view';
         }
-        if ($this->is_login_page() || ($this->is_portal_page() && !is_user_logged_in())) {
+        if ($this->is_login_page() || ($this->is_portal_page() && !is_user_logged_in()) || $is_register_surface) {
             $classes[] = 'cmn-portal-scroll';
         }
         if ($this->is_portal_page() && is_user_logged_in()) {
@@ -4814,6 +6667,11 @@ final class CMN_One_Plugin {
         if ($last_feedback_scan < 1 || ($now_ts - $last_feedback_scan) >= 300) {
             $this->maybe_request_feedback_for_past_bookings();
             set_transient('cmn_feedback_scan_ts', $now_ts, 300);
+        }
+        $last_support_feedback_expiry_scan = (int) get_transient('cmn_support_feedback_request_expiry_scan_ts');
+        if ($last_support_feedback_expiry_scan < 1 || ($now_ts - $last_support_feedback_expiry_scan) >= 300) {
+            $this->maybe_expire_support_feedback_requests();
+            set_transient('cmn_support_feedback_request_expiry_scan_ts', $now_ts, 300);
         }
     }
 
@@ -6028,95 +7886,230 @@ final class CMN_One_Plugin {
         $user = wp_get_current_user();
         $user_id = $user ? (int) $user->ID : 0;
         $is_admin = $this->is_admin_user($user_id);
-        $is_super_admin = $this->is_super_admin_user();
         $can_manage_staff = $this->can_manage_staff_users($user_id);
+        $can_manage_automation = $this->can_manage_automation($user_id);
         $can_access_finance_nav = ($is_admin || $this->is_staff_role($user_id));
+        $can_access_email_centre = $can_access_finance_nav;
         $show_training_simulator = ($is_admin && $this->is_training_simulator_enabled());
+        $automation_console_url = admin_url('admin.php?page=cmn-automation');
 
-        $dashboard_link = ['key' => 'dashboard', 'label' => 'Dashboard', 'url' => $portal_url];
+        $current_view = sanitize_key((string) ($_GET['view'] ?? ''));
+        $current_marketing_tab = sanitize_key((string) ($_GET['marketing_tab'] ?? ''));
+        if ($current_marketing_tab === '') {
+            $current_marketing_tab = 'campaigns';
+        }
+        $current_email_centre_tab = sanitize_key((string) ($_GET['cmn_email_centre_tab'] ?? 'templates'));
+
+        $dashboard_url = add_query_arg(['view' => false, 'cmn_tab' => false], $portal_url);
+        $automation_tab_url = static function ($tab) use ($automation_console_url) {
+            return add_query_arg(['cmn_automation_tab' => sanitize_key((string) $tab)], $automation_console_url);
+        };
+
         $groups = [
-            'talent' => [
-                'label' => 'Talent',
-                'items' => [
-                    ['key' => 'candidates', 'label' => 'Candidates', 'url' => add_query_arg(['view' => 'candidates'], $portal_url)],
-                    ['key' => 'cv_converter', 'label' => 'CV Converter', 'url' => add_query_arg(['view' => 'cv_converter'], $portal_url)],
-                    ['key' => 'compliance_review', 'label' => 'Compliance Review', 'url' => add_query_arg(['view' => 'compliance-review'], $portal_url)],
-                ],
-            ],
-            'sales' => [
-                'label' => 'Sales',
-                'items' => [
-                    ['key' => 'sales_schools', 'label' => 'Schools', 'url' => add_query_arg(['view' => 'schools', 'cmn_bucket' => 'sales', 'cmn_status' => 'lead'], $portal_url)],
-                    ['key' => 'school_requests', 'label' => 'School Requests', 'url' => add_query_arg(['view' => 'school-requests'], $portal_url)],
-                    ['key' => 'sales_contacts', 'label' => 'Contacts', 'url' => add_query_arg(['view' => 'contacts', 'cmn_bucket' => 'sales'], $portal_url)],
-                ],
-            ],
             'clients' => [
                 'label' => 'Clients',
+                'icon' => 'clients',
                 'items' => [
-                    ['key' => 'client_schools', 'label' => 'Schools', 'url' => add_query_arg(['view' => 'schools', 'cmn_bucket' => 'clients', 'cmn_status' => 'client'], $portal_url)],
-                    ['key' => 'client_contacts', 'label' => 'Contacts', 'url' => add_query_arg(['view' => 'contacts', 'cmn_bucket' => 'clients'], $portal_url)],
-                    ['key' => 'requests', 'label' => 'Requests', 'url' => add_query_arg(['view' => 'requests'], $portal_url)],
-                    ['key' => 'bookings', 'label' => 'Bookings', 'url' => add_query_arg(['view' => 'bookings'], $portal_url)],
-                    ['key' => 'rate_guardrails', 'label' => 'Rate Guardrails', 'url' => add_query_arg(['view' => 'rate-guardrails'], $portal_url)],
+                    [
+                        'key' => 'all_schools',
+                        'label' => 'All Schools',
+                        'icon' => 'schools',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
+                        'active_keys' => ['all_schools'],
+                        'active_when' => ['view' => 'schools', 'query' => ['cmn_status' => 'all']],
+                    ],
+                    [
+                        'key' => 'school_requests',
+                        'label' => 'School Requests',
+                        'icon' => 'school_requests',
+                        'url' => add_query_arg(['view' => 'school-requests'], $portal_url),
+                    ],
+                    [
+                        'key' => 'active_bookings',
+                        'label' => 'Active Bookings',
+                        'icon' => 'active_bookings',
+                        'url' => add_query_arg(['view' => 'bookings'], $portal_url),
+                        'active_keys' => ['bookings', 'requests'],
+                    ],
+                    [
+                        'key' => 'rate_guardrails',
+                        'label' => 'Rate Guardrails',
+                        'icon' => 'guardrails',
+                        'url' => add_query_arg(['view' => 'rate-guardrails'], $portal_url),
+                    ],
                 ],
             ],
-            'growth' => [
-                'label' => 'Growth',
+            'pipeline' => [
+                'label' => 'Pipeline',
+                'icon' => 'pipeline',
                 'items' => [
-                    ['key' => 'marketing', 'label' => 'Marketing', 'url' => add_query_arg(['view' => 'marketing'], $portal_url)],
+                    [
+                        'key' => 'pipeline_leads',
+                        'label' => 'Leads',
+                        'icon' => 'leads',
+                        'url' => add_query_arg(['view' => 'leads'], $portal_url),
+                        'active_keys' => ['pipeline_leads'],
+                    ],
+                    [
+                        'key' => 'pipeline_contacts',
+                        'label' => 'Contacts (unconverted)',
+                        'icon' => 'contacts',
+                        'url' => add_query_arg(['view' => 'contacts', 'cmn_bucket' => 'sales'], $portal_url),
+                        'active_keys' => ['pipeline_contacts', 'sales_contacts', 'client_contacts'],
+                    ],
+                    [
+                        'key' => 'referral_activity',
+                        'label' => 'Referral activity',
+                        'icon' => 'referrals',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_bucket' => 'sales', 'cmn_status' => 'lead'], $portal_url),
+                        'active_when' => ['view' => 'schools', 'query' => ['cmn_bucket' => 'sales']],
+                    ],
+                    [
+                        'key' => 'conversion_tracking',
+                        'label' => 'Conversion tracking',
+                        'icon' => 'conversion',
+                        'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'conversion_tracking'], $portal_url),
+                        'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'conversion_tracking']],
+                    ],
                 ],
             ],
-            'tools' => [
-                'label' => 'Tools',
-                'items' => [
-                    ['key' => 'data_integrity', 'label' => 'Data Integrity Auditor', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url)],
-                ],
+            'commercial' => [
+                'label' => 'Commercial',
+                'icon' => 'commercial',
+                'items' => $can_access_finance_nav ? [
+                    [
+                        'key' => 'pricing_logic',
+                        'label' => 'Pricing logic',
+                        'icon' => 'pricing',
+                        'url' => add_query_arg(['view' => 'rate-guardrails'], $portal_url),
+                        'active_keys' => ['rate_guardrails'],
+                    ],
+                    [
+                        'key' => 'margin_overview',
+                        'label' => 'Margin overview',
+                        'icon' => 'margin',
+                        'url' => add_query_arg(['view' => 'finance-overview', 'cmn_finance_focus' => 'margin'], $portal_url),
+                        'active_keys' => ['finance_overview'],
+                    ],
+                    ['key' => 'staff_payroll', 'label' => 'Payroll', 'icon' => 'payroll', 'url' => add_query_arg(['cmn_tab' => 'staff_payroll', 'view' => false], $portal_url)],
+                    ['key' => 'invoicing', 'label' => 'Invoicing', 'icon' => 'invoicing', 'url' => add_query_arg(['view' => 'invoicing'], $portal_url)],
+                    ['key' => 'partner_credit_ledger', 'label' => 'Credit ledger', 'icon' => 'ledger', 'url' => add_query_arg(['view' => 'partner-credit-ledger'], $portal_url)],
+                    ['key' => 'partner_programme', 'label' => 'Partner programme', 'icon' => 'partner_programme', 'url' => add_query_arg(['view' => 'partner-programme'], $portal_url)],
+                    ['key' => 'candidate_rewards', 'label' => 'Candidate rewards logic', 'icon' => 'rewards', 'url' => add_query_arg(['view' => 'candidate-rewards'], $portal_url)],
+                ] : [],
             ],
             'operations' => [
                 'label' => 'Operations',
+                'icon' => 'operations',
                 'items' => array_values(array_filter([
-                    ['key' => 'support', 'label' => 'Support', 'url' => add_query_arg(['view' => 'support'], $portal_url)],
-                    ['key' => 'feedback_insights', 'label' => 'Feedback Insights', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url)],
-                    ['key' => 'staff_lounge', 'label' => 'Staff Lounge', 'url' => add_query_arg(['view' => 'staff-lounge'], $portal_url)],
-                    $is_admin ? ['key' => 'war_room', 'label' => 'War Room', 'url' => add_query_arg(['view' => 'war-room'], $portal_url)] : null,
-                    $is_admin ? ['key' => 'broadcast', 'label' => 'Emergency Broadcast', 'url' => add_query_arg(['view' => 'broadcast'], $portal_url)] : null,
+                    ['key' => 'candidate_management', 'label' => 'Candidate management', 'icon' => 'candidates', 'url' => add_query_arg(['view' => 'candidates'], $portal_url), 'active_keys' => ['candidates']],
+                    ['key' => 'compliance_review', 'label' => 'Compliance Review', 'icon' => 'compliance', 'url' => add_query_arg(['view' => 'compliance-review'], $portal_url)],
+                    $is_admin ? ['key' => 'war_room', 'label' => 'Escalations', 'icon' => 'escalations', 'url' => add_query_arg(['view' => 'war-room'], $portal_url)] : null,
+                    ['key' => 'support', 'label' => 'Support', 'icon' => 'support', 'url' => add_query_arg(['view' => 'support'], $portal_url)],
+                    $is_admin ? ['key' => 'broadcast', 'label' => 'Emergency Broadcast', 'icon' => 'broadcast', 'url' => add_query_arg(['view' => 'broadcast'], $portal_url)] : null,
+                    ['key' => 'feedback_insights', 'label' => 'Feedback Insights', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url)],
                 ])),
             ],
-            'finance' => [
-                'label' => 'Finance',
-                'items' => $can_access_finance_nav
-                    ? [
-                        ['key' => 'finance_overview', 'label' => 'Finance Overview', 'url' => add_query_arg(['view' => 'finance-overview'], $portal_url)],
-                        ['key' => 'staff_payroll', 'label' => 'Payroll', 'url' => add_query_arg(['cmn_tab' => 'staff_payroll', 'view' => false], $portal_url), 'icon' => 'payroll'],
-                        ['key' => 'invoicing', 'label' => 'Invoicing', 'url' => add_query_arg(['view' => 'invoicing'], $portal_url)],
-                        ['key' => 'partner_credit_ledger', 'label' => 'Partner Credit Ledger', 'url' => add_query_arg(['view' => 'partner-credit-ledger'], $portal_url)],
-                        ['key' => 'school_partner_admin', 'label' => 'School Partner Admin', 'url' => add_query_arg(['view' => 'school-partner-admin'], $portal_url)],
-                        ['key' => 'partner_programme', 'label' => 'Partner Programme', 'url' => add_query_arg(['view' => 'partner-programme'], $portal_url)],
-                        ['key' => 'candidate_rewards', 'label' => 'Candidate Rewards', 'url' => add_query_arg(['view' => 'candidate-rewards'], $portal_url)],
-                    ]
-                    : [],
+            'automation' => [
+                'label' => 'Automation',
+                'icon' => 'automation',
+                'items' => $can_manage_automation ? [
+                    ['key' => 'automation_rule_builder', 'label' => 'Rule builder', 'icon' => 'rule_builder', 'url' => $automation_tab_url('rules')],
+                    ['key' => 'automation_rule_performance', 'label' => 'Rule performance', 'icon' => 'rule_performance', 'url' => $automation_tab_url('performance')],
+                    ['key' => 'automation_trigger_logs', 'label' => 'Trigger logs', 'icon' => 'trigger_logs', 'url' => $automation_tab_url('trigger_logs')],
+                    ['key' => 'automation_failed_actions', 'label' => 'Failed actions', 'icon' => 'failed_actions', 'url' => $automation_tab_url('failed_actions')],
+                    ['key' => 'automation_scheduled_actions', 'label' => 'Scheduled actions', 'icon' => 'scheduled_actions', 'url' => $automation_tab_url('scheduled_actions')],
+                    ['key' => 'automation_broadcast_logic', 'label' => 'Broadcast logic', 'icon' => 'broadcast_logic', 'url' => $automation_tab_url('broadcast_logic')],
+                ] : [],
             ],
-            'admin' => [
-                'label' => 'Admin',
-                'admin_only' => true,
+            'intelligence' => [
+                'label' => 'Intelligence',
+                'icon' => 'intelligence',
+                'items' => $is_admin ? [
+                    ['key' => 'intel_revenue_trends', 'label' => 'Revenue trends', 'icon' => 'trend_revenue', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'revenue_trends'], $portal_url), 'active_keys' => ['analytics'], 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'revenue_trends']]],
+                    ['key' => 'intel_margin_trends', 'label' => 'Margin trends', 'icon' => 'trend_margin', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'margin_trends'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'margin_trends']]],
+                    ['key' => 'intel_booking_trends', 'label' => 'Booking trends', 'icon' => 'trend_bookings', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'booking_trends'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'booking_trends']]],
+                    ['key' => 'intel_region_heatmaps', 'label' => 'Region heatmaps', 'icon' => 'heatmap', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'region_heatmaps'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'region_heatmaps']]],
+                    ['key' => 'intel_role_distribution', 'label' => 'Role distribution', 'icon' => 'role_distribution', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'role_distribution'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'role_distribution']]],
+                    ['key' => 'intel_confirmation_times', 'label' => 'Confirmation times', 'icon' => 'confirmation_times', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'confirmation_times'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'confirmation_times']]],
+                    ['key' => 'intel_completion_rates', 'label' => 'Completion rates', 'icon' => 'completion_rates', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'completion_rates'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'completion_rates']]],
+                    ['key' => 'intel_forecast_modelling', 'label' => 'Forecast modelling', 'icon' => 'forecast', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'forecast_modelling'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'forecast_modelling']]],
+                ] : [],
+            ],
+            'system' => [
+                'label' => 'System',
+                'icon' => 'system',
                 'items' => array_values(array_filter([
-                    ['key' => 'analytics', 'label' => 'Analytics', 'url' => add_query_arg(['view' => 'analytics'], $portal_url)],
-                    ['key' => 'system_health', 'label' => 'System Health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url)],
-                    ['key' => 'audit', 'label' => 'Audit Log', 'url' => add_query_arg(['view' => 'audit'], $portal_url)],
-                    $can_manage_staff ? ['key' => 'staff', 'label' => 'Staff', 'url' => add_query_arg(['view' => 'staff'], $portal_url)] : null,
-                    ['key' => 'settings', 'label' => 'Settings', 'url' => add_query_arg(['view' => 'settings'], $portal_url)],
-                    $show_training_simulator ? ['key' => 'training_simulator', 'label' => 'Training Simulator', 'url' => $this->get_training_console_url()] : null,
-                    ['key' => 'wordpress_dashboard', 'label' => 'WordPress Dashboard', 'url' => $wordpress_dashboard_url],
+                    $is_admin ? ['key' => 'audit', 'label' => 'Audit logs', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
+                    ['key' => 'data_integrity', 'label' => 'Data Integrity Auditor', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url)],
+                    $can_access_email_centre ? ['key' => 'email_centre', 'label' => 'Email centre', 'icon' => 'email_centre', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_url), 'active_when' => ['view' => 'email-centre']] : null,
+                    $can_access_email_centre ? ['key' => 'email_centre_templates', 'label' => 'Templates', 'icon' => 'templates', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'templates']] : null,
+                    $can_access_email_centre ? ['key' => 'email_centre_senders', 'label' => 'Senders', 'icon' => 'senders', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'senders'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'senders']] : null,
+                    $can_access_email_centre ? ['key' => 'email_centre_logs', 'label' => 'Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'logs'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'logs']] : null,
+                    $is_admin ? ['key' => 'system_health', 'label' => 'System health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url)] : null,
+                    $is_admin ? ['key' => 'system_logs', 'label' => 'Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
+                ])),
+            ],
+            'configuration' => [
+                'label' => 'Configuration',
+                'icon' => 'configuration',
+                'items' => array_values(array_filter([
+                    ($is_admin && $can_manage_staff) ? ['key' => 'staff', 'label' => 'Staff', 'icon' => 'staff', 'url' => add_query_arg(['view' => 'staff'], $portal_url)] : null,
+                    $is_admin ? ['key' => 'permissions', 'label' => 'Permissions', 'icon' => 'permissions', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => 'permissions'], $portal_url), 'active_when' => ['view' => 'settings', 'query' => ['cmn_settings_tab' => 'permissions']]] : null,
+                    $is_admin ? ['key' => 'settings', 'label' => 'Settings', 'icon' => 'settings', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => false], $portal_url)] : null,
+                    ($is_admin && $show_training_simulator) ? ['key' => 'training_simulator', 'label' => 'Training Simulator', 'icon' => 'training', 'url' => $this->get_training_console_url()] : null,
+                    $is_admin ? ['key' => 'wordpress_dashboard', 'label' => 'WordPress access', 'icon' => 'wordpress', 'url' => $wordpress_dashboard_url] : null,
                 ])),
             ],
         ];
 
-        if (!$is_admin && isset($groups['admin'])) {
-            unset($groups['admin']);
+        foreach ($groups as $group_key => $group_config) {
+            if (empty($group_config['items'])) {
+                unset($groups[$group_key]);
+            }
         }
 
         $active = $active === 'compliance-review' ? 'compliance_review' : $active;
+        $is_dashboard_active = ($active === 'dashboard' || $current_view === '' || $current_view === 'dashboard');
+        $is_staff_nav_item_active = function ($item) use ($active, $current_view, $current_marketing_tab, $current_email_centre_tab) {
+            if (!is_array($item) || !empty($item['heading'])) {
+                return false;
+            }
+            $item_key = (string) ($item['key'] ?? '');
+            if ($item_key !== '' && $item_key === $active) {
+                return true;
+            }
+            $active_keys = isset($item['active_keys']) && is_array($item['active_keys']) ? $item['active_keys'] : [];
+            if ($item_key !== '' && $active_keys && in_array($active, $active_keys, true)) {
+                return true;
+            }
+            $active_when = isset($item['active_when']) && is_array($item['active_when']) ? $item['active_when'] : [];
+            if (!$active_when) {
+                return false;
+            }
+            if (isset($active_when['view']) && sanitize_key((string) $active_when['view']) !== $current_view) {
+                return false;
+            }
+            if (isset($active_when['marketing_tab']) && sanitize_key((string) $active_when['marketing_tab']) !== $current_marketing_tab) {
+                return false;
+            }
+            if (isset($active_when['email_tab']) && sanitize_key((string) $active_when['email_tab']) !== $current_email_centre_tab) {
+                return false;
+            }
+            if (isset($active_when['query']) && is_array($active_when['query'])) {
+                foreach ($active_when['query'] as $query_key => $query_value) {
+                    $query_key = sanitize_key((string) $query_key);
+                    if ($query_key === '') {
+                        continue;
+                    }
+                    $actual_query_value = isset($_GET[$query_key]) ? sanitize_text_field(wp_unslash((string) $_GET[$query_key])) : '';
+                    if ((string) $query_value !== $actual_query_value) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
         $stored_nav_state_raw = get_user_meta($user_id, 'cmn_staff_nav_state', true);
         $stored_nav_state = [];
         if (is_array($stored_nav_state_raw)) {
@@ -6131,12 +8124,92 @@ final class CMN_One_Plugin {
             $stored_nav_state_json = '{}';
         }
 
+        $render_staff_nav_icon = static function ($icon_key) {
+            $icon_key = sanitize_key((string) $icon_key);
+            $icons = [
+                'panel' => '<rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path>',
+                'dashboard' => '<rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect>',
+                'clients' => '<rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 5v14"></path><path d="M12 9h5"></path><path d="M12 13h5"></path>',
+                'schools' => '<path d="M3 21h18"></path><path d="M6 21V9l6-4 6 4v12"></path><path d="M10 14h4"></path>',
+                'control' => '<path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"></path>',
+                'escalations' => '<path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.25 4.5l-6.9 12A1.7 1.7 0 0 0 4.8 19h14.4a1.7 1.7 0 0 0 1.45-2.5l-6.9-12a1.7 1.7 0 0 0-3.5 0z"></path>',
+                'support' => '<circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="2"></circle><path d="M4.9 9h2.2"></path><path d="M16.9 9h2.2"></path><path d="M4.9 15h2.2"></path><path d="M16.9 15h2.2"></path>',
+                'broadcast' => '<path d="M3 11v2"></path><path d="M6 9v6"></path><path d="M6 10l10-4v12l-10-4z"></path><path d="M19 8c1.2 1 2 2.5 2 4s-.8 3-2 4"></path>',
+                'feedback' => '<path d="M5 21V10"></path><path d="M12 21V5"></path><path d="M19 21v-8"></path>',
+                'delivery' => '<rect x="3" y="7" width="18" height="14" rx="2"></rect><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>',
+                'operations' => '<path d="M4 7h16"></path><path d="M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7"></path><path d="M9 12h6"></path>',
+                'candidates' => '<path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path><circle cx="9.5" cy="7.5" r="3"></circle><path d="M20 21v-2.2a3.3 3.3 0 0 0-2.5-3.2"></path><path d="M14.8 4.8a3 3 0 0 1 0 5.4"></path>',
+                'cv_converter' => '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path><circle cx="10" cy="14" r="2.5"></circle><path d="M12 16l2 2"></path>',
+                'compliance' => '<path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"></path><path d="M9 12l2 2 4-4"></path>',
+                'school_requests' => '<path d="M4 12h16"></path><path d="M6 6h12l2 6H4z"></path><path d="M6 12v6h12v-6"></path>',
+                'bookings' => '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path>',
+                'active_bookings' => '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path><path d="M8 14l2.5 2.5L16 11"></path>',
+                'pipeline' => '<path d="M3 7h6v10H3z"></path><path d="M9 10h6v7H9z"></path><path d="M15 13h6v4h-6z"></path>',
+                'leads' => '<path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path><circle cx="9.5" cy="7.5" r="3"></circle><path d="M17 8h4"></path><path d="M19 6v4"></path>',
+                'contacts' => '<path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path>',
+                'conversion' => '<path d="M4 18h4v-4"></path><path d="M20 6h-4v4"></path><path d="M8 14 20 6"></path><path d="M4 18l12-8"></path>',
+                'guardrails' => '<path d="M4 12a8 8 0 0 1 16 0"></path><path d="M12 12l4-3"></path><circle cx="12" cy="12" r="1"></circle>',
+                'commercial' => '<path d="M3 7h18"></path><path d="M5 7v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7"></path><path d="M8 11h8"></path><path d="M8 15h5"></path>',
+                'pricing' => '<path d="M5 5h14"></path><path d="M5 12h9"></path><path d="M5 19h14"></path><circle cx="16.5" cy="12" r="2.5"></circle>',
+                'margin' => '<path d="M3 20h18"></path><path d="M6 16V8"></path><path d="M12 16V4"></path><path d="M18 16v-6"></path>',
+                'finance' => '<path d="M3 7h18"></path><path d="M5 7v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7"></path><path d="M8 11h8"></path><path d="M8 15h5"></path>',
+                'payroll' => '<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18"></path><path d="M7 15h4"></path><path d="M14 15h3"></path>',
+                'invoicing' => '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path><path d="M8 13h8"></path><path d="M8 17h6"></path>',
+                'ledger' => '<path d="M4 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4z"></path><path d="M4 4v16"></path><path d="M8 8h7"></path><path d="M8 12h7"></path>',
+                'partner_programme' => '<path d="M8 12l4-4 4 4"></path><path d="M6 14l6 6 6-6"></path>',
+                'rewards' => '<circle cx="12" cy="8" r="4"></circle><path d="M8.5 12.5 7 21l5-3 5 3-1.5-8.5"></path>',
+                'growth' => '<path d="M3 17l6-6 4 4 8-8"></path><path d="M14 7h7v7"></path>',
+                'campaigns' => '<path d="M22 2L11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path>',
+                'saved_lists' => '<path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path>',
+                'referrals' => '<circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="M8.6 10.7 15.4 6.3"></path><path d="M8.6 13.3 15.4 17.7"></path>',
+                'automation' => '<path d="M4 12h3l2-4 4 8 2-4h5"></path><circle cx="12" cy="12" r="9"></circle>',
+                'rule_builder' => '<rect x="6" y="8" width="12" height="9" rx="2"></rect><path d="M9 8V5"></path><path d="M15 8V5"></path><path d="M10 12h4"></path>',
+                'rule_performance' => '<path d="M3 3v18h18"></path><path d="m7 15 3-3 3 2 4-5"></path>',
+                'trigger_logs' => '<path d="M6 4h12"></path><path d="M6 10h12"></path><path d="M6 16h12"></path><path d="M4 4h.01"></path><path d="M4 10h.01"></path><path d="M4 16h.01"></path>',
+                'failed_actions' => '<circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6"></path><path d="M15 9l-6 6"></path>',
+                'scheduled_actions' => '<circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l3 2"></path>',
+                'broadcast_logic' => '<path d="M3 11v2"></path><path d="M6 9v6"></path><path d="M6 10l10-4v12l-10-4z"></path><path d="M19 8c1.2 1 2 2.5 2 4s-.8 3-2 4"></path>',
+                'intelligence' => '<path d="M3 3v18h18"></path><path d="m7 15 4-4 3 3 5-6"></path>',
+                'trend_revenue' => '<path d="M3 3v18h18"></path><path d="m7 15 3-3 3 2 4-5"></path>',
+                'trend_margin' => '<path d="M3 3v18h18"></path><path d="m7 12 3-3 3 3 4-6"></path>',
+                'trend_bookings' => '<path d="M3 3v18h18"></path><path d="m7 16 3-5 3 2 4-4"></path>',
+                'heatmap' => '<path d="M4 6h16v12H4z"></path><path d="M9 6v12"></path><path d="M15 6v12"></path><path d="M4 10h16"></path><path d="M4 14h16"></path>',
+                'role_distribution' => '<path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path><circle cx="9.5" cy="7.5" r="3"></circle><circle cx="18" cy="8" r="2"></circle>',
+                'confirmation_times' => '<circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l3 2"></path>',
+                'completion_rates' => '<circle cx="12" cy="12" r="8"></circle><path d="M8 12l2.5 2.5L16 9"></path>',
+                'forecast' => '<path d="M3 3v18h18"></path><path d="m6 14 4-4 3 3 5-7"></path><path d="M14 6h4v4"></path>',
+                'system' => '<rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 9h6v6H9z"></path><path d="M9 1v2"></path><path d="M9 21v2"></path><path d="M15 1v2"></path><path d="M15 21v2"></path>',
+                'automation_rules' => '<rect x="6" y="8" width="12" height="9" rx="2"></rect><path d="M9 8V5"></path><path d="M15 8V5"></path><path d="M10 12h4"></path>',
+                'automation_health' => '<path d="M3 12h4l2-4 4 8 2-4h6"></path>',
+                'audit_logs' => '<rect x="5" y="4" width="14" height="18" rx="2"></rect><path d="M9 8h6"></path><path d="M9 12h6"></path><path d="M9 16h4"></path>',
+                'data_integrity' => '<ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"></path>',
+                'email_centre' => '<rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path>',
+                'templates' => '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path><path d="M8 13h8"></path><path d="M8 17h5"></path>',
+                'senders' => '<circle cx="12" cy="12" r="7"></circle><path d="M15.5 9.5a3.5 3.5 0 1 0 0 5.5H18"></path>',
+                'logs' => '<path d="M8 6h12"></path><path d="M8 12h12"></path><path d="M8 18h12"></path><path d="M4 6h.01"></path><path d="M4 12h.01"></path><path d="M4 18h.01"></path>',
+                'admin' => '<path d="M4 21h16"></path><path d="M6 21V7l6-4 6 4v14"></path><path d="M10 13h4"></path>',
+                'configuration' => '<path d="M4 21h16"></path><path d="M6 21V7l6-4 6 4v14"></path><path d="M10 13h4"></path>',
+                'permissions' => '<path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"></path><path d="M9 12h6"></path>',
+                'staff' => '<circle cx="12" cy="8" r="3.5"></circle><path d="M5 20a7 7 0 0 1 14 0"></path>',
+                'settings' => '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.1a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.1a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2h.1a1 1 0 0 0 .5-.9V4a2 2 0 1 1 4 0v.1a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1v.1a1 1 0 0 0 .9.5H20a2 2 0 1 1 0 4h-.1a1 1 0 0 0-.9.6z"></path>',
+                'analytics' => '<path d="M3 3v18h18"></path><path d="m7 15 4-4 3 3 5-6"></path>',
+                'system_health' => '<rect x="3" y="4" width="18" height="14" rx="2"></rect><path d="M8 20h8"></path><path d="M12 18v2"></path><path d="M7 11h3l2-3 2 6 1.5-3H19"></path>',
+                'training' => '<path d="M10 3h4"></path><path d="M9 3v3l-4 7a4 4 0 0 0 3.5 6h7a4 4 0 0 0 3.5-6l-4-7V3"></path><path d="M9 10h6"></path>',
+                'wordpress' => '<circle cx="12" cy="12" r="9"></circle><path d="M8.3 8.6c.9 1.8 1.8 3.8 2.7 5.8"></path><path d="M15.7 8.6c-.9 1.8-1.8 3.8-2.7 5.8"></path><path d="M6.8 12h10.4"></path>',
+            ];
+            $icon_markup = $icons[$icon_key] ?? '<circle cx="12" cy="12" r="8"></circle>';
+            return '<span class="cmn-school-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $icon_markup . '</svg></span>';
+        };
+
         ob_start();
         ?>
         <section class="cmn-portal cmn-portal-light">
             <div class="cmn-portal-topbar">
-                <div class="cmn-topbar-left"><?php echo $this->render_portal_branding(); ?></div>
+                <div class="cmn-topbar-left">
+                    <a class="cmn-topbar-brand-link" href="<?php echo esc_url($dashboard_url); ?>"><?php echo $this->render_portal_branding(); ?></a>
+                </div>
                 <div class="cmn-topbar-right">
+                    <?php echo $this->render_topbar_livechat_button(); ?>
                     <?php echo $this->render_notifications_bell($user ? $user->ID : 0); ?>
                     <span>Welcome, <?php echo esc_html($user ? $user->display_name : 'Admin'); ?></span>
                     <a class="cmn-topbar-logout" href="<?php echo esc_url(wp_logout_url($portal_url)); ?>">Logout</a>
@@ -6144,8 +8217,17 @@ final class CMN_One_Plugin {
             </div>
             <div class="cmn-school-shell cmn-staff-shell">
                 <aside class="cmn-school-nav cmn-staff-nav" data-staff-nav data-user-id="<?php echo esc_attr((string) $user_id); ?>" data-nav-state="<?php echo esc_attr($stored_nav_state_json); ?>">
+                    <div class="cmn-staff-nav-header">
+                        <button type="button" class="cmn-staff-nav-minimize" data-staff-nav-minimize aria-pressed="false" data-tooltip="Minimise sidebar">
+                            <?php echo $render_staff_nav_icon('panel'); ?>
+                            <span class="cmn-school-nav-label">Minimise</span>
+                        </button>
+                    </div>
                     <nav class="cmn-school-nav-links cmn-staff-nav-links">
-                        <a class="cmn-school-nav-link<?php echo $active === $dashboard_link['key'] ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_link['url']); ?>"><?php echo esc_html($dashboard_link['label']); ?></a>
+                        <a class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--dashboard-root<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="Dashboard">
+                            <?php echo $render_staff_nav_icon('dashboard'); ?>
+                            <span class="cmn-school-nav-label">Dashboard</span>
+                        </a>
                         <?php foreach ($groups as $group_key => $group) : ?>
                             <?php
                             $items = (array) ($group['items'] ?? []);
@@ -6154,15 +8236,20 @@ final class CMN_One_Plugin {
                             }
                             $is_group_active = false;
                             foreach ($items as $group_item) {
-                                if (($group_item['key'] ?? '') === $active) {
+                                if ($is_staff_nav_item_active($group_item)) {
                                     $is_group_active = true;
                                     break;
                                 }
                             }
+                            $group_label = (string) ($group['label'] ?? ucfirst($group_key));
+                            $group_icon = (string) ($group['icon'] ?? 'system');
                             ?>
-                            <section class="cmn-staff-nav-group is-open<?php echo $is_group_active ? ' is-active-group' : ''; ?>" data-staff-nav-group="<?php echo esc_attr($group_key); ?>">
-                                <button type="button" class="cmn-staff-nav-toggle" data-staff-nav-toggle="<?php echo esc_attr($group_key); ?>" aria-expanded="true">
-                                    <span><?php echo esc_html((string) ($group['label'] ?? ucfirst($group_key))); ?></span>
+                            <section class="cmn-staff-nav-group<?php echo $is_group_active ? ' is-open is-active-group' : ''; ?>" data-staff-nav-group="<?php echo esc_attr($group_key); ?>">
+                                <button type="button" class="cmn-staff-nav-toggle" data-staff-nav-toggle="<?php echo esc_attr($group_key); ?>" aria-expanded="<?php echo $is_group_active ? 'true' : 'false'; ?>" data-tooltip="<?php echo esc_attr($group_label); ?>">
+                                    <span class="cmn-staff-nav-toggle-main">
+                                        <?php echo $render_staff_nav_icon($group_icon); ?>
+                                        <span class="cmn-staff-nav-toggle-label"><?php echo esc_html($group_label); ?></span>
+                                    </span>
                                     <span class="cmn-staff-nav-caret" aria-hidden="true"></span>
                                 </button>
                                 <div class="cmn-staff-nav-group-body" data-staff-nav-body="<?php echo esc_attr($group_key); ?>">
@@ -6171,19 +8258,11 @@ final class CMN_One_Plugin {
                                         $group_item_key = (string) ($group_item['key'] ?? '');
                                         $group_item_label = (string) ($group_item['label'] ?? 'Item');
                                         $group_item_icon = sanitize_key((string) ($group_item['icon'] ?? ''));
-                                        $group_item_has_icon = $group_item_icon === 'payroll';
+                                        $group_item_is_submenu = !empty($group_item['submenu']);
+                                        $group_item_is_active = $is_staff_nav_item_active($group_item);
                                         ?>
-                                        <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $active === $group_item_key ? ' is-active' : ''; ?><?php echo $group_item_has_icon ? ' cmn-school-nav-link--with-icon' : ''; ?>" href="<?php echo esc_url((string) ($group_item['url'] ?? $portal_url)); ?>">
-                                            <?php if ($group_item_has_icon) : ?>
-                                                <span class="cmn-school-nav-icon" aria-hidden="true">
-                                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                                                        <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                                                        <path d="M3 10h18"></path>
-                                                        <path d="M7 15h4"></path>
-                                                        <path d="M14 15h3"></path>
-                                                    </svg>
-                                                </span>
-                                            <?php endif; ?>
+                                        <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $group_item_is_active ? ' is-active' : ''; ?><?php echo $group_item_is_submenu ? ' cmn-staff-nav-link--submenu' : ''; ?>" href="<?php echo esc_url((string) ($group_item['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr($group_item_label); ?>">
+                                            <?php echo $render_staff_nav_icon($group_item_icon); ?>
                                             <span class="cmn-school-nav-label"><?php echo esc_html($group_item_label); ?></span>
                                         </a>
                                     <?php endforeach; ?>
@@ -6197,6 +8276,7 @@ final class CMN_One_Plugin {
                 </main>
             </div>
         </section>
+        <div id="cmn-portal-overlay-root" aria-live="polite" aria-atomic="true"></div>
         <?php
         $output = ob_get_clean();
         if (strpos($output, 'id="cmn-tomorrow-availability-btn"') === false) {
@@ -10451,10 +12531,7 @@ final class CMN_One_Plugin {
             }
         }
         $legacy_paths = [
-            '/covermenow-one',
-            '/covermenow-one/',
             '/covermenowone-one',
-            '/covermenowone-one/',
         ];
         $query = wp_parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_QUERY);
         $query_args = [];
@@ -10467,13 +12544,33 @@ final class CMN_One_Plugin {
             '/cv_formatter/index.php',
             '/cv_formatter/app',
         ];
-        $is_legacy_portal = in_array($path, $legacy_paths, true);
+        $is_legacy_portal = in_array($normalized_path, $legacy_paths, true);
         $is_legacy_converter = in_array($normalized_path, $legacy_converter_paths, true);
         $is_converter_flag = isset($query_args['converter']) && (string) $query_args['converter'] === '1';
         $is_converter_root = ($normalized_path === '/cv-converter');
         $is_converter_runtime = !empty($query_args['candidate_id']) || !empty($query_args['portal_token']);
-        if (!$is_legacy_portal && !$is_legacy_converter && !$is_converter_flag && !($is_converter_root && !$is_converter_runtime)) {
+        $is_converter_request = $is_legacy_converter || $is_converter_flag || ($is_converter_root && !$is_converter_runtime);
+        if (!$is_legacy_portal && !$is_converter_request) {
             return;
+        }
+        if ($is_legacy_portal && !$is_converter_request) {
+            $portal_target = $this->get_portal_base_url();
+            if (!is_string($portal_target) || $portal_target === '') {
+                return;
+            }
+            $safe_query_args = [];
+            foreach ((array) $query_args as $arg_key => $arg_value) {
+                $safe_key = sanitize_key((string) $arg_key);
+                if ($safe_key === '' || is_array($arg_value)) {
+                    continue;
+                }
+                $safe_query_args[$safe_key] = sanitize_text_field((string) $arg_value);
+            }
+            if (!empty($safe_query_args)) {
+                $portal_target = add_query_arg($safe_query_args, $portal_target);
+            }
+            wp_safe_redirect($portal_target, 301);
+            exit;
         }
         $target_args = [];
         if (!empty($query_args['candidate_id'])) {
@@ -10523,16 +12620,27 @@ final class CMN_One_Plugin {
         if ($normalized_path !== '/portal') {
             return;
         }
-        if (get_page_by_path('portal', OBJECT, 'page')) {
-            return;
-        }
         $portal_page = $this->find_portal_page();
         if (!$portal_page instanceof WP_Post) {
+            return;
+        }
+        if ((int) get_queried_object_id() === (int) $portal_page->ID) {
             return;
         }
         $target = get_permalink($portal_page);
         if (!is_string($target) || $target === '') {
             return;
+        }
+        $target_args = [];
+        foreach ((array) $_GET as $arg_key => $arg_value) {
+            $safe_key = sanitize_key((string) $arg_key);
+            if ($safe_key === '' || is_array($arg_value)) {
+                continue;
+            }
+            $target_args[$safe_key] = sanitize_text_field((string) wp_unslash($arg_value));
+        }
+        if (!empty($target_args)) {
+            $target = add_query_arg($target_args, $target);
         }
         wp_safe_redirect($target, 301);
         exit;
@@ -10768,6 +12876,11 @@ final class CMN_One_Plugin {
     private function get_support_payroll_query_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_support_payroll_queries';
+    }
+
+    private function get_livechat_threads_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_livechat_threads';
     }
 
     private function get_staff_lounge_table() {
@@ -11596,6 +13709,801 @@ final class CMN_One_Plugin {
         return $ref;
     }
 
+    private function normalize_livechat_guest_type($guest_type) {
+        $guest_type = sanitize_key((string) $guest_type);
+        if (!in_array($guest_type, ['school', 'candidate', 'other'], true)) {
+            return 'other';
+        }
+        return $guest_type;
+    }
+
+    private function normalize_livechat_thread_status($status) {
+        $status = sanitize_key((string) $status);
+        if (!in_array($status, ['open', 'closed', 'expired'], true)) {
+            return 'open';
+        }
+        return $status;
+    }
+
+    private function build_livechat_thread_token() {
+        try {
+            return bin2hex(random_bytes(24));
+        } catch (Throwable $e) {
+            return wp_generate_password(48, false, false);
+        }
+    }
+
+    private function hash_livechat_thread_token($thread_token) {
+        $thread_token = trim((string) $thread_token);
+        if ($thread_token === '') {
+            return '';
+        }
+        return hash_hmac('sha256', $thread_token, (string) wp_salt('auth'));
+    }
+
+    private function get_livechat_thread_by_ticket_id($ticket_id) {
+        $ticket_id = max(0, (int) $ticket_id);
+        if ($ticket_id < 1) {
+            return [];
+        }
+        global $wpdb;
+        $table = $this->get_livechat_threads_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return [];
+        }
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE ticket_id = %d
+             LIMIT 1",
+            $ticket_id
+        ), ARRAY_A);
+        if (!is_array($row) || !$row) {
+            return [];
+        }
+        return [
+            'id' => max(0, (int) ($row['id'] ?? 0)),
+            'ticket_id' => max(0, (int) ($row['ticket_id'] ?? 0)),
+            'source_key' => sanitize_key((string) ($row['source_key'] ?? 'website_live_chat')),
+            'guest_name' => sanitize_text_field((string) ($row['guest_name'] ?? '')),
+            'guest_email' => sanitize_email((string) ($row['guest_email'] ?? '')),
+            'guest_type' => $this->normalize_livechat_guest_type((string) ($row['guest_type'] ?? 'other')),
+            'linked_user_id' => max(0, (int) ($row['linked_user_id'] ?? 0)),
+            'status' => $this->normalize_livechat_thread_status((string) ($row['status'] ?? 'open')),
+            'last_message_id' => max(0, (int) ($row['last_message_id'] ?? 0)),
+            'last_ip' => sanitize_text_field((string) ($row['last_ip'] ?? '')),
+            'created_at' => $this->normalize_invoice_datetime((string) ($row['created_at'] ?? '')),
+            'updated_at' => $this->normalize_invoice_datetime((string) ($row['updated_at'] ?? '')),
+            'expires_at' => $this->normalize_invoice_datetime((string) ($row['expires_at'] ?? '')),
+        ];
+    }
+
+    private function get_livechat_thread_by_token($thread_token) {
+        $token_hash = $this->hash_livechat_thread_token($thread_token);
+        if ($token_hash === '') {
+            return [];
+        }
+        global $wpdb;
+        $table = $this->get_livechat_threads_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return [];
+        }
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE thread_token_hash = %s
+             LIMIT 1",
+            $token_hash
+        ), ARRAY_A);
+        if (!is_array($row) || !$row) {
+            return [];
+        }
+        $thread = $this->get_livechat_thread_by_ticket_id((int) ($row['ticket_id'] ?? 0));
+        if (!$thread) {
+            return [];
+        }
+
+        $expires_at = $this->normalize_invoice_datetime((string) ($thread['expires_at'] ?? ''));
+        if ($expires_at !== '' && strtotime($expires_at) !== false && strtotime($expires_at) < current_time('timestamp')) {
+            $this->update_livechat_thread_status((int) ($thread['id'] ?? 0), 'expired');
+            $thread['status'] = 'expired';
+        }
+        return $thread;
+    }
+
+    private function update_livechat_thread_status($thread_id, $status = 'open') {
+        $thread_id = max(0, (int) $thread_id);
+        if ($thread_id < 1) {
+            return;
+        }
+        global $wpdb;
+        $table = $this->get_livechat_threads_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return;
+        }
+        $wpdb->update(
+            $table,
+            [
+                'status' => $this->normalize_livechat_thread_status($status),
+                'updated_at' => current_time('mysql'),
+            ],
+            ['id' => $thread_id],
+            ['%s', '%s'],
+            ['%d']
+        );
+    }
+
+    private function update_livechat_thread_activity($thread_id, $last_message_id = 0, $ip_address = '') {
+        $thread_id = max(0, (int) $thread_id);
+        if ($thread_id < 1) {
+            return;
+        }
+        global $wpdb;
+        $table = $this->get_livechat_threads_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return;
+        }
+        $update_data = [
+            'updated_at' => current_time('mysql'),
+        ];
+        $update_format = ['%s'];
+        $last_message_id = max(0, (int) $last_message_id);
+        if ($last_message_id > 0) {
+            $update_data['last_message_id'] = $last_message_id;
+            $update_format[] = '%d';
+        }
+        $ip_address = substr(sanitize_text_field((string) $ip_address), 0, 64);
+        if ($ip_address !== '') {
+            $update_data['last_ip'] = $ip_address;
+            $update_format[] = '%s';
+        }
+        $wpdb->update(
+            $table,
+            $update_data,
+            ['id' => $thread_id],
+            $update_format,
+            ['%d']
+        );
+    }
+
+    private function get_livechat_source_map_for_tickets($ticket_ids = []) {
+        $ticket_ids = array_values(array_unique(array_filter(array_map('intval', (array) $ticket_ids))));
+        if (!$ticket_ids) {
+            return [];
+        }
+        global $wpdb;
+        $table = $this->get_livechat_threads_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($ticket_ids), '%d'));
+        $rows = (array) $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT ticket_id, source_key, guest_name, guest_email, guest_type, linked_user_id, status
+                 FROM {$table}
+                 WHERE ticket_id IN ({$placeholders})",
+                $ticket_ids
+            ),
+            ARRAY_A
+        );
+        if (!is_array($rows) || !$rows) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($rows as $row) {
+            $ticket_id = max(0, (int) ($row['ticket_id'] ?? 0));
+            if ($ticket_id < 1) {
+                continue;
+            }
+            $source_key = sanitize_key((string) ($row['source_key'] ?? 'website_live_chat'));
+            $map[$ticket_id] = [
+                'source_key' => $source_key,
+                'source_label' => $source_key === 'website_live_chat' ? 'Website Live Chat' : ucfirst(str_replace('_', ' ', $source_key)),
+                'guest_name' => sanitize_text_field((string) ($row['guest_name'] ?? '')),
+                'guest_email' => sanitize_email((string) ($row['guest_email'] ?? '')),
+                'guest_type' => $this->normalize_livechat_guest_type((string) ($row['guest_type'] ?? 'other')),
+                'linked_user_id' => max(0, (int) ($row['linked_user_id'] ?? 0)),
+                'status' => $this->normalize_livechat_thread_status((string) ($row['status'] ?? 'open')),
+            ];
+        }
+        return $map;
+    }
+
+    private function get_livechat_rate_limit_key($scope, $identifier) {
+        $scope = sanitize_key((string) $scope);
+        $identifier = strtolower(trim((string) $identifier));
+        if ($scope === '' || $identifier === '') {
+            return '';
+        }
+        return 'cmn_livechat_rl_' . $scope . '_' . md5($identifier);
+    }
+
+    private function is_livechat_rate_limited($scope, $identifier, $max_events = 10, $window_seconds = 3600) {
+        $max_events = max(1, (int) $max_events);
+        $window_seconds = max(60, (int) $window_seconds);
+        $key = $this->get_livechat_rate_limit_key($scope, $identifier);
+        if ($key === '') {
+            return false;
+        }
+        $now = time();
+        $hits = get_transient($key);
+        $hits = is_array($hits) ? $hits : [];
+        $fresh = [];
+        foreach ($hits as $hit_ts) {
+            $hit_ts = (int) $hit_ts;
+            if ($hit_ts > 0 && ($now - $hit_ts) < $window_seconds) {
+                $fresh[] = $hit_ts;
+            }
+        }
+        if (count($fresh) >= $max_events) {
+            set_transient($key, $fresh, $window_seconds);
+            return true;
+        }
+        $fresh[] = $now;
+        set_transient($key, $fresh, $window_seconds);
+        return false;
+    }
+
+    private function get_livechat_messages_since($ticket_id, $last_message_id = 0, $limit = 120) {
+        $ticket_id = max(0, (int) $ticket_id);
+        $last_message_id = max(0, (int) $last_message_id);
+        $limit = max(1, min(250, (int) $limit));
+        if ($ticket_id < 1) {
+            return [];
+        }
+        global $wpdb;
+        $table = $this->get_support_message_table();
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT id, sender_user_id, sender_type, message, created_at
+             FROM {$table}
+             WHERE ticket_id = %d
+               AND id > %d
+             ORDER BY id ASC
+             LIMIT %d",
+            $ticket_id,
+            $last_message_id,
+            $limit
+        ), ARRAY_A);
+        return is_array($rows) ? $rows : [];
+    }
+
+    private function format_livechat_message_row($row, $thread = []) {
+        $row = is_array($row) ? $row : [];
+        $thread = is_array($thread) ? $thread : [];
+        $sender_type_raw = sanitize_key((string) ($row['sender_type'] ?? 'user'));
+        $sender_type = $sender_type_raw === 'admin' ? 'support' : 'visitor';
+        $sender_name = $sender_type === 'support'
+            ? 'Support'
+            : sanitize_text_field((string) ($thread['guest_name'] ?? 'You'));
+        if ($sender_name === '') {
+            $sender_name = $sender_type === 'support' ? 'Support' : 'You';
+        }
+        $created_at = $this->normalize_invoice_datetime((string) ($row['created_at'] ?? ''));
+        $created_label = $created_at !== '' && strtotime($created_at) !== false
+            ? date_i18n('j M Y g:ia', strtotime($created_at))
+            : '';
+        return [
+            'id' => max(0, (int) ($row['id'] ?? 0)),
+            'sender_type' => $sender_type,
+            'sender_name' => $sender_name,
+            'message' => (string) ($row['message'] ?? ''),
+            'created_at' => $created_at,
+            'created_at_label' => $created_label,
+        ];
+    }
+
+    private function build_livechat_messages_payload($thread, $last_message_id = 0, $limit = 120) {
+        $thread = is_array($thread) ? $thread : [];
+        $ticket_id = max(0, (int) ($thread['ticket_id'] ?? 0));
+        if ($ticket_id < 1) {
+            return [];
+        }
+        $rows = $this->get_livechat_messages_since($ticket_id, $last_message_id, $limit);
+        $messages = [];
+        foreach ($rows as $row) {
+            $messages[] = $this->format_livechat_message_row($row, $thread);
+        }
+        return $messages;
+    }
+
+    private function get_livechat_feedback_record($ticket_id, $thread = []) {
+        $ticket_id = max(0, (int) $ticket_id);
+        if ($ticket_id < 1) {
+            return null;
+        }
+
+        global $wpdb;
+        $table = $this->get_support_feedback_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return null;
+        }
+
+        $thread = is_array($thread) ? $thread : [];
+        $linked_user_id = max(0, (int) ($thread['linked_user_id'] ?? 0));
+        $row = null;
+        if ($linked_user_id > 0) {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT support_rating, response_time_rating, issue_resolved, overall_satisfaction, comments, created_at
+                 FROM {$table}
+                 WHERE ticket_id = %d
+                   AND user_id = %d
+                 LIMIT 1",
+                $ticket_id,
+                $linked_user_id
+            ), ARRAY_A);
+        } else {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT support_rating, response_time_rating, issue_resolved, overall_satisfaction, comments, created_at
+                 FROM {$table}
+                 WHERE ticket_id = %d
+                   AND user_id = 0
+                 LIMIT 1",
+                $ticket_id
+            ), ARRAY_A);
+        }
+
+        if (!is_array($row) || !$row) {
+            return null;
+        }
+
+        return [
+            'support_rating' => max(1, min(5, (int) ($row['support_rating'] ?? 0))),
+            'response_time_rating' => max(1, min(5, (int) ($row['response_time_rating'] ?? 0))),
+            'issue_resolved' => !empty($row['issue_resolved']) ? 1 : 0,
+            'overall_satisfaction' => max(1, min(5, (int) ($row['overall_satisfaction'] ?? 0))),
+            'comments' => sanitize_textarea_field((string) ($row['comments'] ?? '')),
+            'created_at' => $this->normalize_invoice_datetime((string) ($row['created_at'] ?? '')),
+        ];
+    }
+
+    /*
+     * Acceptance checks:
+     * - Live Chat button appears only on /contact (contact page gating).
+     * - Guest can start/send/poll without being logged in.
+     * - Website live chat creates support ticket and appears in staff Support list.
+     * - Staff replies are returned through live chat polling.
+     * - Rate limiting blocks spam for start/send.
+     * - Invalid or expired token returns authorization failure.
+     */
+    public function handle_livechat_start() {
+        if (!check_ajax_referer('cmn_livechat_public', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+
+        $name = sanitize_text_field((string) ($_POST['name'] ?? ''));
+        $email = sanitize_email((string) ($_POST['email'] ?? ''));
+        $guest_type = $this->normalize_livechat_guest_type((string) ($_POST['user_type'] ?? 'other'));
+        $message = sanitize_textarea_field((string) ($_POST['message'] ?? ''));
+        $name = trim($name);
+        $message = trim($message);
+        if ($message === '') {
+            wp_send_json_error(['message' => 'Please enter a message.'], 400);
+        }
+        if ((function_exists('mb_strlen') ? mb_strlen($message) : strlen($message)) > 1500) {
+            wp_send_json_error(['message' => 'Message must be 1500 characters or fewer.'], 400);
+        }
+
+        $ip_address = $this->get_request_ip_address();
+        if ($this->is_livechat_rate_limited('start_ip', $ip_address, 6, 3600)) {
+            wp_send_json_error(['message' => 'Too many chat requests. Please try again shortly.'], 429);
+        }
+
+        $linked_user_id = 0;
+        $role_type = 'guest';
+        $linked_user = null;
+        if (is_user_logged_in()) {
+            $current_user_id = (int) get_current_user_id();
+            if ($current_user_id > 0 && ($this->is_candidate_user($current_user_id) || $this->is_school_user($current_user_id) || $this->is_staff_user($current_user_id))) {
+                $linked_user_id = $current_user_id;
+                $role_type = $this->get_support_user_role_type($current_user_id);
+                $linked_user = get_user_by('id', $current_user_id);
+                if ($this->is_candidate_user($current_user_id)) {
+                    $guest_type = 'candidate';
+                } elseif ($this->is_school_user($current_user_id)) {
+                    $guest_type = 'school';
+                } else {
+                    $guest_type = 'other';
+                }
+            }
+        }
+
+        if ($linked_user instanceof WP_User) {
+            $linked_name = trim((string) $linked_user->display_name);
+            if ($linked_name === '') {
+                $linked_name = trim((string) get_user_meta($linked_user_id, 'first_name', true) . ' ' . (string) get_user_meta($linked_user_id, 'last_name', true));
+            }
+            if ($linked_name === '') {
+                $linked_name = (string) $linked_user->user_login;
+            }
+            $linked_email = sanitize_email((string) $linked_user->user_email);
+            if ($linked_name !== '') {
+                $name = sanitize_text_field($linked_name);
+            }
+            if ($linked_email !== '') {
+                $email = $linked_email;
+            }
+        }
+        if ($name === '' || strlen($name) < 2 || strlen($name) > 120) {
+            wp_send_json_error(['message' => 'Please enter your full name.'], 400);
+        }
+        if ($email === '' || !is_email($email)) {
+            wp_send_json_error(['message' => 'Please enter a valid email address.'], 400);
+        }
+        if ($this->is_livechat_rate_limited('start_email', strtolower($email), 4, 3600)) {
+            wp_send_json_error(['message' => 'Too many chat requests for this email. Please try again shortly.'], 429);
+        }
+
+        global $wpdb;
+        $ticket_table = $this->get_support_ticket_table();
+        $message_table = $this->get_support_message_table();
+        $livechat_table = $this->get_livechat_threads_table();
+        self::migrate_schema_v71_livechat_support_threads();
+
+        $ticket_ref = $this->generate_support_ticket_ref();
+        $guest_type_label = $guest_type === 'school' ? 'School' : ($guest_type === 'candidate' ? 'Candidate' : 'Other');
+        $subject = 'Website Live Chat - ' . $name . ' (' . $guest_type_label . ')';
+        $now = current_time('mysql');
+        $ticket_inserted = $wpdb->insert($ticket_table, [
+            'ticket_ref' => $ticket_ref,
+            'created_by_user_id' => $linked_user_id,
+            'user_role_type' => $role_type,
+            'subject' => $subject,
+            'category' => 'General Enquiry',
+            'queue_key' => 'general',
+            'assigned_to_user_id' => null,
+            'priority' => 'normal',
+            'status' => 'open',
+            'is_new_for_admin' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+            'closed_at' => null,
+        ], ['%s', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%d', '%s', '%s', '%s']);
+        if (!$ticket_inserted) {
+            wp_send_json_error(['message' => 'Unable to start chat.'], 500);
+        }
+        $ticket_id = (int) $wpdb->insert_id;
+
+        $message_inserted = $wpdb->insert($message_table, [
+            'ticket_id' => $ticket_id,
+            'sender_user_id' => $linked_user_id > 0 ? $linked_user_id : null,
+            'sender_type' => 'user',
+            'message' => $message,
+            'attachment_ids' => null,
+            'created_at' => $now,
+        ], ['%d', '%d', '%s', '%s', '%s', '%s']);
+        if (!$message_inserted) {
+            wp_send_json_error(['message' => 'Unable to start chat.'], 500);
+        }
+        $message_id = (int) $wpdb->insert_id;
+
+        $thread_token = $this->build_livechat_thread_token();
+        $thread_hash = $this->hash_livechat_thread_token($thread_token);
+        $expires_at = date('Y-m-d H:i:s', strtotime('+30 days', current_time('timestamp')));
+        $thread_inserted = $wpdb->insert($livechat_table, [
+            'ticket_id' => $ticket_id,
+            'thread_token_hash' => $thread_hash,
+            'source_key' => 'website_live_chat',
+            'guest_name' => $name,
+            'guest_email' => $email,
+            'guest_type' => $guest_type,
+            'linked_user_id' => $linked_user_id > 0 ? $linked_user_id : null,
+            'status' => 'open',
+            'last_message_id' => $message_id,
+            'last_ip' => $ip_address !== '' ? $ip_address : null,
+            'expires_at' => $expires_at,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], ['%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s']);
+        if (!$thread_inserted) {
+            wp_send_json_error(['message' => 'Unable to start chat.'], 500);
+        }
+
+        $this->notify_admins_support($ticket_id, $ticket_ref, $subject, $message);
+
+        $contact_url = home_url('/contact');
+        $confirmation_subject = 'We\'ve received your message - ' . $ticket_ref;
+        $confirmation_body = implode("\n", [
+            'Hi ' . $name . ',',
+            '',
+            'We have received your live chat message.',
+            'Reference: ' . $ticket_ref,
+            '',
+            'You can return to the Contact page to view replies in the live chat widget:',
+            $contact_url,
+        ]);
+        $this->send_support_email($email, $confirmation_subject, $confirmation_body, [
+            'type' => 'livechat_started',
+            'template_key' => 'website_livechat_received',
+            'recipient_role' => 'system',
+            'module' => 'support',
+            'related_entity_type' => 'support_ticket',
+            'related_entity_id' => $ticket_id,
+            'metadata' => [
+                'source' => 'website_live_chat',
+                'guest_type' => $guest_type,
+            ],
+        ]);
+
+        if (function_exists('cmn_audit_log_event')) {
+            cmn_audit_log_event([
+                'module' => 'support',
+                'entity_type' => 'ticket',
+                'entity_id' => $ticket_id,
+                'event_type' => 'livechat_started',
+                'actor_user_id' => $linked_user_id > 0 ? $linked_user_id : null,
+                'metadata' => [
+                    'ticket_id' => $ticket_id,
+                    'guest_email' => $email,
+                    'source' => 'website_live_chat',
+                ],
+            ]);
+        }
+
+        wp_send_json_success([
+            'thread_token' => $thread_token,
+            'ticket_id' => $ticket_id,
+            'ticket_ref' => $ticket_ref,
+            'status' => 'open',
+            'feedback_submitted' => 0,
+            'feedback' => null,
+            'messages' => [
+                $this->format_livechat_message_row([
+                    'id' => $message_id,
+                    'sender_type' => 'user',
+                    'message' => $message,
+                    'created_at' => $now,
+                ], [
+                    'guest_name' => $name,
+                ]),
+            ],
+        ]);
+    }
+
+    public function handle_livechat_send() {
+        if (!check_ajax_referer('cmn_livechat_public', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+
+        $thread_token = sanitize_text_field((string) ($_POST['thread_token'] ?? ''));
+        $message = sanitize_textarea_field((string) ($_POST['message'] ?? ''));
+        $message = trim($message);
+        if ($thread_token === '' || $message === '') {
+            wp_send_json_error(['message' => 'Message is required.'], 400);
+        }
+        if ((function_exists('mb_strlen') ? mb_strlen($message) : strlen($message)) > 1500) {
+            wp_send_json_error(['message' => 'Message must be 1500 characters or fewer.'], 400);
+        }
+
+        $ip_address = $this->get_request_ip_address();
+        if ($this->is_livechat_rate_limited('send_ip', $ip_address, 60, 3600)) {
+            wp_send_json_error(['message' => 'Rate limit reached. Please wait and try again.'], 429);
+        }
+        if ($this->is_livechat_rate_limited('send_token', $thread_token, 40, 3600)) {
+            wp_send_json_error(['message' => 'Rate limit reached. Please wait and try again.'], 429);
+        }
+
+        $thread = $this->get_livechat_thread_by_token($thread_token);
+        if (!$thread) {
+            wp_send_json_error(['message' => 'Not authorized.'], 403);
+        }
+        if ($this->normalize_livechat_thread_status((string) ($thread['status'] ?? 'open')) !== 'open') {
+            wp_send_json_error(['message' => 'This chat is closed.'], 403);
+        }
+
+        $ticket_id = max(0, (int) ($thread['ticket_id'] ?? 0));
+        $ticket = $this->get_support_ticket($ticket_id);
+        if (!$ticket) {
+            wp_send_json_error(['message' => 'Chat not found.'], 404);
+        }
+        if ($this->normalize_support_status((string) ($ticket['status'] ?? 'open')) === 'closed') {
+            $this->update_livechat_thread_status((int) ($thread['id'] ?? 0), 'closed');
+            wp_send_json_error(['message' => 'This chat is closed.'], 403);
+        }
+
+        global $wpdb;
+        $message_table = $this->get_support_message_table();
+        $ticket_table = $this->get_support_ticket_table();
+        $now = current_time('mysql');
+        $sender_user_id = max(0, (int) ($thread['linked_user_id'] ?? 0));
+        $inserted = $wpdb->insert($message_table, [
+            'ticket_id' => $ticket_id,
+            'sender_user_id' => $sender_user_id > 0 ? $sender_user_id : null,
+            'sender_type' => 'user',
+            'message' => $message,
+            'attachment_ids' => null,
+            'created_at' => $now,
+        ], ['%d', '%d', '%s', '%s', '%s', '%s']);
+        if (!$inserted) {
+            wp_send_json_error(['message' => 'Unable to send message.'], 500);
+        }
+        $message_id = (int) $wpdb->insert_id;
+        $wpdb->update($ticket_table, [
+            'status' => 'open',
+            'is_new_for_admin' => 1,
+            'updated_at' => $now,
+            'closed_at' => null,
+        ], ['id' => $ticket_id], ['%s', '%d', '%s', '%s'], ['%d']);
+        $this->update_livechat_thread_activity((int) ($thread['id'] ?? 0), $message_id, $ip_address);
+
+        $ticket_ref = sanitize_text_field((string) ($ticket['ticket_ref'] ?? ''));
+        $this->notify_admins_support_reply($ticket_id, $ticket_ref, $message, $sender_user_id);
+
+        if (function_exists('cmn_audit_log_event')) {
+            cmn_audit_log_event([
+                'module' => 'support',
+                'entity_type' => 'ticket',
+                'entity_id' => $ticket_id,
+                'event_type' => 'livechat_message_sent',
+                'actor_user_id' => $sender_user_id > 0 ? $sender_user_id : null,
+                'metadata' => [
+                    'ticket_id' => $ticket_id,
+                    'source' => 'website_live_chat',
+                ],
+            ]);
+        }
+
+        $last_message_id = max(0, (int) ($_POST['last_message_id'] ?? 0));
+        $messages = $this->build_livechat_messages_payload($thread, $last_message_id, 120);
+        wp_send_json_success([
+            'ticket_id' => $ticket_id,
+            'ticket_ref' => $ticket_ref,
+            'status' => 'open',
+            'messages' => $messages,
+            'last_message_id' => $messages ? max(array_map(function ($msg) { return (int) ($msg['id'] ?? 0); }, $messages)) : $last_message_id,
+        ]);
+    }
+
+    public function handle_livechat_poll() {
+        if (!check_ajax_referer('cmn_livechat_public', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+
+        $thread_token = sanitize_text_field((string) ($_POST['thread_token'] ?? ''));
+        if ($thread_token === '') {
+            wp_send_json_error(['message' => 'Not authorized.'], 403);
+        }
+
+        $thread = $this->get_livechat_thread_by_token($thread_token);
+        if (!$thread) {
+            wp_send_json_error(['message' => 'Not authorized.'], 403);
+        }
+
+        $ticket_id = max(0, (int) ($thread['ticket_id'] ?? 0));
+        $ticket = $this->get_support_ticket($ticket_id);
+        if (!$ticket) {
+            wp_send_json_error(['message' => 'Chat not found.'], 404);
+        }
+
+        $ticket_status = $this->normalize_support_status((string) ($ticket['status'] ?? 'open'));
+        if ($ticket_status === 'closed' && $this->normalize_livechat_thread_status((string) ($thread['status'] ?? 'open')) !== 'expired') {
+            $this->update_livechat_thread_status((int) ($thread['id'] ?? 0), 'closed');
+            $thread['status'] = 'closed';
+        }
+
+        $last_message_id = max(0, (int) ($_POST['last_message_id'] ?? 0));
+        $messages = $this->build_livechat_messages_payload($thread, $last_message_id, 120);
+        $feedback = $this->get_livechat_feedback_record($ticket_id, $thread);
+        $resolved_last = $last_message_id;
+        if ($messages) {
+            $resolved_last = max(array_map(function ($msg) {
+                return max(0, (int) ($msg['id'] ?? 0));
+            }, $messages));
+        }
+        $this->update_livechat_thread_activity((int) ($thread['id'] ?? 0), 0, $this->get_request_ip_address());
+
+        wp_send_json_success([
+            'ticket_id' => $ticket_id,
+            'ticket_ref' => sanitize_text_field((string) ($ticket['ticket_ref'] ?? '')),
+            'ticket_status' => $ticket_status,
+            'thread_status' => $this->normalize_livechat_thread_status((string) ($thread['status'] ?? 'open')),
+            'messages' => $messages,
+            'last_message_id' => $resolved_last,
+            'feedback_submitted' => $feedback ? 1 : 0,
+            'feedback' => $feedback ?: null,
+            'guest_name' => sanitize_text_field((string) ($thread['guest_name'] ?? '')),
+            'guest_email' => sanitize_email((string) ($thread['guest_email'] ?? '')),
+            'source' => sanitize_key((string) ($thread['source_key'] ?? 'website_live_chat')),
+        ]);
+    }
+
+    public function handle_livechat_feedback_submit() {
+        if (!check_ajax_referer('cmn_livechat_public', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+
+        $thread_token = sanitize_text_field((string) ($_POST['thread_token'] ?? ''));
+        if ($thread_token === '') {
+            wp_send_json_error(['message' => 'Not authorized.'], 403);
+        }
+
+        $thread = $this->get_livechat_thread_by_token($thread_token);
+        if (!$thread) {
+            wp_send_json_error(['message' => 'Not authorized.'], 403);
+        }
+
+        $ticket_id = max(0, (int) ($thread['ticket_id'] ?? 0));
+        $ticket = $this->get_support_ticket($ticket_id);
+        if (!$ticket) {
+            wp_send_json_error(['message' => 'Chat not found.'], 404);
+        }
+        if ($this->normalize_support_status((string) ($ticket['status'] ?? 'open')) !== 'closed') {
+            wp_send_json_error(['message' => 'Feedback is available after support closes the chat.'], 400);
+        }
+
+        $support_rating = max(1, min(5, (int) ($_POST['support_rating'] ?? 0)));
+        $response_time_rating = max(1, min(5, (int) ($_POST['response_time_rating'] ?? 0)));
+        $overall_satisfaction = max(1, min(5, (int) ($_POST['overall_satisfaction'] ?? 0)));
+        $issue_resolved_raw = isset($_POST['issue_resolved']) ? (string) $_POST['issue_resolved'] : '';
+        $issue_resolved = ($issue_resolved_raw === '1' || strtolower(trim($issue_resolved_raw)) === 'yes') ? 1 : 0;
+        $comments = trim(sanitize_textarea_field((string) ($_POST['comments'] ?? '')));
+        if ($support_rating < 1 || $response_time_rating < 1 || $overall_satisfaction < 1 || ($issue_resolved_raw !== '0' && $issue_resolved_raw !== '1' && strtolower(trim($issue_resolved_raw)) !== 'yes' && strtolower(trim($issue_resolved_raw)) !== 'no')) {
+            wp_send_json_error(['message' => 'Please complete all required feedback fields.'], 400);
+        }
+        if ((function_exists('mb_strlen') ? mb_strlen($comments) : strlen($comments)) > 1000) {
+            wp_send_json_error(['message' => 'Comments must be 1000 characters or fewer.'], 400);
+        }
+
+        global $wpdb;
+        $table = $this->get_support_feedback_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            wp_send_json_error(['message' => 'Feedback service is unavailable.'], 500);
+        }
+
+        $feedback_user_id = max(0, (int) ($thread['linked_user_id'] ?? 0));
+        $now = current_time('mysql');
+        $saved = $wpdb->replace($table, [
+            'ticket_id' => $ticket_id,
+            'user_id' => $feedback_user_id,
+            'support_rating' => $support_rating,
+            'response_time_rating' => $response_time_rating,
+            'issue_resolved' => $issue_resolved,
+            'overall_satisfaction' => $overall_satisfaction,
+            'comments' => $comments,
+            'created_at' => $now,
+        ], ['%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s']);
+        if (!$saved) {
+            wp_send_json_error(['message' => 'Unable to submit feedback right now.'], 500);
+        }
+
+        $ticket_ref = sanitize_text_field((string) ($ticket['ticket_ref'] ?? ''));
+        foreach ($this->get_admin_users_for_support() as $admin_id) {
+            $admin_id = (int) $admin_id;
+            if ($admin_id < 1) {
+                continue;
+            }
+            $admin_link = $this->get_support_link_for_user($admin_id, $ticket_id, $ticket_ref);
+            $this->add_notification(
+                $admin_id,
+                'support_feedback',
+                'Support feedback',
+                ($ticket_ref !== '' ? $ticket_ref : ('Ticket #' . $ticket_id)) . ' live chat feedback submitted.',
+                $admin_link
+            );
+        }
+
+        if (function_exists('cmn_audit_log_event')) {
+            cmn_audit_log_event([
+                'module' => 'support',
+                'entity_type' => 'ticket',
+                'entity_id' => $ticket_id,
+                'event_type' => 'livechat_feedback_submitted',
+                'actor_user_id' => $feedback_user_id > 0 ? $feedback_user_id : null,
+                'metadata' => [
+                    'ticket_id' => $ticket_id,
+                    'source' => 'website_live_chat',
+                ],
+            ]);
+        }
+
+        wp_send_json_success([
+            'message' => 'Feedback submitted. Thank you.',
+            'feedback_submitted' => 1,
+            'feedback' => $this->get_livechat_feedback_record($ticket_id, $thread),
+        ]);
+    }
+
     private function get_support_user_role_type($user_id) {
         if ($this->is_candidate_user($user_id)) {
             return 'candidate';
@@ -11668,7 +14576,6 @@ final class CMN_One_Plugin {
         $filter = sanitize_key((string) $filter);
         $normalized = $this->normalize_support_ticket_for_view($ticket, $this->is_staff_user());
         $status = $normalized['status'] ?? 'open';
-        $feedback_count = isset($normalized['feedback_count']) ? (int) $normalized['feedback_count'] : 0;
         if ($filter === 'all') {
             return true;
         }
@@ -11685,9 +14592,129 @@ final class CMN_One_Plugin {
             return $status === 'closed';
         }
         if ($filter === 'needs_feedback') {
-            return $status === 'closed' && $feedback_count < 1;
+            return $this->support_ticket_requires_feedback($normalized);
         }
         return true;
+    }
+
+    private function normalize_support_feedback_request_status($status) {
+        $status = sanitize_key((string) $status);
+        if (!in_array($status, ['none', 'requested', 'expired', 'completed', 'dismissed'], true)) {
+            return 'none';
+        }
+        return $status;
+    }
+
+    private function get_support_feedback_request_expiry_ts($ticket) {
+        if (!is_array($ticket)) {
+            return 0;
+        }
+        $raw = trim((string) ($ticket['feedback_request_expires_at'] ?? ''));
+        if ($raw === '') {
+            return 0;
+        }
+        $timestamp = strtotime($raw);
+        if ($timestamp === false) {
+            return 0;
+        }
+        return (int) $timestamp;
+    }
+
+    private function is_support_feedback_request_active($ticket) {
+        if (!is_array($ticket)) {
+            return false;
+        }
+        $status = $this->normalize_support_feedback_request_status((string) ($ticket['feedback_request_status'] ?? 'none'));
+        if ($status !== 'requested') {
+            return false;
+        }
+        $expires_ts = $this->get_support_feedback_request_expiry_ts($ticket);
+        if ($expires_ts < 1) {
+            return true;
+        }
+        return $expires_ts > (int) current_time('timestamp');
+    }
+
+    private function support_ticket_can_request_feedback($ticket) {
+        if (!is_array($ticket)) {
+            return false;
+        }
+        $status = $this->normalize_support_status((string) ($ticket['status'] ?? 'open'));
+        if ($status !== 'closed') {
+            return false;
+        }
+        $feedback_count = isset($ticket['feedback_count']) ? (int) $ticket['feedback_count'] : 0;
+        if ($feedback_count > 0) {
+            return false;
+        }
+        if (!$this->support_ticket_has_column('feedback_request_status')) {
+            return true;
+        }
+        return !$this->is_support_feedback_request_active($ticket);
+    }
+
+    private function maybe_expire_support_feedback_requests($batch_limit = 250) {
+        if (
+            !$this->support_ticket_has_column('feedback_request_status')
+            || !$this->support_ticket_has_column('feedback_requested_at')
+            || !$this->support_ticket_has_column('feedback_request_expires_at')
+        ) {
+            return 0;
+        }
+        global $wpdb;
+        $ticket_table = $this->get_support_ticket_table();
+        $feedback_table = $this->get_support_feedback_table();
+        $batch_limit = max(1, min(1000, (int) $batch_limit));
+        $now_mysql = current_time('mysql');
+        $updated = (int) $wpdb->query($wpdb->prepare(
+            "UPDATE {$ticket_table} t
+             LEFT JOIN {$feedback_table} sf ON sf.ticket_id = t.id
+             SET t.feedback_request_status = 'expired',
+                 t.feedback_requested_at = NULL,
+                 t.feedback_request_expires_at = NULL,
+                 t.updated_at = %s
+             WHERE t.feedback_request_status = 'requested'
+               AND t.feedback_request_expires_at IS NOT NULL
+               AND t.feedback_request_expires_at <= %s
+               AND sf.id IS NULL
+             LIMIT %d",
+            $now_mysql,
+            $now_mysql,
+            $batch_limit
+        ));
+        if ($updated > 0) {
+            $this->add_audit_log(
+                'support_feedback_request_expired_cleanup',
+                'support_ticket',
+                'bulk',
+                ['expired_count' => $updated],
+                0
+            );
+        }
+        return max(0, $updated);
+    }
+
+    private function support_ticket_requires_feedback($ticket) {
+        if (!is_array($ticket)) {
+            return false;
+        }
+        $status = $this->normalize_support_status((string) ($ticket['status'] ?? 'open'));
+        if ($status !== 'closed') {
+            return false;
+        }
+        $feedback_count = isset($ticket['feedback_count']) ? (int) $ticket['feedback_count'] : 0;
+        if ($feedback_count > 0) {
+            return false;
+        }
+        $channel_key = sanitize_key((string) ($ticket['channel_key'] ?? ''));
+        $linked_user_id = max(0, (int) ($ticket['linked_user_id'] ?? 0));
+        if ($channel_key === 'website_live_chat' && $linked_user_id < 1) {
+            return false;
+        }
+        if (!$this->support_ticket_has_column('feedback_request_status')) {
+            return true;
+        }
+        return $this->is_support_feedback_request_active($ticket);
     }
 
     private function insert_support_system_message_once($ticket_id, $message, $sender_user_id = 0, $sender_type = 'admin') {
@@ -11742,17 +14769,57 @@ final class CMN_One_Plugin {
         }, $admins);
     }
 
-    private function notify_admins_support($ticket_id, $ticket_ref, $subject) {
+    private function notify_admins_support($ticket_id, $ticket_ref, $subject, $latest_message = '') {
+        $ticket_id = (int) $ticket_id;
+        $ticket_ref = sanitize_text_field((string) $ticket_ref);
+        $subject = sanitize_text_field((string) $subject);
+        $latest_message = (string) $latest_message;
+        $message_preview = $this->build_payroll_ticket_message_preview($latest_message, 220);
         foreach ($this->get_admin_users_for_support() as $admin_id) {
             $portal_link = $this->get_support_link_for_user($admin_id, $ticket_id, $ticket_ref);
             $this->add_notification($admin_id, 'support_new_ticket', 'New support ticket', "{$ticket_ref} - {$subject}", $portal_link);
+            $email_subject = 'New support ticket: ' . $ticket_ref;
+            $email_body = implode("\n", [
+                'A new support ticket has been created.',
+                '',
+                'Reference: ' . $ticket_ref,
+                'Subject: ' . $subject,
+                'Message preview: ' . $message_preview,
+                'Open in portal: ' . $portal_link,
+            ]);
+            $this->send_support_email_to_user((int) $admin_id, $email_subject, $email_body, 'support_new_ticket_admin', [
+                'ticket_id' => $ticket_id,
+            ]);
         }
     }
 
-    private function notify_admins_support_reply($ticket_id, $ticket_ref) {
+    private function notify_admins_support_reply($ticket_id, $ticket_ref, $latest_message = '', $actor_user_id = 0) {
+        $ticket_id = (int) $ticket_id;
+        $ticket_ref = sanitize_text_field((string) $ticket_ref);
+        $actor_user_id = (int) $actor_user_id;
+        $latest_message = (string) $latest_message;
+        $message_preview = $this->build_payroll_ticket_message_preview($latest_message, 220);
         foreach ($this->get_admin_users_for_support() as $admin_id) {
+            $admin_id = (int) $admin_id;
+            if ($admin_id < 1) {
+                continue;
+            }
+            if ($actor_user_id > 0 && $admin_id === $actor_user_id) {
+                continue;
+            }
             $portal_link = $this->get_support_link_for_user($admin_id, $ticket_id, $ticket_ref);
             $this->add_notification($admin_id, 'support_reply', 'Support ticket reply', "{$ticket_ref} updated.", $portal_link);
+            $email_subject = 'Support ticket updated: ' . $ticket_ref;
+            $email_body = implode("\n", [
+                'A support ticket has a new update.',
+                '',
+                'Reference: ' . $ticket_ref,
+                'Message preview: ' . $message_preview,
+                'Open in portal: ' . $portal_link,
+            ]);
+            $this->send_support_email_to_user($admin_id, $email_subject, $email_body, 'support_ticket_reply_admin', [
+                'ticket_id' => $ticket_id,
+            ]);
         }
     }
 
@@ -11784,6 +14851,14 @@ final class CMN_One_Plugin {
             'hub' => '1',
             'ticket_id' => $ticket_value,
         ], $this->get_portal_base_url());
+    }
+
+    private function get_support_feedback_link_for_user($user_id, $ticket_id, $ticket_ref = '') {
+        $link = $this->get_support_link_for_user($user_id, $ticket_id, $ticket_ref);
+        return add_query_arg([
+            'support_filter' => 'needs_feedback',
+            'support_feedback' => '1',
+        ], $link);
     }
 
     private function get_support_primary_admin_user_id() {
@@ -12044,14 +15119,14 @@ final class CMN_One_Plugin {
                 'Issue type: ' . $issue_type_label,
                 'Message preview: ' . $message_preview,
             ]);
-            $previous_log_type = $GLOBALS['cmn_school_mail_log_type'] ?? null;
-            $GLOBALS['cmn_school_mail_log_type'] = 'support_payroll_ticket_routed';
-            $notification_sent = (bool) $this->send_school_email($recipient_email, $email_subject, $email_body);
-            if ($previous_log_type !== null) {
-                $GLOBALS['cmn_school_mail_log_type'] = $previous_log_type;
-            } else {
-                unset($GLOBALS['cmn_school_mail_log_type']);
-            }
+            $notification_sent = (bool) $this->send_support_email($recipient_email, $email_subject, $email_body, [
+                'type' => 'support_payroll_ticket_routed',
+                'template_key' => 'support_payroll_ticket_routed',
+                'recipient_role' => 'admin',
+                'module' => 'support',
+                'related_entity_type' => 'support_ticket',
+                'related_entity_id' => $ticket_id,
+            ]);
         }
 
         if ($assignee_user_id > 0 && $this->is_staff_user($assignee_user_id)) {
@@ -12450,25 +15525,42 @@ final class CMN_One_Plugin {
         return $this->get_support_link_for_user($user_id, $ticket_id, $ticket_ref);
     }
 
-    private function send_support_email_to_user($user_id, $subject, $message, $log_type = 'support_update') {
+    private function send_support_email_to_user($user_id, $subject, $message, $log_type = 'support_update', $context = []) {
         $user = get_user_by('id', $user_id);
         if (!$user) {
             return false;
         }
+        $user_id = (int) $user_id;
+        $context = is_array($context) ? $context : [];
+        $recipient_role = 'system';
         if ($this->is_candidate_user($user_id)) {
-            return $this->send_candidate_email($user->user_email, $subject, $message, [
+            $recipient_role = 'candidate';
+            if (!$this->can_send_candidate_email_for_context($user->user_email, [
                 'type' => $log_type,
-            ]);
+                'user_id' => $user_id,
+            ])) {
+                $this->log_email($user->user_email, (string) $subject, ['type' => $log_type], 'skipped', 'Candidate email preference disabled');
+                return true;
+            }
+        } elseif ($this->is_school_user($user_id)) {
+            $recipient_role = 'school';
+        } elseif ($this->is_admin_user($user_id)) {
+            $recipient_role = 'admin';
+        } elseif ($this->is_staff_role($user_id) || $this->is_account_manager_user($user_id)) {
+            $recipient_role = 'staff';
         }
-        $previous_log_type = $GLOBALS['cmn_school_mail_log_type'] ?? null;
-        $GLOBALS['cmn_school_mail_log_type'] = $log_type;
-        $sent = $this->send_school_email($user->user_email, $subject, $message);
-        if ($previous_log_type !== null) {
-            $GLOBALS['cmn_school_mail_log_type'] = $previous_log_type;
-        } else {
-            unset($GLOBALS['cmn_school_mail_log_type']);
-        }
-        return $sent;
+
+        $related_entity_type = sanitize_key((string) ($context['related_entity_type'] ?? 'support_ticket'));
+        $related_entity_id = max(0, (int) ($context['related_entity_id'] ?? ($context['ticket_id'] ?? 0)));
+        return $this->send_support_email($user->user_email, $subject, $message, [
+            'type' => sanitize_key((string) $log_type),
+            'template_key' => sanitize_key((string) ($context['template_key'] ?? $log_type)),
+            'recipient_role' => $recipient_role,
+            'recipient_user_id' => $user_id,
+            'module' => 'support',
+            'related_entity_type' => $related_entity_type !== '' ? $related_entity_type : 'support_ticket',
+            'related_entity_id' => $related_entity_id,
+        ]);
     }
 
     private function can_manage_staff_users($user_id = 0) {
@@ -12603,9 +15695,29 @@ final class CMN_One_Plugin {
         return defined('CMN_SCHOOL_SMTP_FROM_NAME') ? CMN_SCHOOL_SMTP_FROM_NAME : 'CoverMeNow Schools';
     }
 
+    private function get_support_from_email() {
+        if (defined('CMN_SUPPORT_SMTP_FROM_EMAIL')) {
+            return (string) CMN_SUPPORT_SMTP_FROM_EMAIL;
+        }
+        if (defined('CMN_SUPPORT_FROM_EMAIL')) {
+            return (string) CMN_SUPPORT_FROM_EMAIL;
+        }
+        return 'support@covermenow.co.uk';
+    }
+
+    private function get_support_from_name() {
+        if (defined('CMN_SUPPORT_SMTP_FROM_NAME')) {
+            return (string) CMN_SUPPORT_SMTP_FROM_NAME;
+        }
+        if (defined('CMN_SUPPORT_FROM_NAME')) {
+            return (string) CMN_SUPPORT_FROM_NAME;
+        }
+        return 'CoverMeNow Support';
+    }
+
     private function begin_candidate_mail_context() {
-        if (!empty($GLOBALS['cmn_school_mail_context'])) {
-            $this->log_mail_context_error('Attempted to set candidate context while school context active.');
+        if (!empty($GLOBALS['cmn_school_mail_context']) || !empty($GLOBALS['cmn_support_mail_context'])) {
+            $this->log_mail_context_error('Attempted to set candidate context while another mail context is active.');
             return null;
         }
         $already = !empty($GLOBALS['cmn_candidate_mail_context']);
@@ -12614,12 +15726,22 @@ final class CMN_One_Plugin {
     }
 
     private function begin_school_mail_context() {
-        if (!empty($GLOBALS['cmn_candidate_mail_context'])) {
-            $this->log_mail_context_error('Attempted to set school context while candidate context active.');
+        if (!empty($GLOBALS['cmn_candidate_mail_context']) || !empty($GLOBALS['cmn_support_mail_context'])) {
+            $this->log_mail_context_error('Attempted to set school context while another mail context is active.');
             return null;
         }
         $already = !empty($GLOBALS['cmn_school_mail_context']);
         $GLOBALS['cmn_school_mail_context'] = true;
+        return $already ? false : true;
+    }
+
+    private function begin_support_mail_context() {
+        if (!empty($GLOBALS['cmn_candidate_mail_context']) || !empty($GLOBALS['cmn_school_mail_context'])) {
+            $this->log_mail_context_error('Attempted to set support context while another mail context is active.');
+            return null;
+        }
+        $already = !empty($GLOBALS['cmn_support_mail_context']);
+        $GLOBALS['cmn_support_mail_context'] = true;
         return $already ? false : true;
     }
 
@@ -12632,9 +15754,33 @@ final class CMN_One_Plugin {
         if ($reply_to) {
             $headers[] = 'Reply-To: ' . $reply_to;
         }
-        $sent = wp_mail($to, $subject, $message, $headers);
-        $this->log_email($to, $subject, $log_context, $sent ? 'sent' : 'failed');
-        return $sent;
+        $log_context = is_array($log_context) ? $log_context : [];
+        $mail_result = $this->send_wp_mail_with_email_log(
+            (string) $to,
+            (string) $subject,
+            (string) $message,
+            $headers,
+            [],
+            [
+                'template_key' => sanitize_key((string) ($log_context['template_key'] ?? ($log_context['type'] ?? ''))),
+                'recipient_user_id' => max(0, (int) ($log_context['recipient_user_id'] ?? ($log_context['user_id'] ?? 0))),
+                'recipient_role' => sanitize_key((string) ($log_context['recipient_role'] ?? 'system')) ?: 'system',
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'related_entity_type' => sanitize_key((string) ($log_context['related_entity_type'] ?? ($log_context['entity_type'] ?? ''))),
+                'related_entity_id' => max(0, (int) ($log_context['related_entity_id'] ?? ($log_context['entity_id'] ?? 0))),
+                'urgency' => sanitize_key((string) ($log_context['urgency'] ?? ($log_context['priority'] ?? ''))),
+                'metadata' => [
+                    'log_type' => sanitize_key((string) ($log_context['type'] ?? 'general')),
+                ],
+            ]
+        );
+        $sent = !empty($mail_result['success']);
+        $send_status = sanitize_key((string) ($mail_result['send_status'] ?? ($sent ? 'sent' : 'failed')));
+        $mail_error = sanitize_text_field((string) ($mail_result['error_message'] ?? ''));
+        $log_status = $send_status === 'suppressed' ? 'skipped' : ($sent ? 'sent' : 'failed');
+        $this->log_email($to, $subject, $log_context, $log_status, $mail_error);
+        return (bool) $sent;
     }
 
     private function get_candidate_notification_pref_defaults() {
@@ -12646,6 +15792,263 @@ final class CMN_One_Plugin {
             'cmn_notify_email_profile_reminders' => '1',
             'cmn_notify_email_learning_courses' => '1',
             'cmn_notify_email_availability_nudges' => '1',
+        ];
+    }
+
+    private function get_notification_preference_defaults() {
+        return [
+            'cmn_notify_portal_enabled' => '1',
+            'cmn_notify_email_enabled' => '1',
+            'cmn_notify_quiet_hours_enabled' => '0',
+            'cmn_notify_quiet_start' => '22:00',
+            'cmn_notify_quiet_end' => '07:00',
+            'cmn_notify_allow_urgent_quiet' => '1',
+            'cmn_notify_timezone' => $this->get_notification_default_timezone(),
+        ];
+    }
+
+    private function get_notification_default_timezone() {
+        $timezone = trim((string) wp_timezone_string());
+        if ($timezone !== '' && in_array($timezone, timezone_identifiers_list(), true)) {
+            return $timezone;
+        }
+        return 'UTC';
+    }
+
+    private function normalize_notification_toggle_value($value, $default = '1') {
+        $normalized = strtolower(trim((string) $value));
+        if (in_array($normalized, ['0', 'false', 'off', 'no'], true)) {
+            return '0';
+        }
+        if (in_array($normalized, ['1', 'true', 'on', 'yes'], true)) {
+            return '1';
+        }
+        return $default === '0' ? '0' : '1';
+    }
+
+    private function normalize_notification_clock_value($value, $default = '22:00') {
+        $value = trim((string) $value);
+        if (preg_match('/^(2[0-3]|[01]?\d):([0-5]\d)$/', $value, $matches)) {
+            return sprintf('%02d:%02d', (int) $matches[1], (int) $matches[2]);
+        }
+        return $default;
+    }
+
+    private function normalize_notification_timezone_value($value) {
+        $value = trim((string) $value);
+        if ($value !== '' && in_array($value, timezone_identifiers_list(), true)) {
+            return $value;
+        }
+        return $this->get_notification_default_timezone();
+    }
+
+    private function normalize_notification_urgency($urgency) {
+        $urgency = sanitize_key((string) $urgency);
+        if (in_array($urgency, ['normal', 'high', 'critical'], true)) {
+            return $urgency;
+        }
+        return 'normal';
+    }
+
+    private function infer_notification_urgency($type = '', $module = '') {
+        $type = strtolower(sanitize_key((string) $type));
+        $module = strtolower(sanitize_key((string) $module));
+        $combined = $type . ' ' . $module;
+        if ($combined !== '' && (strpos($combined, 'emergency') !== false || strpos($combined, 'security') !== false || strpos($combined, 'critical') !== false || strpos($combined, 'reset') !== false || strpos($combined, 'password') !== false || strpos($combined, 'login') !== false)) {
+            return 'critical';
+        }
+        if ($combined !== '' && (strpos($combined, 'urgent') !== false || strpos($combined, 'payroll') !== false || strpos($combined, 'dispute') !== false)) {
+            return 'high';
+        }
+        return 'normal';
+    }
+
+    private function parse_notification_clock_minutes($clock_value) {
+        $clock_value = $this->normalize_notification_clock_value($clock_value, '00:00');
+        [$hours, $minutes] = array_map('intval', explode(':', $clock_value));
+        return max(0, min(1439, ($hours * 60) + $minutes));
+    }
+
+    private function build_datetime_for_minutes(DateTimeImmutable $reference, $minutes) {
+        $hours = (int) floor(max(0, min(1439, (int) $minutes)) / 60);
+        $mins = (int) (max(0, min(1439, (int) $minutes)) % 60);
+        return $reference->setTime($hours, $mins, 0);
+    }
+
+    private function get_notification_quiet_window_state(array $preferences, $timestamp = 0) {
+        $timezone = $this->normalize_notification_timezone_value((string) ($preferences['timezone'] ?? $this->get_notification_default_timezone()));
+        try {
+            $tz = new DateTimeZone($timezone);
+        } catch (Throwable $throwable) {
+            $tz = wp_timezone();
+        }
+        $timestamp = $timestamp > 0 ? (int) $timestamp : time();
+        $now = (new DateTimeImmutable('@' . $timestamp))->setTimezone($tz);
+        $now_minutes = ((int) $now->format('H') * 60) + (int) $now->format('i');
+        $start_minutes = $this->parse_notification_clock_minutes((string) ($preferences['quiet_start'] ?? '22:00'));
+        $end_minutes = $this->parse_notification_clock_minutes((string) ($preferences['quiet_end'] ?? '07:00'));
+
+        if ($start_minutes === $end_minutes) {
+            return [
+                'in_quiet_hours' => false,
+                'next_end' => '',
+                'timezone' => $tz->getName(),
+            ];
+        }
+
+        $in_quiet = false;
+        $next_end_dt = null;
+        if ($start_minutes < $end_minutes) {
+            $in_quiet = $now_minutes >= $start_minutes && $now_minutes < $end_minutes;
+            if ($in_quiet) {
+                $next_end_dt = $this->build_datetime_for_minutes($now, $end_minutes);
+            }
+        } else {
+            $in_quiet = $now_minutes >= $start_minutes || $now_minutes < $end_minutes;
+            if ($in_quiet) {
+                if ($now_minutes >= $start_minutes) {
+                    $next_end_dt = $this->build_datetime_for_minutes($now->modify('+1 day'), $end_minutes);
+                } else {
+                    $next_end_dt = $this->build_datetime_for_minutes($now, $end_minutes);
+                }
+            }
+        }
+
+        return [
+            'in_quiet_hours' => (bool) $in_quiet,
+            'next_end' => $next_end_dt ? $next_end_dt->format('Y-m-d H:i:s') : '',
+            'timezone' => $tz->getName(),
+        ];
+    }
+
+    private function ensure_user_notification_pref_defaults($user_id) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            return;
+        }
+        foreach ($this->get_notification_preference_defaults() as $meta_key => $default) {
+            $existing = get_user_meta($user_id, $meta_key, true);
+            if ($existing === '') {
+                update_user_meta($user_id, $meta_key, $default);
+            }
+        }
+    }
+
+    private function get_user_notification_preferences($user_id) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            $defaults = $this->get_notification_preference_defaults();
+            return [
+                'portal_enabled' => $this->normalize_notification_toggle_value($defaults['cmn_notify_portal_enabled'], '1') === '1' ? 1 : 0,
+                'email_enabled' => $this->normalize_notification_toggle_value($defaults['cmn_notify_email_enabled'], '1') === '1' ? 1 : 0,
+                'quiet_hours_enabled' => $this->normalize_notification_toggle_value($defaults['cmn_notify_quiet_hours_enabled'], '0') === '1' ? 1 : 0,
+                'quiet_start' => $this->normalize_notification_clock_value($defaults['cmn_notify_quiet_start'], '22:00'),
+                'quiet_end' => $this->normalize_notification_clock_value($defaults['cmn_notify_quiet_end'], '07:00'),
+                'allow_urgent_quiet' => $this->normalize_notification_toggle_value($defaults['cmn_notify_allow_urgent_quiet'], '1') === '1' ? 1 : 0,
+                'timezone' => $this->normalize_notification_timezone_value($defaults['cmn_notify_timezone']),
+            ];
+        }
+        $this->ensure_user_notification_pref_defaults($user_id);
+        $defaults = $this->get_notification_preference_defaults();
+
+        $portal_enabled = $this->normalize_notification_toggle_value(get_user_meta($user_id, 'cmn_notify_portal_enabled', true), $defaults['cmn_notify_portal_enabled']) === '1';
+        $email_enabled = $this->normalize_notification_toggle_value(get_user_meta($user_id, 'cmn_notify_email_enabled', true), $defaults['cmn_notify_email_enabled']) === '1';
+        $quiet_enabled = $this->normalize_notification_toggle_value(get_user_meta($user_id, 'cmn_notify_quiet_hours_enabled', true), $defaults['cmn_notify_quiet_hours_enabled']) === '1';
+        $quiet_start = $this->normalize_notification_clock_value(get_user_meta($user_id, 'cmn_notify_quiet_start', true), $defaults['cmn_notify_quiet_start']);
+        $quiet_end = $this->normalize_notification_clock_value(get_user_meta($user_id, 'cmn_notify_quiet_end', true), $defaults['cmn_notify_quiet_end']);
+        $allow_urgent_quiet = $this->normalize_notification_toggle_value(get_user_meta($user_id, 'cmn_notify_allow_urgent_quiet', true), $defaults['cmn_notify_allow_urgent_quiet']) === '1';
+        $timezone = $this->normalize_notification_timezone_value(get_user_meta($user_id, 'cmn_notify_timezone', true));
+
+        return [
+            'portal_enabled' => $portal_enabled ? 1 : 0,
+            'email_enabled' => $email_enabled ? 1 : 0,
+            'quiet_hours_enabled' => $quiet_enabled ? 1 : 0,
+            'quiet_start' => $quiet_start,
+            'quiet_end' => $quiet_end,
+            'allow_urgent_quiet' => $allow_urgent_quiet ? 1 : 0,
+            'timezone' => $timezone,
+        ];
+    }
+
+    private function save_user_notification_preferences($user_id, array $raw_preferences = []) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            return $this->get_user_notification_preferences($user_id);
+        }
+        $defaults = $this->get_notification_preference_defaults();
+        $normalized = [
+            'cmn_notify_portal_enabled' => $this->normalize_notification_toggle_value($raw_preferences['cmn_notify_portal_enabled'] ?? $defaults['cmn_notify_portal_enabled'], $defaults['cmn_notify_portal_enabled']),
+            'cmn_notify_email_enabled' => $this->normalize_notification_toggle_value($raw_preferences['cmn_notify_email_enabled'] ?? $defaults['cmn_notify_email_enabled'], $defaults['cmn_notify_email_enabled']),
+            'cmn_notify_quiet_hours_enabled' => $this->normalize_notification_toggle_value($raw_preferences['cmn_notify_quiet_hours_enabled'] ?? $defaults['cmn_notify_quiet_hours_enabled'], $defaults['cmn_notify_quiet_hours_enabled']),
+            'cmn_notify_quiet_start' => $this->normalize_notification_clock_value($raw_preferences['cmn_notify_quiet_start'] ?? $defaults['cmn_notify_quiet_start'], $defaults['cmn_notify_quiet_start']),
+            'cmn_notify_quiet_end' => $this->normalize_notification_clock_value($raw_preferences['cmn_notify_quiet_end'] ?? $defaults['cmn_notify_quiet_end'], $defaults['cmn_notify_quiet_end']),
+            'cmn_notify_allow_urgent_quiet' => $this->normalize_notification_toggle_value($raw_preferences['cmn_notify_allow_urgent_quiet'] ?? $defaults['cmn_notify_allow_urgent_quiet'], $defaults['cmn_notify_allow_urgent_quiet']),
+            'cmn_notify_timezone' => $this->normalize_notification_timezone_value($raw_preferences['cmn_notify_timezone'] ?? $defaults['cmn_notify_timezone']),
+        ];
+        foreach ($normalized as $meta_key => $meta_value) {
+            update_user_meta($user_id, $meta_key, $meta_value);
+        }
+        return $this->get_user_notification_preferences($user_id);
+    }
+
+    private function resolve_user_id_from_notification_email($email) {
+        $email = sanitize_email((string) $email);
+        if ($email === '' || !is_email($email)) {
+            return 0;
+        }
+        $user = get_user_by('email', $email);
+        if (!$user instanceof WP_User || (int) $user->ID < 1) {
+            return 0;
+        }
+        return (int) $user->ID;
+    }
+
+    private function resolve_user_notification_channel_decision($user_id, $channel, array $context = []) {
+        $user_id = (int) $user_id;
+        $channel = sanitize_key((string) $channel);
+        if ($user_id < 1 || !in_array($channel, ['portal', 'email'], true)) {
+            return [
+                'allow' => true,
+                'reason' => '',
+                'defer_until' => '',
+                'urgency' => 'normal',
+            ];
+        }
+
+        $preferences = $this->get_user_notification_preferences($user_id);
+        $urgency = $this->normalize_notification_urgency((string) ($context['urgency'] ?? ''));
+        if ($urgency === 'normal') {
+            $urgency = $this->infer_notification_urgency((string) ($context['type'] ?? ''), (string) ($context['module'] ?? ''));
+        }
+
+        if ($channel === 'portal' && empty($preferences['portal_enabled'])) {
+            return ['allow' => false, 'reason' => 'channel_disabled', 'defer_until' => '', 'urgency' => $urgency];
+        }
+        if ($channel === 'email' && empty($preferences['email_enabled'])) {
+            return ['allow' => false, 'reason' => 'channel_disabled', 'defer_until' => '', 'urgency' => $urgency];
+        }
+
+        if (!empty($preferences['quiet_hours_enabled'])) {
+            $window = $this->get_notification_quiet_window_state($preferences, (int) ($context['timestamp'] ?? 0));
+            if (!empty($window['in_quiet_hours'])) {
+                $allow_urgent = !empty($preferences['allow_urgent_quiet']);
+                $bypass = $urgency === 'critical' || ($urgency === 'high' && $allow_urgent);
+                if (!$bypass) {
+                    return [
+                        'allow' => false,
+                        'reason' => 'quiet_hours',
+                        'defer_until' => (string) ($window['next_end'] ?? ''),
+                        'urgency' => $urgency,
+                    ];
+                }
+            }
+        }
+
+        return [
+            'allow' => true,
+            'reason' => '',
+            'defer_until' => '',
+            'urgency' => $urgency,
         ];
     }
 
@@ -12700,6 +16103,7 @@ final class CMN_One_Plugin {
         if (!$user_id) {
             return;
         }
+        $this->ensure_user_notification_pref_defaults($user_id);
         foreach ($this->get_candidate_notification_pref_defaults() as $meta_key => $default) {
             $existing = get_user_meta($user_id, $meta_key, true);
             if ($existing === '') {
@@ -12730,9 +16134,6 @@ final class CMN_One_Plugin {
 
     private function can_send_candidate_email_for_context($to, $context) {
         $notify_key = $this->resolve_candidate_notify_key_from_context($context);
-        if ($notify_key === '') {
-            return true;
-        }
         $user_id = isset($context['user_id']) ? (int) $context['user_id'] : 0;
         if (!$user_id) {
             $user = get_user_by('email', (string) $to);
@@ -12744,16 +16145,151 @@ final class CMN_One_Plugin {
             return true;
         }
         $this->ensure_candidate_notification_defaults($user_id);
+        if ($notify_key === '') {
+            return true;
+        }
         return get_user_meta($user_id, $notify_key, true) !== '0';
+    }
+
+    private function send_support_email($to, $subject, $message, $context = [], $headers = [], $attachments = []) {
+        if (!$to) {
+            return false;
+        }
+        $context = is_array($context) ? $context : [];
+        $headers = is_array($headers) ? $headers : ((string) $headers !== '' ? [(string) $headers] : []);
+        $attachments = is_array($attachments) ? $attachments : [];
+
+        $context_type = sanitize_key((string) ($context['type'] ?? 'support_email'));
+        $recipient_user_id = max(0, (int) ($context['recipient_user_id'] ?? ($context['user_id'] ?? 0)));
+        $recipient_role = sanitize_key((string) ($context['recipient_role'] ?? ''));
+        if ($recipient_role === '') {
+            if ($recipient_user_id > 0 && $this->is_candidate_user($recipient_user_id)) {
+                $recipient_role = 'candidate';
+            } elseif ($recipient_user_id > 0 && $this->is_school_user($recipient_user_id)) {
+                $recipient_role = 'school';
+            } elseif ($recipient_user_id > 0 && $this->is_admin_user($recipient_user_id)) {
+                $recipient_role = 'admin';
+            } elseif ($recipient_user_id > 0 && ($this->is_staff_role($recipient_user_id) || $this->is_account_manager_user($recipient_user_id))) {
+                $recipient_role = 'staff';
+            }
+        }
+        if ($recipient_role === '') {
+            $recipient_role = 'system';
+        }
+
+        $had_context = !empty($GLOBALS['cmn_support_mail_context']);
+        $context_state = $this->begin_support_mail_context();
+        if ($context_state === null) {
+            return false;
+        }
+
+        $from_email = $this->get_support_from_email();
+        $from_name = $this->get_support_from_name();
+        $default_headers = [
+            'From: ' . $from_name . ' <' . $from_email . '>',
+            'Reply-To: ' . $from_email,
+        ];
+        if ($headers) {
+            $default_headers = array_merge($default_headers, $headers);
+        }
+
+        $related_entity_type = sanitize_key((string) ($context['related_entity_type'] ?? ($context['entity_type'] ?? 'support_ticket')));
+        $related_entity_id = max(0, (int) ($context['related_entity_id'] ?? ($context['entity_id'] ?? 0)));
+        if ($related_entity_id < 1 && !empty($context['ticket_id'])) {
+            $related_entity_id = max(0, (int) $context['ticket_id']);
+        }
+
+        $mail_result = $this->send_wp_mail_with_email_log(
+            (string) $to,
+            (string) $subject,
+            (string) $message,
+            $default_headers,
+            $attachments,
+            [
+                'template_key' => sanitize_key((string) ($context['template_key'] ?? ($context_type !== '' ? $context_type : 'support_email'))),
+                'module' => 'support',
+                'recipient_user_id' => $recipient_user_id,
+                'recipient_role' => $recipient_role,
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'related_entity_type' => $related_entity_type !== '' ? $related_entity_type : 'support_ticket',
+                'related_entity_id' => $related_entity_id,
+                'urgency' => sanitize_key((string) ($context['urgency'] ?? ($context['priority'] ?? ''))),
+                'metadata' => [
+                    'type' => $context_type !== '' ? $context_type : 'support_email',
+                ],
+            ]
+        );
+
+        $sent = !empty($mail_result['success']);
+        $send_status = sanitize_key((string) ($mail_result['send_status'] ?? ($sent ? 'sent' : 'failed')));
+        $mail_error = sanitize_text_field((string) ($mail_result['error_message'] ?? ''));
+        $log_status = $send_status === 'suppressed' ? 'skipped' : ($sent ? 'sent' : 'failed');
+        $this->log_email($to, $subject, $context, $log_status, $mail_error);
+
+        if ($had_context) {
+            $GLOBALS['cmn_support_mail_context'] = true;
+        } elseif ($context_state) {
+            unset($GLOBALS['cmn_support_mail_context']);
+        }
+
+        return (bool) $sent;
     }
 
     public function send_candidate_email($to, $subject, $message, $context = []) {
         if (!$to) {
             return false;
         }
+        $context = is_array($context) ? $context : [];
         if (!$this->can_send_candidate_email_for_context($to, $context)) {
             $this->log_email($to, $subject, $context, 'skipped', 'Candidate email preference disabled');
             return true;
+        }
+        $context_type = sanitize_key((string) ($context['type'] ?? ''));
+        if ($context_type !== '' && strpos($context_type, 'support_') === 0) {
+            $related_entity_type = sanitize_key((string) ($context['related_entity_type'] ?? ($context['entity_type'] ?? 'support_ticket')));
+            $related_entity_id = max(0, (int) ($context['related_entity_id'] ?? ($context['entity_id'] ?? 0)));
+            if ($related_entity_id < 1 && !empty($context['ticket_id'])) {
+                $related_entity_id = max(0, (int) $context['ticket_id']);
+            }
+            return $this->send_support_email($to, $subject, $message, [
+                'type' => $context_type,
+                'template_key' => sanitize_key((string) ($context['template_key'] ?? $context_type)),
+                'recipient_user_id' => max(0, (int) ($context['recipient_user_id'] ?? ($context['user_id'] ?? 0))),
+                'recipient_role' => 'candidate',
+                'related_entity_type' => $related_entity_type !== '' ? $related_entity_type : 'support_ticket',
+                'related_entity_id' => $related_entity_id,
+            ]);
+        }
+        if (in_array($context_type, ['candidate_booking_confirmed', 'support_ticket_received'], true)) {
+            $template_key = $context_type === 'candidate_booking_confirmed'
+                ? 'candidate_booking_confirmed'
+                : 'support_ticket_received';
+            $template_module = $context_type === 'candidate_booking_confirmed' ? 'operations' : 'support';
+            $related_entity_type = sanitize_key((string) ($context['related_entity_type'] ?? ''));
+            $related_entity_id = max(0, (int) ($context['related_entity_id'] ?? 0));
+            if ($related_entity_id < 1 && !empty($context['related_request_id'])) {
+                $related_entity_type = $related_entity_type !== '' ? $related_entity_type : 'request';
+                $related_entity_id = max(0, (int) $context['related_request_id']);
+            }
+            if ($related_entity_id < 1 && !empty($context['related_candidate_id'])) {
+                $related_entity_type = $related_entity_type !== '' ? $related_entity_type : 'candidate';
+                $related_entity_id = max(0, (int) $context['related_candidate_id']);
+            }
+            $send_result = cmn_send_email($template_key, $to, $context, [
+                'module' => $template_module,
+                'recipient_role' => 'candidate',
+                'subject_override' => (string) $subject,
+                'text_body_override' => (string) $message,
+                'related_entity_type' => $related_entity_type,
+                'related_entity_id' => $related_entity_id,
+            ]);
+            $sent = !empty($send_result['success']);
+            $send_status = sanitize_key((string) ($send_result['send_status'] ?? ($sent ? 'sent' : 'failed')));
+            $error_message = sanitize_text_field((string) ($send_result['error_message'] ?? ''));
+            $log_status = $send_status === 'suppressed' ? 'skipped' : ($sent ? 'sent' : 'failed');
+            $this->log_email($to, $subject, $context, $log_status, $error_message);
+            return $sent;
         }
         $had_context = !empty($GLOBALS['cmn_candidate_mail_context']);
         $context_state = $this->begin_candidate_mail_context();
@@ -12766,19 +16302,79 @@ final class CMN_One_Plugin {
             'From: ' . $from_name . ' <' . $from_email . '>',
             'Reply-To: ' . $from_email,
         ];
-        $sent = wp_mail($to, $subject, $message, $headers);
-        $this->log_email($to, $subject, $context, $sent ? 'sent' : 'failed');
+        $context_related_entity_type = sanitize_key((string) ($context['related_entity_type'] ?? ($context['entity_type'] ?? '')));
+        $context_related_entity_id = max(0, (int) ($context['related_entity_id'] ?? ($context['entity_id'] ?? 0)));
+        if ($context_related_entity_id < 1 && !empty($context['related_request_id'])) {
+            $context_related_entity_type = $context_related_entity_type !== '' ? $context_related_entity_type : 'request';
+            $context_related_entity_id = max(0, (int) $context['related_request_id']);
+        }
+        if ($context_related_entity_id < 1 && !empty($context['related_candidate_id'])) {
+            $context_related_entity_type = $context_related_entity_type !== '' ? $context_related_entity_type : 'candidate';
+            $context_related_entity_id = max(0, (int) $context['related_candidate_id']);
+        }
+        $mail_result = $this->send_wp_mail_with_email_log(
+            (string) $to,
+            (string) $subject,
+            (string) $message,
+            $headers,
+            [],
+            [
+                'template_key' => sanitize_key((string) ($context['template_key'] ?? ($context_type !== '' ? $context_type : 'candidate_email'))),
+                'recipient_user_id' => max(0, (int) ($context['recipient_user_id'] ?? ($context['user_id'] ?? 0))),
+                'recipient_role' => 'candidate',
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'related_entity_type' => $context_related_entity_type,
+                'related_entity_id' => $context_related_entity_id,
+                'urgency' => sanitize_key((string) ($context['urgency'] ?? ($context['priority'] ?? ''))),
+                'metadata' => [
+                    'notify_key' => sanitize_key((string) ($context['notify_key'] ?? '')),
+                    'type' => $context_type !== '' ? $context_type : 'candidate_email',
+                ],
+            ]
+        );
+        $sent = !empty($mail_result['success']);
+        $send_status = sanitize_key((string) ($mail_result['send_status'] ?? ($sent ? 'sent' : 'failed')));
+        $mail_error = sanitize_text_field((string) ($mail_result['error_message'] ?? ''));
+        $log_status = $send_status === 'suppressed' ? 'skipped' : ($sent ? 'sent' : 'failed');
+        $this->log_email($to, $subject, $context, $log_status, $mail_error);
         if ($had_context) {
             $GLOBALS['cmn_candidate_mail_context'] = true;
         } elseif ($context_state) {
             unset($GLOBALS['cmn_candidate_mail_context']);
         }
-        return $sent;
+        return (bool) $sent;
     }
 
     public function send_school_email($to, $subject, $message, $headers = [], $attachments = []) {
         if (!$to) {
             return false;
+        }
+        $log_type = !empty($GLOBALS['cmn_school_mail_log_type']) ? $GLOBALS['cmn_school_mail_log_type'] : 'school_email';
+        if ($log_type !== '' && strpos((string) $log_type, 'support_') === 0) {
+            return $this->send_support_email($to, $subject, $message, [
+                'type' => sanitize_key((string) $log_type),
+                'template_key' => sanitize_key((string) $log_type),
+                'recipient_role' => 'school',
+            ], $headers, $attachments);
+        }
+        if (empty($attachments) && in_array($log_type, ['school_request_confirmed', 'support_ticket_received'], true)) {
+            $template_key = $log_type === 'school_request_confirmed'
+                ? 'school_booking_confirmed'
+                : 'support_ticket_received';
+            $template_module = $log_type === 'school_request_confirmed' ? 'operations' : 'support';
+            $send_result = cmn_send_email($template_key, $to, [], [
+                'module' => $template_module,
+                'recipient_role' => 'school',
+                'subject_override' => (string) $subject,
+                'text_body_override' => (string) $message,
+            ]);
+            $sent = !empty($send_result['success']);
+            $send_status = sanitize_key((string) ($send_result['send_status'] ?? ($sent ? 'sent' : 'failed')));
+            $error_message = sanitize_text_field((string) ($send_result['error_message'] ?? ''));
+            $log_status = $send_status === 'suppressed' ? 'skipped' : ($sent ? 'sent' : 'failed');
+            $this->log_email($to, $subject, ['type' => $log_type], $log_status, $error_message);
+            return $sent;
         }
         $had_context = !empty($GLOBALS['cmn_school_mail_context']);
         $context_state = $this->begin_school_mail_context();
@@ -12798,20 +16394,43 @@ final class CMN_One_Plugin {
                 $default_headers[] = $headers;
             }
         }
-        $sent = wp_mail($to, $subject, $message, $default_headers, $attachments);
-        $log_type = !empty($GLOBALS['cmn_school_mail_log_type']) ? $GLOBALS['cmn_school_mail_log_type'] : 'school_email';
-        $this->log_email($to, $subject, ['type' => $log_type], $sent ? 'sent' : 'failed');
+        $mail_result = $this->send_wp_mail_with_email_log(
+            (string) $to,
+            (string) $subject,
+            (string) $message,
+            $default_headers,
+            $attachments,
+            [
+                'template_key' => sanitize_key((string) ($log_type !== '' ? $log_type : 'school_email')),
+                'recipient_role' => 'school',
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'urgency' => sanitize_key((string) (!empty($GLOBALS['cmn_school_mail_priority']) ? $GLOBALS['cmn_school_mail_priority'] : '')),
+                'metadata' => [
+                    'log_type' => sanitize_key((string) $log_type),
+                    'has_attachments' => !empty($attachments) ? 1 : 0,
+                ],
+            ]
+        );
+        $sent = !empty($mail_result['success']);
+        $send_status = sanitize_key((string) ($mail_result['send_status'] ?? ($sent ? 'sent' : 'failed')));
+        $mail_error = sanitize_text_field((string) ($mail_result['error_message'] ?? ''));
+        $log_status = $send_status === 'suppressed' ? 'skipped' : ($sent ? 'sent' : 'failed');
+        $this->log_email($to, $subject, ['type' => $log_type], $log_status, $mail_error);
         if ($had_context) {
             $GLOBALS['cmn_school_mail_context'] = true;
         } elseif ($context_state) {
             unset($GLOBALS['cmn_school_mail_context']);
         }
-        return $sent;
+        return (bool) $sent;
     }
 
     public function configure_candidate_smtp($phpmailer) {
         if (!empty($GLOBALS['cmn_candidate_mail_context']) && !empty($GLOBALS['cmn_school_mail_context'])) {
             $this->log_mail_context_error('Both candidate and school mail contexts were active. Using candidate context.');
+        }
+        if (!empty($GLOBALS['cmn_support_mail_context']) && (!empty($GLOBALS['cmn_candidate_mail_context']) || !empty($GLOBALS['cmn_school_mail_context']))) {
+            $this->log_mail_context_error('Support mail context active alongside another mail context.');
         }
         if (!empty($GLOBALS['cmn_candidate_mail_context'])) {
             if (!defined('CMN_SMTP_HOST') || !defined('CMN_SMTP_PORT') || !defined('CMN_SMTP_USERNAME') || !defined('CMN_SMTP_PASSWORD')) {
@@ -12845,6 +16464,32 @@ final class CMN_One_Plugin {
                 $phpmailer->setFrom(CMN_SCHOOL_SMTP_FROM_EMAIL, CMN_SCHOOL_SMTP_FROM_NAME, false);
                 $phpmailer->addReplyTo(CMN_SCHOOL_SMTP_FROM_EMAIL, CMN_SCHOOL_SMTP_FROM_NAME);
             }
+            return;
+        }
+        if (!empty($GLOBALS['cmn_support_mail_context'])) {
+            $smtp_host = defined('CMN_SUPPORT_SMTP_HOST') ? CMN_SUPPORT_SMTP_HOST : (defined('CMN_SCHOOL_SMTP_HOST') ? CMN_SCHOOL_SMTP_HOST : '');
+            $smtp_port = defined('CMN_SUPPORT_SMTP_PORT') ? CMN_SUPPORT_SMTP_PORT : (defined('CMN_SCHOOL_SMTP_PORT') ? CMN_SCHOOL_SMTP_PORT : '');
+            $smtp_username = defined('CMN_SUPPORT_SMTP_USERNAME') ? CMN_SUPPORT_SMTP_USERNAME : (defined('CMN_SCHOOL_SMTP_USERNAME') ? CMN_SCHOOL_SMTP_USERNAME : '');
+            $smtp_password = defined('CMN_SUPPORT_SMTP_PASSWORD') ? CMN_SUPPORT_SMTP_PASSWORD : (defined('CMN_SCHOOL_SMTP_PASSWORD') ? CMN_SCHOOL_SMTP_PASSWORD : '');
+            if (!$smtp_host || !$smtp_port || !$smtp_username || !$smtp_password) {
+                return;
+            }
+            $phpmailer->isSMTP();
+            $phpmailer->Host = $smtp_host;
+            $phpmailer->Port = $smtp_port;
+            $phpmailer->SMTPSecure = defined('CMN_SUPPORT_SMTP_ENCRYPTION')
+                ? CMN_SUPPORT_SMTP_ENCRYPTION
+                : (defined('CMN_SCHOOL_SMTP_ENCRYPTION') ? CMN_SCHOOL_SMTP_ENCRYPTION : '');
+            $phpmailer->SMTPAuth = true;
+            $phpmailer->Username = $smtp_username;
+            $phpmailer->Password = $smtp_password;
+
+            $from_email = sanitize_email((string) $this->get_support_from_email());
+            $from_name = sanitize_text_field((string) $this->get_support_from_name());
+            if ($from_email !== '') {
+                $phpmailer->setFrom($from_email, $from_name !== '' ? $from_name : 'CoverMeNow Support', false);
+                $phpmailer->addReplyTo($from_email, $from_name !== '' ? $from_name : 'CoverMeNow Support');
+            }
         }
     }
 
@@ -12852,11 +16497,17 @@ final class CMN_One_Plugin {
         if (!empty($GLOBALS['cmn_candidate_mail_context']) && !empty($GLOBALS['cmn_school_mail_context'])) {
             $this->log_mail_context_error('Both mail contexts active during wp_mail_from. Using candidate sender.');
         }
+        if (!empty($GLOBALS['cmn_support_mail_context']) && (!empty($GLOBALS['cmn_candidate_mail_context']) || !empty($GLOBALS['cmn_school_mail_context']))) {
+            $this->log_mail_context_error('Support mail context active during wp_mail_from with another context.');
+        }
         if (!empty($GLOBALS['cmn_candidate_mail_context'])) {
             return $this->get_candidate_from_email();
         }
         if (!empty($GLOBALS['cmn_school_mail_context'])) {
             return $this->get_school_from_email();
+        }
+        if (!empty($GLOBALS['cmn_support_mail_context'])) {
+            return $this->get_support_from_email();
         }
         return $from;
     }
@@ -12865,17 +16516,23 @@ final class CMN_One_Plugin {
         if (!empty($GLOBALS['cmn_candidate_mail_context']) && !empty($GLOBALS['cmn_school_mail_context'])) {
             $this->log_mail_context_error('Both mail contexts active during wp_mail_from_name. Using candidate sender.');
         }
+        if (!empty($GLOBALS['cmn_support_mail_context']) && (!empty($GLOBALS['cmn_candidate_mail_context']) || !empty($GLOBALS['cmn_school_mail_context']))) {
+            $this->log_mail_context_error('Support mail context active during wp_mail_from_name with another context.');
+        }
         if (!empty($GLOBALS['cmn_candidate_mail_context'])) {
             return $this->get_candidate_from_name();
         }
         if (!empty($GLOBALS['cmn_school_mail_context'])) {
             return $this->get_school_from_name();
         }
+        if (!empty($GLOBALS['cmn_support_mail_context'])) {
+            return $this->get_support_from_name();
+        }
         return $name;
     }
 
     public function handle_candidate_mail_failed($wp_error) {
-        if (empty($GLOBALS['cmn_candidate_mail_context']) && empty($GLOBALS['cmn_school_mail_context'])) {
+        if (empty($GLOBALS['cmn_candidate_mail_context']) && empty($GLOBALS['cmn_school_mail_context']) && empty($GLOBALS['cmn_support_mail_context'])) {
             return;
         }
         $message = $wp_error instanceof WP_Error ? $wp_error->get_error_message() : 'Unknown mail error';
@@ -12890,6 +16547,10 @@ final class CMN_One_Plugin {
             error_log('CMN School SMTP Error: ' . $message);
             unset($GLOBALS['cmn_school_mail_context']);
         }
+        if (!empty($GLOBALS['cmn_support_mail_context'])) {
+            error_log('CMN Support SMTP Error: ' . $message);
+            unset($GLOBALS['cmn_support_mail_context']);
+        }
     }
 
     public function handle_candidate_mail_succeeded($mail_data) {
@@ -12901,6 +16562,9 @@ final class CMN_One_Plugin {
         }
         if (!empty($GLOBALS['cmn_school_mail_context'])) {
             unset($GLOBALS['cmn_school_mail_context']);
+        }
+        if (!empty($GLOBALS['cmn_support_mail_context'])) {
+            unset($GLOBALS['cmn_support_mail_context']);
         }
     }
 
@@ -12914,8 +16578,8 @@ final class CMN_One_Plugin {
 
     public function flag_candidate_password_reset($message, $key, $user_login, $user_data) {
         if ($this->is_candidate_user_object($user_data)) {
-            if (!empty($GLOBALS['cmn_school_mail_context'])) {
-                $this->log_mail_context_error('Attempted to set candidate context for password reset while school context active.');
+            if (!empty($GLOBALS['cmn_school_mail_context']) || !empty($GLOBALS['cmn_support_mail_context'])) {
+                $this->log_mail_context_error('Attempted to set candidate context for password reset while another context is active.');
                 return $message;
             }
             $GLOBALS['cmn_candidate_mail_context'] = true;
@@ -12931,8 +16595,8 @@ final class CMN_One_Plugin {
 
     public function flag_candidate_password_reset_title($title, $user_login, $user_data) {
         if ($this->is_candidate_user_object($user_data)) {
-            if (!empty($GLOBALS['cmn_school_mail_context'])) {
-                $this->log_mail_context_error('Attempted to set candidate context for password reset title while school context active.');
+            if (!empty($GLOBALS['cmn_school_mail_context']) || !empty($GLOBALS['cmn_support_mail_context'])) {
+                $this->log_mail_context_error('Attempted to set candidate context for password reset title while another context is active.');
                 return $title;
             }
             $GLOBALS['cmn_candidate_mail_context'] = true;
@@ -12942,8 +16606,8 @@ final class CMN_One_Plugin {
 
     public function flag_candidate_password_change_email($pass_change_email, $user, $blogname) {
         if ($this->is_candidate_user_object($user)) {
-            if (!empty($GLOBALS['cmn_school_mail_context'])) {
-                $this->log_mail_context_error('Attempted to set candidate context for password change email while school context active.');
+            if (!empty($GLOBALS['cmn_school_mail_context']) || !empty($GLOBALS['cmn_support_mail_context'])) {
+                $this->log_mail_context_error('Attempted to set candidate context for password change email while another context is active.');
                 return $pass_change_email;
             }
             $GLOBALS['cmn_candidate_mail_context'] = true;
@@ -12956,9 +16620,1292 @@ final class CMN_One_Plugin {
         return $wpdb->prefix . 'cmn_notifications';
     }
 
+    private function notifications_table_has_available_at() {
+        static $has_available_at = null;
+        if ($has_available_at === null) {
+            $has_available_at = self::table_has_column($this->get_notifications_table(), 'available_at');
+        }
+        return (bool) $has_available_at;
+    }
+
     private function get_email_log_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_email_log';
+    }
+
+    private function get_email_templates_storage_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_email_templates';
+    }
+
+    private function get_email_senders_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_email_senders';
+    }
+
+    private function get_email_sender_legacy_table_candidates() {
+        global $wpdb;
+        $primary = $this->get_email_senders_table();
+        $candidates = [
+            $wpdb->prefix . 'cmn_email_sender',
+            $wpdb->prefix . 'cmn_email_sender_directory',
+            $wpdb->prefix . 'cmn_sender_directory',
+        ];
+        return array_values(array_filter(array_unique(array_map('strval', $candidates)), static function ($table) use ($primary) {
+            return $table !== '' && $table !== $primary;
+        }));
+    }
+
+    private function get_email_sender_default_seed_definitions() {
+        return [
+            [
+                'email' => 'school@covermenow.co.uk',
+                'display_name' => 'CoverMeNow School Team',
+                'source' => 'default_seed',
+            ],
+            [
+                'email' => 'candidate@covermenow.co.uk',
+                'display_name' => 'CoverMeNow Candidate Team',
+                'source' => 'default_seed',
+            ],
+            [
+                'email' => 'support@covermenow.co.uk',
+                'display_name' => 'CoverMeNow Support',
+                'source' => 'default_seed',
+            ],
+        ];
+    }
+
+    private function resolve_email_centre_redirect_target($redirect_raw = '') {
+        $default = add_query_arg(['view' => 'email-centre'], $this->get_portal_base_url());
+        $redirect_raw = trim((string) $redirect_raw);
+        if ($redirect_raw === '') {
+            return $default;
+        }
+        return wp_validate_redirect(esc_url_raw($redirect_raw), $default);
+    }
+
+    private function is_valid_covermenow_sender_email($email) {
+        $email = sanitize_email((string) $email);
+        if ($email === '' || !is_email($email)) {
+            return false;
+        }
+        $parts = explode('@', strtolower($email));
+        if (count($parts) !== 2) {
+            return false;
+        }
+        $domain = trim((string) $parts[1]);
+        return $domain === 'covermenow.co.uk';
+    }
+
+    private function normalize_email_sender_status($status, $default = 'active') {
+        $status = strtolower(trim((string) $status));
+        if (in_array($status, ['active', 'enabled', 'on', '1', 'true', 'yes'], true)) {
+            return 'active';
+        }
+        if (in_array($status, ['disabled', 'inactive', 'off', '0', 'false', 'no'], true)) {
+            return 'disabled';
+        }
+        $default = strtolower(trim((string) $default));
+        return $default === 'disabled' ? 'disabled' : 'active';
+    }
+
+    private function get_email_sender_table_schema() {
+        $table = $this->get_email_senders_table();
+        return [
+            'table' => $table,
+            'has_id' => self::table_has_column($table, 'id'),
+            'has_email' => self::table_has_column($table, 'email'),
+            'has_email_address' => self::table_has_column($table, 'email_address'),
+            'has_display_name' => self::table_has_column($table, 'display_name'),
+            'has_status' => self::table_has_column($table, 'status'),
+            'has_is_active' => self::table_has_column($table, 'is_active'),
+            'has_source' => self::table_has_column($table, 'source'),
+            'has_created_at' => self::table_has_column($table, 'created_at'),
+            'has_updated_at' => self::table_has_column($table, 'updated_at'),
+        ];
+    }
+
+    private function get_email_sender_select_columns(array $schema) {
+        $columns = ['id'];
+        foreach (['email', 'email_address', 'display_name', 'status', 'is_active', 'source', 'created_at', 'updated_at'] as $column) {
+            $flag = 'has_' . $column;
+            if (!empty($schema[$flag])) {
+                $columns[] = $column;
+            }
+        }
+        return $columns;
+    }
+
+    private function normalize_email_sender_row(array $row, array $schema = []) {
+        $id = (int) ($row['id'] ?? 0);
+        if ($id < 1) {
+            return [];
+        }
+
+        $email = '';
+        if (!empty($schema['has_email'])) {
+            $email = $this->sanitize_mail_header_email((string) ($row['email'] ?? ''));
+        } else {
+            $email = $this->sanitize_mail_header_email((string) ($row['email'] ?? ''));
+        }
+        if ($email === '') {
+            if (!empty($schema['has_email_address'])) {
+                $email = $this->sanitize_mail_header_email((string) ($row['email_address'] ?? ''));
+            } else {
+                $email = $this->sanitize_mail_header_email((string) ($row['email_address'] ?? ''));
+            }
+        }
+        if ($email === '') {
+            return [];
+        }
+
+        $display_name = sanitize_text_field((string) ($row['display_name'] ?? ''));
+        if ((function_exists('mb_strlen') ? mb_strlen($display_name) : strlen($display_name)) > 190) {
+            $display_name = function_exists('mb_substr') ? mb_substr($display_name, 0, 190) : substr($display_name, 0, 190);
+        }
+
+        $status = '';
+        if (!empty($schema['has_status']) || array_key_exists('status', $row)) {
+            $status = $this->normalize_email_sender_status((string) ($row['status'] ?? ''));
+        }
+        if ($status === '') {
+            $status = !empty($row['is_active']) ? 'active' : 'disabled';
+        }
+        $is_active = $status === 'active' ? 1 : 0;
+        if (!empty($schema['has_is_active']) || array_key_exists('is_active', $row)) {
+            $is_active = !empty($row['is_active']) ? 1 : 0;
+            $status = $is_active ? 'active' : 'disabled';
+        }
+
+        $source = sanitize_key((string) ($row['source'] ?? ''));
+        if ($source === '') {
+            $source = 'manual';
+        }
+
+        return [
+            'id' => $id,
+            'email' => $email,
+            'email_address' => $email,
+            'display_name' => $display_name,
+            'status' => $status,
+            'is_active' => $is_active,
+            'source' => $source,
+            'created_at' => sanitize_text_field((string) ($row['created_at'] ?? '')),
+            'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
+        ];
+    }
+
+    private function get_email_sender_row_by_email($email, $active_only = false, array $schema = []) {
+        global $wpdb;
+        $email = strtolower($this->sanitize_mail_header_email($email));
+        if ($email === '') {
+            return [];
+        }
+
+        if (empty($schema)) {
+            $schema = $this->get_email_sender_table_schema();
+        }
+        if (empty($schema['has_id']) || (empty($schema['has_email']) && empty($schema['has_email_address']))) {
+            return [];
+        }
+
+        $table_sql = self::quote_sql_identifier((string) $schema['table']);
+        $conditions = [];
+        $params = [];
+        if (!empty($schema['has_email'])) {
+            $conditions[] = "LOWER(" . self::quote_sql_identifier('email') . ") = %s";
+            $params[] = $email;
+        }
+        if (!empty($schema['has_email_address'])) {
+            $conditions[] = "LOWER(" . self::quote_sql_identifier('email_address') . ") = %s";
+            $params[] = $email;
+        }
+        if (empty($conditions)) {
+            return [];
+        }
+
+        $where_active = '';
+        if ($active_only) {
+            if (!empty($schema['has_status'])) {
+                $where_active = " AND LOWER(" . self::quote_sql_identifier('status') . ") = 'active'";
+            } elseif (!empty($schema['has_is_active'])) {
+                $where_active = " AND " . self::quote_sql_identifier('is_active') . " = 1";
+            }
+        }
+
+        $columns = $this->get_email_sender_select_columns($schema);
+        $select_sql = implode(', ', array_map([self::class, 'quote_sql_identifier'], $columns));
+        $sql = "SELECT {$select_sql}
+                FROM {$table_sql}
+                WHERE (" . implode(' OR ', $conditions) . "){$where_active}
+                ORDER BY " . self::quote_sql_identifier('id') . " ASC
+                LIMIT 1";
+        $prepared = $wpdb->prepare($sql, $params);
+        $row = $wpdb->get_row($prepared, ARRAY_A);
+        if (!is_array($row)) {
+            return [];
+        }
+        return $this->normalize_email_sender_row($row, $schema);
+    }
+
+    private function upsert_email_sender_directory_entry($email, $display_name = '', $status = 'active', $source = 'manual', $preserve_existing_name = true) {
+        global $wpdb;
+        $schema = $this->get_email_sender_table_schema();
+        if (empty($schema['has_id']) || (empty($schema['has_email']) && empty($schema['has_email_address']))) {
+            return ['id' => 0, 'created' => false, 'row' => []];
+        }
+
+        $email = $this->sanitize_mail_header_email($email);
+        if ($email === '') {
+            return ['id' => 0, 'created' => false, 'row' => []];
+        }
+        $display_name = sanitize_text_field((string) $display_name);
+        if ((function_exists('mb_strlen') ? mb_strlen($display_name) : strlen($display_name)) > 190) {
+            $display_name = function_exists('mb_substr') ? mb_substr($display_name, 0, 190) : substr($display_name, 0, 190);
+        }
+        $status = $this->normalize_email_sender_status($status);
+        $source = sanitize_key((string) $source);
+        if ($source === '') {
+            $source = 'manual';
+        }
+        $target_active = $status === 'active' ? 1 : 0;
+
+        $table = (string) $schema['table'];
+        $existing = $this->get_email_sender_row_by_email($email, false, $schema);
+        $now = current_time('mysql');
+
+        if (!empty($existing['id'])) {
+            $update_data = [];
+            $update_format = [];
+            if (!empty($schema['has_email']) && empty($existing['email'])) {
+                $update_data['email'] = $email;
+                $update_format[] = '%s';
+            }
+            if (!empty($schema['has_email_address']) && empty($existing['email_address'])) {
+                $update_data['email_address'] = $email;
+                $update_format[] = '%s';
+            }
+            if (!empty($schema['has_display_name']) && $display_name !== '') {
+                $existing_name = sanitize_text_field((string) ($existing['display_name'] ?? ''));
+                if (!$preserve_existing_name || $existing_name === '') {
+                    $update_data['display_name'] = $display_name;
+                    $update_format[] = '%s';
+                }
+            }
+            if (!empty($schema['has_status']) && sanitize_key((string) ($existing['status'] ?? '')) !== $status) {
+                $update_data['status'] = $status;
+                $update_format[] = '%s';
+            }
+            if (!empty($schema['has_is_active']) && (int) ($existing['is_active'] ?? 0) !== $target_active) {
+                $update_data['is_active'] = $target_active;
+                $update_format[] = '%d';
+            }
+            if (!empty($schema['has_source'])) {
+                $existing_source = sanitize_key((string) ($existing['source'] ?? ''));
+                if ($source === 'manual' || $existing_source === '' || $existing_source === 'legacy_import') {
+                    if ($existing_source !== $source) {
+                        $update_data['source'] = $source;
+                        $update_format[] = '%s';
+                    }
+                }
+            }
+            if (!empty($schema['has_updated_at'])) {
+                $update_data['updated_at'] = $now;
+                $update_format[] = '%s';
+            }
+
+            if (!empty($update_data)) {
+                $updated = $wpdb->update(
+                    $table,
+                    $update_data,
+                    ['id' => (int) $existing['id']],
+                    $update_format,
+                    ['%d']
+                );
+                if ($updated === false) {
+                    return ['id' => 0, 'created' => false, 'row' => []];
+                }
+            }
+            $fresh_row = $this->get_email_sender_row((int) $existing['id']);
+            return ['id' => (int) $existing['id'], 'created' => false, 'row' => $fresh_row];
+        }
+
+        $insert_data = [];
+        $insert_format = [];
+        if (!empty($schema['has_email'])) {
+            $insert_data['email'] = $email;
+            $insert_format[] = '%s';
+        }
+        if (!empty($schema['has_email_address'])) {
+            $insert_data['email_address'] = $email;
+            $insert_format[] = '%s';
+        }
+        if (!empty($schema['has_display_name'])) {
+            $insert_data['display_name'] = $display_name;
+            $insert_format[] = '%s';
+        }
+        if (!empty($schema['has_status'])) {
+            $insert_data['status'] = $status;
+            $insert_format[] = '%s';
+        }
+        if (!empty($schema['has_is_active'])) {
+            $insert_data['is_active'] = $target_active;
+            $insert_format[] = '%d';
+        }
+        if (!empty($schema['has_source'])) {
+            $insert_data['source'] = $source;
+            $insert_format[] = '%s';
+        }
+        if (!empty($schema['has_created_at'])) {
+            $insert_data['created_at'] = $now;
+            $insert_format[] = '%s';
+        }
+        if (!empty($schema['has_updated_at'])) {
+            $insert_data['updated_at'] = $now;
+            $insert_format[] = '%s';
+        }
+        if (empty($insert_data)) {
+            return ['id' => 0, 'created' => false, 'row' => []];
+        }
+
+        $inserted = $wpdb->insert($table, $insert_data, $insert_format);
+        if ($inserted === false) {
+            $fallback_row = $this->get_email_sender_row_by_email($email, false, $schema);
+            $fallback_id = (int) ($fallback_row['id'] ?? 0);
+            return ['id' => $fallback_id, 'created' => false, 'row' => $fallback_row];
+        }
+
+        $sender_id = (int) $wpdb->insert_id;
+        return ['id' => $sender_id, 'created' => true, 'row' => $this->get_email_sender_row($sender_id)];
+    }
+
+    private function get_template_from_email_addresses_for_sender_seeding() {
+        global $wpdb;
+        $templates_table = $this->get_email_templates_storage_table();
+        if (!self::table_has_column($templates_table, 'from_email')) {
+            return [];
+        }
+
+        $rows = $wpdb->get_col(
+            "SELECT DISTINCT from_email
+             FROM {$templates_table}
+             WHERE from_email IS NOT NULL
+               AND from_email <> ''"
+        );
+
+        $emails = [];
+        foreach ((array) $rows as $value) {
+            $email = $this->sanitize_mail_header_email((string) $value);
+            if ($email === '') {
+                continue;
+            }
+            $emails[strtolower($email)] = $email;
+        }
+        return array_values($emails);
+    }
+
+    private function migrate_legacy_email_sender_rows() {
+        global $wpdb;
+        $legacy_tables = $this->get_email_sender_legacy_table_candidates();
+        if (empty($legacy_tables)) {
+            return;
+        }
+
+        foreach ($legacy_tables as $legacy_table) {
+            $has_email = self::table_has_column($legacy_table, 'email');
+            $has_email_address = self::table_has_column($legacy_table, 'email_address');
+            if (!$has_email && !$has_email_address) {
+                continue;
+            }
+
+            $columns = ['id'];
+            foreach (['email', 'email_address', 'display_name', 'status', 'is_active', 'created_at', 'updated_at'] as $column) {
+                if (self::table_has_column($legacy_table, $column)) {
+                    $columns[] = $column;
+                }
+            }
+            if (count($columns) < 2) {
+                continue;
+            }
+
+            $legacy_sql = self::quote_sql_identifier($legacy_table);
+            $select_sql = implode(', ', array_map([self::class, 'quote_sql_identifier'], $columns));
+            $rows = $wpdb->get_results(
+                "SELECT {$select_sql}
+                 FROM {$legacy_sql}
+                 ORDER BY " . self::quote_sql_identifier('id') . " ASC",
+                ARRAY_A
+            );
+
+            foreach ((array) $rows as $legacy_row) {
+                $legacy_email = $this->sanitize_mail_header_email((string) ($legacy_row['email'] ?? ''));
+                if ($legacy_email === '') {
+                    $legacy_email = $this->sanitize_mail_header_email((string) ($legacy_row['email_address'] ?? ''));
+                }
+                if ($legacy_email === '') {
+                    continue;
+                }
+                $legacy_name = sanitize_text_field((string) ($legacy_row['display_name'] ?? ''));
+                $legacy_status = $this->normalize_email_sender_status(
+                    (string) ($legacy_row['status'] ?? ''),
+                    !empty($legacy_row['is_active']) ? 'active' : 'disabled'
+                );
+                $this->upsert_email_sender_directory_entry($legacy_email, $legacy_name, $legacy_status, 'legacy_import', true);
+            }
+        }
+    }
+
+    private function ensure_email_sender_directory_seeded($include_template_inference = true) {
+        static $seeded = false;
+        static $seeded_with_templates = false;
+        static $seeding_now = false;
+
+        $include_template_inference = !empty($include_template_inference);
+        if ($seeding_now) {
+            return;
+        }
+        if ($seeded && (!$include_template_inference || $seeded_with_templates)) {
+            return;
+        }
+
+        $seeding_now = true;
+        try {
+            self::migrate_schema_v64_email_sender_directory();
+            self::migrate_schema_v67_email_sender_table_normalization();
+
+            $this->migrate_legacy_email_sender_rows();
+
+            foreach ($this->get_email_sender_default_seed_definitions() as $seed_row) {
+                $seed_email = $this->sanitize_mail_header_email((string) ($seed_row['email'] ?? ''));
+                if ($seed_email === '') {
+                    continue;
+                }
+                $this->upsert_email_sender_directory_entry(
+                    $seed_email,
+                    sanitize_text_field((string) ($seed_row['display_name'] ?? '')),
+                    'active',
+                    sanitize_key((string) ($seed_row['source'] ?? 'default_seed')),
+                    true
+                );
+            }
+
+            if ($include_template_inference) {
+                foreach ($this->get_template_from_email_addresses_for_sender_seeding() as $template_email) {
+                    $this->upsert_email_sender_directory_entry(
+                        $template_email,
+                        '',
+                        'active',
+                        'template_inferred',
+                        true
+                    );
+                }
+                $seeded_with_templates = true;
+            }
+
+            $seeded = true;
+        } finally {
+            $seeding_now = false;
+        }
+    }
+
+    private function get_email_sender_row($sender_id) {
+        global $wpdb;
+        $sender_id = (int) $sender_id;
+        if ($sender_id < 1) {
+            return [];
+        }
+
+        $schema = $this->get_email_sender_table_schema();
+        if (empty($schema['has_id']) || (empty($schema['has_email']) && empty($schema['has_email_address']))) {
+            return [];
+        }
+        $table_sql = self::quote_sql_identifier((string) $schema['table']);
+        $columns = $this->get_email_sender_select_columns($schema);
+        $select_sql = implode(', ', array_map([self::class, 'quote_sql_identifier'], $columns));
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT {$select_sql}
+             FROM {$table_sql}
+             WHERE id = %d
+             LIMIT 1",
+            $sender_id
+        ), ARRAY_A);
+        if (!is_array($row)) {
+            return [];
+        }
+        return $this->normalize_email_sender_row($row, $schema);
+    }
+
+    private function get_email_sender_directory_rows($active_only = false) {
+        global $wpdb;
+        $this->ensure_email_sender_directory_seeded(true);
+
+        $schema = $this->get_email_sender_table_schema();
+        if (empty($schema['has_id']) || (empty($schema['has_email']) && empty($schema['has_email_address']))) {
+            return [];
+        }
+
+        $table_sql = self::quote_sql_identifier((string) $schema['table']);
+        $columns = $this->get_email_sender_select_columns($schema);
+        $select_sql = implode(', ', array_map([self::class, 'quote_sql_identifier'], $columns));
+
+        $where_sql = '';
+        if (!empty($active_only)) {
+            if (!empty($schema['has_status'])) {
+                $where_sql = "WHERE LOWER(" . self::quote_sql_identifier('status') . ") = 'active'";
+            } elseif (!empty($schema['has_is_active'])) {
+                $where_sql = "WHERE " . self::quote_sql_identifier('is_active') . " = 1";
+            }
+        }
+
+        $order_email_column = !empty($schema['has_email']) ? 'email' : 'email_address';
+        $order_email_sql = self::quote_sql_identifier($order_email_column);
+        $order_sql = "ORDER BY {$order_email_sql} ASC";
+        if (!empty($schema['has_status'])) {
+            $order_sql = "ORDER BY CASE WHEN LOWER(" . self::quote_sql_identifier('status') . ") = 'active' THEN 1 ELSE 0 END DESC, {$order_email_sql} ASC";
+        } elseif (!empty($schema['has_is_active'])) {
+            $order_sql = "ORDER BY " . self::quote_sql_identifier('is_active') . " DESC, {$order_email_sql} ASC";
+        }
+
+        $rows = $wpdb->get_results(
+            "SELECT {$select_sql}
+             FROM {$table_sql}
+             {$where_sql}
+             {$order_sql}",
+            ARRAY_A
+        );
+
+        $output = [];
+        foreach ((array) $rows as $row) {
+            $normalized_row = $this->normalize_email_sender_row((array) $row, $schema);
+            if (empty($normalized_row['id'])) {
+                continue;
+            }
+            $output[] = $normalized_row;
+        }
+
+        return $output;
+    }
+
+    private function sanitize_mail_header_text($value) {
+        $value = wp_strip_all_tags((string) $value);
+        $value = str_replace(["\r", "\n"], '', $value);
+        $value = str_replace(['<', '>', '"'], '', $value);
+        $value = preg_replace('/\s+/', ' ', $value);
+        if (!is_string($value)) {
+            $value = '';
+        }
+        $value = trim($value);
+        return sanitize_text_field($value);
+    }
+
+    private function sanitize_mail_header_email($email) {
+        $email = str_replace(["\r", "\n"], '', (string) $email);
+        $email = sanitize_email($email);
+        if ($email === '' || !is_email($email)) {
+            return '';
+        }
+        return $email;
+    }
+
+    private function get_active_email_senders_lookup_by_email() {
+        $this->ensure_email_sender_directory_seeded(true);
+        $lookup = [];
+        foreach ((array) $this->get_email_sender_directory_rows(true) as $row) {
+            $email = $this->sanitize_mail_header_email((string) ($row['email_address'] ?? ''));
+            if ($email === '') {
+                continue;
+            }
+            $lookup[strtolower($email)] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'email_address' => $email,
+                'display_name' => $this->sanitize_mail_header_text((string) ($row['display_name'] ?? '')),
+                'is_active' => !empty($row['is_active']) ? 1 : 0,
+                'source' => sanitize_key((string) ($row['source'] ?? 'manual')),
+            ];
+        }
+        return $lookup;
+    }
+
+    private function get_active_email_sender_row_by_email($email) {
+        return $this->get_email_sender_row_by_email($email, true);
+    }
+
+    private function get_email_template_sender_defaults_map() {
+        global $wpdb;
+        $templates_table = $this->get_email_templates_storage_table();
+        if (!self::table_has_column($templates_table, 'template_key')) {
+            return [];
+        }
+
+        $select_fields = ['template_key', 'from_email', 'from_name'];
+        $has_default_sender_id = self::table_has_column($templates_table, 'default_sender_id');
+        if ($has_default_sender_id) {
+            $select_fields[] = 'default_sender_id';
+        }
+        $select_sql = implode(', ', $select_fields);
+        $rows = $wpdb->get_results(
+            "SELECT {$select_sql}
+             FROM {$templates_table}
+             WHERE template_key <> ''",
+            ARRAY_A
+        );
+
+        $map = [];
+        foreach ((array) $rows as $row) {
+            $template_key = sanitize_key((string) ($row['template_key'] ?? ''));
+            if ($template_key === '') {
+                continue;
+            }
+            $map[$template_key] = [
+                'default_sender_id' => $has_default_sender_id ? (int) ($row['default_sender_id'] ?? 0) : 0,
+                'from_email' => sanitize_email((string) ($row['from_email'] ?? '')),
+                'from_name' => sanitize_text_field((string) ($row['from_name'] ?? '')),
+            ];
+        }
+
+        return $map;
+    }
+
+    private function get_email_template_storage_rows_map() {
+        global $wpdb;
+        $templates_table = $this->get_email_templates_storage_table();
+        if (!self::table_has_column($templates_table, 'template_key')) {
+            return [];
+        }
+
+        $select_fields = ['id', 'template_key'];
+        $optional_columns = [
+            'module',
+            'recipient_role',
+            'from_email',
+            'from_name',
+            'status',
+            'updated_at',
+            'default_sender_id',
+        ];
+        foreach ($optional_columns as $column_name) {
+            if (self::table_has_column($templates_table, $column_name)) {
+                $select_fields[] = $column_name;
+            }
+        }
+
+        $rows = $wpdb->get_results(
+            "SELECT " . implode(', ', $select_fields) . "
+             FROM {$templates_table}
+             WHERE template_key <> ''
+             ORDER BY id DESC",
+            ARRAY_A
+        );
+
+        $map = [];
+        foreach ((array) $rows as $row) {
+            $template_key = sanitize_key((string) ($row['template_key'] ?? ''));
+            if ($template_key === '' || isset($map[$template_key])) {
+                continue;
+            }
+
+            $map[$template_key] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'template_key' => $template_key,
+                'module' => sanitize_key((string) ($row['module'] ?? '')),
+                'recipient_role' => sanitize_key((string) ($row['recipient_role'] ?? '')),
+                'from_email' => sanitize_email((string) ($row['from_email'] ?? '')),
+                'from_name' => sanitize_text_field((string) ($row['from_name'] ?? '')),
+                'status' => sanitize_key((string) ($row['status'] ?? '')),
+                'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
+                'default_sender_id' => (int) ($row['default_sender_id'] ?? 0),
+            ];
+        }
+
+        return $map;
+    }
+
+    private function normalize_email_log_status($status, $default = 'queued') {
+        $status = sanitize_key((string) $status);
+        if (in_array($status, ['queued', 'sent', 'failed'], true)) {
+            return $status;
+        }
+        $default = sanitize_key((string) $default);
+        if (in_array($default, ['queued', 'sent', 'failed'], true)) {
+            return $default;
+        }
+        return 'queued';
+    }
+
+    private function infer_email_module_for_log_context($template_key, $subject = '') {
+        $seed = strtolower((string) $template_key . ' ' . (string) $subject);
+        if ($seed === '') {
+            return 'system';
+        }
+        if (strpos($seed, 'payroll') !== false || strpos($seed, 'finance') !== false || strpos($seed, 'invoice') !== false || strpos($seed, 'remittance') !== false) {
+            return 'finance';
+        }
+        if (strpos($seed, 'support') !== false || strpos($seed, 'ticket') !== false) {
+            return 'support';
+        }
+        if (strpos($seed, 'partner') !== false) {
+            return 'partner';
+        }
+        if (strpos($seed, 'reward') !== false) {
+            return 'rewards';
+        }
+        if (strpos($seed, 'book') !== false || strpos($seed, 'shift') !== false || strpos($seed, 'request') !== false) {
+            return 'bookings';
+        }
+        if (strpos($seed, 'onboard') !== false || strpos($seed, 'welcome') !== false || strpos($seed, 'register') !== false || strpos($seed, 'verify') !== false) {
+            return 'onboarding';
+        }
+        if (strpos($seed, 'marketing') !== false || strpos($seed, 'campaign') !== false) {
+            return 'marketing';
+        }
+        return 'system';
+    }
+
+    private function sanitize_email_log_metadata_value($value, $depth = 0) {
+        if ($depth > 3) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+        if (is_int($value) || is_float($value)) {
+            return $value;
+        }
+        if (is_string($value)) {
+            $value = sanitize_textarea_field($value);
+            if (strlen($value) > 500) {
+                $value = substr($value, 0, 500);
+            }
+            return $value;
+        }
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $output = [];
+        $count = 0;
+        $blocked_keys = [
+            'body',
+            'message',
+            'html',
+            'html_body',
+            'text_body',
+            'content',
+            'rendered_html_body',
+            'rendered_text_body',
+            'rendered_body',
+            'email_body',
+        ];
+        foreach ($value as $raw_key => $raw_child) {
+            if ($count >= 40) {
+                break;
+            }
+            $count++;
+            $key = is_string($raw_key) ? sanitize_key($raw_key) : '';
+            if ($key !== '' && in_array($key, $blocked_keys, true)) {
+                continue;
+            }
+            $child = $this->sanitize_email_log_metadata_value($raw_child, $depth + 1);
+            if ($child === null) {
+                continue;
+            }
+            if ($key === '') {
+                $output[] = $child;
+            } else {
+                $output[$key] = $child;
+            }
+        }
+        return $output;
+    }
+
+    private function sanitize_email_log_metadata($metadata) {
+        if (!is_array($metadata)) {
+            return [];
+        }
+        $sanitized = $this->sanitize_email_log_metadata_value($metadata, 0);
+        return is_array($sanitized) ? $sanitized : [];
+    }
+
+    private function encode_email_log_metadata_json($metadata) {
+        $safe = $this->sanitize_email_log_metadata($metadata);
+        if (empty($safe)) {
+            return '';
+        }
+
+        $json = wp_json_encode($safe);
+        if (!is_string($json) || $json === '') {
+            return '';
+        }
+
+        if (strlen($json) <= 4096) {
+            return $json;
+        }
+
+        $truncated = [
+            'truncated' => 1,
+            'excerpt' => sanitize_textarea_field(substr($json, 0, 3800)),
+        ];
+        $truncated_json = wp_json_encode($truncated);
+        if (!is_string($truncated_json) || $truncated_json === '') {
+            $truncated_json = substr($json, 0, 4096);
+        }
+        if (strlen($truncated_json) > 4096) {
+            $truncated_json = substr($truncated_json, 0, 4096);
+        }
+        return $truncated_json;
+    }
+
+    public function email_log_insert($args = []) {
+        global $wpdb;
+        $args = is_array($args) ? $args : [];
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'recipient_email')) {
+            return 0;
+        }
+
+        $recipient_email = sanitize_email((string) ($args['recipient_email'] ?? ''));
+        $sender_email = $this->sanitize_mail_header_email((string) ($args['sender_email'] ?? ($args['from_email'] ?? '')));
+        $from_email = $this->sanitize_mail_header_email((string) ($args['from_email'] ?? $sender_email));
+        if ($from_email === '' && $sender_email !== '') {
+            $from_email = $sender_email;
+        }
+        if ($sender_email === '' && $from_email !== '') {
+            $sender_email = $from_email;
+        }
+        $subject = sanitize_text_field((string) ($args['subject'] ?? ''));
+        if ($recipient_email === '' || !is_email($recipient_email)) {
+            return 0;
+        }
+        if ($from_email === '' || !is_email($from_email)) {
+            return 0;
+        }
+        if ($sender_email === '' || !is_email($sender_email)) {
+            $sender_email = $from_email;
+        }
+        if ($subject === '') {
+            $subject = 'CoverMeNow ONE notification';
+        }
+
+        $status = $this->normalize_email_log_status((string) ($args['status'] ?? 'queued'), 'queued');
+        $error_message = sanitize_textarea_field((string) ($args['error_message'] ?? ''));
+        if (strlen($error_message) > 1000) {
+            $error_message = substr($error_message, 0, 1000);
+        }
+        $module = sanitize_key((string) ($args['module'] ?? ''));
+        if ($module === '' && isset($args['metadata']) && is_array($args['metadata']) && !empty($args['metadata']['module'])) {
+            $module = sanitize_key((string) $args['metadata']['module']);
+        }
+        $metadata_payload = [];
+        if (isset($args['metadata']) && is_array($args['metadata'])) {
+            $metadata_payload = (array) $args['metadata'];
+        }
+        if (isset($args['meta_json']) && is_array($args['meta_json'])) {
+            $metadata_payload = array_merge($metadata_payload, (array) $args['meta_json']);
+        }
+        $metadata_json = $this->encode_email_log_metadata_json($metadata_payload);
+        $now = current_time('mysql');
+        $sender_name = $this->sanitize_mail_header_text((string) ($args['sender_name'] ?? ($args['from_name'] ?? '')));
+        $from_name = $this->sanitize_mail_header_text((string) ($args['from_name'] ?? $sender_name));
+        if ($from_name === '' && $sender_name !== '') {
+            $from_name = $sender_name;
+        }
+        if ($sender_name === '' && $from_name !== '') {
+            $sender_name = $from_name;
+        }
+
+        $insert_data = [
+            'template_key' => sanitize_key((string) ($args['template_key'] ?? '')) ?: null,
+            'recipient_email' => $recipient_email,
+            'from_email' => $from_email,
+            'subject' => $subject,
+            'error_message' => $error_message !== '' ? $error_message : null,
+        ];
+        $insert_format = ['%s', '%s', '%s', '%s', '%s'];
+
+        if (self::table_has_column($table, 'status')) {
+            $insert_data['status'] = $status;
+            $insert_format[] = '%s';
+        } elseif (self::table_has_column($table, 'send_status')) {
+            $insert_data['send_status'] = $status;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'created_at')) {
+            $insert_data['created_at'] = $now;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'updated_at')) {
+            $insert_data['updated_at'] = $now;
+            $insert_format[] = '%s';
+        }
+
+        if (self::table_has_column($table, 'recipient_user_id')) {
+            $recipient_user_id = max(0, (int) ($args['recipient_user_id'] ?? 0));
+            $insert_data['recipient_user_id'] = $recipient_user_id > 0 ? $recipient_user_id : null;
+            $insert_format[] = '%d';
+        }
+        if (self::table_has_column($table, 'recipient_role')) {
+            $insert_data['recipient_role'] = sanitize_key((string) ($args['recipient_role'] ?? '')) ?: null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'module')) {
+            $insert_data['module'] = $module !== '' ? $module : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'from_name')) {
+            $insert_data['from_name'] = $from_name !== '' ? $from_name : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'sender_email')) {
+            $insert_data['sender_email'] = $sender_email;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'sender_name')) {
+            $insert_data['sender_name'] = $sender_name !== '' ? $sender_name : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'related_entity_type')) {
+            $insert_data['related_entity_type'] = sanitize_key((string) ($args['related_entity_type'] ?? '')) ?: null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'related_entity_id')) {
+            $related_entity_id = max(0, (int) ($args['related_entity_id'] ?? 0));
+            $insert_data['related_entity_id'] = $related_entity_id > 0 ? $related_entity_id : null;
+            $insert_format[] = '%d';
+        }
+        if (self::table_has_column($table, 'metadata')) {
+            $insert_data['metadata'] = $metadata_json !== '' ? $metadata_json : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'meta_json')) {
+            $insert_data['meta_json'] = $metadata_json !== '' ? $metadata_json : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'send_status') && !isset($insert_data['send_status'])) {
+            $insert_data['send_status'] = $status;
+            $insert_format[] = '%s';
+        }
+
+        $inserted = $wpdb->insert($table, $insert_data, $insert_format);
+        if ($inserted === false) {
+            return 0;
+        }
+
+        return (int) $wpdb->insert_id;
+    }
+
+    public function email_log_update_status($log_id, $status, $error_message = null) {
+        global $wpdb;
+        $log_id = (int) $log_id;
+        if ($log_id < 1) {
+            return false;
+        }
+
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'id')) {
+            return false;
+        }
+
+        $status = $this->normalize_email_log_status($status, 'failed');
+        $update_data = [];
+        $update_format = [];
+        if (self::table_has_column($table, 'status')) {
+            $update_data['status'] = $status;
+            $update_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'updated_at')) {
+            $update_data['updated_at'] = current_time('mysql');
+            $update_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'send_status')) {
+            $update_data['send_status'] = $status;
+            $update_format[] = '%s';
+        }
+        if (empty($update_data)) {
+            return false;
+        }
+
+        if ($error_message !== null || $status === 'failed') {
+            $sanitized_error = sanitize_textarea_field((string) $error_message);
+            if (strlen($sanitized_error) > 1000) {
+                $sanitized_error = substr($sanitized_error, 0, 1000);
+            }
+            $update_data['error_message'] = $sanitized_error !== '' ? $sanitized_error : null;
+            $update_format[] = '%s';
+        }
+
+        $updated = $wpdb->update(
+            $table,
+            $update_data,
+            ['id' => $log_id],
+            $update_format,
+            ['%d']
+        );
+
+        return $updated !== false;
+    }
+
+    public function email_log_list($filters = [], $page = 1, $per_page = 20) {
+        global $wpdb;
+        $filters = is_array($filters) ? $filters : [];
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'recipient_email')) {
+            return [
+                'rows' => [],
+                'total' => 0,
+                'page' => 1,
+                'per_page' => 20,
+                'total_pages' => 0,
+            ];
+        }
+
+        $page = max(1, (int) $page);
+        $per_page = max(1, min(200, (int) $per_page));
+
+        $where = ['1=1'];
+        $params = [];
+
+        $template_key = sanitize_text_field((string) ($filters['template_key'] ?? ''));
+        if ($template_key !== '') {
+            $where[] = 'template_key LIKE %s';
+            $params[] = '%' . $wpdb->esc_like($template_key) . '%';
+        }
+
+        $status = sanitize_key((string) ($filters['status'] ?? ''));
+        if (in_array($status, ['queued', 'sent', 'failed'], true)) {
+            $status_column = self::table_has_column($table, 'status') ? 'status' : 'send_status';
+            $where[] = "{$status_column} = %s";
+            $params[] = $status;
+        }
+
+        $recipient_email = sanitize_text_field((string) ($filters['recipient_email'] ?? ''));
+        if ($recipient_email !== '') {
+            $where[] = 'recipient_email LIKE %s';
+            $params[] = '%' . $wpdb->esc_like($recipient_email) . '%';
+        }
+
+        $date_from = sanitize_text_field((string) ($filters['date_from'] ?? ''));
+        if ($date_from !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+            $where[] = 'created_at >= %s';
+            $params[] = $date_from . ' 00:00:00';
+        }
+        $date_to = sanitize_text_field((string) ($filters['date_to'] ?? ''));
+        if ($date_to !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+            $where[] = 'created_at <= %s';
+            $params[] = $date_to . ' 23:59:59';
+        }
+
+        $where_sql = implode(' AND ', $where);
+        $count_sql = "SELECT COUNT(*) FROM {$table} WHERE {$where_sql}";
+        $count_query = !empty($params) ? $wpdb->prepare($count_sql, $params) : $count_sql;
+        $total = (int) $wpdb->get_var($count_query);
+
+        $offset = ($page - 1) * $per_page;
+        $from_email_select = "'' AS from_email";
+        if (self::table_has_column($table, 'from_email')) {
+            $from_email_select = 'from_email';
+        } elseif (self::table_has_column($table, 'sender_email')) {
+            $from_email_select = 'sender_email AS from_email';
+        }
+        $from_name_select = "'' AS from_name";
+        if (self::table_has_column($table, 'from_name')) {
+            $from_name_select = 'from_name';
+        } elseif (self::table_has_column($table, 'sender_name')) {
+            $from_name_select = 'sender_name AS from_name';
+        }
+        $metadata_select = "'' AS metadata";
+        if (self::table_has_column($table, 'metadata') && self::table_has_column($table, 'meta_json')) {
+            $metadata_select = "CASE WHEN metadata IS NOT NULL AND metadata <> '' THEN metadata ELSE meta_json END AS metadata";
+        } elseif (self::table_has_column($table, 'metadata')) {
+            $metadata_select = 'metadata';
+        } elseif (self::table_has_column($table, 'meta_json')) {
+            $metadata_select = 'meta_json AS metadata';
+        }
+        $select_fields = [
+            'id',
+            self::table_has_column($table, 'template_key') ? 'template_key' : "'' AS template_key",
+            self::table_has_column($table, 'module') ? 'module' : "'' AS module",
+            'recipient_email',
+            self::table_has_column($table, 'recipient_user_id') ? 'recipient_user_id' : 'NULL AS recipient_user_id',
+            self::table_has_column($table, 'recipient_role') ? 'recipient_role' : "'' AS recipient_role",
+            $from_email_select,
+            $from_name_select,
+            'subject',
+            self::table_has_column($table, 'status') ? 'status' : (self::table_has_column($table, 'send_status') ? 'send_status AS status' : "'queued' AS status"),
+            'error_message',
+            self::table_has_column($table, 'related_entity_type') ? 'related_entity_type' : "'' AS related_entity_type",
+            self::table_has_column($table, 'related_entity_id') ? 'related_entity_id' : 'NULL AS related_entity_id',
+            $metadata_select,
+            'created_at',
+            self::table_has_column($table, 'updated_at') ? 'updated_at' : 'created_at AS updated_at',
+        ];
+
+        $list_sql = "SELECT " . implode(', ', $select_fields) . "
+                     FROM {$table}
+                     WHERE {$where_sql}
+                     ORDER BY id DESC
+                     LIMIT %d OFFSET %d";
+        $list_params = array_merge($params, [$per_page, $offset]);
+        $rows = $wpdb->get_results($wpdb->prepare($list_sql, $list_params), ARRAY_A);
+
+        $prepared_rows = [];
+        foreach ((array) $rows as $row) {
+            $prepared_rows[] = $this->prepare_email_log_row((array) $row);
+        }
+
+        return [
+            'rows' => $prepared_rows,
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $per_page,
+            'total_pages' => $per_page > 0 ? (int) ceil($total / $per_page) : 0,
+        ];
+    }
+
+    private function get_email_centre_logs($limit = 200) {
+        $limit = max(10, min(500, (int) $limit));
+        $result = $this->email_log_list([], 1, $limit);
+        return (array) ($result['rows'] ?? []);
+    }
+
+    private function get_email_log_entry_by_id($log_id) {
+        global $wpdb;
+        $log_id = (int) $log_id;
+        if ($log_id < 1) {
+            return [];
+        }
+
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'recipient_email')) {
+            return [];
+        }
+
+        $from_email_select = "'' AS from_email";
+        if (self::table_has_column($table, 'from_email')) {
+            $from_email_select = 'from_email';
+        } elseif (self::table_has_column($table, 'sender_email')) {
+            $from_email_select = 'sender_email AS from_email';
+        }
+        $from_name_select = "'' AS from_name";
+        if (self::table_has_column($table, 'from_name')) {
+            $from_name_select = 'from_name';
+        } elseif (self::table_has_column($table, 'sender_name')) {
+            $from_name_select = 'sender_name AS from_name';
+        }
+        $metadata_select = "'' AS metadata";
+        if (self::table_has_column($table, 'metadata') && self::table_has_column($table, 'meta_json')) {
+            $metadata_select = "CASE WHEN metadata IS NOT NULL AND metadata <> '' THEN metadata ELSE meta_json END AS metadata";
+        } elseif (self::table_has_column($table, 'metadata')) {
+            $metadata_select = 'metadata';
+        } elseif (self::table_has_column($table, 'meta_json')) {
+            $metadata_select = 'meta_json AS metadata';
+        }
+        $select_fields = [
+            'id',
+            self::table_has_column($table, 'template_key') ? 'template_key' : "'' AS template_key",
+            self::table_has_column($table, 'module') ? 'module' : "'' AS module",
+            'recipient_email',
+            self::table_has_column($table, 'recipient_user_id') ? 'recipient_user_id' : 'NULL AS recipient_user_id',
+            self::table_has_column($table, 'recipient_role') ? 'recipient_role' : "'' AS recipient_role",
+            $from_email_select,
+            $from_name_select,
+            'subject',
+            self::table_has_column($table, 'status') ? 'status' : (self::table_has_column($table, 'send_status') ? 'send_status AS status' : "'queued' AS status"),
+            'error_message',
+            self::table_has_column($table, 'related_entity_type') ? 'related_entity_type' : "'' AS related_entity_type",
+            self::table_has_column($table, 'related_entity_id') ? 'related_entity_id' : 'NULL AS related_entity_id',
+            $metadata_select,
+            'created_at',
+            self::table_has_column($table, 'updated_at') ? 'updated_at' : 'created_at AS updated_at',
+        ];
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT " . implode(', ', $select_fields) . "
+             FROM {$table}
+             WHERE id = %d
+             LIMIT 1",
+            $log_id
+        ), ARRAY_A);
+
+        return is_array($row) ? $this->prepare_email_log_row((array) $row) : [];
+    }
+
+    private function prepare_email_log_row(array $row) {
+        $status = $this->normalize_email_log_status((string) ($row['status'] ?? ($row['send_status'] ?? 'queued')), 'queued');
+        $error_message = sanitize_textarea_field((string) ($row['error_message'] ?? ''));
+        if (strlen($error_message) > 1000) {
+            $error_message = substr($error_message, 0, 1000);
+        }
+        $metadata_json = (string) ($row['metadata'] ?? '');
+
+        return [
+            'id' => (int) ($row['id'] ?? 0),
+            'template_key' => sanitize_key((string) ($row['template_key'] ?? '')),
+            'module' => sanitize_key((string) ($row['module'] ?? '')),
+            'recipient_email' => sanitize_email((string) ($row['recipient_email'] ?? '')),
+            'recipient_user_id' => max(0, (int) ($row['recipient_user_id'] ?? 0)),
+            'recipient_role' => sanitize_key((string) ($row['recipient_role'] ?? '')),
+            'from_email' => sanitize_email((string) ($row['from_email'] ?? '')),
+            'from_name' => sanitize_text_field((string) ($row['from_name'] ?? '')),
+            'sender_email' => sanitize_email((string) ($row['from_email'] ?? '')),
+            'sender_name' => sanitize_text_field((string) ($row['from_name'] ?? '')),
+            'subject' => sanitize_text_field((string) ($row['subject'] ?? '')),
+            'status' => $status,
+            'send_status' => $status,
+            'error_message' => $error_message,
+            'related_entity_type' => sanitize_key((string) ($row['related_entity_type'] ?? '')),
+            'related_entity_id' => max(0, (int) ($row['related_entity_id'] ?? 0)),
+            'metadata' => $metadata_json,
+            'created_at' => sanitize_text_field((string) ($row['created_at'] ?? '')),
+            'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
+        ];
+    }
+
+    private function sanitize_email_log_context_meta(array $context_meta) {
+        return $this->sanitize_email_log_metadata($context_meta);
+    }
+
+    private function insert_email_log_entry($template_key, $recipient_email, $recipient_role, $from_email, $subject, $send_status, $error_message = '', $related_entity_type = '', $related_entity_id = 0, $log_meta = []) {
+        $template_key = sanitize_key((string) $template_key);
+        $recipient_email = sanitize_email((string) $recipient_email);
+        $recipient_role = sanitize_key((string) $recipient_role);
+        $from_email = sanitize_email((string) $from_email);
+        $module = sanitize_key((string) ($log_meta['module'] ?? ''));
+        $subject = sanitize_text_field((string) $subject);
+        $send_status = $this->normalize_email_log_status((string) $send_status, 'failed');
+        $error_message = sanitize_textarea_field((string) $error_message);
+        if (strlen($error_message) > 1000) {
+            $error_message = substr($error_message, 0, 1000);
+        }
+        $related_entity_type = sanitize_key((string) $related_entity_type);
+        $related_entity_id = max(0, (int) $related_entity_id);
+        $log_meta = is_array($log_meta) ? $log_meta : [];
+
+        $metadata = [];
+        $context_meta = $this->sanitize_email_log_context_meta(is_array($log_meta['context_meta'] ?? null) ? (array) $log_meta['context_meta'] : []);
+        if (!empty($context_meta)) {
+            $metadata['context_meta'] = $context_meta;
+        }
+        $resent_from_log_id = max(0, (int) ($log_meta['resent_from_log_id'] ?? ($log_meta['resend_from_log_id'] ?? 0)));
+        if ($resent_from_log_id > 0) {
+            $metadata['resent_from_log_id'] = $resent_from_log_id;
+        }
+
+        return (int) $this->email_log_insert([
+            'template_key' => $template_key !== '' ? $template_key : null,
+            'recipient_email' => $recipient_email,
+            'recipient_role' => $recipient_role !== '' ? $recipient_role : 'system',
+            'from_email' => $from_email !== '' ? $from_email : 'system@covermenow.co.uk',
+            'sender_email' => $from_email !== '' ? $from_email : 'system@covermenow.co.uk',
+            'module' => $module !== '' ? $module : $this->infer_email_module_for_log_context($template_key, $subject),
+            'subject' => $subject,
+            'status' => $send_status,
+            'error_message' => $error_message,
+            'related_entity_type' => $related_entity_type,
+            'related_entity_id' => $related_entity_id,
+            'metadata' => $metadata,
+        ]);
     }
 
     private function get_audit_log_table() {
@@ -13126,14 +18073,2374 @@ final class CMN_One_Plugin {
         ], ['%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s']);
     }
 
-    private function add_notification($user_id, $type, $title, $message = '', $link_url = '') {
+    public function get_email_registry_manifest($force_refresh = false) {
+        $cache_key = 'cmn_email_registry_manifest_v1';
+        if (!$force_refresh) {
+            $cached = get_transient($cache_key);
+            if (is_array($cached)) {
+                return $cached;
+            }
+        }
+
+        $entries = $this->build_email_registry_from_source_files();
+        foreach ($this->get_email_registry_manual_catalog() as $manual_row) {
+            $template_key = sanitize_key((string) ($manual_row['template_key'] ?? ''));
+            if ($template_key === '') {
+                continue;
+            }
+            $this->add_email_registry_entry($entries, $template_key, $manual_row);
+        }
+
+        $manifest = [];
+        foreach ($entries as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            unset($entry['_trigger_map'], $entry['_location_map']);
+            $manifest[] = $entry;
+        }
+        usort($manifest, static function ($a, $b) {
+            $module_a = sanitize_key((string) ($a['module'] ?? 'system'));
+            $module_b = sanitize_key((string) ($b['module'] ?? 'system'));
+            if ($module_a !== $module_b) {
+                return strcmp($module_a, $module_b);
+            }
+            $name_a = strtolower((string) ($a['name'] ?? ''));
+            $name_b = strtolower((string) ($b['name'] ?? ''));
+            return strcmp($name_a, $name_b);
+        });
+
+        set_transient($cache_key, $manifest, 15 * MINUTE_IN_SECONDS);
+        return $manifest;
+    }
+
+    public function get_supported_smart_tags($template_key) {
+        $template_key = sanitize_key((string) $template_key);
+        if ($template_key === '') {
+            return [];
+        }
+
+        $registry_entry = $this->get_email_registry_entry_by_key($template_key);
+        $module = sanitize_key((string) ($registry_entry['module'] ?? ''));
+        $stored_template = $this->get_email_template_storage_row($template_key);
+        if ($module === '') {
+            $module = sanitize_key((string) ($stored_template['module'] ?? ''));
+        }
+        if ($module === '') {
+            $module = 'system';
+        }
+
+        $tags = [];
+        foreach ((array) $this->get_module_supported_smart_tags($module) as $tag) {
+            $normalized = sanitize_key((string) $tag);
+            if ($normalized !== '') {
+                $tags[$normalized] = $normalized;
+            }
+        }
+        foreach ((array) ($registry_entry['supported_smart_tags'] ?? []) as $tag) {
+            $normalized = sanitize_key((string) $tag);
+            if ($normalized !== '') {
+                $tags[$normalized] = $normalized;
+            }
+        }
+        foreach ((array) ($stored_template['supported_smart_tags'] ?? []) as $tag) {
+            $normalized = sanitize_key((string) $tag);
+            if ($normalized !== '') {
+                $tags[$normalized] = $normalized;
+            }
+        }
+
+        return array_values($tags);
+    }
+
+    public function render_email_template($template_key, $data_array = []) {
+        $template_key = sanitize_key((string) $template_key);
+        $data_array = is_array($data_array) ? $data_array : [];
+        if ($template_key === '') {
+            return [
+                'template_key' => '',
+                'module' => '',
+                'subject' => '',
+                'html_body' => '',
+                'text_body' => '',
+                'supported_smart_tags' => [],
+            ];
+        }
+
+        $template = $this->get_email_template_storage_row($template_key);
+        $subject = (string) ($template['subject'] ?? '');
+        $html_body = (string) ($template['html_body'] ?? '');
+        $text_body = (string) ($template['text_body'] ?? '');
+        $module = sanitize_key((string) ($template['module'] ?? ''));
+        if ($module === '') {
+            $registry_entry = $this->get_email_registry_entry_by_key($template_key);
+            $module = sanitize_key((string) ($registry_entry['module'] ?? ''));
+        }
+
+        $supported_tags = $this->get_supported_smart_tags($template_key);
+        $normalized_data = $this->normalize_email_smart_tag_data($data_array);
+
+        return [
+            'template_key' => $template_key,
+            'module' => $module,
+            'subject' => $this->replace_template_smart_tags($subject, $normalized_data, $supported_tags),
+            'html_body' => $this->replace_template_smart_tags($html_body, $normalized_data, $supported_tags),
+            'text_body' => $this->replace_template_smart_tags($text_body, $normalized_data, $supported_tags),
+            'supported_smart_tags' => $supported_tags,
+        ];
+    }
+
+    private function get_published_email_template_storage_row($template_key) {
+        global $wpdb;
+        $template_key = sanitize_key((string) $template_key);
+        if ($template_key === '') {
+            return [];
+        }
+        $table = $this->get_email_templates_storage_table();
+        if (!self::table_has_column($table, 'template_key')) {
+            return [];
+        }
+
+        $select_fields = [
+            'id',
+            'template_key',
+            'subject',
+            'html_body',
+            'text_body',
+            'from_email',
+            'from_name',
+            'reply_to_email',
+            'module',
+            'recipient_role',
+            'status',
+        ];
+        if (self::table_has_column($table, 'default_sender_id')) {
+            $select_fields[] = 'default_sender_id';
+        }
+
+        if (self::table_has_column($table, 'status')) {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT " . implode(', ', $select_fields) . "
+                 FROM {$table}
+                 WHERE template_key = %s
+                   AND status = %s
+                 ORDER BY id DESC
+                 LIMIT 1",
+                $template_key,
+                'published'
+            ), ARRAY_A);
+        } else {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT " . implode(', ', $select_fields) . "
+                 FROM {$table}
+                 WHERE template_key = %s
+                 ORDER BY id DESC
+                 LIMIT 1",
+                $template_key
+            ), ARRAY_A);
+        }
+
+        if (!is_array($row)) {
+            return [];
+        }
+
+        return [
+            'id' => (int) ($row['id'] ?? 0),
+            'template_key' => sanitize_key((string) ($row['template_key'] ?? '')),
+            'subject' => sanitize_text_field((string) ($row['subject'] ?? '')),
+            'html_body' => (string) ($row['html_body'] ?? ''),
+            'text_body' => sanitize_textarea_field((string) ($row['text_body'] ?? '')),
+            'from_email' => sanitize_email((string) ($row['from_email'] ?? '')),
+            'from_name' => sanitize_text_field((string) ($row['from_name'] ?? '')),
+            'reply_to_email' => sanitize_email((string) ($row['reply_to_email'] ?? '')),
+            'module' => sanitize_key((string) ($row['module'] ?? '')),
+            'recipient_role' => sanitize_key((string) ($row['recipient_role'] ?? '')),
+            'status' => sanitize_key((string) ($row['status'] ?? '')),
+            'default_sender_id' => (int) ($row['default_sender_id'] ?? 0),
+        ];
+    }
+
+    private function get_code_default_email_template_payload($template_key, array $registry_entry = []) {
+        $template_key = sanitize_key((string) $template_key);
+        $registry_entry = is_array($registry_entry) ? $registry_entry : [];
+        $module = sanitize_key((string) ($registry_entry['module'] ?? ''));
+        if ($module === '') {
+            $module = 'system';
+        }
+        $recipient_role = sanitize_key((string) ($registry_entry['recipient_role'] ?? ''));
+        if ($recipient_role === '') {
+            $recipient_role = 'system';
+        }
+
+        $subject_defaults = [
+            'verification' => 'Verify your email for CoverMeNow ONE',
+            'welcome' => 'Welcome to CoverMeNow ONE',
+            'admin_notification' => 'New Candidate Registration Request',
+            'password_reset' => 'Reset your CoverMeNow ONE password',
+            'registration_confirmation' => 'School Application Received',
+            'profile_completion' => 'Complete Your CoverMeNow Profile',
+            'booking_received' => 'Booking request received',
+            'booking_confirmed' => 'Candidate confirmed',
+            'booking_declined' => 'Booking update',
+            'lead_follow_up_1' => 'CoverMeNow follow-up',
+            'follow_up_candidate' => 'CoverMeNow candidate follow-up',
+            'candidate_welcome_nudge' => 'Welcome to CoverMeNow',
+            'booking_follow_up' => 'Booking follow-up',
+            'compliance_reminder' => 'Compliance reminder',
+            'school_candidate_feedback_request' => 'Please confirm and rate your completed booking',
+        ];
+        $text_defaults = [
+            'verification' => "Hi {{candidate_name}},\n\nPlease verify your email for {{company_name}} using the link below:\n{{verify_link}}\n\nThanks,\n{{company_name}}",
+            'welcome' => "Hi {{candidate_name}},\n\nWelcome to {{company_name}}. You can now log in and complete your profile.\n\nPortal: {{portal_link}}",
+            'admin_notification' => "A new candidate registration request has been received.\n\nCandidate: {{candidate_name}}\nEmail: {{email}}\nDate: {{today_date}}",
+            'password_reset' => "Hi {{candidate_name}},\n\nUse the link below to reset your password:\n{{reset_link}}\n\nIf you did not request this, please ignore this email.",
+            'registration_confirmation' => "Hi {{school_name}},\n\nThanks for applying to {{company_name}}.\nWe have received your application.",
+            'profile_completion' => "Hi {{school_name}},\n\nPlease complete your school profile using the secure link below:\n{{portal_link}}",
+            'booking_received' => "Your booking request has been received.\n\nDate: {{booking_date}}\nRole: {{booking_role}}",
+            'booking_confirmed' => "Your booking has been confirmed.\n\nDate: {{booking_date}}\nCandidate: {{candidate_name}}",
+            'booking_declined' => "Your booking could not be confirmed at this time.\n\nDate: {{booking_date}}",
+            'lead_follow_up_1' => "Hi {{contact_name}},\n\nJust checking in regarding your interest in CoverMeNow.\n\nBest regards,\n{{company_name}}",
+            'follow_up_candidate' => "Hi {{candidate_name}},\n\nA quick follow-up from {{company_name}}.\n\nPortal: {{portal_link}}",
+            'candidate_welcome_nudge' => "Hi {{candidate_name}},\n\nWelcome to {{company_name}}. Please complete your profile to start receiving work alerts.",
+            'booking_follow_up' => "Hi {{school_name}},\n\nFollowing up on your booking for {{booking_date}}.",
+            'compliance_reminder' => "Hi {{candidate_name}},\n\nThis is a reminder to complete your compliance items.\n\nPortal: {{portal_link}}",
+            'school_candidate_feedback_request' => "Hi {{school_name}},\n\nPlease confirm and rate your completed booking.\n\nCandidate: {{candidate_name}}\nDate: {{booking_date}}\nRole: {{booking_role}}\n\nLeave feedback in your portal:\n{{portal_link}}\n\nEach completed feedback helps maintain quality and supports your School Partner Programme progress.",
+        ];
+
+        $fallback_name = sanitize_text_field((string) ($registry_entry['name'] ?? ''));
+        if ($fallback_name === '') {
+            $fallback_name = ucwords(trim(str_replace('_', ' ', $template_key)));
+        }
+        $subject = sanitize_text_field((string) ($subject_defaults[$template_key] ?? $fallback_name));
+        if ($subject === '') {
+            $subject = 'CoverMeNow ONE notification';
+        }
+
+        $text_body = (string) ($text_defaults[$template_key] ?? '');
+        if ($text_body === '') {
+            $text_body = "Hello,\n\nThis is an automated notification from {{company_name}}.\n\n{{message_preview}}";
+        }
+        $html_body = '<p>' . nl2br(esc_html($text_body)) . '</p>';
+
+        return [
+            'id' => 0,
+            'template_key' => $template_key,
+            'subject' => $subject,
+            'html_body' => $html_body,
+            'text_body' => $text_body,
+            'from_email' => '',
+            'from_name' => '',
+            'reply_to_email' => '',
+            'module' => $module,
+            'recipient_role' => $recipient_role,
+            'status' => 'published',
+            'default_sender_id' => 0,
+        ];
+    }
+
+    private function resolve_email_sender_for_template($template_key, array $template_row, array $registry_entry, $recipient_role = 'system') {
+        $template_key = sanitize_key((string) $template_key);
+        $recipient_role = sanitize_key((string) $recipient_role);
+        if ($recipient_role === '') {
+            $recipient_role = 'system';
+        }
+
+        $active_sender_lookup = $this->get_active_email_senders_lookup_by_email();
+        $selected_sender = [];
+
+        $sender_id = max(0, (int) ($template_row['default_sender_id'] ?? 0));
+        if ($sender_id > 0) {
+            $sender = $this->get_email_sender_row($sender_id);
+            $sender_email = $this->sanitize_mail_header_email((string) ($sender['email_address'] ?? ''));
+            if (!empty($sender['is_active']) && $sender_email !== '' && !empty($active_sender_lookup[strtolower($sender_email)])) {
+                $selected_sender = (array) $active_sender_lookup[strtolower($sender_email)];
+            }
+        }
+
+        if (empty($selected_sender)) {
+            $template_sender_map = $this->get_email_template_sender_defaults_map();
+            $sender_assignment = (array) ($template_sender_map[$template_key] ?? []);
+            $assigned_sender_id = max(0, (int) ($sender_assignment['default_sender_id'] ?? 0));
+            if ($assigned_sender_id > 0) {
+                $sender = $this->get_email_sender_row($assigned_sender_id);
+                $sender_email = $this->sanitize_mail_header_email((string) ($sender['email_address'] ?? ''));
+                if (!empty($sender['is_active']) && $sender_email !== '' && !empty($active_sender_lookup[strtolower($sender_email)])) {
+                    $selected_sender = (array) $active_sender_lookup[strtolower($sender_email)];
+                }
+            }
+            if (empty($selected_sender) && !empty($sender_assignment['from_email'])) {
+                $assigned_email = strtolower($this->sanitize_mail_header_email((string) ($sender_assignment['from_email'] ?? '')));
+                if ($assigned_email !== '' && !empty($active_sender_lookup[$assigned_email])) {
+                    $selected_sender = (array) $active_sender_lookup[$assigned_email];
+                }
+            }
+        }
+
+        if (empty($selected_sender) && !empty($template_row['from_email'])) {
+            $template_from_email = strtolower($this->sanitize_mail_header_email((string) ($template_row['from_email'] ?? '')));
+            if ($template_from_email !== '' && !empty($active_sender_lookup[$template_from_email])) {
+                $selected_sender = (array) $active_sender_lookup[$template_from_email];
+            }
+        }
+
+        if (empty($selected_sender) && !empty($registry_entry['default_from_email'])) {
+            $registry_email = strtolower($this->sanitize_mail_header_email((string) ($registry_entry['default_from_email'] ?? '')));
+            if ($registry_email !== '' && !empty($active_sender_lookup[$registry_email])) {
+                $selected_sender = (array) $active_sender_lookup[$registry_email];
+                if (empty($selected_sender['display_name']) && !empty($registry_entry['default_from_name'])) {
+                    $selected_sender['display_name'] = $this->sanitize_mail_header_text((string) ($registry_entry['default_from_name'] ?? ''));
+                }
+            }
+        }
+
+        if (empty($selected_sender)) {
+            return [
+                'valid' => false,
+                'error' => 'No approved sender is configured for this template.',
+                'sender_id' => 0,
+                'from_email' => '',
+                'from_name' => '',
+                'reply_to_email' => '',
+            ];
+        }
+
+        $from_email = $this->sanitize_mail_header_email((string) ($selected_sender['email_address'] ?? ''));
+        $from_name = $this->sanitize_mail_header_text((string) ($selected_sender['display_name'] ?? ''));
+        if ($from_name === '' && $from_email !== '') {
+            $from_name_local = strstr($from_email, '@', true);
+            $from_name = $this->sanitize_mail_header_text(ucwords(trim(str_replace(['.', '_', '-'], ' ', (string) $from_name_local))));
+        }
+        if ($from_name === '') {
+            $from_name = 'CoverMeNow ONE';
+        }
+
+        $reply_to_email = $this->sanitize_mail_header_email((string) ($template_row['reply_to_email'] ?? ''));
+        if ($reply_to_email !== '' && empty($active_sender_lookup[strtolower($reply_to_email)])) {
+            $reply_to_email = '';
+        }
+        if ($reply_to_email === '') {
+            $reply_to_email = $from_email;
+        }
+
+        return [
+            'valid' => true,
+            'error' => '',
+            'sender_id' => max(0, (int) ($selected_sender['id'] ?? 0)),
+            'from_email' => $from_email,
+            'from_name' => $from_name,
+            'reply_to_email' => $reply_to_email,
+        ];
+    }
+
+    private function prune_wp_mail_runtime_token_map() {
+        if (empty($this->email_log_runtime_token_map) || !is_array($this->email_log_runtime_token_map)) {
+            $this->email_log_runtime_token_map = [];
+            return;
+        }
+        $threshold = time() - (60 * 60);
+        foreach ($this->email_log_runtime_token_map as $token => $token_row) {
+            $created_at = (int) ($token_row['created_at'] ?? 0);
+            if ($created_at > 0 && $created_at < $threshold) {
+                unset($this->email_log_runtime_token_map[$token]);
+            }
+        }
+    }
+
+    private function normalize_wp_mail_headers_for_logging($headers) {
+        if (is_array($headers)) {
+            $lines = $headers;
+        } else {
+            $lines = preg_split("/\\r\\n|\\r|\\n/", (string) $headers);
+        }
+        $normalized = [];
+        foreach ((array) $lines as $line) {
+            $line = trim((string) $line);
+            if ($line === '') {
+                continue;
+            }
+            $normalized[] = $line;
+        }
+        return $normalized;
+    }
+
+    private function get_wp_mail_header_value_for_logging(array $headers, $name) {
+        $target = strtolower(trim((string) $name));
+        if ($target === '') {
+            return '';
+        }
+        foreach ($headers as $line) {
+            $line = (string) $line;
+            $pos = strpos($line, ':');
+            if ($pos === false) {
+                continue;
+            }
+            $header_name = strtolower(trim(substr($line, 0, $pos)));
+            if ($header_name !== $target) {
+                continue;
+            }
+            return trim(substr($line, $pos + 1));
+        }
+        return '';
+    }
+
+    private function extract_wp_mail_sender_from_headers_for_logging(array $headers) {
+        $from_value = $this->get_wp_mail_header_value_for_logging($headers, 'From');
+        $from_email = '';
+        $from_name = '';
+        if ($from_value !== '') {
+            if (preg_match('/^(.*)<([^>]+)>$/', $from_value, $matches)) {
+                $from_name = $this->sanitize_mail_header_text((string) ($matches[1] ?? ''));
+                $from_email = $this->sanitize_mail_header_email((string) ($matches[2] ?? ''));
+            } else {
+                $from_email = $this->sanitize_mail_header_email($from_value);
+                if ($from_email === '') {
+                    $from_name = $this->sanitize_mail_header_text($from_value);
+                }
+            }
+        }
+        if ($from_email === '') {
+            $from_email = $this->sanitize_mail_header_email((string) get_option('admin_email'));
+        }
+        if ($from_email === '') {
+            $from_email = $this->sanitize_mail_header_email((string) $this->get_school_from_email());
+        }
+        if ($from_email === '') {
+            $from_email = 'school@covermenow.co.uk';
+        }
+        if ($from_name === '') {
+            $from_name = 'CoverMeNow ONE';
+        }
+        return [
+            'email' => $from_email,
+            'name' => $from_name,
+        ];
+    }
+
+    private function extract_wp_mail_recipients_for_logging($to) {
+        $raw_list = [];
+        if (is_array($to)) {
+            foreach ($to as $candidate) {
+                $raw_list[] = (string) $candidate;
+            }
+        } else {
+            $raw_list = explode(',', (string) $to);
+        }
+
+        $emails = [];
+        foreach ($raw_list as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate === '') {
+                continue;
+            }
+            if (strpos($candidate, '<') !== false && preg_match('/<([^>]+)>/', $candidate, $matches)) {
+                $candidate = trim((string) ($matches[1] ?? ''));
+            }
+            $email = $this->sanitize_mail_header_email($candidate);
+            if ($email === '') {
+                continue;
+            }
+            $emails[strtolower($email)] = $email;
+        }
+
+        return array_values($emails);
+    }
+
+    private function build_wp_mail_log_token() {
+        if (function_exists('wp_generate_uuid4')) {
+            return 'cmn-' . wp_generate_uuid4();
+        }
+        return 'cmn-' . uniqid('', true);
+    }
+
+    private function update_wp_mail_log_status_by_subject_recipient($mail_data, $status, $error_message = '') {
+        global $wpdb;
+        $status = $this->normalize_email_log_status($status, 'failed');
+        $subject = sanitize_text_field((string) ($mail_data['subject'] ?? ''));
+        $recipients = $this->extract_wp_mail_recipients_for_logging($mail_data['to'] ?? []);
+        if ($subject === '' || empty($recipients)) {
+            return;
+        }
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'recipient_email')) {
+            return;
+        }
+        $status_column = self::table_has_column($table, 'status') ? 'status' : (self::table_has_column($table, 'send_status') ? 'send_status' : '');
+        if ($status_column === '') {
+            return;
+        }
+        foreach ($recipients as $recipient_email) {
+            $log_id = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT id
+                 FROM {$table}
+                 WHERE recipient_email = %s
+                   AND subject = %s
+                   AND {$status_column} = %s
+                 ORDER BY id DESC
+                 LIMIT 1",
+                $recipient_email,
+                $subject,
+                'queued'
+            ));
+            if ($log_id > 0) {
+                $this->email_log_update_status($log_id, $status, $error_message);
+            }
+        }
+    }
+
+    private function update_wp_mail_log_status_by_token($token, $status, $error_message = '', $mail_data = []) {
+        $token = sanitize_text_field((string) $token);
+        if ($token === '') {
+            $this->update_wp_mail_log_status_by_subject_recipient($mail_data, $status, $error_message);
+            return;
+        }
+
+        $log_ids = [];
+        $map_row = (array) ($this->email_log_runtime_token_map[$token] ?? []);
+        if (!empty($map_row['log_ids']) && is_array($map_row['log_ids'])) {
+            foreach ((array) $map_row['log_ids'] as $log_id) {
+                $log_id = (int) $log_id;
+                if ($log_id > 0) {
+                    $log_ids[$log_id] = $log_id;
+                }
+            }
+        }
+        if (empty($log_ids)) {
+            global $wpdb;
+            $table = self::get_email_logs_table_name();
+            $metadata_column = self::table_has_column($table, 'meta_json')
+                ? 'meta_json'
+                : (self::table_has_column($table, 'metadata') ? 'metadata' : '');
+            if ($metadata_column !== '') {
+                $rows = $wpdb->get_col($wpdb->prepare(
+                    "SELECT id
+                     FROM {$table}
+                     WHERE {$metadata_column} LIKE %s
+                     ORDER BY id DESC
+                     LIMIT 25",
+                    '%"message_token":"' . $wpdb->esc_like($token) . '"%'
+                ));
+                foreach ((array) $rows as $row_id) {
+                    $row_id = (int) $row_id;
+                    if ($row_id > 0) {
+                        $log_ids[$row_id] = $row_id;
+                    }
+                }
+            }
+        }
+        if (!empty($log_ids)) {
+            foreach ($log_ids as $log_id) {
+                $this->email_log_update_status((int) $log_id, $status, $error_message);
+            }
+            unset($this->email_log_runtime_token_map[$token]);
+            return;
+        }
+
+        $this->update_wp_mail_log_status_by_subject_recipient($mail_data, $status, $error_message);
+    }
+
+    public function capture_wp_mail_log_pre_send($mail_data) {
+        if (!is_array($mail_data)) {
+            return $mail_data;
+        }
+        if ($this->email_log_runtime_bypass) {
+            return $mail_data;
+        }
+
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'recipient_email')) {
+            return $mail_data;
+        }
+
+        $recipients = $this->extract_wp_mail_recipients_for_logging($mail_data['to'] ?? []);
+        if (empty($recipients)) {
+            return $mail_data;
+        }
+
+        $this->prune_wp_mail_runtime_token_map();
+        $headers = $this->normalize_wp_mail_headers_for_logging($mail_data['headers'] ?? []);
+        $existing_token = $this->get_wp_mail_header_value_for_logging($headers, 'X-CMN-Email-Log-Token');
+        $message_token = $existing_token !== '' ? sanitize_text_field($existing_token) : $this->build_wp_mail_log_token();
+        if ($existing_token === '') {
+            $headers[] = 'X-CMN-Email-Log-Token: ' . $message_token;
+            $mail_data['headers'] = $headers;
+        }
+
+        $template_key = sanitize_key((string) $this->get_wp_mail_header_value_for_logging($headers, 'X-CMN-Template-Key'));
+        $module = sanitize_key((string) $this->get_wp_mail_header_value_for_logging($headers, 'X-CMN-Email-Module'));
+        if ($module === '') {
+            $module = $this->infer_email_module_for_log_context($template_key, (string) ($mail_data['subject'] ?? ''));
+        }
+        $recipient_role = sanitize_key((string) $this->get_wp_mail_header_value_for_logging($headers, 'X-CMN-Recipient-Role'));
+        if ($recipient_role === '') {
+            $recipient_role = 'unknown';
+        }
+        $sender = $this->extract_wp_mail_sender_from_headers_for_logging($headers);
+        $subject = sanitize_text_field((string) ($mail_data['subject'] ?? ''));
+        if ($subject === '') {
+            $subject = 'CoverMeNow ONE notification';
+        }
+
+        $log_ids = [];
+        foreach ($recipients as $recipient_email) {
+            $log_id = (int) $this->email_log_insert([
+                'template_key' => $template_key !== '' ? $template_key : null,
+                'module' => $module,
+                'recipient_email' => $recipient_email,
+                'recipient_role' => $recipient_role,
+                'from_email' => (string) ($sender['email'] ?? ''),
+                'from_name' => (string) ($sender['name'] ?? ''),
+                'sender_email' => (string) ($sender['email'] ?? ''),
+                'sender_name' => (string) ($sender['name'] ?? ''),
+                'subject' => $subject,
+                'status' => 'queued',
+                'metadata' => [
+                    'source' => 'wp_mail_hook',
+                    'message_token' => $message_token,
+                ],
+            ]);
+            if ($log_id > 0) {
+                $log_ids[] = $log_id;
+            }
+        }
+
+        if (!empty($log_ids)) {
+            $this->email_log_runtime_token_map[$message_token] = [
+                'log_ids' => array_values(array_unique(array_map('intval', $log_ids))),
+                'created_at' => time(),
+            ];
+        }
+
+        return $mail_data;
+    }
+
+    public function capture_wp_mail_log_success($mail_data) {
+        $mail_data = is_array($mail_data) ? $mail_data : [];
+        $headers = $this->normalize_wp_mail_headers_for_logging($mail_data['headers'] ?? []);
+        $token = $this->get_wp_mail_header_value_for_logging($headers, 'X-CMN-Email-Log-Token');
+        $this->update_wp_mail_log_status_by_token($token, 'sent', '', $mail_data);
+    }
+
+    public function capture_wp_mail_log_failure($wp_error) {
+        $mail_data = [];
+        $error_message = 'wp_mail failed.';
+        if ($wp_error instanceof WP_Error) {
+            $error_message = sanitize_text_field((string) $wp_error->get_error_message());
+            $mail_data = (array) $wp_error->get_error_data('wp_mail_failed');
+            if (empty($mail_data)) {
+                $mail_data = (array) $wp_error->get_error_data();
+            }
+        }
+        $headers = $this->normalize_wp_mail_headers_for_logging($mail_data['headers'] ?? []);
+        $token = $this->get_wp_mail_header_value_for_logging($headers, 'X-CMN-Email-Log-Token');
+        $this->update_wp_mail_log_status_by_token($token, 'failed', $error_message, $mail_data);
+    }
+
+    private function send_wp_mail_with_email_log($recipient_email, $subject, $message_body, $headers = [], $attachments = [], $log_args = []) {
+        $recipient_email = sanitize_email((string) $recipient_email);
+        $subject = sanitize_text_field((string) $subject);
+        $message_body = (string) $message_body;
+        $headers = is_array($headers) ? $headers : ((string) $headers !== '' ? [(string) $headers] : []);
+        $attachments = is_array($attachments) ? $attachments : [];
+        $log_args = is_array($log_args) ? $log_args : [];
+
+        $from_email = $this->sanitize_mail_header_email((string) ($log_args['from_email'] ?? ''));
+        if ($from_email === '') {
+            $from_email = $this->sanitize_mail_header_email((string) $this->get_school_from_email());
+        }
+        if ($from_email === '') {
+            $from_email = 'school@covermenow.co.uk';
+        }
+        $from_name = $this->sanitize_mail_header_text((string) ($log_args['from_name'] ?? ''));
+        if ($from_name === '') {
+            $from_name = 'CoverMeNow ONE';
+        }
+
+        $template_key = sanitize_key((string) ($log_args['template_key'] ?? ''));
+        $recipient_role = sanitize_key((string) ($log_args['recipient_role'] ?? ''));
+        if ($recipient_role === '') {
+            $recipient_role = 'system';
+        }
+        $metadata_module = '';
+        if (!empty($log_args['metadata']) && is_array($log_args['metadata']) && !empty($log_args['metadata']['module'])) {
+            $metadata_module = sanitize_key((string) $log_args['metadata']['module']);
+        }
+        $module = sanitize_key((string) ($log_args['module'] ?? $metadata_module));
+        if ($module === '') {
+            $module = $this->infer_email_module_for_log_context($template_key, $subject);
+        }
+
+        $related_entity_type = sanitize_key((string) ($log_args['related_entity_type'] ?? ''));
+        $related_entity_id = max(0, (int) ($log_args['related_entity_id'] ?? 0));
+        $metadata = is_array($log_args['metadata'] ?? null) ? (array) $log_args['metadata'] : [];
+        $recipient_user_id = max(0, (int) ($log_args['recipient_user_id'] ?? 0));
+        if ($recipient_user_id < 1) {
+            $recipient_user_id = $this->resolve_user_id_from_notification_email($recipient_email);
+        }
+        $delivery_urgency = $this->normalize_notification_urgency(
+            (string) ($log_args['urgency'] ?? ($log_args['priority'] ?? ($metadata['urgency'] ?? ($metadata['priority'] ?? ''))))
+        );
+        if ($delivery_urgency === 'normal') {
+            $delivery_urgency = $this->infer_notification_urgency((string) $template_key, (string) $module);
+        }
+        $delivery_decision = [
+            'allow' => true,
+            'reason' => '',
+            'defer_until' => '',
+            'urgency' => $delivery_urgency,
+        ];
+        if ($recipient_user_id > 0) {
+            $delivery_decision = $this->resolve_user_notification_channel_decision($recipient_user_id, 'email', [
+                'urgency' => $delivery_urgency,
+                'type' => $template_key,
+                'module' => $module,
+            ]);
+        }
+        if (empty($delivery_decision['allow'])) {
+            $suppress_reason = $delivery_decision['reason'] === 'channel_disabled'
+                ? 'Suppressed by notification preferences (email disabled).'
+                : 'Suppressed by notification preferences (quiet hours).';
+            if (!empty($delivery_decision['defer_until'])) {
+                $suppress_reason .= ' Next window: ' . (string) $delivery_decision['defer_until'];
+            }
+            $metadata['delivery_decision'] = 'suppressed';
+            $metadata['delivery_reason'] = (string) ($delivery_decision['reason'] ?? '');
+            $metadata['delivery_urgency'] = (string) ($delivery_decision['urgency'] ?? 'normal');
+            if (!empty($delivery_decision['defer_until'])) {
+                $metadata['delivery_defer_until'] = (string) $delivery_decision['defer_until'];
+            }
+            $log_id = (int) $this->email_log_insert([
+                'template_key' => $template_key !== '' ? $template_key : null,
+                'module' => $module,
+                'recipient_email' => $recipient_email,
+                'recipient_user_id' => $recipient_user_id > 0 ? $recipient_user_id : null,
+                'recipient_role' => $recipient_role,
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'sender_email' => $from_email,
+                'sender_name' => $from_name,
+                'subject' => $subject,
+                'status' => 'failed',
+                'error_message' => $suppress_reason,
+                'related_entity_type' => $related_entity_type !== '' ? $related_entity_type : null,
+                'related_entity_id' => $related_entity_id > 0 ? $related_entity_id : null,
+                'metadata' => $metadata,
+            ]);
+            return [
+                'success' => true,
+                'send_status' => 'suppressed',
+                'log_id' => $log_id,
+                'error_message' => $suppress_reason,
+            ];
+        }
+        $message_token = $this->build_wp_mail_log_token();
+        $headers[] = 'X-CMN-Email-Log-Token: ' . $message_token;
+        if ($template_key !== '') {
+            $headers[] = 'X-CMN-Template-Key: ' . $template_key;
+        }
+        if ($module !== '') {
+            $headers[] = 'X-CMN-Email-Module: ' . $module;
+        }
+        if ($recipient_role !== '') {
+            $headers[] = 'X-CMN-Recipient-Role: ' . $recipient_role;
+        }
+        $metadata['message_token'] = $message_token;
+        $metadata['delivery_urgency'] = (string) $delivery_urgency;
+        if (!isset($metadata['source'])) {
+            $metadata['source'] = 'wrapper';
+        }
+
+        $log_id = (int) $this->email_log_insert([
+            'template_key' => $template_key !== '' ? $template_key : null,
+            'module' => $module,
+            'recipient_email' => $recipient_email,
+            'recipient_user_id' => $recipient_user_id > 0 ? $recipient_user_id : null,
+            'recipient_role' => $recipient_role,
+            'from_email' => $from_email,
+            'from_name' => $from_name,
+            'sender_email' => $from_email,
+            'sender_name' => $from_name,
+            'subject' => $subject,
+            'status' => 'queued',
+            'related_entity_type' => $related_entity_type !== '' ? $related_entity_type : null,
+            'related_entity_id' => $related_entity_id > 0 ? $related_entity_id : null,
+            'metadata' => $metadata,
+        ]);
+
+        $sent = false;
+        $mail_error = '';
+        $mail_failed = static function ($wp_error) use (&$mail_error) {
+            if ($wp_error instanceof WP_Error) {
+                $mail_error = sanitize_text_field((string) $wp_error->get_error_message());
+            }
+        };
+
+        $prior_bypass_state = $this->email_log_runtime_bypass ? true : false;
+        $this->email_log_runtime_bypass = true;
+        add_action('wp_mail_failed', $mail_failed, 20, 1);
+        try {
+            $sent = (bool) wp_mail($recipient_email, $subject, $message_body, $headers, $attachments);
+        } catch (Throwable $throwable) {
+            $sent = false;
+            $mail_error = sanitize_text_field((string) $throwable->getMessage());
+        } finally {
+            remove_action('wp_mail_failed', $mail_failed, 20);
+            $this->email_log_runtime_bypass = $prior_bypass_state;
+        }
+
+        if (!$sent && $mail_error === '') {
+            $mail_error = 'wp_mail returned false.';
+        }
+
+        if ($log_id > 0) {
+            $this->email_log_update_status($log_id, $sent ? 'sent' : 'failed', $mail_error);
+        }
+
+        return [
+            'success' => $sent,
+            'send_status' => $sent ? 'sent' : 'failed',
+            'log_id' => $log_id,
+            'error_message' => $mail_error,
+        ];
+    }
+
+    public function send_email($template_key, $recipient_email, $data = [], $context_meta = []) {
+        $template_key = sanitize_key((string) $template_key);
+        $recipient_email = sanitize_email((string) $recipient_email);
+        $data = is_array($data) ? $data : [];
+        $context_meta = is_array($context_meta) ? $context_meta : [];
+
+        if ($template_key === '') {
+            return [
+                'success' => false,
+                'send_status' => 'failed',
+                'template_key' => '',
+                'recipient_email' => $recipient_email,
+                'log_id' => 0,
+                'error_message' => 'Template key is required.',
+            ];
+        }
+        if ($recipient_email === '' || !is_email($recipient_email)) {
+            return [
+                'success' => false,
+                'send_status' => 'failed',
+                'template_key' => $template_key,
+                'recipient_email' => $recipient_email,
+                'log_id' => 0,
+                'error_message' => 'Recipient email is invalid.',
+            ];
+        }
+
+        $subject_override = isset($context_meta['subject_override'])
+            ? sanitize_text_field((string) $context_meta['subject_override'])
+            : '';
+        $html_body_override = isset($context_meta['html_body_override'])
+            ? wp_kses_post((string) $context_meta['html_body_override'])
+            : '';
+        $text_body_override = isset($context_meta['text_body_override'])
+            ? sanitize_textarea_field((string) $context_meta['text_body_override'])
+            : '';
+
+        $registry_entry = $this->get_email_registry_entry_by_key($template_key);
+        $default_payload = $this->get_code_default_email_template_payload($template_key, $registry_entry);
+        $published_template = $this->get_published_email_template_storage_row($template_key);
+        $uses_fallback_template = empty($published_template);
+
+        $template_payload = $default_payload;
+        if (!empty($published_template)) {
+            foreach ([
+                'id',
+                'template_key',
+                'subject',
+                'html_body',
+                'text_body',
+                'from_email',
+                'from_name',
+                'reply_to_email',
+                'module',
+                'recipient_role',
+                'status',
+                'default_sender_id',
+            ] as $field) {
+                if (!array_key_exists($field, $published_template)) {
+                    continue;
+                }
+                if (in_array($field, ['id', 'default_sender_id'], true)) {
+                    $template_payload[$field] = (int) $published_template[$field];
+                    continue;
+                }
+                if (in_array($field, ['html_body', 'text_body'], true)) {
+                    if ((string) $published_template[$field] !== '') {
+                        $template_payload[$field] = (string) $published_template[$field];
+                    }
+                    continue;
+                }
+                if ((string) $published_template[$field] !== '') {
+                    $template_payload[$field] = (string) $published_template[$field];
+                }
+            }
+        }
+
+        $module = sanitize_key((string) ($template_payload['module'] ?? ''));
+        if ($module === '') {
+            $module = sanitize_key((string) ($registry_entry['module'] ?? ''));
+        }
+        if ($module === '') {
+            $module = sanitize_key((string) ($context_meta['module'] ?? 'system'));
+        }
+        if ($module === '') {
+            $module = 'system';
+        }
+
+        $recipient_role = sanitize_key((string) ($context_meta['recipient_role'] ?? ''));
+        if ($recipient_role === '') {
+            $recipient_role = sanitize_key((string) ($template_payload['recipient_role'] ?? ''));
+        }
+        if ($recipient_role === '') {
+            $recipient_role = sanitize_key((string) ($registry_entry['recipient_role'] ?? ''));
+        }
+        if ($recipient_role === '') {
+            $recipient_role = 'system';
+        }
+
+        $supported_tags = $this->get_supported_smart_tags($template_key);
+        $normalized_data = $this->normalize_email_smart_tag_data($data);
+        $subject_template = $subject_override !== '' ? $subject_override : (string) ($template_payload['subject'] ?? '');
+        $html_template = $html_body_override !== '' ? $html_body_override : (string) ($template_payload['html_body'] ?? '');
+        $text_template = $text_body_override !== '' ? $text_body_override : (string) ($template_payload['text_body'] ?? '');
+        $rendered_subject = $this->replace_template_smart_tags($subject_template, $normalized_data, $supported_tags);
+        $rendered_html = $this->replace_template_smart_tags($html_template, $normalized_data, $supported_tags);
+        $rendered_text = $this->replace_template_smart_tags($text_template, $normalized_data, $supported_tags);
+
+        $rendered_subject = sanitize_text_field($rendered_subject);
+        if ($rendered_subject === '') {
+            $fallback_subject = sanitize_text_field((string) ($registry_entry['name'] ?? ''));
+            if ($fallback_subject === '') {
+                $fallback_subject = ucwords(trim(str_replace('_', ' ', $template_key)));
+            }
+            if ($fallback_subject === '') {
+                $fallback_subject = 'CoverMeNow ONE notification';
+            }
+            $rendered_subject = $fallback_subject;
+        }
+        if ($rendered_text === '' && $rendered_html !== '') {
+            $rendered_text = trim((string) wp_strip_all_tags($rendered_html));
+        }
+        $message_body = $rendered_html !== '' ? $rendered_html : $rendered_text;
+        if ($message_body === '') {
+            $log_id = $this->insert_email_log_entry(
+                $template_key,
+                $recipient_email,
+                $recipient_role,
+                '',
+                $rendered_subject,
+                'failed',
+                'Template body is empty.',
+                sanitize_key((string) ($context_meta['related_entity_type'] ?? ($context_meta['entity_type'] ?? ''))),
+                max(0, (int) ($context_meta['related_entity_id'] ?? ($context_meta['entity_id'] ?? 0)))
+            );
+            return [
+                'success' => false,
+                'send_status' => 'failed',
+                'template_key' => $template_key,
+                'module' => $module,
+                'recipient_email' => $recipient_email,
+                'recipient_role' => $recipient_role,
+                'from_email' => '',
+                'subject' => $rendered_subject,
+                'used_fallback_template' => $uses_fallback_template,
+                'log_id' => (int) $log_id,
+                'error_message' => 'Template body is empty.',
+            ];
+        }
+
+        $sender = $this->resolve_email_sender_for_template($template_key, $template_payload, $registry_entry, $recipient_role);
+        if (empty($sender['valid'])) {
+            $sender_error = sanitize_text_field((string) ($sender['error'] ?? 'No approved sender configured.'));
+            $log_id = $this->insert_email_log_entry(
+                $template_key,
+                $recipient_email,
+                $recipient_role,
+                '',
+                $rendered_subject,
+                'failed',
+                $sender_error,
+                sanitize_key((string) ($context_meta['related_entity_type'] ?? ($context_meta['entity_type'] ?? ''))),
+                max(0, (int) ($context_meta['related_entity_id'] ?? ($context_meta['entity_id'] ?? 0)))
+            );
+            return [
+                'success' => false,
+                'send_status' => 'failed',
+                'template_key' => $template_key,
+                'module' => $module,
+                'recipient_email' => $recipient_email,
+                'recipient_role' => $recipient_role,
+                'from_email' => '',
+                'subject' => $rendered_subject,
+                'used_fallback_template' => $uses_fallback_template,
+                'log_id' => (int) $log_id,
+                'error_message' => $sender_error,
+            ];
+        }
+
+        $from_email = $this->sanitize_mail_header_email((string) ($sender['from_email'] ?? ''));
+        $from_name = $this->sanitize_mail_header_text((string) ($sender['from_name'] ?? ''));
+        $reply_to_email = $this->sanitize_mail_header_email((string) ($sender['reply_to_email'] ?? ''));
+        if ($module === 'support' || strpos($template_key, 'support') !== false) {
+            $from_email = $this->sanitize_mail_header_email((string) $this->get_support_from_email());
+            $from_name = $this->sanitize_mail_header_text((string) $this->get_support_from_name());
+            if ($reply_to_email === '') {
+                $reply_to_email = $from_email;
+            }
+        }
+        if ($from_email === '') {
+            $log_id = $this->insert_email_log_entry(
+                $template_key,
+                $recipient_email,
+                $recipient_role,
+                '',
+                $rendered_subject,
+                'failed',
+                'Template sender is invalid.',
+                sanitize_key((string) ($context_meta['related_entity_type'] ?? ($context_meta['entity_type'] ?? ''))),
+                max(0, (int) ($context_meta['related_entity_id'] ?? ($context_meta['entity_id'] ?? 0)))
+            );
+            return [
+                'success' => false,
+                'send_status' => 'failed',
+                'template_key' => $template_key,
+                'module' => $module,
+                'recipient_email' => $recipient_email,
+                'recipient_role' => $recipient_role,
+                'from_email' => '',
+                'subject' => $rendered_subject,
+                'used_fallback_template' => $uses_fallback_template,
+                'log_id' => (int) $log_id,
+                'error_message' => 'Template sender is invalid.',
+            ];
+        }
+
+        $headers = [];
+        if ($rendered_html !== '') {
+            $headers[] = 'Content-Type: text/html; charset=UTF-8';
+        } else {
+            $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+        }
+        $headers[] = 'From: ' . $from_name . ' <' . $from_email . '>';
+        if ($reply_to_email !== '') {
+            $headers[] = 'Reply-To: ' . $reply_to_email;
+        }
+
+        $mail_context_scope = '';
+        $mail_context_was_set = false;
+        $mail_context_state = false;
+        $is_support_mail = $module === 'support'
+            || strpos($template_key, 'support') !== false
+            || strtolower($from_email) === strtolower($this->sanitize_mail_header_email($this->get_support_from_email()));
+        if ($is_support_mail) {
+            $mail_context_scope = 'support';
+            $mail_context_was_set = !empty($GLOBALS['cmn_support_mail_context']);
+            $mail_context_state = $this->begin_support_mail_context();
+            if ($mail_context_state === null) {
+                $log_id = $this->insert_email_log_entry(
+                    $template_key,
+                    $recipient_email,
+                    $recipient_role,
+                    $from_email,
+                    $rendered_subject,
+                    'failed',
+                    'Mail context conflict (support).',
+                    sanitize_key((string) ($context_meta['related_entity_type'] ?? ($context_meta['entity_type'] ?? ''))),
+                    max(0, (int) ($context_meta['related_entity_id'] ?? ($context_meta['entity_id'] ?? 0)))
+                );
+                return [
+                    'success' => false,
+                    'send_status' => 'failed',
+                    'template_key' => $template_key,
+                    'module' => $module,
+                    'recipient_email' => $recipient_email,
+                    'recipient_role' => $recipient_role,
+                    'from_email' => $from_email,
+                    'subject' => $rendered_subject,
+                    'used_fallback_template' => $uses_fallback_template,
+                    'log_id' => (int) $log_id,
+                    'error_message' => 'Mail context conflict (support).',
+                ];
+            }
+        } elseif ($recipient_role === 'candidate') {
+            $mail_context_scope = 'candidate';
+            $mail_context_was_set = !empty($GLOBALS['cmn_candidate_mail_context']);
+            $mail_context_state = $this->begin_candidate_mail_context();
+            if ($mail_context_state === null) {
+                $log_id = $this->insert_email_log_entry(
+                    $template_key,
+                    $recipient_email,
+                    $recipient_role,
+                    $from_email,
+                    $rendered_subject,
+                    'failed',
+                    'Mail context conflict (candidate).',
+                    sanitize_key((string) ($context_meta['related_entity_type'] ?? ($context_meta['entity_type'] ?? ''))),
+                    max(0, (int) ($context_meta['related_entity_id'] ?? ($context_meta['entity_id'] ?? 0)))
+                );
+                return [
+                    'success' => false,
+                    'send_status' => 'failed',
+                    'template_key' => $template_key,
+                    'module' => $module,
+                    'recipient_email' => $recipient_email,
+                    'recipient_role' => $recipient_role,
+                    'from_email' => $from_email,
+                    'subject' => $rendered_subject,
+                    'used_fallback_template' => $uses_fallback_template,
+                    'log_id' => (int) $log_id,
+                    'error_message' => 'Mail context conflict (candidate).',
+                ];
+            }
+        } elseif (in_array($recipient_role, ['school', 'staff', 'admin'], true)) {
+            $mail_context_scope = 'school';
+            $mail_context_was_set = !empty($GLOBALS['cmn_school_mail_context']);
+            $mail_context_state = $this->begin_school_mail_context();
+            if ($mail_context_state === null) {
+                $log_id = $this->insert_email_log_entry(
+                    $template_key,
+                    $recipient_email,
+                    $recipient_role,
+                    $from_email,
+                    $rendered_subject,
+                    'failed',
+                    'Mail context conflict (school).',
+                    sanitize_key((string) ($context_meta['related_entity_type'] ?? ($context_meta['entity_type'] ?? ''))),
+                    max(0, (int) ($context_meta['related_entity_id'] ?? ($context_meta['entity_id'] ?? 0)))
+                );
+                return [
+                    'success' => false,
+                    'send_status' => 'failed',
+                    'template_key' => $template_key,
+                    'module' => $module,
+                    'recipient_email' => $recipient_email,
+                    'recipient_role' => $recipient_role,
+                    'from_email' => $from_email,
+                    'subject' => $rendered_subject,
+                    'used_fallback_template' => $uses_fallback_template,
+                    'log_id' => (int) $log_id,
+                    'error_message' => 'Mail context conflict (school).',
+                ];
+            }
+        }
+
+        $related_entity_type = sanitize_key((string) ($context_meta['related_entity_type'] ?? ($context_meta['entity_type'] ?? '')));
+        $related_entity_id = max(0, (int) ($context_meta['related_entity_id'] ?? ($context_meta['entity_id'] ?? 0)));
+        $recipient_user_id = max(0, (int) ($context_meta['recipient_user_id'] ?? ($context_meta['user_id'] ?? 0)));
+        $mail_result = $this->send_wp_mail_with_email_log(
+            $recipient_email,
+            $rendered_subject,
+            $message_body,
+            $headers,
+            [],
+            [
+                'template_key' => $template_key,
+                'module' => $module,
+                'recipient_user_id' => $recipient_user_id,
+                'recipient_role' => $recipient_role,
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'related_entity_type' => $related_entity_type,
+                'related_entity_id' => $related_entity_id,
+                'urgency' => sanitize_key((string) ($context_meta['urgency'] ?? ($context_meta['priority'] ?? ''))),
+                'metadata' => [
+                    'module' => $module,
+                    'used_fallback_template' => $uses_fallback_template ? 1 : 0,
+                ],
+            ]
+        );
+        $sent = !empty($mail_result['success']);
+        $mail_error = sanitize_text_field((string) ($mail_result['error_message'] ?? ''));
+        $log_id = max(0, (int) ($mail_result['log_id'] ?? 0));
+        if ($mail_context_scope === 'candidate') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_candidate_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_candidate_mail_context']);
+            }
+        } elseif ($mail_context_scope === 'school') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_school_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_school_mail_context']);
+            }
+        } elseif ($mail_context_scope === 'support') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_support_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_support_mail_context']);
+            }
+        }
+        if (!$sent && $mail_error === '') {
+            $mail_error = 'wp_mail returned false.';
+        }
+
+        return [
+            'success' => (bool) $sent,
+            'send_status' => $sent ? 'sent' : 'failed',
+            'template_key' => $template_key,
+            'module' => $module,
+            'recipient_email' => $recipient_email,
+            'recipient_role' => $recipient_role,
+            'from_email' => $from_email,
+            'subject' => $rendered_subject,
+            'used_fallback_template' => $uses_fallback_template,
+            'log_id' => (int) $log_id,
+            'error_message' => $mail_error,
+        ];
+    }
+
+    private function get_email_template_storage_row($template_key) {
+        global $wpdb;
+        $template_key = sanitize_key((string) $template_key);
+        if ($template_key === '') {
+            return [];
+        }
+        $table = $this->get_email_templates_storage_table();
+        if (!self::table_has_column($table, 'template_key')) {
+            return [];
+        }
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT template_key, subject, html_body, text_body, module, status
+             FROM {$table}
+             WHERE template_key = %s
+             ORDER BY CASE WHEN status = 'published' THEN 0 ELSE 1 END, id DESC
+             LIMIT 1",
+            $template_key
+        ), ARRAY_A);
+
+        return is_array($row) ? $row : [];
+    }
+
+    private function get_email_template_storage_full_row($template_key) {
+        global $wpdb;
+        $template_key = sanitize_key((string) $template_key);
+        if ($template_key === '') {
+            return [];
+        }
+        $table = $this->get_email_templates_storage_table();
+        if (!self::table_has_column($table, 'template_key')) {
+            return [];
+        }
+
+        $select_fields = [
+            'id',
+            'template_key',
+            'subject',
+            'html_body',
+            'text_body',
+            'from_email',
+            'from_name',
+            'reply_to_email',
+            'module',
+            'recipient_role',
+            'status',
+            'updated_at',
+        ];
+        if (self::table_has_column($table, 'default_sender_id')) {
+            $select_fields[] = 'default_sender_id';
+        }
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT " . implode(', ', $select_fields) . "
+             FROM {$table}
+             WHERE template_key = %s
+             ORDER BY id DESC
+             LIMIT 1",
+            $template_key
+        ), ARRAY_A);
+        if (!is_array($row)) {
+            return [];
+        }
+
+        return [
+            'id' => (int) ($row['id'] ?? 0),
+            'template_key' => sanitize_key((string) ($row['template_key'] ?? '')),
+            'subject' => sanitize_text_field((string) ($row['subject'] ?? '')),
+            'html_body' => (string) ($row['html_body'] ?? ''),
+            'text_body' => sanitize_textarea_field((string) ($row['text_body'] ?? '')),
+            'from_email' => sanitize_email((string) ($row['from_email'] ?? '')),
+            'from_name' => sanitize_text_field((string) ($row['from_name'] ?? '')),
+            'reply_to_email' => sanitize_email((string) ($row['reply_to_email'] ?? '')),
+            'module' => sanitize_key((string) ($row['module'] ?? '')),
+            'recipient_role' => sanitize_key((string) ($row['recipient_role'] ?? '')),
+            'status' => sanitize_key((string) ($row['status'] ?? '')),
+            'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
+            'default_sender_id' => (int) ($row['default_sender_id'] ?? 0),
+        ];
+    }
+
+    private function get_email_registry_entry_by_key($template_key) {
+        $template_key = sanitize_key((string) $template_key);
+        if ($template_key === '') {
+            return [];
+        }
+
+        foreach ((array) $this->get_email_registry_manifest() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (sanitize_key((string) ($row['template_key'] ?? '')) === $template_key) {
+                return $row;
+            }
+        }
+
+        return [];
+    }
+
+    private function get_module_supported_smart_tags($module) {
+        $module = sanitize_key((string) $module);
+        $map = [
+            'system' => [
+                'candidate_name',
+                'school_name',
+                'booking_date',
+                'shift_count',
+                'tier_name',
+                'amount_due',
+                'period_start',
+                'period_end',
+                'pay_date',
+                'ticket_ref',
+                'portal_link',
+                'company_name',
+                'today_date',
+            ],
+            'onboarding' => [
+                'candidate_name',
+                'school_name',
+                'first_name',
+                'last_name',
+                'full_name',
+                'email',
+                'verify_link',
+                'portal_link',
+                'reset_link',
+                'company_name',
+                'today_date',
+            ],
+            'operations' => [
+                'candidate_name',
+                'school_name',
+                'booking_date',
+                'booking_ref',
+                'booking_role',
+                'location',
+                'shift_count',
+                'today_date',
+            ],
+            'feedback' => [
+                'candidate_name',
+                'school_name',
+                'booking_date',
+                'booking_ref',
+                'booking_role',
+                'portal_link',
+                'company_name',
+                'today_date',
+            ],
+            'finance' => [
+                'candidate_name',
+                'school_name',
+                'period_start',
+                'period_end',
+                'pay_date',
+                'amount_due',
+                'shift_count',
+                'payroll_status',
+                'today_date',
+            ],
+            'payroll' => [
+                'candidate_name',
+                'school_name',
+                'period_start',
+                'period_end',
+                'pay_date',
+                'amount_due',
+                'shift_count',
+                'tier_name',
+                'payroll_status',
+                'today_date',
+            ],
+            'partner' => [
+                'school_name',
+                'tier_name',
+                'confirmed_days',
+                'credit_balance',
+                'amount_due',
+                'period_start',
+                'period_end',
+                'today_date',
+            ],
+            'rewards' => [
+                'candidate_name',
+                'tier_name',
+                'shift_count',
+                'bonus_amount',
+                'amount_due',
+                'cycle_label',
+                'today_date',
+            ],
+            'support' => [
+                'candidate_name',
+                'school_name',
+                'ticket_ref',
+                'issue_type',
+                'period_id',
+                'period_label',
+                'message_preview',
+                'today_date',
+            ],
+            'marketing' => [
+                'school_name',
+                'contact_name',
+                'contact_role',
+                'email',
+                'portal_link',
+                'unsubscribe_link',
+                'location',
+                'postcode',
+                'distance',
+                'today_date',
+            ],
+        ];
+
+        if (!isset($map[$module])) {
+            return $map['system'];
+        }
+        return (array) $map[$module];
+    }
+
+    private function normalize_email_smart_tag_key($key) {
+        $key = trim(strtolower((string) $key));
+        if ($key === '') {
+            return '';
+        }
+        if (strpos($key, '{{') === 0 && substr($key, -2) === '}}') {
+            $key = substr($key, 2, -2);
+        }
+        return sanitize_key(trim((string) $key));
+    }
+
+    private function normalize_email_smart_tag_value($value) {
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+        if (is_int($value) || is_float($value)) {
+            return (string) $value;
+        }
+        if (is_string($value)) {
+            return trim(wp_strip_all_tags($value));
+        }
+        if (is_null($value)) {
+            return '';
+        }
+        return '';
+    }
+
+    private function normalize_email_smart_tag_data(array $data_array) {
+        $normalized = [];
+        foreach ($data_array as $raw_key => $raw_value) {
+            $key = $this->normalize_email_smart_tag_key($raw_key);
+            if ($key === '') {
+                continue;
+            }
+            $normalized[$key] = $this->normalize_email_smart_tag_value($raw_value);
+        }
+
+        if (!isset($normalized['candidate_name']) && !empty($normalized['full_name'])) {
+            $normalized['candidate_name'] = (string) $normalized['full_name'];
+        }
+        if (!isset($normalized['full_name']) && !empty($normalized['candidate_name'])) {
+            $normalized['full_name'] = (string) $normalized['candidate_name'];
+        }
+        if (!isset($normalized['shift_count']) && isset($normalized['shifts_count'])) {
+            $normalized['shift_count'] = (string) $normalized['shifts_count'];
+        }
+        if (!isset($normalized['amount_due']) && isset($normalized['gross_amount'])) {
+            $normalized['amount_due'] = (string) $normalized['gross_amount'];
+        }
+        if (!isset($normalized['today_date'])) {
+            $normalized['today_date'] = (string) current_time('Y-m-d');
+        }
+
+        return $normalized;
+    }
+
+    private function replace_template_smart_tags($text, array $normalized_data, array $supported_tags) {
+        $text = (string) $text;
+        if ($text === '') {
+            return '';
+        }
+
+        $allowed = [];
+        foreach ($supported_tags as $tag) {
+            $normalized = sanitize_key((string) $tag);
+            if ($normalized !== '') {
+                $allowed[$normalized] = true;
+            }
+        }
+
+        return preg_replace_callback('/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/', static function ($matches) use ($normalized_data, $allowed) {
+            $tag = sanitize_key((string) ($matches[1] ?? ''));
+            if ($tag === '' || empty($allowed[$tag])) {
+                return '';
+            }
+            return (string) ($normalized_data[$tag] ?? '');
+        }, $text);
+    }
+
+    private function get_email_template_preview_sample_data($template_key) {
+        $template_key = sanitize_key((string) $template_key);
+        $registry_entry = $this->get_email_registry_entry_by_key($template_key);
+        $module = sanitize_key((string) ($registry_entry['module'] ?? 'system'));
+        $today = current_time('Y-m-d');
+
+        $sample = [
+            'candidate_name' => 'Alex Morgan',
+            'school_name' => 'Riverdale High',
+            'booking_date' => $today,
+            'booking_ref' => 'BK-1024',
+            'booking_role' => 'Teacher',
+            'location' => 'London',
+            'shift_count' => '5',
+            'tier_name' => 'Gold',
+            'amount_due' => '450.00',
+            'period_start' => date('Y-m-d', strtotime($today . ' -7 days')),
+            'period_end' => $today,
+            'pay_date' => date('Y-m-d', strtotime($today . ' +1 day')),
+            'ticket_ref' => 'TCK-5501',
+            'portal_link' => home_url('/portal'),
+            'company_name' => 'CoverMeNow',
+            'today_date' => $today,
+            'first_name' => 'Alex',
+            'last_name' => 'Morgan',
+            'full_name' => 'Alex Morgan',
+            'email' => 'alex.morgan@example.com',
+            'verify_link' => home_url('/verify-account'),
+            'reset_link' => home_url('/reset-password'),
+            'payroll_status' => 'Ready',
+            'confirmed_days' => '12',
+            'credit_balance' => '120.00',
+            'bonus_amount' => '75.00',
+            'cycle_label' => 'Spring 2026',
+            'issue_type' => 'Missing shift',
+            'period_id' => '2026-02-13__2026-02-19',
+            'period_label' => 'Fri 13 Feb - Thu 19 Feb',
+            'message_preview' => 'Please check one missing shift on Tuesday.',
+            'contact_name' => 'Jordan Blake',
+            'contact_role' => 'Business Manager',
+            'unsubscribe_link' => home_url('/unsubscribe'),
+            'postcode' => 'SW1A 1AA',
+            'distance' => '4.2 miles',
+        ];
+
+        if ($module === 'support') {
+            $sample['issue_type'] = 'Hold / bank issue';
+            $sample['message_preview'] = 'Bank details are now updated. Please release payment.';
+        } elseif ($module === 'payroll' || $module === 'finance') {
+            $sample['payroll_status'] = 'Estimate pending lock';
+            $sample['amount_due'] = '528.00';
+        }
+
+        return $sample;
+    }
+
+    private function render_email_template_preview_payload($template_key, $subject, $html_body, $text_body) {
+        $template_key = sanitize_key((string) $template_key);
+        if ($template_key === '') {
+            return [
+                'subject' => '',
+                'html_body' => '',
+                'text_body' => '',
+                'sample_data' => [],
+                'supported_smart_tags' => [],
+            ];
+        }
+
+        $subject = sanitize_text_field((string) $subject);
+        $html_body = wp_kses_post((string) $html_body);
+        $text_body = sanitize_textarea_field((string) $text_body);
+        $sample_data = $this->get_email_template_preview_sample_data($template_key);
+        $supported_tags = $this->get_supported_smart_tags($template_key);
+        $normalized_data = $this->normalize_email_smart_tag_data($sample_data);
+
+        return [
+            'subject' => $this->replace_template_smart_tags($subject, $normalized_data, $supported_tags),
+            'html_body' => $this->replace_template_smart_tags($html_body, $normalized_data, $supported_tags),
+            'text_body' => $this->replace_template_smart_tags($text_body, $normalized_data, $supported_tags),
+            'sample_data' => $normalized_data,
+            'supported_smart_tags' => $supported_tags,
+        ];
+    }
+
+    private function build_email_registry_from_source_files() {
+        $entries = [];
+        $files = $this->get_email_registry_scan_php_files();
+        $plugin_root = wp_normalize_path(plugin_dir_path(__FILE__));
+        $plugin_root_label = basename(rtrim($plugin_root, '/\\'));
+
+        foreach ($files as $file_path) {
+            $source = @file_get_contents($file_path);
+            if (!is_string($source) || $source === '') {
+                continue;
+            }
+            $lines = preg_split('/\R/', $source);
+            if (!is_array($lines) || !$lines) {
+                continue;
+            }
+            $function_starts = $this->index_function_starts_for_email_registry($lines);
+            $hook_map = $this->build_email_registry_hook_map($source);
+            $normalized_path = wp_normalize_path($file_path);
+            $relative_path = ltrim(str_replace($plugin_root, '', $normalized_path), '/');
+            if ($relative_path === '') {
+                $relative_path = basename($normalized_path);
+            }
+            $display_path = $plugin_root_label . '/' . $relative_path;
+
+            foreach ($lines as $index => $line) {
+                $line_number = $index + 1;
+                $send_method = '';
+                if (preg_match('/->\s*(send_candidate_email|send_school_email_with_alt_body|send_school_email|send_cmn_mail)\s*\(/', $line, $method_match)) {
+                    $send_method = sanitize_key((string) $method_match[1]);
+                } elseif (preg_match('/\bwp_mail\s*\(/', $line)) {
+                    $send_method = 'wp_mail';
+                }
+
+                if ($send_method === '') {
+                    continue;
+                }
+                if (preg_match('/function\s+' . preg_quote($send_method, '/') . '\s*\(/', $line)) {
+                    continue;
+                }
+
+                $function_name = $this->resolve_function_name_for_email_registry_line($line_number, $function_starts);
+                if ($function_name === '') {
+                    $function_name = 'global_scope';
+                }
+                if (in_array($function_name, ['send_candidate_email', 'send_school_email', 'send_school_email_with_alt_body', 'send_cmn_mail', 'cmn_send_candidate_email', 'cmn_send_school_email'], true)) {
+                    continue;
+                }
+
+                $snippet_lines = array_slice($lines, $index, 18);
+                $snippet = is_array($snippet_lines) ? implode("\n", $snippet_lines) : (string) $line;
+
+                $to_expression = '';
+                if (preg_match('/' . preg_quote($send_method, '/') . '\s*\(\s*([^,\n]+)\s*,/s', $snippet, $to_match)) {
+                    $to_expression = trim((string) ($to_match[1] ?? ''));
+                    if (function_exists('mb_substr')) {
+                        $to_expression = (string) mb_substr($to_expression, 0, 120);
+                    } else {
+                        $to_expression = (string) substr($to_expression, 0, 120);
+                    }
+                }
+
+                $context_type = '';
+                if (preg_match("/['\"]type['\"]\s*=>\s*'([^']+)'/i", $snippet, $type_match)) {
+                    $context_type = sanitize_key((string) ($type_match[1] ?? ''));
+                }
+
+                $log_type = '';
+                for ($cursor = max(1, $line_number - 12); $cursor <= $line_number; $cursor++) {
+                    $probe_line = (string) ($lines[$cursor - 1] ?? '');
+                    if (preg_match("/cmn_school_mail_log_type'\\]\\s*=\\s*'([^']+)'/i", $probe_line, $log_match)) {
+                        $log_type = sanitize_key((string) ($log_match[1] ?? ''));
+                    }
+                }
+
+                $template_key = $this->derive_email_registry_template_key($function_name, $send_method, $log_type, $context_type);
+                if ($template_key === '') {
+                    continue;
+                }
+
+                $hook_names = array_values(array_unique(array_filter(array_map('strval', (array) ($hook_map[$function_name] ?? [])))));
+                $triggered_by = $hook_names ? implode(', ', $hook_names) : ('internal:' . $function_name);
+                $module = $this->derive_email_registry_module($template_key, $function_name, $hook_names);
+                $recipient_role = $this->derive_email_registry_recipient_role($send_method, $template_key, $function_name, $to_expression);
+                $recipient_source = $this->derive_email_registry_recipient_source($to_expression, $recipient_role);
+                $sender_defaults = $this->derive_email_registry_sender_defaults($send_method, $recipient_role);
+                $smart_tag_data = $this->derive_email_registry_smart_tags($template_key, $function_name, $snippet);
+
+                $this->add_email_registry_entry($entries, $template_key, [
+                    'template_key' => $template_key,
+                    'name' => ucwords(trim(str_replace(['_', '-'], ' ', $template_key))),
+                    'module' => $module,
+                    'triggered_by' => $triggered_by,
+                    'recipient_role' => $recipient_role,
+                    'recipient_source' => $recipient_source,
+                    'default_from_email' => (string) ($sender_defaults['default_from_email'] ?? ''),
+                    'default_from_name' => (string) ($sender_defaults['default_from_name'] ?? ''),
+                    'has_smart_tags' => !empty($smart_tag_data['has_smart_tags']),
+                    'supported_smart_tags' => (array) ($smart_tag_data['supported_smart_tags'] ?? []),
+                    'code_locations' => [$display_path . '::' . $function_name . ':' . $line_number],
+                ]);
+            }
+        }
+
+        return $entries;
+    }
+
+    private function get_email_registry_scan_php_files() {
+        $root = plugin_dir_path(__FILE__);
+        $files = [];
+        try {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)
+            );
+            foreach ($iterator as $file_info) {
+                if (!$file_info instanceof SplFileInfo || !$file_info->isFile()) {
+                    continue;
+                }
+                if (strtolower((string) $file_info->getExtension()) !== 'php') {
+                    continue;
+                }
+                $files[] = wp_normalize_path((string) $file_info->getPathname());
+            }
+        } catch (Throwable $e) {
+            $files[] = wp_normalize_path(__FILE__);
+        }
+        if (!$files) {
+            $files[] = wp_normalize_path(__FILE__);
+        }
+        $files = array_values(array_unique(array_filter($files)));
+        sort($files);
+        return $files;
+    }
+
+    private function index_function_starts_for_email_registry(array $lines) {
+        $starts = [];
+        foreach ($lines as $index => $line) {
+            if (preg_match('/\bfunction\s+([a-zA-Z0-9_]+)\s*\(/', (string) $line, $match)) {
+                $starts[] = [
+                    'line' => $index + 1,
+                    'name' => sanitize_key((string) ($match[1] ?? '')),
+                ];
+            }
+        }
+        return $starts;
+    }
+
+    private function resolve_function_name_for_email_registry_line($line_number, array $function_starts) {
+        $line_number = (int) $line_number;
+        if ($line_number < 1 || !$function_starts) {
+            return '';
+        }
+        $resolved = '';
+        foreach ($function_starts as $start) {
+            $start_line = (int) ($start['line'] ?? 0);
+            if ($start_line > $line_number) {
+                break;
+            }
+            $resolved = sanitize_key((string) ($start['name'] ?? ''));
+        }
+        return $resolved;
+    }
+
+    private function build_email_registry_hook_map($source) {
+        $source = (string) $source;
+        $map = [];
+        if ($source === '') {
+            return $map;
+        }
+
+        $patterns = [
+            '/add_action\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*\[\s*\$this\s*,\s*[\'"]([^\'"]+)[\'"]\s*\]/i' => 'action',
+            '/add_filter\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*\[\s*\$this\s*,\s*[\'"]([^\'"]+)[\'"]\s*\]/i' => 'filter',
+        ];
+        foreach ($patterns as $pattern => $label) {
+            if (!preg_match_all($pattern, $source, $matches, PREG_SET_ORDER)) {
+                continue;
+            }
+            foreach ((array) $matches as $match) {
+                $hook_name = sanitize_text_field((string) ($match[1] ?? ''));
+                $method_name = sanitize_key((string) ($match[2] ?? ''));
+                if ($hook_name === '' || $method_name === '') {
+                    continue;
+                }
+                $descriptor = $label . ':' . $hook_name;
+                if (!isset($map[$method_name])) {
+                    $map[$method_name] = [];
+                }
+                $map[$method_name][$descriptor] = $descriptor;
+            }
+        }
+
+        foreach ($map as $method_name => $hooks) {
+            $map[$method_name] = array_values($hooks);
+        }
+
+        return $map;
+    }
+
+    private function add_email_registry_entry(array &$entries, $template_key, array $payload) {
+        $template_key = sanitize_key((string) $template_key);
+        if ($template_key === '') {
+            return;
+        }
+
+        if (!isset($entries[$template_key])) {
+            $entries[$template_key] = [
+                'template_key' => $template_key,
+                'name' => '',
+                'module' => 'system',
+                'triggered_by' => '',
+                'recipient_role' => 'system',
+                'recipient_source' => '',
+                'default_from_email' => '',
+                'default_from_name' => '',
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [],
+                '_trigger_map' => [],
+                '_location_map' => [],
+            ];
+        }
+
+        $entry = &$entries[$template_key];
+        foreach (['name', 'module', 'recipient_role', 'recipient_source', 'default_from_email', 'default_from_name'] as $field) {
+            $candidate = isset($payload[$field]) ? (string) $payload[$field] : '';
+            if ($candidate === '') {
+                continue;
+            }
+            if ($field === 'module' || $field === 'recipient_role') {
+                $candidate = sanitize_key($candidate);
+            }
+            if ($entry[$field] === '' || in_array($entry[$field], ['system', 'unknown'], true)) {
+                $entry[$field] = $candidate;
+            }
+        }
+
+        if (!empty($payload['triggered_by'])) {
+            foreach (array_map('trim', explode(',', (string) $payload['triggered_by'])) as $trigger_name) {
+                if ($trigger_name !== '') {
+                    $entry['_trigger_map'][$trigger_name] = $trigger_name;
+                }
+            }
+        }
+
+        foreach ((array) ($payload['code_locations'] ?? []) as $location) {
+            $location = sanitize_text_field((string) $location);
+            if ($location !== '') {
+                $entry['_location_map'][$location] = $location;
+            }
+        }
+
+        $has_smart_tags = !empty($payload['has_smart_tags']);
+        if ($has_smart_tags) {
+            $entry['has_smart_tags'] = true;
+        }
+        foreach ((array) ($payload['supported_smart_tags'] ?? []) as $tag) {
+            $tag = sanitize_key((string) $tag);
+            if ($tag === '') {
+                continue;
+            }
+            $entry['supported_smart_tags'][$tag] = $tag;
+        }
+
+        $entry['triggered_by'] = implode(', ', array_values($entry['_trigger_map']));
+        $entry['code_locations'] = array_values($entry['_location_map']);
+        $entry['supported_smart_tags'] = array_values($entry['supported_smart_tags']);
+        if ($entry['name'] === '') {
+            $entry['name'] = ucwords(trim(str_replace(['_', '-'], ' ', $template_key)));
+        }
+        if ($entry['module'] === '') {
+            $entry['module'] = 'system';
+        }
+        if ($entry['recipient_role'] === '') {
+            $entry['recipient_role'] = 'system';
+        }
+
+    }
+
+    private function derive_email_registry_template_key($function_name, $send_method, $log_type, $context_type) {
+        $log_type = sanitize_key((string) $log_type);
+        if ($log_type !== '') {
+            return $log_type;
+        }
+
+        $context_type = sanitize_key((string) $context_type);
+        if ($context_type !== '') {
+            return $context_type;
+        }
+
+        $function_name = sanitize_key((string) $function_name);
+        if ($function_name === '') {
+            return '';
+        }
+        $derived = $function_name;
+        foreach (['handle_', 'render_', 'maybe_', 'run_', 'send_', 'get_'] as $prefix) {
+            if (strpos($derived, $prefix) === 0) {
+                $derived = substr($derived, strlen($prefix));
+                break;
+            }
+        }
+        $derived = preg_replace('/_(for|to|by|from)_.+$/', '', (string) $derived);
+        $derived = preg_replace('/_shortcode$/', '', (string) $derived);
+        $derived = preg_replace('/_job$/', '', (string) $derived);
+        $derived = preg_replace('/_cron$/', '', (string) $derived);
+        $derived = sanitize_key((string) $derived);
+        if ($derived === '' || in_array($derived, ['school', 'candidate', 'staff', 'admin', 'email'], true)) {
+            $derived = sanitize_key($send_method . '_' . $function_name);
+        }
+        return $derived;
+    }
+
+    private function derive_email_registry_module($template_key, $function_name, array $hook_names = []) {
+        $haystack = strtolower(trim((string) $template_key . ' ' . (string) $function_name . ' ' . implode(' ', $hook_names)));
+        $rules = [
+            'payroll' => 'payroll',
+            'invoice' => 'finance',
+            'finance' => 'finance',
+            'partner' => 'partner',
+            'reward' => 'rewards',
+            'support' => 'support',
+            'ticket' => 'support',
+            'marketing' => 'marketing',
+            'compliance' => 'onboarding',
+            'verify' => 'onboarding',
+            'welcome' => 'onboarding',
+            'registration' => 'onboarding',
+            'booking' => 'operations',
+            'request' => 'operations',
+        ];
+        foreach ($rules as $needle => $module) {
+            if (strpos($haystack, $needle) !== false) {
+                return $module;
+            }
+        }
+        return 'system';
+    }
+
+    private function derive_email_registry_recipient_role($send_method, $template_key, $function_name, $to_expression = '') {
+        $send_method = sanitize_key((string) $send_method);
+        if ($send_method === 'send_candidate_email') {
+            return 'candidate';
+        }
+        if ($send_method === 'send_school_email' || $send_method === 'send_school_email_with_alt_body') {
+            $hint = strtolower((string) $template_key . ' ' . (string) $function_name . ' ' . (string) $to_expression);
+            if (strpos($hint, 'staff') !== false) {
+                return 'staff';
+            }
+            if (strpos($hint, 'admin') !== false || strpos($hint, 'duty') !== false) {
+                return 'admin';
+            }
+            return 'school';
+        }
+        if ($send_method === 'send_cmn_mail') {
+            return 'system';
+        }
+
+        $hint = strtolower((string) $template_key . ' ' . (string) $function_name . ' ' . (string) $to_expression);
+        if (strpos($hint, 'candidate') !== false) {
+            return 'candidate';
+        }
+        if (strpos($hint, 'school') !== false) {
+            return 'school';
+        }
+        if (strpos($hint, 'staff') !== false) {
+            return 'staff';
+        }
+        if (strpos($hint, 'admin') !== false) {
+            return 'admin';
+        }
+        return 'system';
+    }
+
+    private function derive_email_registry_recipient_source($to_expression, $recipient_role = 'system') {
+        $to_expression = trim((string) $to_expression);
+        $probe = strtolower($to_expression);
+        if ($probe === '') {
+            return $recipient_role === 'candidate'
+                ? 'candidate user email'
+                : ($recipient_role === 'school' ? 'school user email' : 'resolved recipient');
+        }
+        if (strpos($probe, 'user->user_email') !== false) {
+            return 'wp_users.user_email';
+        }
+        if (strpos($probe, 'candidate_email') !== false) {
+            return 'candidate profile email';
+        }
+        if (strpos($probe, 'school_email') !== false || strpos($probe, 'to_email') !== false || strpos($probe, 'recipient_email') !== false) {
+            return 'school/contact email fields';
+        }
+        if (strpos($probe, "get_option('admin_email'") !== false || strpos($probe, 'admin_email') !== false) {
+            return 'wp_options.admin_email';
+        }
+        if (strpos($probe, '$email') !== false) {
+            return 'request payload email';
+        }
+        return sanitize_text_field($to_expression);
+    }
+
+    private function derive_email_registry_sender_defaults($send_method, $recipient_role = 'system') {
+        $send_method = sanitize_key((string) $send_method);
+        if ($send_method === 'send_candidate_email') {
+            return [
+                'default_from_email' => sanitize_email($this->get_candidate_from_email()),
+                'default_from_name' => sanitize_text_field($this->get_candidate_from_name()),
+            ];
+        }
+        if ($send_method === 'send_school_email' || $send_method === 'send_school_email_with_alt_body') {
+            return [
+                'default_from_email' => sanitize_email($this->get_school_from_email()),
+                'default_from_name' => sanitize_text_field($this->get_school_from_name()),
+            ];
+        }
+        if ($send_method === 'send_support_email' || $send_method === 'send_support_email_to_user') {
+            return [
+                'default_from_email' => sanitize_email($this->get_support_from_email()),
+                'default_from_name' => sanitize_text_field($this->get_support_from_name()),
+            ];
+        }
+        if ($send_method === 'send_cmn_mail') {
+            return [
+                'default_from_email' => '(dynamic)',
+                'default_from_name' => '(dynamic)',
+            ];
+        }
+        if ($recipient_role === 'candidate') {
+            return [
+                'default_from_email' => sanitize_email($this->get_candidate_from_email()),
+                'default_from_name' => sanitize_text_field($this->get_candidate_from_name()),
+            ];
+        }
+        if ($recipient_role === 'school' || $recipient_role === 'staff' || $recipient_role === 'admin') {
+            return [
+                'default_from_email' => sanitize_email($this->get_school_from_email()),
+                'default_from_name' => sanitize_text_field($this->get_school_from_name()),
+            ];
+        }
+        return [
+            'default_from_email' => sanitize_email((string) get_option('admin_email')),
+            'default_from_name' => 'WordPress',
+        ];
+    }
+
+    private function derive_email_registry_smart_tags($template_key, $function_name, $snippet = '') {
+        $template_key = sanitize_key((string) $template_key);
+        $function_name = sanitize_key((string) $function_name);
+        $snippet = (string) $snippet;
+        $probe = strtolower($template_key . ' ' . $function_name . ' ' . $snippet);
+
+        $marketing_tags = [
+            'school_name',
+            'school_location',
+            'school_town',
+            'contact_name',
+            'contact_role',
+            'email',
+            'portal_link',
+            'unsubscribe_link',
+            'company_name',
+            'location',
+            'postcode',
+            'distance',
+            'last_contacted_date',
+        ];
+        $automation_tags = [
+            'first_name',
+            'last_name',
+            'full_name',
+            'email',
+            'phone',
+            'school_name',
+            'school_email',
+            'school_phone',
+            'school_domain',
+            'location',
+            'booking_date',
+            'booking_ref',
+            'candidate_day_rate',
+            'school_day_rate',
+            'today_date',
+            'ticket_ref',
+        ];
+
+        if (strpos($probe, 'marketing') !== false) {
+            return [
+                'has_smart_tags' => true,
+                'supported_smart_tags' => $marketing_tags,
+            ];
+        }
+        if (strpos($probe, 'automation') !== false || strpos($probe, '{{') !== false || strpos($probe, 'replace_smart_tags') !== false) {
+            return [
+                'has_smart_tags' => true,
+                'supported_smart_tags' => $automation_tags,
+            ];
+        }
+        return [
+            'has_smart_tags' => false,
+            'supported_smart_tags' => [],
+        ];
+    }
+
+    private function get_email_registry_manual_catalog() {
+        $file = basename(plugin_dir_path(__FILE__)) . '/covermenowone-one.php';
+        $candidate_from_email = sanitize_email($this->get_candidate_from_email());
+        $candidate_from_name = sanitize_text_field($this->get_candidate_from_name());
+        $school_from_email = sanitize_email($this->get_school_from_email());
+        $school_from_name = sanitize_text_field($this->get_school_from_name());
+
+        $automation_tags = [
+            'first_name',
+            'last_name',
+            'full_name',
+            'email',
+            'phone',
+            'school_name',
+            'school_email',
+            'school_phone',
+            'school_domain',
+            'location',
+            'booking_date',
+            'booking_ref',
+            'candidate_day_rate',
+            'school_day_rate',
+            'today_date',
+            'ticket_ref',
+        ];
+
+        return [
+            [
+                'template_key' => 'verification',
+                'name' => 'Candidate Verification',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'candidate',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $candidate_from_email,
+                'default_from_name' => $candidate_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'welcome',
+                'name' => 'Candidate Welcome',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'candidate',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $candidate_from_email,
+                'default_from_name' => $candidate_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'admin_notification',
+                'name' => 'New Candidate Admin Notification',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'admin',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $candidate_from_email,
+                'default_from_name' => $candidate_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'password_reset',
+                'name' => 'Candidate Password Reset',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'candidate',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $candidate_from_email,
+                'default_from_name' => $candidate_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'registration_confirmation',
+                'name' => 'School Registration Confirmation',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'school',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $school_from_email,
+                'default_from_name' => $school_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'profile_completion',
+                'name' => 'School Profile Completion',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'school',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $school_from_email,
+                'default_from_name' => $school_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'booking_received',
+                'name' => 'School Booking Received',
+                'module' => 'operations',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'school',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $school_from_email,
+                'default_from_name' => $school_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'booking_confirmed',
+                'name' => 'School Booking Confirmed',
+                'module' => 'operations',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'school',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $school_from_email,
+                'default_from_name' => $school_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'booking_declined',
+                'name' => 'School Booking Declined',
+                'module' => 'operations',
+                'triggered_by' => 'action:wp_ajax_cmn_send_test_emails',
+                'recipient_role' => 'school',
+                'recipient_source' => 'request payload email',
+                'default_from_email' => $school_from_email,
+                'default_from_name' => $school_from_name,
+                'has_smart_tags' => false,
+                'supported_smart_tags' => [],
+                'code_locations' => [$file . '::get_email_templates_by_type'],
+            ],
+            [
+                'template_key' => 'lead_follow_up_1',
+                'name' => 'Automation Lead Follow-up',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:template_redirect',
+                'recipient_role' => 'school',
+                'recipient_source' => 'automation context school_email',
+                'default_from_email' => $school_from_email,
+                'default_from_name' => $school_from_name,
+                'has_smart_tags' => true,
+                'supported_smart_tags' => $automation_tags,
+                'code_locations' => [$file . '::execute_action_send_email'],
+            ],
+            [
+                'template_key' => 'follow_up_candidate',
+                'name' => 'Automation Candidate Follow-up',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:template_redirect',
+                'recipient_role' => 'candidate',
+                'recipient_source' => 'automation context candidate_email',
+                'default_from_email' => $candidate_from_email,
+                'default_from_name' => $candidate_from_name,
+                'has_smart_tags' => true,
+                'supported_smart_tags' => $automation_tags,
+                'code_locations' => [$file . '::execute_action_send_email'],
+            ],
+            [
+                'template_key' => 'candidate_welcome_nudge',
+                'name' => 'Automation Candidate Welcome Nudge',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:template_redirect',
+                'recipient_role' => 'candidate',
+                'recipient_source' => 'automation context candidate_email',
+                'default_from_email' => $candidate_from_email,
+                'default_from_name' => $candidate_from_name,
+                'has_smart_tags' => true,
+                'supported_smart_tags' => $automation_tags,
+                'code_locations' => [$file . '::execute_action_send_email'],
+            ],
+            [
+                'template_key' => 'booking_follow_up',
+                'name' => 'Automation Booking Follow-up',
+                'module' => 'operations',
+                'triggered_by' => 'action:template_redirect',
+                'recipient_role' => 'school',
+                'recipient_source' => 'automation context school_email',
+                'default_from_email' => $school_from_email,
+                'default_from_name' => $school_from_name,
+                'has_smart_tags' => true,
+                'supported_smart_tags' => $automation_tags,
+                'code_locations' => [$file . '::execute_action_send_email'],
+            ],
+            [
+                'template_key' => 'compliance_reminder',
+                'name' => 'Automation Compliance Reminder',
+                'module' => 'onboarding',
+                'triggered_by' => 'action:template_redirect',
+                'recipient_role' => 'candidate',
+                'recipient_source' => 'automation context candidate_email',
+                'default_from_email' => $candidate_from_email,
+                'default_from_name' => $candidate_from_name,
+                'has_smart_tags' => true,
+                'supported_smart_tags' => $automation_tags,
+                'code_locations' => [$file . '::execute_action_send_email'],
+            ],
+            [
+                'template_key' => 'school_candidate_feedback_request',
+                'name' => 'School Candidate Feedback Request',
+                'module' => 'feedback',
+                'triggered_by' => 'action:booking_completion_feedback_prompt',
+                'recipient_role' => 'school',
+                'recipient_source' => 'booking school user email',
+                'default_from_email' => $school_from_email,
+                'default_from_name' => $school_from_name,
+                'has_smart_tags' => true,
+                'supported_smart_tags' => [
+                    'school_name',
+                    'candidate_name',
+                    'booking_date',
+                    'booking_role',
+                    'portal_link',
+                    'company_name',
+                    'today_date',
+                ],
+                'code_locations' => [$file . '::maybe_request_school_candidate_feedback_prompt'],
+            ],
+        ];
+    }
+
+    private function add_notification($user_id, $type, $title, $message = '', $link_url = '', $context = []) {
         global $wpdb;
         $user_id = (int) $user_id;
         if (!$user_id) {
             return 0;
         }
+        $context = is_array($context) ? $context : [];
         $table = $this->get_notifications_table();
-        $wpdb->insert($table, [
+        $module = sanitize_key((string) ($context['module'] ?? ''));
+        $urgency = $this->normalize_notification_urgency((string) ($context['urgency'] ?? ''));
+        if ($urgency === 'normal') {
+            $urgency = $this->infer_notification_urgency((string) $type, $module);
+        }
+        $delivery = $this->resolve_user_notification_channel_decision($user_id, 'portal', [
+            'urgency' => $urgency,
+            'type' => sanitize_key((string) $type),
+            'module' => $module,
+        ]);
+        if (empty($delivery['allow']) && ($delivery['reason'] ?? '') === 'channel_disabled') {
+            return 0;
+        }
+        $available_at = '';
+        if (empty($delivery['allow']) && ($delivery['reason'] ?? '') === 'quiet_hours') {
+            $available_at = sanitize_text_field((string) ($delivery['defer_until'] ?? ''));
+        }
+        $insert_data = [
             'user_id' => $user_id,
             'type' => sanitize_text_field($type),
             'title' => sanitize_text_field($title),
@@ -13141,7 +20448,13 @@ final class CMN_One_Plugin {
             'link_url' => esc_url_raw($link_url),
             'is_read' => 0,
             'created_at' => current_time('mysql'),
-        ], ['%d', '%s', '%s', '%s', '%s', '%d', '%s']);
+        ];
+        $formats = ['%d', '%s', '%s', '%s', '%s', '%d', '%s'];
+        if ($this->notifications_table_has_available_at()) {
+            $insert_data['available_at'] = $available_at !== '' ? $available_at : null;
+            $formats[] = '%s';
+        }
+        $wpdb->insert($table, $insert_data, $formats);
         return (int) $wpdb->insert_id;
     }
 
@@ -13153,6 +20466,19 @@ final class CMN_One_Plugin {
         if ($limit < 1) {
             $limit = 10;
         }
+        if ($this->notifications_table_has_available_at()) {
+            $now = current_time('mysql');
+            return $wpdb->get_results($wpdb->prepare(
+                "SELECT * FROM {$table}
+                 WHERE user_id = %d
+                   AND (available_at IS NULL OR available_at <= %s)
+                 ORDER BY created_at DESC
+                 LIMIT %d",
+                $user_id,
+                $now,
+                $limit
+            ), ARRAY_A);
+        }
         return $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$table} WHERE user_id = %d ORDER BY created_at DESC LIMIT %d",
             $user_id,
@@ -13163,6 +20489,16 @@ final class CMN_One_Plugin {
     private function count_unread_notifications($user_id) {
         global $wpdb;
         $table = $this->get_notifications_table();
+        if ($this->notifications_table_has_available_at()) {
+            return (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$table}
+                 WHERE user_id = %d
+                   AND is_read = 0
+                   AND (available_at IS NULL OR available_at <= %s)",
+                (int) $user_id,
+                current_time('mysql')
+            ));
+        }
         return (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM {$table} WHERE user_id = %d AND is_read = 0",
             (int) $user_id
@@ -13180,14 +20516,89 @@ final class CMN_One_Plugin {
     }
 
     private function mark_single_notification_read($user_id, $notification_id) {
+        $user_id = (int) $user_id;
+        $notification_id = (int) $notification_id;
+        if ($user_id < 1 || $notification_id < 1) {
+            return;
+        }
+        $this->mark_notification_ids_read($user_id, [$notification_id]);
+    }
+
+    private function sanitize_notification_ids_from_request($raw_ids) {
+        $ids = [];
+        if (is_array($raw_ids)) {
+            $ids = $raw_ids;
+        } else {
+            $raw = trim((string) $raw_ids);
+            if ($raw === '') {
+                return [];
+            }
+            $json_decoded = json_decode(wp_unslash($raw), true);
+            if (is_array($json_decoded)) {
+                $ids = $json_decoded;
+            } else {
+                $ids = preg_split('/[\s,]+/', $raw);
+            }
+        }
+
+        $output = [];
+        foreach ((array) $ids as $id_value) {
+            $id = max(0, (int) $id_value);
+            if ($id > 0) {
+                $output[$id] = $id;
+            }
+            if (count($output) >= 200) {
+                break;
+            }
+        }
+        return array_values($output);
+    }
+
+    private function mark_notification_ids_read($user_id, array $notification_ids) {
         global $wpdb;
+        $user_id = (int) $user_id;
+        $notification_ids = array_values(array_filter(array_map('intval', $notification_ids), static function ($id) {
+            return $id > 0;
+        }));
+        if ($user_id < 1 || empty($notification_ids)) {
+            return;
+        }
+
         $table = $this->get_notifications_table();
-        $wpdb->update($table, [
-            'is_read' => 1,
-        ], [
-            'id' => (int) $notification_id,
-            'user_id' => (int) $user_id,
-        ], ['%d'], ['%d', '%d']);
+        $placeholders = implode(',', array_fill(0, count($notification_ids), '%d'));
+        $sql = $wpdb->prepare(
+            "UPDATE {$table}
+             SET is_read = 1
+             WHERE user_id = %d
+               AND id IN ({$placeholders})",
+            array_merge([(int) $user_id], $notification_ids)
+        );
+        if (is_string($sql) && $sql !== '') {
+            $wpdb->query($sql);
+        }
+    }
+
+    private function delete_notification_ids($user_id, array $notification_ids) {
+        global $wpdb;
+        $user_id = (int) $user_id;
+        $notification_ids = array_values(array_filter(array_map('intval', $notification_ids), static function ($id) {
+            return $id > 0;
+        }));
+        if ($user_id < 1 || empty($notification_ids)) {
+            return;
+        }
+
+        $table = $this->get_notifications_table();
+        $placeholders = implode(',', array_fill(0, count($notification_ids), '%d'));
+        $sql = $wpdb->prepare(
+            "DELETE FROM {$table}
+             WHERE user_id = %d
+               AND id IN ({$placeholders})",
+            array_merge([(int) $user_id], $notification_ids)
+        );
+        if (is_string($sql) && $sql !== '') {
+            $wpdb->query($sql);
+        }
     }
 
     private function clear_notifications($user_id) {
@@ -13198,10 +20609,21 @@ final class CMN_One_Plugin {
         ], ['%d']);
     }
 
-    private function get_notifications_payload($user_id, $limit = 10) {
+    private function get_notifications_payload($user_id, $limit = 25) {
+        $user_id = (int) $user_id;
+        $items = (array) $this->get_user_notifications($user_id, $limit);
+        foreach ($items as &$item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $raw_link = !empty($item['link_url']) ? (string) $item['link_url'] : '';
+            $item['link_url'] = $this->resolve_support_notification_link($item, $user_id, $raw_link);
+        }
+        unset($item);
+
         return [
             'unread' => $this->count_unread_notifications($user_id),
-            'items' => $this->get_user_notifications($user_id, $limit),
+            'items' => $items,
         ];
     }
 
@@ -13211,7 +20633,7 @@ final class CMN_One_Plugin {
             return '';
         }
         $unread = $this->count_unread_notifications($user_id);
-        $items = $this->get_user_notifications($user_id, 10);
+        $items = $this->get_user_notifications($user_id, 25);
         ob_start();
         ?>
         <div class="cmn-bell" data-bell>
@@ -13225,12 +20647,14 @@ final class CMN_One_Plugin {
                 <div class="cmn-bell-header">
                     <strong>Notifications</strong>
                     <div class="cmn-bell-actions">
-                        <button class="cmn-ghost cmn-btn-mini" type="button" data-bell-mark>Mark all read</button>
-                        <button class="cmn-ghost cmn-btn-mini" type="button" data-bell-clear>Clear all</button>
+                        <button class="cmn-ghost cmn-btn-mini" type="button" data-bell-mark>Mark all as read</button>
+                        <button class="cmn-ghost cmn-btn-mini" type="button" data-bell-mark-selected disabled>Mark as read</button>
+                        <button class="cmn-ghost cmn-btn-mini" type="button" data-bell-delete-selected disabled>Delete</button>
+                        <button class="cmn-ghost cmn-btn-mini" type="button" data-bell-clear>Delete all</button>
                     </div>
                 </div>
                 <?php if ($items) : ?>
-                    <div class="cmn-bell-list">
+                    <div class="cmn-bell-list" data-bell-list>
                         <?php foreach ($items as $item) : ?>
                             <?php
                             $is_unread = empty($item['is_read']);
@@ -13240,17 +20664,29 @@ final class CMN_One_Plugin {
                             $item_class = 'cmn-bell-item' . ($is_unread ? ' is-unread' : '');
                             $item_id = (int) ($item['id'] ?? 0);
                             ?>
-                            <?php if ($link_url) : ?>
-                                <a class="<?php echo esc_attr($item_class); ?>" href="<?php echo esc_url($link_url); ?>" data-notification-id="<?php echo esc_attr($item_id); ?>" data-notification-link>
-                                    <strong><?php echo esc_html($item['title']); ?></strong>
-                                    <?php if (!empty($item['message'])) : ?><span><?php echo esc_html($item['message']); ?></span><?php endif; ?>
-                                </a>
-                            <?php else : ?>
-                                <div class="<?php echo esc_attr($item_class); ?>" data-notification-id="<?php echo esc_attr($item_id); ?>">
-                                    <strong><?php echo esc_html($item['title']); ?></strong>
-                                    <?php if (!empty($item['message'])) : ?><span><?php echo esc_html($item['message']); ?></span><?php endif; ?>
+                            <article class="<?php echo esc_attr($item_class); ?>" data-notification-item data-notification-id="<?php echo esc_attr($item_id); ?>">
+                                <label class="cmn-bell-select" aria-label="Select notification">
+                                    <input type="checkbox" data-notification-select value="<?php echo esc_attr($item_id); ?>">
+                                    <span aria-hidden="true"></span>
+                                </label>
+                                <div class="cmn-bell-item-body">
+                                    <?php if ($link_url) : ?>
+                                        <a class="cmn-bell-link" href="<?php echo esc_url($link_url); ?>" data-notification-id="<?php echo esc_attr($item_id); ?>" data-notification-link>
+                                            <strong><?php echo esc_html($item['title']); ?></strong>
+                                            <?php if (!empty($item['message'])) : ?><span><?php echo esc_html($item['message']); ?></span><?php endif; ?>
+                                        </a>
+                                    <?php else : ?>
+                                        <div class="cmn-bell-link cmn-bell-link-static" data-notification-id="<?php echo esc_attr($item_id); ?>">
+                                            <strong><?php echo esc_html($item['title']); ?></strong>
+                                            <?php if (!empty($item['message'])) : ?><span><?php echo esc_html($item['message']); ?></span><?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
-                            <?php endif; ?>
+                                <div class="cmn-bell-item-actions">
+                                    <button class="cmn-ghost cmn-btn-mini" type="button" data-notification-mark-read <?php disabled(!$is_unread); ?>>Mark as read</button>
+                                    <button class="cmn-ghost cmn-btn-mini" type="button" data-notification-delete>Delete</button>
+                                </div>
+                            </article>
                         <?php endforeach; ?>
                     </div>
                 <?php else : ?>
@@ -13313,6 +20749,39 @@ final class CMN_One_Plugin {
         $this->mark_single_notification_read($user_id, $notification_id);
         wp_send_json_success($this->get_notifications_payload($user_id));
     }
+
+    public function handle_notifications_mark_selected_read() {
+        if (!check_ajax_referer('cmn_mark_notifications_read', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $notification_ids = $this->sanitize_notification_ids_from_request($_POST['notification_ids'] ?? []);
+        if (empty($notification_ids)) {
+            wp_send_json_error(['message' => 'Select at least one notification.'], 400);
+        }
+        $user_id = get_current_user_id();
+        $this->mark_notification_ids_read($user_id, $notification_ids);
+        wp_send_json_success($this->get_notifications_payload($user_id));
+    }
+
+    public function handle_notifications_delete_selected() {
+        if (!check_ajax_referer('cmn_mark_notifications_read', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $notification_ids = $this->sanitize_notification_ids_from_request($_POST['notification_ids'] ?? []);
+        if (empty($notification_ids)) {
+            wp_send_json_error(['message' => 'Select at least one notification.'], 400);
+        }
+        $user_id = get_current_user_id();
+        $this->delete_notification_ids($user_id, $notification_ids);
+        wp_send_json_success($this->get_notifications_payload($user_id));
+    }
+
     public function handle_notifications_poll() {
         if (!check_ajax_referer('cmn_mark_notifications_read', 'nonce', false)) {
             wp_send_json_error(['message' => 'Invalid request.'], 403);
@@ -14397,7 +21866,7 @@ final class CMN_One_Plugin {
     }
 
     private function get_email_templates_by_type($type) {
-        $type = sanitize_text_field($type);
+        $type = sanitize_key((string) $type);
         $templates = [];
         if ($type === 'candidate') {
             $name = 'John Smith';
@@ -14455,6 +21924,25 @@ final class CMN_One_Plugin {
                 'message' => "We're unable to confirm this request. Please select another available candidate.",
             ];
         }
+        if ($type === 'support') {
+            $ticket_ref = 'CMN-SUP-000001';
+            $ticket_link = add_query_arg(['view' => 'support', 'ticket_id' => 1], $this->get_portal_base_url());
+            $templates[] = [
+                'id' => 'support_ticket_received',
+                'subject' => '[TEST MODE] Support ticket received: ' . $ticket_ref,
+                'message' => "Thanks for contacting CoverMeNow ONE Support.\n\nReference: {$ticket_ref}\nSubject: Test support ticket\n\nYou can reply in your portal:\n{$ticket_link}",
+            ];
+            $templates[] = [
+                'id' => 'support_ticket_reply',
+                'subject' => '[TEST MODE] Update on your support ticket: ' . $ticket_ref,
+                'message' => "Support has posted an update to your ticket.\n\nReference: {$ticket_ref}\n\nView ticket:\n{$ticket_link}",
+            ];
+            $templates[] = [
+                'id' => 'support_ticket_closed',
+                'subject' => '[TEST MODE] Support ticket closed: ' . $ticket_ref,
+                'message' => "Your support ticket has been closed.\n\nReference: {$ticket_ref}\n\nIf needed, you can reopen from the support page:\n{$ticket_link}",
+            ];
+        }
         return $templates;
     }
 
@@ -14509,6 +21997,22 @@ final class CMN_One_Plugin {
             } else {
                 unset($GLOBALS['cmn_school_mail_log_type']);
             }
+        } elseif ($type === 'support') {
+            $from_email = $this->get_support_from_email();
+            $from_name = $this->get_support_from_name();
+            foreach ($templates as $template) {
+                $sent = $this->send_support_email($email, $template['subject'], $template['message'], [
+                    'type' => 'test_support',
+                    'template_key' => sanitize_key((string) ($template['id'] ?? 'test_support')),
+                    'recipient_role' => 'system',
+                    'related_entity_type' => 'support_ticket',
+                    'related_entity_id' => 1,
+                ]);
+                $results[] = [
+                    'type' => $template['id'],
+                    'status' => $sent ? 'sent' : 'failed',
+                ];
+            }
         } else {
             wp_send_json_error(['message' => 'Email type not implemented yet.'], 400);
         }
@@ -14532,6 +22036,7 @@ final class CMN_One_Plugin {
         add_shortcode('cmn_candidate_dashboard', [$this, 'render_candidate_dashboard_shortcode']);
         add_shortcode('cmn_register_school', [$this, 'render_register_school_shortcode']);
         add_shortcode('cmn_register_candidate', [$this, 'render_register_candidate_shortcode']);
+        add_shortcode('cmn_request_received', [$this, 'render_request_received_shortcode']);
         add_shortcode('cmn_school_landing', [$this, 'render_school_landing_shortcode']);
         add_shortcode('cmn_candidate_landing', [$this, 'render_candidate_landing_shortcode']);
         add_shortcode('cmn_available_wall', [$this, 'render_available_wall_shortcode']);
@@ -14539,11 +22044,9 @@ final class CMN_One_Plugin {
 
     public function render_login_shortcode($portal_only = false) {
         ob_start();
-        $candidate_page = get_page_by_title('Candidate Registration');
-        $school_page = get_page_by_title('School Registration');
-        $candidate_url = $candidate_page ? get_permalink($candidate_page) : home_url('/candidate-registration');
-        $school_url = $school_page ? get_permalink($school_page) : home_url('/school-registration');
         $portal_url = $this->get_portal_base_url();
+        $candidate_url = add_query_arg(['view' => 'register-candidate'], $portal_url);
+        $school_url = add_query_arg(['view' => 'register-school'], $portal_url);
         $redirect_to = isset($_GET['redirect_to']) ? esc_url_raw(wp_unslash($_GET['redirect_to'])) : '';
         $container_class = $portal_only ? 'cmn-login-page cmn-portal-login' : 'cmn-login-page';
         ?>
@@ -14605,8 +22108,8 @@ final class CMN_One_Plugin {
                         </div>
                         <div class="cmn-hero-block cmn-hero-cta-block">
                             <div class="cmn-hero-ctas">
-                                <a class="cmn-cta-primary cmn-register-link" href="<?php echo esc_url($school_url); ?>">Apply to Register (School)</a>
-                                <a class="cmn-cta-primary cmn-register-link" href="<?php echo esc_url($candidate_url); ?>">Apply to Register (Candidate)</a>
+                                <a class="cmn-cta-primary cmn-register-link" href="<?php echo esc_url($school_url); ?>">Apply (School)</a>
+                                <a class="cmn-cta-primary cmn-register-link" href="<?php echo esc_url($candidate_url); ?>">Register (Candidate)</a>
                             </div>
                         </div>
                     </div>
@@ -14860,6 +22363,12 @@ final class CMN_One_Plugin {
             }
             return $this->render_training_console_tab();
         }
+        if ($view === 'register-school') {
+            return $this->render_register_school_shortcode();
+        }
+        if ($view === 'register-candidate') {
+            return $this->render_register_candidate_shortcode();
+        }
         if ($view === 'candidate-verify') {
             return $this->render_candidate_verify_shortcode();
         }
@@ -14999,6 +22508,9 @@ final class CMN_One_Plugin {
         if ($view === 'settings') {
             return $this->render_staff_settings_shortcode();
         }
+        if ($view === 'email-centre' || $view === 'email_centre') {
+            return $this->render_staff_email_centre_shortcode();
+        }
         if ($view === 'finance-overview' || $view === 'finance_overview') {
             return $this->render_staff_finance_overview_shortcode();
         }
@@ -15059,10 +22571,8 @@ final class CMN_One_Plugin {
     }
 
     public function render_staff_dashboard_shortcode() {
-        $tasks = $this->get_activity_items(['task', 'call'], 8);
-        $pending_review_candidates = $this->get_candidates_awaiting_document_review(10);
-        $pending_review_count = count($this->get_candidates_awaiting_document_review(600));
-        $cv_awaiting_count = $this->count_candidates_awaiting_cv_conversion(600);
+        global $wpdb;
+
         $open_support_count = $this->count_open_support_tickets();
         $new_requests_count = $this->count_new_booking_requests_for_dashboard();
         $new_school_requests_count = $this->count_pending_school_requests();
@@ -15076,90 +22586,211 @@ final class CMN_One_Plugin {
         $portal_url = $this->get_portal_base_url();
         $user_id = get_current_user_id();
         $can_broadcast = $this->is_admin_user($user_id);
+        $can_manage_automation = $this->can_manage_automation($user_id);
         $automation_counts = ['active_rules' => 0, 'runs_today' => 0, 'failures_today' => 0];
-        if ($this->can_manage_automation($user_id)) {
+        if ($can_manage_automation) {
             $automation_counts = (array) $this->get_automation_engine()->get_overview_counts();
         }
-        $shortcuts = [
+        $automation_failures = (int) ($automation_counts['failures_today'] ?? 0);
+        $automation_console_url = $can_manage_automation
+            ? admin_url('admin.php?page=cmn-automation')
+            : add_query_arg(['view' => 'system_health'], $portal_url);
+
+        $active_schools_count = $this->count_by_status('cmn_school', 'client');
+        if ($active_schools_count < 1) {
+            $active_schools_count = $this->count_total_posts('cmn_school');
+        }
+        $active_candidates_count = $this->count_total_posts('cmn_candidate');
+
+        $open_bookings_count = $this->count_bookings_by_status('open');
+        if ($open_bookings_count < 1) {
+            $open_bookings_count = $this->count_bookings_by_status('requested') + $this->count_bookings_by_status('pending');
+        }
+        if ($open_bookings_count < 1) {
+            $open_bookings_count = $new_requests_count;
+        }
+
+        $week_reference = function_exists('cmn_now')
+            ? cmn_now()->setTimezone(wp_timezone())
+            : new DateTimeImmutable('now', wp_timezone());
+        $week_start = $week_reference->modify('monday this week')->setTime(0, 0, 0);
+        $week_end = $week_start->modify('+6 days')->setTime(23, 59, 59);
+        $week_label = date_i18n('M j', $week_start->getTimestamp()) . ' - ' . date_i18n('M j', $week_end->getTimestamp());
+
+        $week_revenue = 0.0;
+        $invoices_table = $this->get_invoices_table();
+        if ($this->candidate_rewards_table_exists($invoices_table)) {
+            $week_revenue = (float) $wpdb->get_var($wpdb->prepare(
+                "SELECT COALESCE(SUM(total), 0)
+                 FROM {$invoices_table}
+                 WHERE status <> %s
+                   AND period_start <= %s
+                   AND period_end >= %s",
+                'void',
+                $week_end->format('Y-m-d'),
+                $week_start->format('Y-m-d')
+            ));
+        }
+        $week_revenue = round(max(0, $week_revenue), 2);
+
+        $audit_events_today = 0;
+        $audit_table = $this->get_audit_log_table();
+        if ($this->candidate_rewards_table_exists($audit_table)) {
+            $audit_events_today = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$audit_table} WHERE DATE(created_at) = %s",
+                current_time('Y-m-d')
+            ));
+        }
+
+        $escalations_count = $bookings_at_risk_count + $alert_low_feedback;
+        $format_money = static function ($value) {
+            return 'GBP ' . number_format((float) $value, 2);
+        };
+
+        $business_health_cards = [
             [
-                'label' => 'Candidates Awaiting Document Review',
-                'count' => $pending_review_count,
-                'url' => add_query_arg(['view' => 'candidates', 'cmn_doc_review' => 'pending'], $portal_url),
-            ],
-            [
-                'label' => 'CVs Awaiting Conversion',
-                'count' => $cv_awaiting_count,
-                'url' => add_query_arg(['view' => 'cv_converter', 'cmn_status' => 'awaiting'], $portal_url),
-            ],
-            [
-                'label' => 'Open Support Tickets',
-                'count' => $open_support_count,
-                'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
-            ],
-            [
-                'label' => 'New Requests',
-                'count' => $new_requests_count,
-                'url' => add_query_arg(['view' => 'requests', 'cmn_status' => 'requested'], $portal_url),
-            ],
-            [
-                'label' => 'New School Requests',
-                'count' => $new_school_requests_count,
-                'url' => add_query_arg(['view' => 'school-requests', 'status' => 'all'], $portal_url),
-            ],
-            [
-                'label' => 'Bookings at Risk (Low Margin)',
-                'count' => $bookings_at_risk_count,
-                'url' => add_query_arg(['view' => 'rate-guardrails', 'cmn_risk_only' => 1], $portal_url),
-            ],
-            [
-                'label' => "Today's Bookings",
-                'count' => $todays_bookings_count,
+                'label' => "Today's bookings",
+                'value' => number_format((int) $todays_bookings_count),
+                'subtext' => 'Confirmed and pending for today.',
                 'url' => add_query_arg(['view' => 'bookings'], $portal_url),
             ],
             [
-                'label' => 'Send Emergency Broadcast',
-                'count' => null,
-                'url' => add_query_arg(['view' => 'broadcast'], $portal_url),
-                'requires_admin' => true,
+                'label' => "This week's revenue",
+                'value' => $format_money($week_revenue),
+                'subtext' => 'Invoice total in week ' . $week_label . '.',
+                'url' => add_query_arg(['view' => 'finance-overview'], $portal_url),
             ],
             [
-                'label' => 'Create Marketing Campaign',
-                'count' => null,
+                'label' => 'Active schools',
+                'value' => number_format((int) $active_schools_count),
+                'subtext' => 'Client schools active in the network.',
+                'url' => add_query_arg(['view' => 'schools', 'cmn_bucket' => 'clients', 'cmn_status' => 'client'], $portal_url),
+            ],
+            [
+                'label' => 'Active candidates',
+                'value' => number_format((int) $active_candidates_count),
+                'subtext' => 'Candidate profiles currently in pool.',
+                'url' => add_query_arg(['view' => 'candidates'], $portal_url),
+            ],
+            [
+                'label' => 'Open bookings',
+                'value' => number_format((int) $open_bookings_count),
+                'subtext' => 'Requests currently awaiting closure.',
+                'url' => add_query_arg(['view' => 'requests', 'cmn_status' => 'requested'], $portal_url),
+            ],
+        ];
+
+        $risk_cards = [
+            [
+                'label' => 'Missing DBS',
+                'count' => (int) $alert_missing_dbs,
+                'detail' => 'Candidates missing DBS verification.',
+                'severity' => $alert_missing_dbs > 20 ? 'high' : ($alert_missing_dbs > 0 ? 'medium' : 'low'),
+                'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
+            ],
+            [
+                'label' => 'Missing ID',
+                'count' => (int) $alert_missing_id,
+                'detail' => 'Candidates missing valid photo ID.',
+                'severity' => $alert_missing_id > 20 ? 'high' : ($alert_missing_id > 0 ? 'medium' : 'low'),
+                'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
+            ],
+            [
+                'label' => 'Cancelled availability',
+                'count' => (int) $alert_availability,
+                'detail' => 'Availability withdrawals to review.',
+                'severity' => $alert_availability > 0 ? 'medium' : 'low',
+                'url' => add_query_arg(['view' => 'requests', 'cmn_status' => 'cancelled'], $portal_url),
+            ],
+            [
+                'label' => 'Bookings at risk',
+                'count' => (int) $bookings_at_risk_count,
+                'detail' => 'Low margin bookings requiring action.',
+                'severity' => $bookings_at_risk_count > 0 ? 'high' : 'low',
+                'url' => add_query_arg(['view' => 'rate-guardrails', 'cmn_risk_only' => 1], $portal_url),
+            ],
+            [
+                'label' => 'Failed automations',
+                'count' => (int) $automation_failures,
+                'detail' => $can_manage_automation ? 'Automation failures detected today.' : 'Automation console access restricted.',
+                'severity' => $automation_failures > 0 ? 'high' : ($can_manage_automation ? 'low' : 'medium'),
+                'url' => $automation_console_url,
+            ],
+        ];
+
+        $growth_cards = [
+            [
+                'label' => 'Emergency broadcasts',
+                'value' => $can_broadcast ? 'Ready' : 'Admin',
+                'detail' => $can_broadcast ? 'Send urgent updates in one action.' : 'Admin access required to broadcast.',
+                'url' => $can_broadcast ? add_query_arg(['view' => 'broadcast'], $portal_url) : add_query_arg(['view' => 'support'], $portal_url),
+                'urgency' => 'urgent',
+            ],
+            [
+                'label' => 'Marketing campaigns',
+                'value' => 'Open',
+                'detail' => 'Create and launch outbound campaigns.',
                 'url' => add_query_arg(['view' => 'marketing', 'marketing_tab' => 'campaigns'], $portal_url),
+                'urgency' => 'neutral',
             ],
             [
-                'label' => 'Marketing Saved Lists',
-                'count' => null,
+                'label' => 'Saved lists',
+                'value' => 'Open',
+                'detail' => 'Manage reusable marketing audiences.',
                 'url' => add_query_arg(['view' => 'marketing', 'marketing_tab' => 'lists'], $portal_url),
+                'urgency' => 'neutral',
             ],
             [
-                'label' => 'Marketing Send Log',
-                'count' => null,
-                'url' => add_query_arg(['view' => 'marketing', 'marketing_tab' => 'send_log'], $portal_url),
+                'label' => 'Referral activity',
+                'value' => number_format((int) $new_school_requests_count),
+                'detail' => 'New school requests in current pipeline.',
+                'url' => add_query_arg(['view' => 'school-requests', 'status' => 'all'], $portal_url),
+                'urgency' => 'neutral',
             ],
             [
-                'label' => 'Automation: Active Rules',
+                'label' => 'Automation rules running today',
+                'value' => number_format((int) ($automation_counts['runs_today'] ?? 0)),
+                'detail' => $can_manage_automation ? 'Rule executions recorded today.' : 'Automation overview restricted by role.',
+                'url' => $automation_console_url,
+                'urgency' => 'neutral',
+            ],
+        ];
+
+        $system_cards = [
+            [
+                'label' => 'Failed actions',
+                'count' => (int) $automation_failures,
+                'detail' => 'Automation actions failed today.',
+                'status' => $automation_failures > 0 ? 'red' : 'green',
+                'url' => $automation_console_url,
+            ],
+            [
+                'label' => 'Audit logs',
+                'count' => (int) $audit_events_today,
+                'detail' => 'Audit events captured today.',
+                'status' => $audit_events_today > 0 ? 'green' : 'amber',
+                'url' => add_query_arg(['view' => 'audit'], $portal_url),
+            ],
+            [
+                'label' => 'Automation health',
                 'count' => (int) ($automation_counts['active_rules'] ?? 0),
-                'url' => admin_url('admin.php?page=cmn-automation'),
-                'requires_automation' => true,
+                'detail' => $can_manage_automation ? 'Active rules currently enabled.' : 'Automation visibility restricted.',
+                'status' => $automation_failures > 0 ? 'red' : ((int) ($automation_counts['active_rules'] ?? 0) > 0 ? 'green' : 'amber'),
+                'url' => $automation_console_url,
             ],
             [
-                'label' => 'Automation: Runs Today',
-                'count' => (int) ($automation_counts['runs_today'] ?? 0),
-                'url' => admin_url('admin.php?page=cmn-automation'),
-                'requires_automation' => true,
+                'label' => 'Support tickets open',
+                'count' => (int) $open_support_count,
+                'detail' => 'Open tickets across support queues.',
+                'status' => $open_support_count > 24 ? 'red' : ($open_support_count > 10 ? 'amber' : 'green'),
+                'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
             ],
             [
-                'label' => 'Automation: Failed Actions',
-                'count' => (int) ($automation_counts['failures_today'] ?? 0),
-                'url' => admin_url('admin.php?page=cmn-automation'),
-                'requires_automation' => true,
-            ],
-            [
-                'label' => 'Automation: Create Rule',
-                'count' => null,
-                'url' => admin_url('admin.php?page=cmn-automation'),
-                'requires_automation' => true,
+                'label' => 'Escalations',
+                'count' => (int) $escalations_count,
+                'detail' => 'Bookings at risk and low feedback alerts.',
+                'status' => $escalations_count > 10 ? 'red' : ($escalations_count > 0 ? 'amber' : 'green'),
+                'url' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'at_risk_candidates'], $portal_url),
             ],
         ];
 
@@ -15169,120 +22800,99 @@ final class CMN_One_Plugin {
             <div class="cmn-header-row">
                 <div>
                     <h2>Dashboard</h2>
+                    <p>Operational control centre with live health, risk, growth, and system performance signals.</p>
                 </div>
             </div>
         </header>
-        <section class="cmn-dashboard-shortcuts">
-            <?php foreach ($shortcuts as $shortcut) : ?>
-                <?php if (!empty($shortcut['requires_admin']) && !$can_broadcast) { continue; } ?>
-                <?php if (!empty($shortcut['requires_automation']) && !$this->can_manage_automation($user_id)) { continue; } ?>
-                <a class="cmn-shortcut-tile" href="<?php echo esc_url((string) $shortcut['url']); ?>">
-                    <span><?php echo esc_html((string) $shortcut['label']); ?></span>
-                    <?php if ($shortcut['count'] !== null) : ?>
-                        <strong><?php echo esc_html((string) ((int) $shortcut['count'])); ?></strong>
-                    <?php else : ?>
-                        <strong>Open</strong>
-                    <?php endif; ?>
-                </a>
-            <?php endforeach; ?>
-        </section>
-        <div class="cmn-admin-grid">
-            <div class="cmn-admin-column">
-                <div class="cmn-dashboard-card cmn-card-tone-4">
-                    <div class="cmn-panel-header">
-                        <h3>Tasks, Reminders & Callbacks</h3>
-                        <a class="cmn-btn-secondary" href="<?php echo esc_url(add_query_arg(['view' => 'schools'], $portal_url)); ?>">Add Task</a>
-                    </div>
-                    <div class="cmn-task-list">
-                        <?php if ($tasks) : ?>
-                            <?php foreach ($tasks as $task) : ?>
-                                <?php
-                                $task_type = $task['activity_type'] ?? '';
-                                $task_detail = $task['notes'] ?? '';
-                                $task_date = $task['due_date'] ?? '';
-                                $task_label = $task_date ? date_i18n('M j, Y', strtotime($task_date)) : 'No date';
-                                $is_overdue = $task_date && strtotime($task_date) < strtotime(date('Y-m-d'));
-                                ?>
-                                <div class="cmn-task-item<?php echo $is_overdue ? ' is-overdue' : ''; ?>">
-                                    <div>
-                                        <strong><?php echo esc_html($task['subject'] ?? 'Task'); ?></strong>
-                                        <span><?php echo esc_html($task_detail ? wp_trim_words($task_detail, 8, '...') : ucfirst($task_type)); ?></span>
-                                    </div>
-                                    <div class="cmn-task-meta"><?php echo esc_html($task_label); ?><?php echo $is_overdue ? ' - Overdue' : ''; ?></div>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php else : ?>
-                            <div class="cmn-empty">No tasks added yet.</div>
-                        <?php endif; ?>
+        <div class="cmn-exec-dashboard">
+            <section class="cmn-exec-band">
+                <div class="cmn-exec-band-head">
+                    <div>
+                        <h3>Business Health</h3>
+                        <p>Top-line view of live delivery and commercial activity.</p>
                     </div>
                 </div>
-                <div class="cmn-dashboard-card cmn-card-tone-4 cmn-awaiting-review-card">
-                    <div class="cmn-panel-header">
-                        <h3>Candidates Awaiting Document Review</h3>
-                        <span class="cmn-status-chip is-pending"><?php echo esc_html(count($pending_review_candidates)); ?></span>
-                    </div>
-                    <?php if ($pending_review_candidates) : ?>
-                        <div class="cmn-awaiting-review-list">
-                            <?php foreach ($pending_review_candidates as $review_row) : ?>
-                                <div class="cmn-awaiting-review-item">
-                                    <div>
-                                        <strong><?php echo esc_html((string) ($review_row['candidate_name'] ?? 'Candidate')); ?></strong>
-                                        <span><?php echo esc_html((string) ($review_row['candidate_email'] ?? '')); ?></span>
-                                        <span>Pending: <?php echo esc_html(implode(', ', (array) ($review_row['pending_docs'] ?? []))); ?></span>
-                                        <span>Uploaded: <?php echo esc_html((string) ($review_row['uploaded_at_label'] ?? '-')); ?></span>
-                                    </div>
-                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'candidates', 'candidate_id' => (int) ($review_row['candidate_id'] ?? 0)], $portal_url) . '#candidate-documents'); ?>">Review</a>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else : ?>
-                        <div class="cmn-empty">No candidates are waiting for document review.</div>
-                    <?php endif; ?>
+                <div class="cmn-exec-kpi-grid">
+                    <?php foreach ($business_health_cards as $card_index => $card) : ?>
+                        <?php
+                        $metric_tier_class = ((int) $card_index < 2) ? ' is-primary-heartbeat' : ' is-capacity-signal';
+                        ?>
+                        <a class="cmn-exec-kpi-card<?php echo esc_attr($metric_tier_class); ?>" href="<?php echo esc_url((string) $card['url']); ?>">
+                            <span class="cmn-exec-kpi-label"><?php echo esc_html((string) $card['label']); ?></span>
+                            <strong class="cmn-exec-kpi-value"><?php echo esc_html((string) $card['value']); ?></strong>
+                            <span class="cmn-exec-kpi-subtext"><?php echo esc_html((string) $card['subtext']); ?></span>
+                        </a>
+                    <?php endforeach; ?>
                 </div>
-            </div>
-            <div class="cmn-admin-column">
-                <div class="cmn-dashboard-card cmn-card-tone-4">
-                    <div class="cmn-panel-header">
-                        <h3>Alerts</h3>
-                        <span class="cmn-status-chip is-pending"><?php echo esc_html($alert_missing_dbs + $alert_missing_id + $alert_availability + $alert_low_feedback + $new_school_requests_count); ?></span>
-                    </div>
-                    <div class="cmn-request-row cmn-alert-row">
-                        <span class="cmn-priority-bar"></span>
-                        <div class="cmn-request-content">
-                            <strong>Missing DBS</strong>
-                            <span><?php echo esc_html($alert_missing_dbs); ?> candidates</span>
-                        </div>
-                    </div>
-                    <div class="cmn-request-row cmn-alert-row">
-                        <span class="cmn-priority-bar"></span>
-                        <div class="cmn-request-content">
-                            <strong>Missing ID</strong>
-                            <span><?php echo esc_html($alert_missing_id); ?> candidates</span>
-                        </div>
-                    </div>
-                    <div class="cmn-request-row cmn-alert-row">
-                        <span class="cmn-priority-bar"></span>
-                        <div class="cmn-request-content">
-                            <strong>Cancelled Availability</strong>
-                            <span><?php echo esc_html($alert_availability); ?> candidate</span>
-                        </div>
-                    </div>
-                    <div class="cmn-request-row cmn-alert-row">
-                        <span class="cmn-priority-bar"></span>
-                        <div class="cmn-request-content">
-                            <strong>Low Feedback Alerts (<=2)</strong>
-                            <span><?php echo esc_html($alert_low_feedback); ?> flagged</span>
-                        </div>
-                    </div>
-                    <div class="cmn-request-row cmn-alert-row">
-                        <span class="cmn-priority-bar"></span>
-                        <div class="cmn-request-content">
-                            <strong>New School Requests</strong>
-                            <span><?php echo esc_html($new_school_requests_count); ?> pending</span>
-                        </div>
+            </section>
+
+            <section class="cmn-exec-band">
+                <div class="cmn-exec-band-head">
+                    <div>
+                        <h3>Risk &amp; Compliance</h3>
+                        <p>Actionable alerts with severity signalling and direct drill-down links.</p>
                     </div>
                 </div>
-            </div>
+                <div class="cmn-exec-alert-grid">
+                    <?php foreach ($risk_cards as $risk_card) : ?>
+                        <?php
+                        $risk_count = (int) ($risk_card['count'] ?? 0);
+                        $risk_state_class = $risk_count > 0 ? ' has-issue' : ' is-clear';
+                        ?>
+                        <a class="cmn-exec-alert-card is-<?php echo esc_attr((string) $risk_card['severity']); ?><?php echo esc_attr($risk_state_class); ?>" href="<?php echo esc_url((string) $risk_card['url']); ?>">
+                            <div class="cmn-exec-alert-head">
+                                <span class="cmn-exec-alert-label"><?php echo esc_html((string) $risk_card['label']); ?></span>
+                                <span class="cmn-exec-alert-count"><?php echo esc_html(number_format($risk_count)); ?></span>
+                            </div>
+                            <p><?php echo esc_html((string) $risk_card['detail']); ?></p>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+
+            <section class="cmn-exec-band">
+                <div class="cmn-exec-band-head">
+                    <div>
+                        <h3>Growth &amp; Outreach</h3>
+                        <p>Forward delivery pipeline and engagement momentum.</p>
+                    </div>
+                </div>
+                <div class="cmn-exec-activity-grid">
+                    <?php foreach ($growth_cards as $growth_card) : ?>
+                        <?php
+                        $growth_urgency_class = (string) ($growth_card['urgency'] ?? 'neutral') === 'urgent'
+                            ? ' is-urgent'
+                            : ' is-neutral';
+                        ?>
+                        <a class="cmn-exec-activity-card<?php echo esc_attr($growth_urgency_class); ?>" href="<?php echo esc_url((string) $growth_card['url']); ?>">
+                            <span class="cmn-exec-activity-label"><?php echo esc_html((string) $growth_card['label']); ?></span>
+                            <strong class="cmn-exec-activity-value"><?php echo esc_html((string) $growth_card['value']); ?></strong>
+                            <span class="cmn-exec-activity-subtext"><?php echo esc_html((string) $growth_card['detail']); ?></span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+
+            <section class="cmn-exec-band">
+                <div class="cmn-exec-band-head">
+                    <div>
+                        <h3>System &amp; Performance</h3>
+                        <p>Runtime stability, queue pressure, and audit visibility at a glance.</p>
+                    </div>
+                </div>
+                <div class="cmn-exec-system-grid">
+                    <?php foreach ($system_cards as $system_card) : ?>
+                        <a class="cmn-exec-system-card" href="<?php echo esc_url((string) $system_card['url']); ?>">
+                            <span class="cmn-exec-status-dot is-<?php echo esc_attr((string) $system_card['status']); ?>" aria-hidden="true"></span>
+                            <div class="cmn-exec-system-body">
+                                <span class="cmn-exec-system-label"><?php echo esc_html((string) $system_card['label']); ?></span>
+                                <span class="cmn-exec-system-subtext"><?php echo esc_html((string) $system_card['detail']); ?></span>
+                            </div>
+                            <strong class="cmn-exec-system-count"><?php echo esc_html(number_format((int) $system_card['count'])); ?></strong>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </section>
         </div>
         <?php
         $inner = ob_get_clean();
@@ -15299,15 +22909,163 @@ final class CMN_One_Plugin {
         $portal_page = get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $school_identifier = isset($_GET['school_id']) ? sanitize_text_field($_GET['school_id']) : '';
-        if ($school_identifier !== '') {
-            $school_post_id = $this->resolve_school_identifier($school_identifier);
-            if ($school_post_id && !$this->user_can_access_school($school_post_id)) {
+        $requested_pid = isset($_GET['pid']) ? (int) $_GET['pid'] : 0;
+        $request_bucket = isset($_GET['cmn_bucket']) ? sanitize_key((string) $_GET['cmn_bucket']) : '';
+        $current_user_id = (int) get_current_user_id();
+        if ($school_identifier !== '' || $requested_pid > 0) {
+            $req_id = 'SCHVIEW-' . wp_generate_uuid4();
+            $request_started_at = microtime(true);
+            $this->log_school_view_event($req_id, 'request_received', [
+                'requested_school_identifier' => $school_identifier,
+                'requested_pid' => $requested_pid,
+                'cmn_bucket' => $request_bucket,
+                'current_user_id' => $current_user_id,
+                'current_user_role' => $this->get_current_user_role(),
+                'caps' => [
+                    'is_admin' => $this->is_admin_user($current_user_id) ? 1 : 0,
+                    'is_staff' => $this->is_staff_role($current_user_id) ? 1 : 0,
+                    'is_account_manager' => $this->is_account_manager_user($current_user_id) ? 1 : 0,
+                ],
+            ], $request_started_at);
+
+            $resolve_started_at = microtime(true);
+            $resolved_by_school_id = $school_identifier !== '' ? (int) $this->resolve_school_identifier($school_identifier) : 0;
+            $this->log_school_view_event($req_id, 'resolve_by_school_id', [
+                'requested_school_identifier' => $school_identifier,
+                'resolved_post_id' => $resolved_by_school_id,
+            ], $resolve_started_at);
+
+            $resolved_by_pid = 0;
+            if (!$resolved_by_school_id && $requested_pid > 0) {
+                $pid_post = get_post($requested_pid);
+                if ($pid_post && $pid_post->post_type === 'cmn_school') {
+                    $resolved_by_pid = (int) $requested_pid;
+                }
+            }
+            $this->log_school_view_event($req_id, 'resolve_by_pid', [
+                'requested_pid' => $requested_pid,
+                'resolved_post_id' => $resolved_by_pid,
+            ], $resolve_started_at);
+
+            $school_post_id = $resolved_by_school_id ?: $resolved_by_pid;
+            if (!$school_post_id) {
+                return $this->render_staff_shell('all_schools', '<div class="cmn-panel-card"><h3>School not found</h3><p>We could not resolve this school reference.</p></div>');
+            }
+
+            $permission_granted = $this->user_can_access_school($school_post_id, $current_user_id);
+            $school_record = get_post($school_post_id);
+            $school_meta_snapshot = [
+                'cmn_status' => (string) get_post_meta($school_post_id, 'cmn_status', true),
+                'access_request_status' => (string) $this->get_school_access_request_status($school_post_id),
+                'cmn_account_manager_user' => (int) get_post_meta($school_post_id, 'cmn_account_manager_user', true),
+                'cmn_account_manager_user_id' => (int) get_post_meta($school_post_id, 'cmn_account_manager_user_id', true),
+                'cmn_school_id' => (string) get_post_meta($school_post_id, 'cmn_school_id', true),
+                'cmn_location' => (string) get_post_meta($school_post_id, 'cmn_location', true),
+                'cmn_postcode' => (string) get_post_meta($school_post_id, 'cmn_postcode', true),
+                'cmn_town' => (string) get_post_meta($school_post_id, 'cmn_town', true),
+                'cmn_address_line1' => (string) get_post_meta($school_post_id, 'cmn_address_line1', true),
+                'cmn_account_manager' => (string) get_post_meta($school_post_id, 'cmn_account_manager', true),
+            ];
+            $missing_fields = $this->get_school_profile_missing_fields($school_post_id);
+            $this->log_school_view_event($req_id, 'meta_presence_check', [
+                'resolved_school_post_id' => (int) $school_post_id,
+                'school_record_found' => $school_record instanceof WP_Post ? 1 : 0,
+                'school_record_type' => $school_record instanceof WP_Post ? (string) $school_record->post_type : '',
+                'permission_granted' => $permission_granted ? 1 : 0,
+                'missing_fields' => $missing_fields,
+                'school_meta' => $school_meta_snapshot,
+                'meta_presence' => [
+                    'status' => $school_meta_snapshot['cmn_status'] !== '' ? 1 : 0,
+                    'postcode' => $school_meta_snapshot['cmn_postcode'] !== '' ? 1 : 0,
+                    'town' => $school_meta_snapshot['cmn_town'] !== '' ? 1 : 0,
+                    'address_line1' => $school_meta_snapshot['cmn_address_line1'] !== '' ? 1 : 0,
+                    'account_manager' => $school_meta_snapshot['cmn_account_manager'] !== '' ? 1 : 0,
+                ],
+            ], $request_started_at);
+
+            if (!$permission_granted) {
                 return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>You do not have access to this school.</p></div></section>';
             }
-            if ($school_post_id) {
-                $bucket_for_profile = isset($_GET['cmn_bucket']) ? sanitize_key((string) $_GET['cmn_bucket']) : '';
-                $active_profile_nav = $bucket_for_profile === 'clients' ? 'client_schools' : 'sales_schools';
-                return $this->render_staff_shell($active_profile_nav, $this->render_frontend_school_profile($school_post_id));
+
+            $bucket_for_profile = $request_bucket;
+            $status_for_profile = isset($_GET['cmn_status']) ? sanitize_key((string) $_GET['cmn_status']) : '';
+            $active_profile_nav = ($bucket_for_profile === 'sales' || $status_for_profile === 'lead') ? 'pipeline_leads' : 'all_schools';
+
+            $render_ref = null;
+            register_shutdown_function(function () use (&$render_ref, $req_id, $school_identifier, $school_post_id) {
+                $error = error_get_last();
+                if (!$error || !in_array((int) ($error['type'] ?? 0), [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+                    return;
+                }
+                $render_ref = $render_ref ?: ('CMN-ERR-SCHVIEW-' . gmdate('YmdHis') . '-' . substr(wp_generate_uuid4(), 0, 8));
+                $payload = [
+                    'req_id' => $req_id,
+                    'reference' => $render_ref,
+                    'school_identifier' => $school_identifier,
+                    'resolved_school_post_id' => (int) $school_post_id,
+                    'error_type' => (int) ($error['type'] ?? 0),
+                    'error_message' => (string) ($error['message'] ?? ''),
+                    'error_file' => (string) ($error['file'] ?? ''),
+                    'error_line' => (int) ($error['line'] ?? 0),
+                ];
+                error_log('[CMN_SCHOOL_VIEW_CRASH] ' . wp_json_encode($payload));
+                while (ob_get_level() > 0) {
+                    ob_end_clean();
+                }
+                echo $this->build_school_view_error_card(
+                    $render_ref,
+                    'A system error stopped this profile from loading.',
+                    $school_identifier,
+                    $school_post_id
+                );
+            });
+
+            $this->log_school_view_event($req_id, 'render_start', [
+                'resolved_school_post_id' => (int) $school_post_id,
+                'template' => 'render_frontend_school_profile',
+            ], $request_started_at);
+
+            ob_start();
+            try {
+                $profile_html = (string) $this->render_frontend_school_profile($school_post_id);
+                $buffered = ob_get_clean();
+                $profile_html = trim($buffered . $profile_html);
+                if ($profile_html === '') {
+                    $render_ref = 'CMN-ERR-SCHVIEW-' . gmdate('YmdHis') . '-' . substr(wp_generate_uuid4(), 0, 8);
+                    $this->log_school_view_crash($req_id, $render_ref, [
+                        'resolved_school_post_id' => (int) $school_post_id,
+                        'school_identifier' => $school_identifier,
+                        'reason' => 'Profile render returned empty output.',
+                    ]);
+                    return $this->render_staff_shell($active_profile_nav, $this->build_school_view_error_card(
+                        $render_ref,
+                        'Profile render returned empty output.',
+                        $school_identifier,
+                        $school_post_id
+                    ));
+                }
+                $this->log_school_view_event($req_id, 'render_success', [
+                    'resolved_school_post_id' => (int) $school_post_id,
+                    'template' => 'render_frontend_school_profile',
+                ], $request_started_at);
+                return $this->render_staff_shell($active_profile_nav, $profile_html);
+            } catch (Throwable $e) {
+                if (ob_get_level() > 0) {
+                    ob_end_clean();
+                }
+                $render_ref = 'CMN-ERR-SCHVIEW-' . gmdate('YmdHis') . '-' . substr(wp_generate_uuid4(), 0, 8);
+                $this->log_school_view_crash($req_id, $render_ref, [
+                    'resolved_school_post_id' => (int) $school_post_id,
+                    'school_identifier' => $school_identifier,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+                return $this->render_staff_shell($active_profile_nav, $this->build_school_view_error_card(
+                    $render_ref,
+                    'An unexpected error occurred while rendering this profile.',
+                    $school_identifier,
+                    $school_post_id
+                ));
             }
         }
         $view = isset($_GET['view']) ? sanitize_text_field($_GET['view']) : 'schools';
@@ -15353,11 +23111,19 @@ final class CMN_One_Plugin {
         $bulk_active = $import_data ? ' is-active' : '';
         $add_active = '';
 
+        $school_list_post_statuses = $this->get_school_list_post_statuses();
+        /*
+         * Eligibility contract: Sales/Clients -> Schools list
+         * - Entity source: cmn_school posts (internal CRM records), including non-public internal post statuses.
+         * - Sales list inclusion: cmn_status = 'lead'.
+         * - Clients list inclusion: cmn_status = 'client'.
+         * - Additional filters: pipeline stage, account manager, location, and search criteria.
+         */
         $args = [
             'post_type' => 'cmn_school',
+            'post_status' => $school_list_post_statuses,
             'posts_per_page' => 200,
         ];
-        $current_user_id = get_current_user_id();
         $assigned_school_ids = [];
         if ($this->is_account_manager_user($current_user_id) && !$this->is_admin_user($current_user_id) && !$this->is_staff_role($current_user_id)) {
             $assigned_school_ids = $this->get_assigned_school_ids_for_account_manager($current_user_id);
@@ -15420,6 +23186,7 @@ final class CMN_One_Plugin {
         if ($search !== '') {
             global $wpdb;
             $like = '%' . $wpdb->esc_like($search) . '%';
+            $status_placeholders = implode(',', array_fill(0, count($school_list_post_statuses), '%s'));
             $meta_keys = [
                 'cmn_school_id',
                 'cmn_location',
@@ -15444,9 +23211,9 @@ final class CMN_One_Plugin {
                 FROM {$wpdb->posts} p
                 LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID
                 WHERE p.post_type = 'cmn_school'
-                  AND p.post_status = 'publish'
+                  AND p.post_status IN ({$status_placeholders})
                   AND (p.post_title LIKE %s OR (pm.meta_key IN ($placeholders) AND pm.meta_value LIKE %s))";
-            $params = array_merge([$like], $meta_keys, [$like]);
+            $params = array_merge($school_list_post_statuses, [$like], $meta_keys, [$like]);
             $matched_ids = $wpdb->get_col($wpdb->prepare($sql, $params));
             if (!$matched_ids) {
                 $matched_ids = [0];
@@ -15472,7 +23239,10 @@ final class CMN_One_Plugin {
             'cmn_bucket' => $bucket ?: null,
         ]), $portal_url);
         $manager_users = $this->get_account_manager_users();
-        $active_nav = ($bucket === 'clients') ? 'client_schools' : 'sales_schools';
+        $active_nav = 'all_schools';
+        if ($status === 'lead' || $bucket === 'sales' || $view === 'leads') {
+            $active_nav = 'pipeline_leads';
+        }
         $filter_count = 0;
         if ($stage !== '') {
             $filter_count++;
@@ -15743,6 +23513,7 @@ final class CMN_One_Plugin {
                             <td>
                                 <?php the_title(); ?>
                                 <?php $school_code = get_post_meta(get_the_ID(), 'cmn_school_id', true); ?>
+                                <?php $view_identifier = $school_code ? (string) $school_code : (string) get_the_ID(); ?>
                                 <?php if ($school_code) : ?>
                                     <div class="cmn-table-meta">ID: <?php echo esc_html($school_code); ?></div>
                                 <?php endif; ?>
@@ -15757,7 +23528,7 @@ final class CMN_One_Plugin {
                             ?>
                             <td><span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span></td>
                             <td><span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_label); ?></span></td>
-                            <td><a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'schools', 'school_id' => $school_code, 'cmn_bucket' => $bucket ?: null]), home_url('/portal'))); ?>">View</a></td>
+                            <td><a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'schools', 'school_id' => $school_code ?: null, 'pid' => get_the_ID(), 'cmn_bucket' => $bucket ?: null]), home_url('/portal'))); ?>">View</a></td>
                         </tr>
                     <?php endwhile; wp_reset_postdata(); ?>
                 <?php else : ?>
@@ -16910,6 +24681,26 @@ final class CMN_One_Plugin {
         $available_count = isset($calendar_summary['available_count']) ? (int) $calendar_summary['available_count'] : 0;
         $unavailable_count = isset($calendar_summary['unavailable_count']) ? (int) $calendar_summary['unavailable_count'] : 0;
         $feedback_summary = $this->get_feedback_summary_for_entity('candidate', $candidate_id);
+        $feedback_rating_payload = $this->get_candidate_average_rating_payload($candidate_user_id);
+        $feedback_breakdown_rows = $this->get_candidate_feedback_breakdown_for_candidate_user($candidate_user_id);
+        $feedback_entry_rows = [];
+        foreach ((array) $this->get_candidate_feedback_entries_for_candidate_user($candidate_user_id, 120) as $feedback_row) {
+            $formatted_feedback = $this->format_candidate_feedback_row($feedback_row);
+            $feedback_booking_id = (int) ($formatted_feedback['booking_id'] ?? 0);
+            $feedback_booking_date = $feedback_booking_id > 0 ? $this->get_booking_service_date($feedback_booking_id) : '';
+            if ($feedback_booking_date === '') {
+                $feedback_booking_date = sanitize_text_field((string) ($formatted_feedback['created_at'] ?? ''));
+            }
+            $feedback_entry_rows[] = [
+                'id' => (int) ($formatted_feedback['id'] ?? 0),
+                'booking_id' => $feedback_booking_id,
+                'booking_date' => $feedback_booking_date,
+                'school_name' => $this->get_school_user_label_for_feedback((int) ($formatted_feedback['school_user_id'] ?? 0)),
+                'average_rating' => round((float) ($formatted_feedback['average_rating'] ?? 0), 2),
+                'comments' => sanitize_textarea_field((string) ($formatted_feedback['comments'] ?? '')),
+                'module_scores' => (array) ($formatted_feedback['module_scores'] ?? []),
+            ];
+        }
 
         $doc_map = [
             'id' => 'Photo ID',
@@ -17096,6 +24887,59 @@ final class CMN_One_Plugin {
                 <p>Average rating: <?php echo esc_html(number_format((float) ($feedback_summary['avg_overall'] ?? 0), 2)); ?>/5</p>
                 <p>Reliability rating: <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 2)); ?>/5</p>
                 <p>Total feedback count: <?php echo esc_html((string) ((int) ($feedback_summary['feedback_count'] ?? 0))); ?></p>
+            </div>
+
+            <div class="cmn-dashboard-card cmn-dashboard-card-wide">
+                <div class="cmn-card-header">
+                    <h3>School Feedback (All Entries)</h3>
+                    <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($feedback_rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
+                </div>
+                <p class="cmn-muted"><?php echo esc_html((string) ((int) ($feedback_rating_payload['feedback_count'] ?? 0))); ?> total review(s).</p>
+                <ul class="cmn-status-list">
+                    <?php foreach ((array) $feedback_breakdown_rows as $breakdown_row) : ?>
+                        <li>
+                            <span><?php echo esc_html((string) ($breakdown_row['label'] ?? 'Module')); ?></span>
+                            <strong><?php echo esc_html(number_format((float) ($breakdown_row['average'] ?? 0), 1)); ?>/5</strong>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php if ($feedback_entry_rows) : ?>
+                    <div class="cmn-list">
+                        <?php foreach ($feedback_entry_rows as $entry_row) : ?>
+                            <?php
+                            $entry_booking_date_display = '';
+                            if (!empty($entry_row['booking_date'])) {
+                                $entry_booking_date_display = date_i18n('D j M Y', strtotime((string) $entry_row['booking_date']));
+                            }
+                            ?>
+                            <div class="cmn-list-item">
+                                <div class="cmn-card-header">
+                                    <strong><?php echo esc_html((string) ($entry_row['school_name'] ?? 'School')); ?></strong>
+                                    <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($entry_row['average_rating'] ?? 0), 1)); ?>/5</span>
+                                </div>
+                                <p class="cmn-muted">
+                                    Booking <?php echo esc_html((int) ($entry_row['booking_id'] ?? 0) > 0 ? ('#' . (int) ($entry_row['booking_id'] ?? 0)) : '—'); ?>
+                                    <?php if ($entry_booking_date_display !== '') : ?>
+                                        • <?php echo esc_html($entry_booking_date_display); ?>
+                                    <?php endif; ?>
+                                </p>
+                                <ul class="cmn-status-list">
+                                    <?php foreach ((array) ($entry_row['module_scores'] ?? []) as $module_row) : ?>
+                                        <li>
+                                            <span><?php echo esc_html((string) ($module_row['label'] ?? 'Module')); ?></span>
+                                            <strong><?php echo esc_html((string) ((int) ($module_row['score'] ?? 0))); ?>/5</strong>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                                <?php if (!empty($entry_row['comments'])) : ?>
+                                    <p class="cmn-muted"><?php echo esc_html((string) $entry_row['comments']); ?></p>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else : ?>
+                    <div class="cmn-empty">No school feedback entries yet.</div>
+                <?php endif; ?>
             </div>
 
             <div class="cmn-dashboard-card cmn-dashboard-card-wide">
@@ -21049,6 +28893,12 @@ final class CMN_One_Plugin {
         $return_url = $build_url(['cmn_sp_admin_school_user' => $selected_school_user_id > 0 ? $selected_school_user_id : null]);
         $is_admin = $this->is_admin_user($user_id);
         $staff_delta_limit = $this->get_school_partner_staff_manual_day_delta_limit();
+        $debug_school_user_id = max(0, (int) ($_GET['cmn_visibility_school_user'] ?? ($selected_school_user_id > 0 ? $selected_school_user_id : 0)));
+        $debug_visibility_report = [];
+        if ($is_admin && $debug_school_user_id > 0) {
+            $debug_visibility_report = $this->get_school_visibility_report($debug_school_user_id);
+        }
+        $debug_visibility_json = $debug_visibility_report ? wp_json_encode($debug_visibility_report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '';
 
         ob_start();
         ?>
@@ -21059,6 +28909,42 @@ final class CMN_One_Plugin {
         <?php if ($message !== '') : ?>
             <div class="cmn-dashboard-card" style="margin-bottom:12px;">
                 <p class="<?php echo $message_type === 'error' ? 'cmn-register-error' : ($message_type === 'warning' ? 'cmn-register-warning' : 'cmn-register-success'); ?>"><?php echo esc_html($message); ?></p>
+            </div>
+        <?php endif; ?>
+        <?php if ($is_admin) : ?>
+            <div class="cmn-dashboard-card" style="margin-bottom:12px;">
+                <h3>Debug: School Visibility</h3>
+                <p class="cmn-muted">Checks why a school appears in Partner Programme but not in Sales/Clients school lists.</p>
+                <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-inline" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+                    <input type="hidden" name="view" value="school-partner-admin">
+                    <?php if ($search_filter !== '') : ?>
+                        <input type="hidden" name="cmn_sp_admin_search" value="<?php echo esc_attr($search_filter); ?>">
+                    <?php endif; ?>
+                    <?php if ($selected_school_user_id > 0) : ?>
+                        <input type="hidden" name="cmn_sp_admin_school_user" value="<?php echo esc_attr((string) $selected_school_user_id); ?>">
+                    <?php endif; ?>
+                    <label style="display:flex;flex-direction:column;gap:4px;min-width:220px;">
+                        <span>School User ID</span>
+                        <input type="number" name="cmn_visibility_school_user" min="1" step="1" value="<?php echo esc_attr($debug_school_user_id > 0 ? (string) $debug_school_user_id : ''); ?>" required>
+                    </label>
+                    <button class="cmn-primary" type="submit">Run Visibility Debug</button>
+                </form>
+                <?php if ($debug_visibility_json !== '') : ?>
+                    <pre style="max-height:360px;overflow:auto;background:rgba(8,11,17,0.76);border:1px solid rgba(255,255,255,0.12);padding:12px;border-radius:10px;"><?php echo esc_html($debug_visibility_json); ?></pre>
+                <?php else : ?>
+                    <div class="cmn-empty">Choose a School User ID to inspect list visibility decisions.</div>
+                <?php endif; ?>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">
+                    <?php wp_nonce_field('cmn_reconcile_school_lists', 'cmn_reconcile_school_lists_nonce'); ?>
+                    <input type="hidden" name="action" value="cmn_reconcile_school_lists">
+                    <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr((string) $return_url); ?>">
+                    <label style="display:flex;gap:6px;align-items:center;">
+                        <input type="checkbox" name="cmn_dry_run" value="1" checked>
+                        <span>Dry run</span>
+                    </label>
+                    <button class="cmn-ghost" type="submit">Reconcile School Lists</button>
+                </form>
             </div>
         <?php endif; ?>
         <div class="cmn-dashboard-card" style="margin-bottom:16px;">
@@ -27261,6 +35147,7 @@ final class CMN_One_Plugin {
                     <div class="cmn-support-thread-actions">
                         <button class="cmn-ghost" type="button" data-support-close-ticket disabled>Close Ticket</button>
                         <button class="cmn-ghost" type="button" data-support-reopen-ticket disabled>Reopen</button>
+                        <button class="cmn-ghost" type="button" data-support-request-feedback disabled>Request feedback</button>
                         <button class="cmn-ghost" type="button" data-support-save-transcript disabled>Save Transcript</button>
                         <button class="cmn-ghost" type="button" data-support-email-transcript disabled>Send Transcript to Email</button>
                     </div>
@@ -27297,6 +35184,212 @@ final class CMN_One_Plugin {
         <?php
         $inner = ob_get_clean();
         return $this->render_staff_shell('support', $inner);
+    }
+
+    private function get_support_whats_new_option_key() {
+        return 'cmn_support_whats_new_feed';
+    }
+
+    private function sanitize_support_whats_new_text($value, $max_length = 260) {
+        $text = sanitize_text_field((string) $value);
+        $text = trim(preg_replace('/\s+/', ' ', $text));
+        if ($text === '') {
+            return '';
+        }
+        $max_length = max(1, (int) $max_length);
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            if (mb_strlen($text, 'UTF-8') > $max_length) {
+                $text = rtrim(mb_substr($text, 0, $max_length - 1, 'UTF-8')) . '...';
+            }
+        } elseif (strlen($text) > $max_length) {
+            $text = rtrim(substr($text, 0, $max_length - 1)) . '...';
+        }
+        return $text;
+    }
+
+    private function normalize_support_whats_new_item($item) {
+        if (!is_array($item)) {
+            return null;
+        }
+        $summary = $this->sanitize_support_whats_new_text($item['summary'] ?? '', 320);
+        if ($summary === '') {
+            return null;
+        }
+
+        $version = sanitize_text_field((string) ($item['version'] ?? ''));
+        if ($version !== '' && !$this->is_valid_release_version($version)) {
+            $version = '';
+        }
+
+        $published_at = sanitize_text_field((string) ($item['published_at'] ?? ''));
+        if ($published_at === '' || strtotime($published_at) === false) {
+            $published_at = current_time('mysql');
+        }
+
+        $highlights = [];
+        $raw_highlights = $item['highlights'] ?? [];
+        if (is_array($raw_highlights)) {
+            foreach ($raw_highlights as $highlight) {
+                $clean_highlight = $this->sanitize_support_whats_new_text($highlight, 180);
+                if ($clean_highlight !== '') {
+                    $highlights[] = $clean_highlight;
+                }
+                if (count($highlights) >= 4) {
+                    break;
+                }
+            }
+        }
+
+        return [
+            'version' => $version,
+            'published_at' => $published_at,
+            'summary' => $summary,
+            'highlights' => $highlights,
+        ];
+    }
+
+    private function build_default_support_whats_new_item($release_version = '') {
+        $release_version = sanitize_text_field((string) $release_version);
+        if ($release_version !== '' && !$this->is_valid_release_version($release_version)) {
+            $release_version = '';
+        }
+
+        return [
+            'version' => $release_version,
+            'published_at' => current_time('mysql'),
+            'summary' => 'We rolled out the latest portal update focused on support speed, clarity, and reliability.',
+            'highlights' => [
+                'Ticket updates now refresh more consistently to reduce missed messages.',
+                'Notification delivery and unread indicators were tuned for clearer status visibility.',
+                'General quality, performance, and security hardening across support workflows.',
+            ],
+        ];
+    }
+
+    private function get_support_whats_new_feed_items($limit = 3) {
+        $limit = max(1, (int) $limit);
+        $option_key = $this->get_support_whats_new_option_key();
+        $stored = get_option($option_key, []);
+        if (!is_array($stored)) {
+            $stored = [];
+        }
+
+        $items = [];
+        foreach ($stored as $entry) {
+            $normalized = $this->normalize_support_whats_new_item($entry);
+            if ($normalized) {
+                $items[] = $normalized;
+            }
+        }
+
+        $current_release = $this->get_release_version();
+        $has_current_release = false;
+        foreach ($items as $item) {
+            if (($item['version'] ?? '') !== '' && $item['version'] === $current_release) {
+                $has_current_release = true;
+                break;
+            }
+        }
+        if (!$has_current_release) {
+            array_unshift($items, $this->build_default_support_whats_new_item($current_release));
+        }
+
+        usort($items, static function ($a, $b) {
+            $a_time = strtotime((string) ($a['published_at'] ?? '')) ?: 0;
+            $b_time = strtotime((string) ($b['published_at'] ?? '')) ?: 0;
+            if ($a_time === $b_time) {
+                $a_version = (string) ($a['version'] ?? '');
+                $b_version = (string) ($b['version'] ?? '');
+                return strcmp($b_version, $a_version);
+            }
+            return $b_time <=> $a_time;
+        });
+
+        $deduped = [];
+        $seen = [];
+        foreach ($items as $item) {
+            $dedupe_key = (($item['version'] ?? '') !== '')
+                ? 'v:' . (string) $item['version']
+                : 's:' . sha1((string) ($item['summary'] ?? ''));
+            if (isset($seen[$dedupe_key])) {
+                continue;
+            }
+            $seen[$dedupe_key] = true;
+            $deduped[] = $item;
+            if (count($deduped) >= 12) {
+                break;
+            }
+        }
+
+        $persist = [];
+        foreach ($deduped as $item) {
+            $persist[] = [
+                'version' => (string) ($item['version'] ?? ''),
+                'published_at' => (string) ($item['published_at'] ?? ''),
+                'summary' => (string) ($item['summary'] ?? ''),
+                'highlights' => array_values(array_map('strval', (array) ($item['highlights'] ?? []))),
+            ];
+        }
+        update_option($option_key, $persist, false);
+
+        return array_slice($deduped, 0, $limit);
+    }
+
+    private function render_support_whats_new_panel($audience = 'portal') {
+        $audience = sanitize_key((string) $audience);
+        if ($audience === '') {
+            $audience = 'portal';
+        }
+        $items = $this->get_support_whats_new_feed_items(3);
+        if (!$items) {
+            return '';
+        }
+
+        ob_start();
+        ?>
+        <section class="cmn-support-whats-new" data-support-whats-new data-support-whats-new-audience="<?php echo esc_attr($audience); ?>">
+            <div class="cmn-support-whats-new__header">
+                <h4>What's New</h4>
+                <span class="cmn-muted">Latest safe summary of platform updates.</span>
+            </div>
+            <ul class="cmn-support-whats-new__list">
+                <?php foreach ($items as $item) : ?>
+                    <?php
+                    $entry_version = trim((string) ($item['version'] ?? ''));
+                    $entry_summary = trim((string) ($item['summary'] ?? ''));
+                    $entry_highlights = (array) ($item['highlights'] ?? []);
+                    $entry_time_raw = trim((string) ($item['published_at'] ?? ''));
+                    $entry_time = $entry_time_raw !== '' ? strtotime($entry_time_raw) : false;
+                    $entry_time_iso = $entry_time ? gmdate('c', $entry_time) : '';
+                    $entry_time_label = $entry_time
+                        ? date_i18n('M j, Y', $entry_time)
+                        : '';
+                    ?>
+                    <li class="cmn-support-whats-new__item">
+                        <div class="cmn-support-whats-new__meta">
+                            <?php if ($entry_version !== '') : ?>
+                                <span class="cmn-support-whats-new__version">v<?php echo esc_html($entry_version); ?></span>
+                            <?php endif; ?>
+                            <?php if ($entry_time_label !== '') : ?>
+                                <time datetime="<?php echo esc_attr($entry_time_iso); ?>"><?php echo esc_html($entry_time_label); ?></time>
+                            <?php endif; ?>
+                        </div>
+                        <p><?php echo esc_html($entry_summary); ?></p>
+                        <?php if ($entry_highlights) : ?>
+                            <ul class="cmn-support-whats-new__highlights">
+                                <?php foreach ($entry_highlights as $entry_highlight) : ?>
+                                    <?php $highlight_text = trim((string) $entry_highlight); ?>
+                                    <?php if ($highlight_text === '') { continue; } ?>
+                                    <li><?php echo esc_html($highlight_text); ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php endif; ?>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        </section>
+        <?php
+        return ob_get_clean();
     }
 
     public function render_staff_lounge_shortcode() {
@@ -27679,7 +35772,7 @@ final class CMN_One_Plugin {
         </div>
         <?php
         $inner = ob_get_clean();
-        $active_contacts_nav = $bucket === 'sales' ? 'sales_contacts' : 'client_contacts';
+        $active_contacts_nav = 'pipeline_contacts';
         return $this->render_staff_shell($active_contacts_nav, $inner);
     }
 
@@ -27834,6 +35927,1892 @@ final class CMN_One_Plugin {
         return $this->render_staff_shell('staff', $inner);
     }
 
+    public function render_staff_email_centre_shortcode() {
+        if (!is_user_logged_in()) {
+            return $this->render_login_shortcode();
+        }
+        $user_id = (int) get_current_user_id();
+        $is_admin = $this->is_admin_user($user_id);
+        $is_allowed = $is_admin || $this->is_staff_role($user_id);
+        if (!$is_allowed) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>Email Centre is available to staff/admin only.</p></div></section>';
+        }
+
+        $tab_map = [
+            'templates' => 'email_centre_templates',
+            'senders' => 'email_centre_senders',
+            'logs' => 'email_centre_logs',
+        ];
+        $requested_tab = sanitize_key((string) ($_GET['cmn_email_centre_tab'] ?? 'templates'));
+        $email_centre_tab = array_key_exists($requested_tab, $tab_map) ? $requested_tab : 'templates';
+        $active_nav_key = $tab_map[$email_centre_tab];
+
+        self::migrate_schema_v64_email_sender_directory();
+        self::migrate_schema_v67_email_sender_table_normalization();
+        $this->ensure_email_sender_directory_seeded(true);
+        $registry_rows = function_exists('cmn_email_registry') ? cmn_email_registry() : [];
+        if (!is_array($registry_rows)) {
+            $registry_rows = [];
+        }
+        $template_sender_map = $this->get_email_template_sender_defaults_map();
+        $sender_rows = $this->get_email_sender_directory_rows(false);
+        $sender_lookup = [];
+        foreach ((array) $sender_rows as $sender_row) {
+            $sender_id = (int) ($sender_row['id'] ?? 0);
+            if ($sender_id > 0) {
+                $sender_lookup[$sender_id] = $sender_row;
+            }
+        }
+        $email_logs = [];
+        $email_logs_total = 0;
+        $email_logs_page = 1;
+        $email_logs_per_page = 20;
+        $email_logs_total_pages = 0;
+        $email_logs_filter_status = '';
+        $email_logs_filter_recipient = '';
+        $email_logs_filter_template = '';
+        $email_logs_filter_date_from = '';
+        $email_logs_filter_date_to = '';
+        if ($email_centre_tab === 'logs') {
+            self::migrate_schema_v66_email_logs_table_hardening();
+            self::migrate_schema_v68_email_logs_canonical_backfill();
+
+            $email_logs_filter_status = sanitize_key((string) ($_GET['cmn_email_log_status'] ?? ''));
+            if (!in_array($email_logs_filter_status, ['', 'queued', 'sent', 'failed'], true)) {
+                $email_logs_filter_status = '';
+            }
+            $email_logs_filter_recipient = sanitize_text_field((string) wp_unslash($_GET['cmn_email_log_recipient'] ?? ''));
+            $email_logs_filter_template = sanitize_text_field((string) wp_unslash($_GET['cmn_email_log_template'] ?? ''));
+            $email_logs_filter_date_from = sanitize_text_field((string) ($_GET['cmn_email_log_from'] ?? ''));
+            $email_logs_filter_date_to = sanitize_text_field((string) ($_GET['cmn_email_log_to'] ?? ''));
+            if ($email_logs_filter_date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $email_logs_filter_date_from)) {
+                $email_logs_filter_date_from = '';
+            }
+            if ($email_logs_filter_date_to !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $email_logs_filter_date_to)) {
+                $email_logs_filter_date_to = '';
+            }
+            $email_logs_page = max(1, (int) ($_GET['cmn_email_log_page'] ?? 1));
+
+            $email_logs_result = $this->email_log_list([
+                'status' => $email_logs_filter_status,
+                'recipient_email' => $email_logs_filter_recipient,
+                'template_key' => $email_logs_filter_template,
+                'date_from' => $email_logs_filter_date_from,
+                'date_to' => $email_logs_filter_date_to,
+            ], $email_logs_page, $email_logs_per_page);
+
+            $email_logs = (array) ($email_logs_result['rows'] ?? []);
+            $email_logs_total = max(0, (int) ($email_logs_result['total'] ?? 0));
+            $email_logs_total_pages = max(0, (int) ($email_logs_result['total_pages'] ?? 0));
+            $email_logs_page = max(1, (int) ($email_logs_result['page'] ?? $email_logs_page));
+        }
+
+        $notice_status = sanitize_key((string) ($_GET['cmn_email_centre_status'] ?? ''));
+        $notice_message_raw = isset($_GET['cmn_email_centre_msg']) ? (string) wp_unslash($_GET['cmn_email_centre_msg']) : '';
+        $notice_message = sanitize_text_field(rawurldecode($notice_message_raw));
+        $notice_class = '';
+        if ($notice_message !== '') {
+            if ($notice_status === 'success') {
+                $notice_class = 'cmn-register-success';
+            } elseif ($notice_status === 'warning') {
+                $notice_class = 'cmn-register-warning';
+            } else {
+                $notice_class = 'cmn-register-error';
+            }
+        }
+
+        $portal_base_url = $this->get_portal_base_url();
+        $templates_url = add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_base_url);
+        $senders_url = add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'senders'], $portal_base_url);
+        $logs_url = add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'logs'], $portal_base_url);
+        $template_storage_map = [];
+        $template_rows_map = [];
+        $template_rows = [];
+        $template_rows_filtered = [];
+        $template_module_options = [];
+        $template_recipient_role_options = [];
+        $template_status_options = [];
+        $template_filter_module = '';
+        $template_filter_recipient_role = '';
+        $template_filter_status = '';
+        $template_search = '';
+        $template_selected_key = '';
+        $template_selected_row = [];
+        $template_editor_row = [];
+
+        if ($email_centre_tab === 'templates') {
+            $template_storage_map = $this->get_email_template_storage_rows_map();
+
+            $resolve_template_from_email = static function ($template_key, $fallback_from_email = '') use ($template_sender_map, $sender_lookup, $template_storage_map) {
+                $template_key = sanitize_key((string) $template_key);
+                $resolved = sanitize_email((string) $fallback_from_email);
+                if ($template_key === '') {
+                    return $resolved;
+                }
+
+                $sender_assignment = (array) ($template_sender_map[$template_key] ?? []);
+                $assigned_sender_id = (int) ($sender_assignment['default_sender_id'] ?? 0);
+                if ($assigned_sender_id > 0 && !empty($sender_lookup[$assigned_sender_id]['email_address'])) {
+                    return sanitize_email((string) $sender_lookup[$assigned_sender_id]['email_address']);
+                }
+                if (!empty($sender_assignment['from_email'])) {
+                    return sanitize_email((string) $sender_assignment['from_email']);
+                }
+                if ($resolved === '' && !empty($template_storage_map[$template_key]['from_email'])) {
+                    $resolved = sanitize_email((string) $template_storage_map[$template_key]['from_email']);
+                }
+
+                return $resolved;
+            };
+
+            foreach ((array) $registry_rows as $registry_row) {
+                $template_key = sanitize_key((string) ($registry_row['template_key'] ?? ''));
+                if ($template_key === '') {
+                    continue;
+                }
+                $storage_row = (array) ($template_storage_map[$template_key] ?? []);
+                $module = sanitize_key((string) ($storage_row['module'] ?? ($registry_row['module'] ?? '')));
+                if ($module === '') {
+                    $module = 'system';
+                }
+                $recipient_role = sanitize_key((string) ($storage_row['recipient_role'] ?? ($registry_row['recipient_role'] ?? '')));
+                if ($recipient_role === '') {
+                    $recipient_role = 'system';
+                }
+                $status = sanitize_key((string) ($storage_row['status'] ?? ''));
+                if ($status === '') {
+                    $status = 'published';
+                }
+                $name = sanitize_text_field((string) ($registry_row['name'] ?? ''));
+                if ($name === '') {
+                    $name = ucwords(str_replace('_', ' ', $template_key));
+                }
+                $from_email = $resolve_template_from_email($template_key, (string) ($registry_row['default_from_email'] ?? ''));
+                $template_rows_map[$template_key] = [
+                    'template_key' => $template_key,
+                    'name' => $name,
+                    'module' => $module,
+                    'recipient_role' => $recipient_role,
+                    'from_email' => $from_email,
+                    'status' => $status,
+                    'last_updated' => sanitize_text_field((string) ($storage_row['updated_at'] ?? '')),
+                ];
+            }
+
+            foreach ($template_storage_map as $template_key => $storage_row) {
+                if (isset($template_rows_map[$template_key])) {
+                    continue;
+                }
+                $module = sanitize_key((string) ($storage_row['module'] ?? ''));
+                if ($module === '') {
+                    $module = 'system';
+                }
+                $recipient_role = sanitize_key((string) ($storage_row['recipient_role'] ?? ''));
+                if ($recipient_role === '') {
+                    $recipient_role = 'system';
+                }
+                $status = sanitize_key((string) ($storage_row['status'] ?? ''));
+                if ($status === '') {
+                    $status = 'draft';
+                }
+                $name = ucwords(str_replace('_', ' ', $template_key));
+                $from_email = $resolve_template_from_email($template_key, (string) ($storage_row['from_email'] ?? ''));
+                $template_rows_map[$template_key] = [
+                    'template_key' => $template_key,
+                    'name' => $name,
+                    'module' => $module,
+                    'recipient_role' => $recipient_role,
+                    'from_email' => $from_email,
+                    'status' => $status,
+                    'last_updated' => sanitize_text_field((string) ($storage_row['updated_at'] ?? '')),
+                ];
+            }
+
+            $template_rows = array_values($template_rows_map);
+            usort($template_rows, static function ($a, $b) {
+                $module_compare = strcmp((string) ($a['module'] ?? ''), (string) ($b['module'] ?? ''));
+                if ($module_compare !== 0) {
+                    return $module_compare;
+                }
+                return strcmp(strtolower((string) ($a['name'] ?? '')), strtolower((string) ($b['name'] ?? '')));
+            });
+
+            foreach ($template_rows as $template_row) {
+                $row_module = sanitize_key((string) ($template_row['module'] ?? ''));
+                $row_role = sanitize_key((string) ($template_row['recipient_role'] ?? ''));
+                $row_status = sanitize_key((string) ($template_row['status'] ?? ''));
+                if ($row_module !== '') {
+                    $template_module_options[$row_module] = $row_module;
+                }
+                if ($row_role !== '') {
+                    $template_recipient_role_options[$row_role] = $row_role;
+                }
+                if ($row_status !== '') {
+                    $template_status_options[$row_status] = $row_status;
+                }
+            }
+            if (!isset($template_status_options['draft'])) {
+                $template_status_options['draft'] = 'draft';
+            }
+            if (!isset($template_status_options['published'])) {
+                $template_status_options['published'] = 'published';
+            }
+
+            $template_module_options = array_values($template_module_options);
+            $template_recipient_role_options = array_values($template_recipient_role_options);
+            $template_status_options = array_values($template_status_options);
+            sort($template_module_options, SORT_NATURAL | SORT_FLAG_CASE);
+            sort($template_recipient_role_options, SORT_NATURAL | SORT_FLAG_CASE);
+            sort($template_status_options, SORT_NATURAL | SORT_FLAG_CASE);
+
+            $template_filter_module = sanitize_key((string) ($_GET['cmn_email_module'] ?? ''));
+            $template_filter_recipient_role = sanitize_key((string) ($_GET['cmn_email_recipient_role'] ?? ''));
+            $template_filter_status = sanitize_key((string) ($_GET['cmn_email_template_status'] ?? ''));
+            $template_search = sanitize_text_field((string) wp_unslash($_GET['cmn_email_template_search'] ?? ''));
+            if ($template_filter_module !== '' && !in_array($template_filter_module, $template_module_options, true)) {
+                $template_filter_module = '';
+            }
+            if ($template_filter_recipient_role !== '' && !in_array($template_filter_recipient_role, $template_recipient_role_options, true)) {
+                $template_filter_recipient_role = '';
+            }
+            if ($template_filter_status !== '' && !in_array($template_filter_status, $template_status_options, true)) {
+                $template_filter_status = '';
+            }
+            $template_search_normalized = function_exists('mb_strtolower') ? mb_strtolower($template_search) : strtolower($template_search);
+            foreach ($template_rows as $template_row) {
+                $row_module = sanitize_key((string) ($template_row['module'] ?? ''));
+                $row_role = sanitize_key((string) ($template_row['recipient_role'] ?? ''));
+                $row_status = sanitize_key((string) ($template_row['status'] ?? ''));
+                $row_key = sanitize_key((string) ($template_row['template_key'] ?? ''));
+                $row_name = sanitize_text_field((string) ($template_row['name'] ?? ''));
+                if ($template_filter_module !== '' && $row_module !== $template_filter_module) {
+                    continue;
+                }
+                if ($template_filter_recipient_role !== '' && $row_role !== $template_filter_recipient_role) {
+                    continue;
+                }
+                if ($template_filter_status !== '' && $row_status !== $template_filter_status) {
+                    continue;
+                }
+                if ($template_search_normalized !== '') {
+                    $haystack_key = function_exists('mb_strtolower') ? mb_strtolower($row_key) : strtolower($row_key);
+                    $haystack_name = function_exists('mb_strtolower') ? mb_strtolower($row_name) : strtolower($row_name);
+                    if (strpos($haystack_key, $template_search_normalized) === false && strpos($haystack_name, $template_search_normalized) === false) {
+                        continue;
+                    }
+                }
+                $template_rows_filtered[] = $template_row;
+            }
+
+            $template_selected_key = sanitize_key((string) ($_GET['cmn_template_key'] ?? ''));
+            if ($template_selected_key !== '' && isset($template_rows_map[$template_selected_key])) {
+                $template_selected_row = (array) $template_rows_map[$template_selected_key];
+                $template_editor_row = $this->get_email_template_storage_full_row($template_selected_key);
+            }
+        }
+
+        $this->add_audit_log('email_registry_viewed', 'system', 'email_centre', [
+            'registry_count' => count($registry_rows),
+            'sender_count' => count($sender_rows),
+            'logs_count' => count($email_logs),
+            'view' => 'email-centre',
+            'tab' => $email_centre_tab,
+        ], $user_id);
+
+        ob_start();
+        ?>
+        <header class="cmn-school-header">
+            <h2>Email Centre</h2>
+            <p>Manage templates, sender addresses, and delivery logs.</p>
+        </header>
+        <div class="cmn-panel-card cmn-email-centre-subnav">
+            <div class="cmn-email-centre-subnav-links">
+                <a class="cmn-ghost<?php echo $email_centre_tab === 'templates' ? ' is-active' : ''; ?>" href="<?php echo esc_url($templates_url); ?>">Templates</a>
+                <a class="cmn-ghost<?php echo $email_centre_tab === 'senders' ? ' is-active' : ''; ?>" href="<?php echo esc_url($senders_url); ?>">Senders</a>
+                <a class="cmn-ghost<?php echo $email_centre_tab === 'logs' ? ' is-active' : ''; ?>" href="<?php echo esc_url($logs_url); ?>">Logs</a>
+            </div>
+        </div>
+        <?php if ($notice_message !== '') : ?>
+            <div class="cmn-panel-card"><p class="<?php echo esc_attr($notice_class); ?>"><?php echo esc_html($notice_message); ?></p></div>
+        <?php endif; ?>
+
+        <?php if ($email_centre_tab === 'senders') : ?>
+            <section class="cmn-panel-card cmn-panel-card-wide">
+                <h3>Sender Directory</h3>
+                <p class="cmn-muted">Approved sender addresses used by email templates.</p>
+                <?php if ($is_admin) : ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
+                        <?php wp_nonce_field('cmn_email_sender_add', 'cmn_email_sender_add_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_email_sender_add">
+                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($senders_url); ?>">
+                        <div class="cmn-form-grid">
+                            <label>Email address
+                                <input type="email" name="cmn_sender_email_address" placeholder="school@covermenow.co.uk" required>
+                            </label>
+                            <label>Display name
+                                <input type="text" name="cmn_sender_display_name" placeholder="CoverMeNow School Team" required>
+                            </label>
+                        </div>
+                        <button class="cmn-primary" type="submit">Add Sender</button>
+                    </form>
+                <?php endif; ?>
+                <div class="cmn-table-scroll">
+                    <table class="cmn-table">
+                        <thead>
+                            <tr>
+                                <th>Email Address</th>
+                                <th>Display Name</th>
+                                <th>Status</th>
+                                <th>Source</th>
+                                <th>Created</th>
+                                <?php if ($is_admin) : ?>
+                                    <th>Action</th>
+                                <?php endif; ?>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (!$sender_rows) : ?>
+                                <tr><td colspan="<?php echo esc_attr($is_admin ? '6' : '5'); ?>">No sender addresses configured.</td></tr>
+                            <?php else : ?>
+                                <?php foreach ($sender_rows as $sender_row) : ?>
+                                    <?php
+                                    $sender_id = (int) ($sender_row['id'] ?? 0);
+                                    $sender_email = sanitize_email((string) ($sender_row['email_address'] ?? ''));
+                                    $sender_name = sanitize_text_field((string) ($sender_row['display_name'] ?? ''));
+                                    $sender_active = !empty($sender_row['is_active']) ? 1 : 0;
+                                    $sender_source_key = sanitize_key((string) ($sender_row['source'] ?? 'manual'));
+                                    $sender_source_label = 'Manual';
+                                    if ($sender_source_key === 'default_seed') {
+                                        $sender_source_label = 'Auto-seeded';
+                                    } elseif ($sender_source_key === 'template_inferred') {
+                                        $sender_source_label = 'Inferred';
+                                    } elseif ($sender_source_key === 'legacy_import') {
+                                        $sender_source_label = 'Legacy import';
+                                    }
+                                    $sender_created = sanitize_text_field((string) ($sender_row['created_at'] ?? ''));
+                                    ?>
+                                    <tr>
+                                        <td><?php echo esc_html($sender_email); ?></td>
+                                        <td><?php echo esc_html($sender_name !== '' ? $sender_name : '—'); ?></td>
+                                        <td><?php echo esc_html($sender_active ? 'Active' : 'Inactive'); ?></td>
+                                        <td><?php echo esc_html($sender_source_label); ?></td>
+                                        <td><?php echo esc_html($sender_created !== '' ? $sender_created : 'n/a'); ?></td>
+                                        <?php if ($is_admin) : ?>
+                                            <td>
+                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                                    <?php wp_nonce_field('cmn_email_sender_toggle_' . $sender_id, 'cmn_email_sender_toggle_nonce'); ?>
+                                                    <input type="hidden" name="action" value="cmn_email_sender_toggle">
+                                                    <input type="hidden" name="cmn_sender_id" value="<?php echo esc_attr((string) $sender_id); ?>">
+                                                    <input type="hidden" name="cmn_sender_active" value="<?php echo esc_attr($sender_active ? '0' : '1'); ?>">
+                                                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($senders_url); ?>">
+                                                    <button class="cmn-ghost" type="submit"><?php echo esc_html($sender_active ? 'Deactivate' : 'Activate'); ?></button>
+                                                </form>
+                                            </td>
+                                        <?php endif; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        <?php elseif ($email_centre_tab === 'logs') : ?>
+            <?php
+            $email_logs_filter_args = array_filter([
+                'cmn_email_log_status' => $email_logs_filter_status,
+                'cmn_email_log_recipient' => $email_logs_filter_recipient,
+                'cmn_email_log_template' => $email_logs_filter_template,
+                'cmn_email_log_from' => $email_logs_filter_date_from,
+                'cmn_email_log_to' => $email_logs_filter_date_to,
+            ], static function ($value) {
+                return (string) $value !== '';
+            });
+            $email_logs_prev_page_url = $email_logs_page > 1
+                ? add_query_arg(array_merge($email_logs_filter_args, ['cmn_email_log_page' => $email_logs_page - 1]), $logs_url)
+                : '';
+            $email_logs_next_page_url = ($email_logs_total_pages > 0 && $email_logs_page < $email_logs_total_pages)
+                ? add_query_arg(array_merge($email_logs_filter_args, ['cmn_email_log_page' => $email_logs_page + 1]), $logs_url)
+                : '';
+            $email_logs_range_start = $email_logs_total > 0 ? (($email_logs_page - 1) * $email_logs_per_page) + 1 : 0;
+            $email_logs_range_end = $email_logs_total > 0 ? min($email_logs_total, $email_logs_range_start + count($email_logs) - 1) : 0;
+            $active_sender_rows = array_values(array_filter((array) $sender_rows, function ($row) {
+                return !empty($row['is_active']) && $this->sanitize_mail_header_email((string) ($row['email_address'] ?? '')) !== '';
+            }));
+            ?>
+            <section class="cmn-panel-card cmn-panel-card-wide">
+                <h3>Email Logs</h3>
+                <p class="cmn-muted">Queued and delivered email events.</p>
+                <?php if ($is_allowed) : ?>
+                    <?php if (empty($active_sender_rows)) : ?>
+                        <p class="cmn-register-warning">Add and activate a sender in Email Centre &gt; Senders to use Send Test.</p>
+                    <?php else : ?>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
+                            <?php wp_nonce_field('cmn_email_centre_send_test', 'cmn_email_centre_send_test_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_email_centre_send_test">
+                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($logs_url); ?>">
+                            <div class="cmn-form-grid">
+                                <label>Recipient
+                                    <input type="email" name="cmn_email_test_recipient" required placeholder="name@example.com">
+                                </label>
+                                <label>Sender
+                                    <select name="cmn_email_test_sender" required>
+                                        <?php foreach ($active_sender_rows as $active_sender_row) : ?>
+                                            <?php
+                                            $active_sender_email = $this->sanitize_mail_header_email((string) ($active_sender_row['email_address'] ?? ''));
+                                            if ($active_sender_email === '') {
+                                                continue;
+                                            }
+                                            $active_sender_name = $this->sanitize_mail_header_text((string) ($active_sender_row['display_name'] ?? ''));
+                                            $active_sender_label = $active_sender_name !== '' ? ($active_sender_name . ' <' . $active_sender_email . '>') : $active_sender_email;
+                                            ?>
+                                            <option value="<?php echo esc_attr($active_sender_email); ?>"><?php echo esc_html($active_sender_label); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <label>Subject
+                                    <input type="text" name="cmn_email_test_subject" value="CMN Test Email" maxlength="255">
+                                </label>
+                            </div>
+                            <button class="cmn-primary" type="submit">Send Test</button>
+                        </form>
+                    <?php endif; ?>
+                <?php endif; ?>
+                <form method="get" class="cmn-form">
+                    <input type="hidden" name="view" value="email-centre">
+                    <input type="hidden" name="cmn_email_centre_tab" value="logs">
+                    <div class="cmn-form-grid">
+                        <label>Status
+                            <select name="cmn_email_log_status">
+                                <option value="">All statuses</option>
+                                <option value="queued"<?php selected($email_logs_filter_status, 'queued'); ?>>Queued</option>
+                                <option value="sent"<?php selected($email_logs_filter_status, 'sent'); ?>>Sent</option>
+                                <option value="failed"<?php selected($email_logs_filter_status, 'failed'); ?>>Failed</option>
+                            </select>
+                        </label>
+                        <label>Recipient
+                            <input type="text" name="cmn_email_log_recipient" value="<?php echo esc_attr($email_logs_filter_recipient); ?>" placeholder="Search recipient email">
+                        </label>
+                        <label>Template
+                            <input type="text" name="cmn_email_log_template" value="<?php echo esc_attr($email_logs_filter_template); ?>" placeholder="Search template key">
+                        </label>
+                        <label>Date from
+                            <input type="date" name="cmn_email_log_from" value="<?php echo esc_attr($email_logs_filter_date_from); ?>">
+                        </label>
+                        <label>Date to
+                            <input type="date" name="cmn_email_log_to" value="<?php echo esc_attr($email_logs_filter_date_to); ?>">
+                        </label>
+                    </div>
+                    <div class="cmn-form-actions">
+                        <button class="cmn-primary" type="submit">Apply Filters</button>
+                        <a class="cmn-ghost" href="<?php echo esc_url($logs_url); ?>">Reset</a>
+                    </div>
+                </form>
+                <div class="cmn-table-scroll">
+                    <table class="cmn-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Template</th>
+                                <th>Recipient</th>
+                                <th>Role</th>
+                                <th>From</th>
+                                <th>Subject</th>
+                                <th>Status</th>
+                                <th>Error</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (!$email_logs) : ?>
+                                <tr><td colspan="9">No email logs yet.</td></tr>
+                            <?php else : ?>
+                                <?php foreach ($email_logs as $log_row) : ?>
+                                    <?php
+                                    $log_id = (int) ($log_row['id'] ?? 0);
+                                    $template_key = sanitize_key((string) ($log_row['template_key'] ?? ''));
+                                    $recipient_email = sanitize_email((string) ($log_row['recipient_email'] ?? ''));
+                                    $recipient_role = sanitize_key((string) ($log_row['recipient_role'] ?? ''));
+                                    $from_email = sanitize_email((string) ($log_row['from_email'] ?? ''));
+                                    $subject = sanitize_text_field((string) ($log_row['subject'] ?? ''));
+                                    $send_status = sanitize_key((string) ($log_row['status'] ?? ($log_row['send_status'] ?? '')));
+                                    $error_message = sanitize_text_field((string) ($log_row['error_message'] ?? ''));
+                                    if (strlen($error_message) > 140) {
+                                        $error_message = substr($error_message, 0, 140) . '...';
+                                    }
+                                    $created_at = sanitize_text_field((string) ($log_row['created_at'] ?? ''));
+                                    ?>
+                                    <tr>
+                                        <td><?php echo esc_html((string) $log_id); ?></td>
+                                        <td><?php echo esc_html($template_key !== '' ? $template_key : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($recipient_email !== '' ? $recipient_email : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($recipient_role !== '' ? $recipient_role : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($from_email !== '' ? $from_email : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($subject !== '' ? $subject : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($send_status !== '' ? $send_status : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($send_status === 'failed' && $error_message !== '' ? $error_message : '—'); ?></td>
+                                        <td><?php echo esc_html($created_at !== '' ? $created_at : 'n/a'); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php if ($email_logs_total > 0) : ?>
+                    <p class="cmn-muted">Showing <?php echo esc_html((string) $email_logs_range_start); ?>-<?php echo esc_html((string) $email_logs_range_end); ?> of <?php echo esc_html((string) $email_logs_total); ?> logs.</p>
+                <?php endif; ?>
+                <?php if ($email_logs_total_pages > 1) : ?>
+                    <div class="cmn-form-actions">
+                        <?php if ($email_logs_prev_page_url !== '') : ?>
+                            <a class="cmn-ghost" href="<?php echo esc_url($email_logs_prev_page_url); ?>">Previous</a>
+                        <?php endif; ?>
+                        <span class="cmn-muted">Page <?php echo esc_html((string) $email_logs_page); ?> of <?php echo esc_html((string) $email_logs_total_pages); ?></span>
+                        <?php if ($email_logs_next_page_url !== '') : ?>
+                            <a class="cmn-ghost" href="<?php echo esc_url($email_logs_next_page_url); ?>">Next</a>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            </section>
+        <?php else : ?>
+            <section class="cmn-panel-card cmn-panel-card-wide">
+                <h3>Templates</h3>
+                <p class="cmn-muted">Filter and search templates, then open a template to edit.</p>
+                <form method="get" class="cmn-form">
+                    <input type="hidden" name="view" value="email-centre">
+                    <input type="hidden" name="cmn_email_centre_tab" value="templates">
+                    <div class="cmn-form-grid">
+                        <label>Module
+                            <select name="cmn_email_module">
+                                <option value="">All modules</option>
+                                <?php foreach ($template_module_options as $module_option) : ?>
+                                    <option value="<?php echo esc_attr($module_option); ?>"<?php selected($template_filter_module, $module_option); ?>><?php echo esc_html($module_option); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Recipient Role
+                            <select name="cmn_email_recipient_role">
+                                <option value="">All roles</option>
+                                <?php foreach ($template_recipient_role_options as $role_option) : ?>
+                                    <option value="<?php echo esc_attr($role_option); ?>"<?php selected($template_filter_recipient_role, $role_option); ?>><?php echo esc_html($role_option); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Status
+                            <select name="cmn_email_template_status">
+                                <option value="">All statuses</option>
+                                <?php foreach ($template_status_options as $status_option) : ?>
+                                    <option value="<?php echo esc_attr($status_option); ?>"<?php selected($template_filter_status, $status_option); ?>><?php echo esc_html(ucfirst($status_option)); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Search
+                            <input type="text" name="cmn_email_template_search" value="<?php echo esc_attr($template_search); ?>" placeholder="Search key or name">
+                        </label>
+                    </div>
+                    <div class="cmn-form-actions">
+                        <button class="cmn-primary" type="submit">Apply Filters</button>
+                        <a class="cmn-ghost" href="<?php echo esc_url($templates_url); ?>">Reset</a>
+                    </div>
+                </form>
+                <div class="cmn-table-scroll">
+                    <table class="cmn-table">
+                        <thead>
+                            <tr>
+                                <th>Template Key</th>
+                                <th>Name</th>
+                                <th>Module</th>
+                                <th>Recipient Role</th>
+                                <th>From Email</th>
+                                <th>Status</th>
+                                <th>Last Updated</th>
+                                <th>Edit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (!$template_rows_filtered) : ?>
+                                <tr><td colspan="8">No templates match the current filters.</td></tr>
+                            <?php else : ?>
+                                <?php foreach ($template_rows_filtered as $template_row) : ?>
+                                    <?php
+                                    $template_key = sanitize_key((string) ($template_row['template_key'] ?? ''));
+                                    if ($template_key === '') {
+                                        continue;
+                                    }
+                                    $template_name = sanitize_text_field((string) ($template_row['name'] ?? ''));
+                                    $template_module = sanitize_key((string) ($template_row['module'] ?? 'system'));
+                                    $template_recipient_role = sanitize_key((string) ($template_row['recipient_role'] ?? 'system'));
+                                    $template_from_email = sanitize_email((string) ($template_row['from_email'] ?? ''));
+                                    $template_status = sanitize_key((string) ($template_row['status'] ?? 'draft'));
+                                    $template_last_updated = sanitize_text_field((string) ($template_row['last_updated'] ?? ''));
+                                    $template_last_updated_display = $template_last_updated !== '' ? mysql2date('Y-m-d H:i', $template_last_updated) : '';
+                                    if ($template_last_updated_display === '') {
+                                        $template_last_updated_display = $template_last_updated;
+                                    }
+                                    $template_view_url = add_query_arg([
+                                        'cmn_email_module' => $template_filter_module,
+                                        'cmn_email_recipient_role' => $template_filter_recipient_role,
+                                        'cmn_email_template_status' => $template_filter_status,
+                                        'cmn_email_template_search' => $template_search,
+                                        'cmn_template_key' => $template_key,
+                                    ], $templates_url);
+                                    ?>
+                                    <tr>
+                                        <td><?php echo esc_html($template_key); ?></td>
+                                        <td><?php echo esc_html($template_name !== '' ? $template_name : ucfirst(str_replace('_', ' ', $template_key))); ?></td>
+                                        <td><?php echo esc_html($template_module !== '' ? $template_module : 'system'); ?></td>
+                                        <td><?php echo esc_html($template_recipient_role !== '' ? $template_recipient_role : 'system'); ?></td>
+                                        <td><?php echo esc_html($template_from_email !== '' ? $template_from_email : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($template_status !== '' ? ucfirst(str_replace('_', ' ', $template_status)) : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($template_last_updated_display !== '' ? $template_last_updated_display : 'n/a'); ?></td>
+                                        <td><a class="cmn-ghost" href="<?php echo esc_url($template_view_url); ?>">Edit</a></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <?php if ($template_selected_row) : ?>
+                <?php
+                $selected_template_key = sanitize_key((string) ($template_selected_row['template_key'] ?? ''));
+                $selected_template_registry = (array) $this->get_email_registry_entry_by_key($selected_template_key);
+                $selected_template_name = sanitize_text_field((string) ($template_selected_row['name'] ?? ($selected_template_registry['name'] ?? '')));
+                if ($selected_template_name === '') {
+                    $selected_template_name = ucfirst(str_replace('_', ' ', $selected_template_key));
+                }
+                $selected_template_module = sanitize_key((string) ($template_editor_row['module'] ?? ($template_selected_row['module'] ?? ($selected_template_registry['module'] ?? 'system'))));
+                if ($selected_template_module === '') {
+                    $selected_template_module = 'system';
+                }
+                $selected_template_role = sanitize_key((string) ($template_editor_row['recipient_role'] ?? ($template_selected_row['recipient_role'] ?? ($selected_template_registry['recipient_role'] ?? 'system'))));
+                if ($selected_template_role === '') {
+                    $selected_template_role = 'system';
+                }
+                $selected_template_subject = sanitize_text_field((string) ($template_editor_row['subject'] ?? ''));
+                $selected_template_html = (string) ($template_editor_row['html_body'] ?? '');
+                $selected_template_text = sanitize_textarea_field((string) ($template_editor_row['text_body'] ?? ''));
+                $selected_template_from = $this->sanitize_mail_header_email((string) ($template_editor_row['from_email'] ?? ($template_selected_row['from_email'] ?? ($selected_template_registry['default_from_email'] ?? ''))));
+                $selected_template_reply_to = $this->sanitize_mail_header_email((string) ($template_editor_row['reply_to_email'] ?? ''));
+                $selected_template_status = sanitize_key((string) ($template_editor_row['status'] ?? ($template_selected_row['status'] ?? 'draft')));
+                if (!in_array($selected_template_status, ['draft', 'published'], true)) {
+                    $selected_template_status = 'draft';
+                }
+                $selected_template_updated = sanitize_text_field((string) ($template_editor_row['updated_at'] ?? ($template_selected_row['last_updated'] ?? '')));
+                $selected_template_updated_display = $selected_template_updated !== '' ? mysql2date('Y-m-d H:i', $selected_template_updated) : '';
+                if ($selected_template_updated_display === '') {
+                    $selected_template_updated_display = $selected_template_updated;
+                }
+                $selected_template_sender_options = [];
+                foreach ((array) $sender_rows as $sender_row) {
+                    $sender_email = $this->sanitize_mail_header_email((string) ($sender_row['email_address'] ?? ''));
+                    if ($sender_email === '' || empty($sender_row['is_active'])) {
+                        continue;
+                    }
+                    $sender_display_name = $this->sanitize_mail_header_text((string) ($sender_row['display_name'] ?? ''));
+                    $selected_template_sender_options[$sender_email] = $sender_display_name !== '' ? ($sender_display_name . ' <' . $sender_email . '>') : $sender_email;
+                }
+                if ($selected_template_from === '' || !isset($selected_template_sender_options[$selected_template_from])) {
+                    $selected_template_from = (string) key($selected_template_sender_options);
+                }
+                if ($selected_template_reply_to === '' || !isset($selected_template_sender_options[$selected_template_reply_to])) {
+                    $selected_template_reply_to = $selected_template_from;
+                }
+                $has_active_sender_options = !empty($selected_template_sender_options);
+                $template_editor_id = 'cmn_template_html_editor_' . sanitize_key($selected_template_key);
+                $selected_template_smart_tags = array_values(array_filter(array_map('sanitize_key', (array) $this->get_supported_smart_tags($selected_template_key))));
+                sort($selected_template_smart_tags, SORT_NATURAL | SORT_FLAG_CASE);
+                $template_preview_nonce = wp_create_nonce('cmn_email_template_preview_' . $selected_template_key);
+                $template_send_test_nonce = wp_create_nonce('cmn_email_template_send_test_' . $selected_template_key);
+                $template_preview_ajax_url = admin_url('admin-ajax.php');
+                if (function_exists('wp_enqueue_editor')) {
+                    wp_enqueue_editor();
+                }
+                $selected_template_redirect_url = add_query_arg([
+                    'view' => 'email-centre',
+                    'cmn_email_centre_tab' => 'templates',
+                    'cmn_email_module' => $template_filter_module,
+                    'cmn_email_recipient_role' => $template_filter_recipient_role,
+                    'cmn_email_template_status' => $template_filter_status,
+                    'cmn_email_template_search' => $template_search,
+                    'cmn_template_key' => $selected_template_key,
+                ], $portal_base_url);
+                ?>
+                <section class="cmn-panel-card cmn-panel-card-wide" id="cmn-template-readonly"
+                    data-template-key="<?php echo esc_attr($selected_template_key); ?>"
+                    data-editor-id="<?php echo esc_attr($template_editor_id); ?>"
+                    data-preview-url="<?php echo esc_url($template_preview_ajax_url); ?>"
+                    data-preview-nonce="<?php echo esc_attr($template_preview_nonce); ?>"
+                    data-send-test-nonce="<?php echo esc_attr($template_send_test_nonce); ?>">
+                    <h3>Template Editor</h3>
+                    <p class="cmn-muted">Update template content and save as a new version.</p>
+                    <div class="cmn-email-template-layout">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form cmn-email-template-main">
+                            <?php wp_nonce_field('cmn_email_template_save_' . $selected_template_key, 'cmn_email_template_save_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_email_template_save">
+                            <input type="hidden" name="cmn_template_key" value="<?php echo esc_attr($selected_template_key); ?>">
+                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($selected_template_redirect_url); ?>">
+                            <div class="cmn-form-grid">
+                                <label>Template Key
+                                    <input type="text" value="<?php echo esc_attr($selected_template_key); ?>" readonly>
+                                </label>
+                                <label>Name
+                                    <input type="text" value="<?php echo esc_attr($selected_template_name); ?>" readonly>
+                                </label>
+                                <label>Module
+                                    <input type="text" value="<?php echo esc_attr($selected_template_module); ?>" readonly>
+                                </label>
+                                <label>Recipient Role
+                                    <input type="text" value="<?php echo esc_attr($selected_template_role); ?>" readonly>
+                                </label>
+                                <label>From Email
+                                    <select name="cmn_template_from_email" required <?php disabled(!$has_active_sender_options); ?>>
+                                        <?php if (!$has_active_sender_options) : ?>
+                                            <option value="">No active senders configured</option>
+                                        <?php else : ?>
+                                            <?php foreach ($selected_template_sender_options as $sender_email => $sender_label) : ?>
+                                                <option value="<?php echo esc_attr($sender_email); ?>"<?php selected($selected_template_from, $sender_email); ?>><?php echo esc_html($sender_label); ?></option>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </select>
+                                </label>
+                                <label>Reply-to Email
+                                    <input type="email" name="cmn_template_reply_to_email" value="<?php echo esc_attr($selected_template_reply_to); ?>" placeholder="reply@covermenow.co.uk">
+                                </label>
+                                <label>Subject
+                                    <input type="text" name="cmn_template_subject" value="<?php echo esc_attr($selected_template_subject); ?>" maxlength="255" required>
+                                </label>
+                                <fieldset>
+                                    <legend>Status</legend>
+                                    <label class="cmn-inline-check">
+                                        <input type="radio" name="cmn_template_status" value="draft"<?php checked($selected_template_status, 'draft'); ?>>
+                                        Draft
+                                    </label>
+                                    <label class="cmn-inline-check">
+                                        <input type="radio" name="cmn_template_status" value="published"<?php checked($selected_template_status, 'published'); ?>>
+                                        Published
+                                    </label>
+                                </fieldset>
+                            </div>
+                            <label>HTML Body</label>
+                            <div class="cmn-email-template-editor">
+                                <?php
+                                if (function_exists('wp_editor')) {
+                                    wp_editor($selected_template_html, $template_editor_id, [
+                                        'textarea_name' => 'cmn_template_html_body',
+                                        'textarea_rows' => 14,
+                                        'media_buttons' => false,
+                                        'teeny' => false,
+                                        'quicktags' => true,
+                                    ]);
+                                } else {
+                                    ?>
+                                    <textarea name="cmn_template_html_body" rows="14"><?php echo esc_textarea($selected_template_html); ?></textarea>
+                                    <?php
+                                }
+                                ?>
+                            </div>
+                            <label>Text Fallback</label>
+                            <textarea name="cmn_template_text_body" rows="8"><?php echo esc_textarea($selected_template_text); ?></textarea>
+                            <input type="hidden" name="cmn_template_confirm_clear" value="0">
+                            <label class="cmn-inline-check">
+                                <input type="checkbox" name="cmn_template_confirm_clear" value="1">
+                                Confirm intentional clear when saving blank subject/body.
+                            </label>
+                            <?php if (!$has_active_sender_options) : ?>
+                                <p class="cmn-register-error">Add and activate at least one sender in Email Centre > Senders before saving this template.</p>
+                            <?php endif; ?>
+                            <div class="cmn-form-actions">
+                                <button class="cmn-primary" type="submit" <?php disabled(!$has_active_sender_options); ?>>Save Template</button>
+                                <button class="cmn-ghost" type="button" data-template-preview-btn>Preview</button>
+                                <button class="cmn-ghost" type="button" data-template-send-test-open <?php disabled(!$has_active_sender_options); ?>>Send Test</button>
+                                <span class="cmn-muted"><?php echo esc_html($selected_template_updated_display !== '' ? 'Last updated ' . $selected_template_updated_display : 'Not saved yet'); ?></span>
+                            </div>
+                            <p class="cmn-register-error" data-template-preview-error style="display:none;"></p>
+                            <div class="cmn-email-template-preview" data-template-preview-output hidden>
+                                <h4>Preview</h4>
+                                <p class="cmn-muted">Using sample mock data for smart tags.</p>
+                                <p><strong>Subject</strong></p>
+                                <p data-template-preview-subject></p>
+                                <p><strong>HTML</strong></p>
+                                <div class="cmn-panel-card" data-template-preview-html></div>
+                                <p><strong>Text Fallback</strong></p>
+                                <pre data-template-preview-text></pre>
+                            </div>
+                        </form>
+                        <aside class="cmn-panel-card cmn-email-template-sidebar">
+                            <h4>Smart Tags</h4>
+                            <p class="cmn-muted">Click a tag to insert into subject or body.</p>
+                            <div class="cmn-email-template-tags">
+                                <?php if (!$selected_template_smart_tags) : ?>
+                                    <p class="cmn-muted">No smart tags available for this template.</p>
+                                <?php else : ?>
+                                    <?php foreach ($selected_template_smart_tags as $smart_tag) : ?>
+                                        <?php $token = '{{' . $smart_tag . '}}'; ?>
+                                        <button type="button" class="cmn-ghost cmn-email-tag-insert" data-insert-tag="<?php echo esc_attr($token); ?>"><?php echo esc_html($token); ?></button>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
+                        </aside>
+                    </div>
+                    <div class="cmn-modal" data-template-send-test-modal>
+                        <div class="cmn-modal-content">
+                            <div class="cmn-modal-header">
+                                <h3>Send Test Email</h3>
+                                <button class="cmn-ghost cmn-btn-mini" type="button" data-template-send-test-close>Close</button>
+                            </div>
+                            <form class="cmn-form" data-template-send-test-form>
+                                <label>Recipient Email
+                                    <input type="email" name="recipient_email" placeholder="name@example.com" required>
+                                </label>
+                                <p class="cmn-muted">This uses sample mock data for smart tags and does not trigger workflows.</p>
+                                <div class="cmn-form-actions">
+                                    <button class="cmn-primary" type="submit">Send Test</button>
+                                    <button class="cmn-ghost" type="button" data-template-send-test-close>Cancel</button>
+                                </div>
+                                <p class="cmn-muted" data-template-send-test-message></p>
+                            </form>
+                        </div>
+                    </div>
+                    <script>
+                    (function() {
+                        var root = document.getElementById('cmn-template-readonly');
+                        if (!root || root.dataset.smartTagBound === '1') {
+                            return;
+                        }
+                        root.dataset.smartTagBound = '1';
+                        var form = root.querySelector('form');
+                        if (!form) {
+                            return;
+                        }
+                        var subjectInput = form.querySelector('input[name="cmn_template_subject"]');
+                        var textInput = form.querySelector('textarea[name="cmn_template_text_body"]');
+                        var htmlTextarea = form.querySelector('textarea[name="cmn_template_html_body"]');
+                        var fromEmailSelect = form.querySelector('select[name="cmn_template_from_email"]');
+                        var replyToInput = form.querySelector('input[name="cmn_template_reply_to_email"]');
+                        var previewBtn = form.querySelector('[data-template-preview-btn]');
+                        var previewError = form.querySelector('[data-template-preview-error]');
+                        var previewOutput = form.querySelector('[data-template-preview-output]');
+                        var previewSubject = form.querySelector('[data-template-preview-subject]');
+                        var previewHtml = form.querySelector('[data-template-preview-html]');
+                        var previewText = form.querySelector('[data-template-preview-text]');
+                        var sendTestOpenBtn = form.querySelector('[data-template-send-test-open]');
+                        var sendTestModal = root.querySelector('[data-template-send-test-modal]');
+                        var sendTestForm = root.querySelector('[data-template-send-test-form]');
+                        var sendTestMessage = root.querySelector('[data-template-send-test-message]');
+                        var sendTestCloseButtons = root.querySelectorAll('[data-template-send-test-close]');
+                        var editorId = root.getAttribute('data-editor-id') || '';
+                        var activeTarget = 'subject';
+
+                        function getTinyEditor() {
+                            if (!editorId || typeof window.tinymce === 'undefined' || !window.tinymce) {
+                                return null;
+                            }
+                            return window.tinymce.get(editorId) || null;
+                        }
+
+                        function getHtmlBodyValue() {
+                            var editor = getTinyEditor();
+                            if (editor && !editor.isHidden()) {
+                                return editor.getContent();
+                            }
+                            return htmlTextarea ? htmlTextarea.value : '';
+                        }
+
+                        function insertAtCursor(input, text) {
+                            if (!input) {
+                                return;
+                            }
+                            var start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+                            var end = typeof input.selectionEnd === 'number' ? input.selectionEnd : input.value.length;
+                            input.value = input.value.slice(0, start) + text + input.value.slice(end);
+                            input.focus();
+                            input.selectionStart = input.selectionEnd = start + text.length;
+                        }
+
+                        function insertTag(tagToken) {
+                            if (!tagToken) {
+                                return;
+                            }
+                            if (activeTarget === 'subject' && subjectInput) {
+                                insertAtCursor(subjectInput, tagToken);
+                                return;
+                            }
+                            if (activeTarget === 'text' && textInput) {
+                                insertAtCursor(textInput, tagToken);
+                                return;
+                            }
+                            var editor = getTinyEditor();
+                            if (editor && !editor.isHidden()) {
+                                editor.focus();
+                                editor.execCommand('mceInsertContent', false, tagToken);
+                                return;
+                            }
+                            if (htmlTextarea) {
+                                insertAtCursor(htmlTextarea, tagToken);
+                                return;
+                            }
+                            if (subjectInput) {
+                                insertAtCursor(subjectInput, tagToken);
+                            }
+                        }
+
+                        if (subjectInput) {
+                            subjectInput.addEventListener('focus', function() { activeTarget = 'subject'; });
+                        }
+                        if (textInput) {
+                            textInput.addEventListener('focus', function() { activeTarget = 'text'; });
+                        }
+                        if (htmlTextarea) {
+                            htmlTextarea.addEventListener('focus', function() { activeTarget = 'html'; });
+                        }
+
+                        var bindTinyFocus = function() {
+                            var editor = getTinyEditor();
+                            if (!editor || editor.__cmnFocusBound) {
+                                return;
+                            }
+                            editor.__cmnFocusBound = true;
+                            editor.on('focus', function() { activeTarget = 'html'; });
+                        };
+                        setTimeout(bindTinyFocus, 300);
+                        setTimeout(bindTinyFocus, 1200);
+
+                        root.querySelectorAll('[data-insert-tag]').forEach(function(button) {
+                            button.addEventListener('click', function() {
+                                insertTag(button.getAttribute('data-insert-tag') || '');
+                            });
+                        });
+
+                        function setSendTestMessage(message, statusClass) {
+                            if (!sendTestMessage) {
+                                return;
+                            }
+                            sendTestMessage.textContent = message || '';
+                            sendTestMessage.classList.remove('cmn-register-success', 'cmn-register-error', 'cmn-muted');
+                            if (statusClass) {
+                                sendTestMessage.classList.add(statusClass);
+                            } else {
+                                sendTestMessage.classList.add('cmn-muted');
+                            }
+                        }
+
+                        function openSendTestModal() {
+                            if (!sendTestModal) {
+                                return;
+                            }
+                            sendTestModal.classList.add('is-open');
+                            setSendTestMessage('', '');
+                            var emailInput = sendTestForm ? sendTestForm.querySelector('input[name="recipient_email"]') : null;
+                            if (emailInput) {
+                                emailInput.focus();
+                            }
+                        }
+
+                        function closeSendTestModal() {
+                            if (!sendTestModal) {
+                                return;
+                            }
+                            sendTestModal.classList.remove('is-open');
+                        }
+
+                        if (sendTestOpenBtn && sendTestModal) {
+                            sendTestOpenBtn.addEventListener('click', function() {
+                                openSendTestModal();
+                            });
+                            sendTestCloseButtons.forEach(function(button) {
+                                button.addEventListener('click', function() {
+                                    closeSendTestModal();
+                                });
+                            });
+                            sendTestModal.addEventListener('click', function(event) {
+                                if (event.target === sendTestModal) {
+                                    closeSendTestModal();
+                                }
+                            });
+                        }
+
+                        if (sendTestForm) {
+                            sendTestForm.addEventListener('submit', function(event) {
+                                event.preventDefault();
+                                var ajaxUrl = root.getAttribute('data-preview-url') || '';
+                                var sendTestNonce = root.getAttribute('data-send-test-nonce') || '';
+                                var templateKey = root.getAttribute('data-template-key') || '';
+                                var recipientEmailInput = sendTestForm.querySelector('input[name="recipient_email"]');
+                                var recipientEmail = recipientEmailInput ? recipientEmailInput.value : '';
+                                if (!ajaxUrl || !sendTestNonce || !templateKey) {
+                                    setSendTestMessage('Unable to send test email right now.', 'cmn-register-error');
+                                    return;
+                                }
+                                var params = new URLSearchParams();
+                                params.set('action', 'cmn_email_template_send_test');
+                                params.set('nonce', sendTestNonce);
+                                params.set('template_key', templateKey);
+                                params.set('recipient_email', recipientEmail);
+                                params.set('subject', subjectInput ? subjectInput.value : '');
+                                params.set('html_body', getHtmlBodyValue());
+                                params.set('text_body', textInput ? textInput.value : '');
+                                params.set('from_email', fromEmailSelect ? fromEmailSelect.value : '');
+                                params.set('reply_to_email', replyToInput ? replyToInput.value : '');
+                                var submitBtn = sendTestForm.querySelector('button[type="submit"]');
+                                if (submitBtn) {
+                                    submitBtn.disabled = true;
+                                }
+                                setSendTestMessage('Sending test email...', 'cmn-muted');
+                                fetch(ajaxUrl, {
+                                    method: 'POST',
+                                    credentials: 'same-origin',
+                                    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                                    body: params.toString()
+                                }).then(function(response) {
+                                    return response.json();
+                                }).then(function(payload) {
+                                    if (!payload || payload.success !== true) {
+                                        var errorMsg = payload && payload.data && payload.data.message ? payload.data.message : 'Test email failed.';
+                                        throw new Error(errorMsg);
+                                    }
+                                    var successMsg = payload && payload.data && payload.data.message ? payload.data.message : 'Test email sent.';
+                                    setSendTestMessage(successMsg, 'cmn-register-success');
+                                }).catch(function(error) {
+                                    setSendTestMessage(error && error.message ? error.message : 'Test email failed.', 'cmn-register-error');
+                                }).finally(function() {
+                                    if (submitBtn) {
+                                        submitBtn.disabled = false;
+                                    }
+                                });
+                            });
+                        }
+
+                        if (!previewBtn) {
+                            return;
+                        }
+
+                        previewBtn.addEventListener('click', function() {
+                            var ajaxUrl = root.getAttribute('data-preview-url') || '';
+                            var previewNonce = root.getAttribute('data-preview-nonce') || '';
+                            var templateKey = root.getAttribute('data-template-key') || '';
+                            if (!ajaxUrl || !previewNonce || !templateKey) {
+                                return;
+                            }
+                            var params = new URLSearchParams();
+                            params.set('action', 'cmn_email_template_preview');
+                            params.set('nonce', previewNonce);
+                            params.set('template_key', templateKey);
+                            params.set('subject', subjectInput ? subjectInput.value : '');
+                            params.set('html_body', getHtmlBodyValue());
+                            params.set('text_body', textInput ? textInput.value : '');
+                            previewBtn.disabled = true;
+                            if (previewError) {
+                                previewError.style.display = 'none';
+                                previewError.textContent = '';
+                            }
+                            fetch(ajaxUrl, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                                body: params.toString()
+                            }).then(function(response) {
+                                return response.json();
+                            }).then(function(payload) {
+                                if (!payload || payload.success !== true) {
+                                    var errorMsg = payload && payload.data && payload.data.message ? payload.data.message : 'Preview could not be generated.';
+                                    throw new Error(errorMsg);
+                                }
+                                var data = payload.data || {};
+                                if (previewSubject) {
+                                    previewSubject.textContent = data.subject || '';
+                                }
+                                if (previewHtml) {
+                                    previewHtml.innerHTML = data.html_body || '';
+                                }
+                                if (previewText) {
+                                    previewText.textContent = data.text_body || '';
+                                }
+                                if (previewOutput) {
+                                    previewOutput.hidden = false;
+                                }
+                            }).catch(function(error) {
+                                if (previewError) {
+                                    previewError.textContent = error && error.message ? error.message : 'Preview failed.';
+                                    previewError.style.display = 'block';
+                                }
+                            }).finally(function() {
+                                previewBtn.disabled = false;
+                            });
+                        });
+                    })();
+                    </script>
+                </section>
+            <?php endif; ?>
+        <?php endif; ?>
+        <?php
+        $inner = ob_get_clean();
+        return $this->render_staff_shell($active_nav_key, $inner);
+    }
+
+    public function handle_email_sender_add() {
+        if (!is_user_logged_in() || !$this->is_admin_user()) {
+            wp_die('Unauthorized', 403);
+        }
+
+        $redirect = $this->resolve_email_centre_redirect_target((string) ($_POST['cmn_redirect'] ?? ''));
+        $build_redirect = static function ($target, $status, $message) {
+            return add_query_arg([
+                'cmn_email_centre_status' => sanitize_key((string) $status),
+                'cmn_email_centre_msg' => rawurlencode((string) $message),
+            ], (string) $target);
+        };
+
+        $nonce = isset($_POST['cmn_email_sender_add_nonce']) ? (string) $_POST['cmn_email_sender_add_nonce'] : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_email_sender_add')) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Invalid request. Please refresh and try again.'));
+            exit;
+        }
+
+        self::migrate_schema_v64_email_sender_directory();
+        self::migrate_schema_v67_email_sender_table_normalization();
+        $this->ensure_email_sender_directory_seeded(true);
+
+        $email_address = sanitize_email((string) wp_unslash($_POST['cmn_sender_email_address'] ?? ''));
+        $display_name = sanitize_text_field((string) wp_unslash($_POST['cmn_sender_display_name'] ?? ''));
+        if (!$this->is_valid_covermenow_sender_email($email_address)) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Only @covermenow.co.uk sender addresses are allowed.'));
+            exit;
+        }
+        if ($display_name === '') {
+            $local_part = strstr($email_address, '@', true);
+            $display_name = ucwords(trim(str_replace(['.', '_', '-'], ' ', (string) $local_part)));
+        }
+        $name_len = function_exists('mb_strlen') ? mb_strlen($display_name) : strlen($display_name);
+        if ($display_name === '' || $name_len > 190) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Display name is required and must be 190 characters or fewer.'));
+            exit;
+        }
+
+        $existing_sender = $this->get_email_sender_row_by_email($email_address, false);
+        $upsert = $this->upsert_email_sender_directory_entry($email_address, $display_name, 'active', 'manual', false);
+        $sender_id = (int) ($upsert['id'] ?? 0);
+        if ($sender_id < 1) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Unable to add sender right now.'));
+            exit;
+        }
+
+        $final_sender = $this->get_email_sender_row($sender_id);
+        $actor_user_id = (int) get_current_user_id();
+        $status_message = !empty($existing_sender['id']) ? 'Sender updated.' : 'Sender added.';
+        $audit_event = !empty($existing_sender['id']) ? 'email_sender_updated' : 'email_sender_created';
+        $this->add_audit_log($audit_event, 'email_sender', (string) $sender_id, [
+            'email_address' => sanitize_email((string) ($final_sender['email_address'] ?? $email_address)),
+            'display_name' => sanitize_text_field((string) ($final_sender['display_name'] ?? $display_name)),
+            'status' => sanitize_key((string) ($final_sender['status'] ?? 'active')),
+            'is_active' => !empty($final_sender['is_active']) ? 1 : 0,
+            'source' => sanitize_key((string) ($final_sender['source'] ?? 'manual')),
+        ], $actor_user_id);
+
+        wp_safe_redirect($build_redirect($redirect, 'success', $status_message));
+        exit;
+    }
+
+    public function handle_email_sender_toggle() {
+        if (!is_user_logged_in() || !$this->is_admin_user()) {
+            wp_die('Unauthorized', 403);
+        }
+
+        $redirect = $this->resolve_email_centre_redirect_target((string) ($_POST['cmn_redirect'] ?? ''));
+        $build_redirect = static function ($target, $status, $message) {
+            return add_query_arg([
+                'cmn_email_centre_status' => sanitize_key((string) $status),
+                'cmn_email_centre_msg' => rawurlencode((string) $message),
+            ], (string) $target);
+        };
+
+        $sender_id = (int) ($_POST['cmn_sender_id'] ?? 0);
+        $target_active = (int) ($_POST['cmn_sender_active'] ?? 0) === 1 ? 1 : 0;
+        if ($sender_id < 1) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Select a valid sender.'));
+            exit;
+        }
+
+        $nonce = isset($_POST['cmn_email_sender_toggle_nonce']) ? (string) $_POST['cmn_email_sender_toggle_nonce'] : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_email_sender_toggle_' . $sender_id)) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Invalid request. Please refresh and try again.'));
+            exit;
+        }
+
+        self::migrate_schema_v64_email_sender_directory();
+        self::migrate_schema_v67_email_sender_table_normalization();
+        $this->ensure_email_sender_directory_seeded(false);
+
+        global $wpdb;
+        $schema = $this->get_email_sender_table_schema();
+        if (empty($schema['has_id']) || (empty($schema['has_email']) && empty($schema['has_email_address']))) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Email sender directory is unavailable.'));
+            exit;
+        }
+
+        $sender = $this->get_email_sender_row($sender_id);
+        if (empty($sender['id'])) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Sender not found.'));
+            exit;
+        }
+
+        $table = (string) ($schema['table'] ?? $this->get_email_senders_table());
+        $update_data = [];
+        $update_format = [];
+        if (!empty($schema['has_status'])) {
+            $update_data['status'] = $target_active ? 'active' : 'disabled';
+            $update_format[] = '%s';
+        }
+        if (!empty($schema['has_is_active'])) {
+            $update_data['is_active'] = $target_active;
+            $update_format[] = '%d';
+        }
+        if (!empty($schema['has_updated_at'])) {
+            $update_data['updated_at'] = current_time('mysql');
+            $update_format[] = '%s';
+        }
+        if (empty($update_data)) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Email sender directory is unavailable.'));
+            exit;
+        }
+
+        $updated = $wpdb->update(
+            $table,
+            $update_data,
+            ['id' => $sender_id],
+            $update_format,
+            ['%d']
+        );
+        if ($updated === false) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Unable to update sender status right now.'));
+            exit;
+        }
+
+        $updated_sender = $this->get_email_sender_row($sender_id);
+        $this->add_audit_log('email_sender_status_changed', 'email_sender', (string) $sender_id, [
+            'email_address' => sanitize_email((string) ($updated_sender['email_address'] ?? ($sender['email_address'] ?? ''))),
+            'from_active' => !empty($sender['is_active']) ? 1 : 0,
+            'to_active' => $target_active,
+            'source' => sanitize_key((string) ($updated_sender['source'] ?? ($sender['source'] ?? 'manual'))),
+        ], (int) get_current_user_id());
+
+        $status_message = $target_active ? 'Sender activated.' : 'Sender deactivated.';
+        wp_safe_redirect($build_redirect($redirect, 'success', $status_message));
+        exit;
+    }
+
+    public function handle_email_template_assign_sender() {
+        if (!is_user_logged_in() || !$this->is_admin_user()) {
+            wp_die('Unauthorized', 403);
+        }
+
+        $redirect = $this->resolve_email_centre_redirect_target((string) ($_POST['cmn_redirect'] ?? ''));
+        $build_redirect = static function ($target, $status, $message) {
+            return add_query_arg([
+                'cmn_email_centre_status' => sanitize_key((string) $status),
+                'cmn_email_centre_msg' => rawurlencode((string) $message),
+            ], (string) $target);
+        };
+
+        $template_key = sanitize_key((string) wp_unslash($_POST['cmn_template_key'] ?? ''));
+        if ($template_key === '') {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Template key is required.'));
+            exit;
+        }
+        $nonce = isset($_POST['cmn_email_template_assign_sender_nonce']) ? (string) $_POST['cmn_email_template_assign_sender_nonce'] : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_email_template_assign_sender_' . $template_key)) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Invalid request. Please refresh and try again.'));
+            exit;
+        }
+
+        self::migrate_schema_v63_email_template_storage();
+        self::migrate_schema_v64_email_sender_directory();
+        self::migrate_schema_v67_email_sender_table_normalization();
+        $this->ensure_email_sender_directory_seeded(true);
+
+        $sender_id = (int) ($_POST['cmn_sender_id'] ?? 0);
+        if ($sender_id < 1) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Select an active sender to assign.'));
+            exit;
+        }
+        $sender = $this->get_email_sender_row($sender_id);
+        if (empty($sender['id'])) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Selected sender was not found.'));
+            exit;
+        }
+        if (empty($sender['is_active'])) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Selected sender is inactive.'));
+            exit;
+        }
+
+        global $wpdb;
+        $templates_table = $this->get_email_templates_storage_table();
+        if (!self::table_has_column($templates_table, 'template_key')) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Email templates table is unavailable.'));
+            exit;
+        }
+        $has_default_sender_id = self::table_has_column($templates_table, 'default_sender_id');
+        $now = current_time('mysql');
+
+        $existing_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id
+             FROM {$templates_table}
+             WHERE template_key = %s
+             ORDER BY id DESC
+             LIMIT 1",
+            $template_key
+        ));
+
+        $assigned_email = $this->sanitize_mail_header_email((string) ($sender['email_address'] ?? ''));
+        if ($assigned_email === '') {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Selected sender email is invalid.'));
+            exit;
+        }
+        $approved_sender_row = $this->get_active_email_sender_row_by_email($assigned_email);
+        if (empty($approved_sender_row['id'])) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Selected sender is not approved.'));
+            exit;
+        }
+        $sender_id = (int) ($approved_sender_row['id'] ?? $sender_id);
+        $assigned_name = $this->sanitize_mail_header_text((string) ($approved_sender_row['display_name'] ?? ($sender['display_name'] ?? '')));
+        if ($assigned_name === '') {
+            $assigned_local = strstr($assigned_email, '@', true);
+            $assigned_name = $this->sanitize_mail_header_text(ucwords(trim(str_replace(['.', '_', '-'], ' ', (string) $assigned_local))));
+        }
+        if ($assigned_name === '') {
+            $assigned_name = 'CoverMeNow ONE';
+        }
+        if ($existing_id > 0) {
+            $update_data = [
+                'from_email' => $assigned_email,
+                'from_name' => $assigned_name,
+                'reply_to_email' => $assigned_email,
+                'updated_at' => $now,
+            ];
+            $update_format = ['%s', '%s', '%s', '%s'];
+            if ($has_default_sender_id) {
+                $update_data['default_sender_id'] = $sender_id;
+                $update_format[] = '%d';
+            }
+            $updated = $wpdb->update(
+                $templates_table,
+                $update_data,
+                ['id' => $existing_id],
+                $update_format,
+                ['%d']
+            );
+            if ($updated === false) {
+                wp_safe_redirect($build_redirect($redirect, 'error', 'Unable to assign sender right now.'));
+                exit;
+            }
+        } else {
+            $registry_entry = $this->get_email_registry_entry_by_key($template_key);
+            $insert_data = [
+                'template_key' => $template_key,
+                'subject' => '',
+                'html_body' => '',
+                'text_body' => '',
+                'from_email' => $assigned_email,
+                'from_name' => $assigned_name,
+                'reply_to_email' => $assigned_email,
+                'module' => sanitize_key((string) ($registry_entry['module'] ?? 'system')) ?: 'system',
+                'recipient_role' => sanitize_key((string) ($registry_entry['recipient_role'] ?? 'system')) ?: 'system',
+                'status' => 'draft',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            $insert_format = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'];
+            if ($has_default_sender_id) {
+                $insert_data['default_sender_id'] = $sender_id;
+                $insert_format[] = '%d';
+            }
+            $inserted = $wpdb->insert($templates_table, $insert_data, $insert_format);
+            if ($inserted === false) {
+                wp_safe_redirect($build_redirect($redirect, 'error', 'Unable to assign sender right now.'));
+                exit;
+            }
+        }
+
+        $this->add_audit_log('email_template_sender_assigned', 'email_template', $template_key, [
+            'template_key' => $template_key,
+            'sender_id' => $sender_id,
+            'sender_email' => $assigned_email,
+        ], (int) get_current_user_id());
+
+        $status_message = 'Template sender assigned.';
+        wp_safe_redirect($build_redirect($redirect, 'success', $status_message));
+        exit;
+    }
+
+    public function handle_email_template_save() {
+        if (!is_user_logged_in() || !($this->is_admin_user() || $this->is_staff_role())) {
+            wp_die('Unauthorized', 403);
+        }
+
+        $template_key = sanitize_key((string) wp_unslash($_POST['cmn_template_key'] ?? ''));
+        $redirect = $this->resolve_email_centre_redirect_target((string) ($_POST['cmn_redirect'] ?? ''));
+        $build_redirect = static function ($target, $status, $message) {
+            return add_query_arg([
+                'cmn_email_centre_status' => sanitize_key((string) $status),
+                'cmn_email_centre_msg' => rawurlencode((string) $message),
+            ], (string) $target);
+        };
+
+        if ($template_key === '') {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Template key is required.'));
+            exit;
+        }
+
+        $nonce = isset($_POST['cmn_email_template_save_nonce']) ? (string) $_POST['cmn_email_template_save_nonce'] : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_email_template_save_' . $template_key)) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Invalid request. Please refresh and try again.'));
+            exit;
+        }
+
+        self::migrate_schema_v63_email_template_storage();
+        self::migrate_schema_v64_email_sender_directory();
+        self::migrate_schema_v67_email_sender_table_normalization();
+        $this->ensure_email_sender_directory_seeded(true);
+
+        $existing_template = $this->get_email_template_storage_full_row($template_key);
+        $subject_field_present = array_key_exists('cmn_template_subject', $_POST);
+        $html_body_field_present = array_key_exists('cmn_template_html_body', $_POST);
+        $text_body_field_present = array_key_exists('cmn_template_text_body', $_POST);
+        $confirm_clear = (int) wp_unslash($_POST['cmn_template_confirm_clear'] ?? '0') === 1;
+
+        $existing_subject = sanitize_text_field((string) ($existing_template['subject'] ?? ''));
+        $existing_html_body = (string) ($existing_template['html_body'] ?? '');
+        $existing_text_body = sanitize_textarea_field((string) ($existing_template['text_body'] ?? ''));
+
+        $subject = $subject_field_present ? sanitize_text_field((string) wp_unslash($_POST['cmn_template_subject'] ?? '')) : $existing_subject;
+        $html_body_raw = $html_body_field_present ? (string) wp_unslash($_POST['cmn_template_html_body'] ?? '') : $existing_html_body;
+        $html_body = wp_kses_post($html_body_raw);
+        $text_body = $text_body_field_present
+            ? sanitize_textarea_field((string) wp_unslash($_POST['cmn_template_text_body'] ?? ''))
+            : $existing_text_body;
+
+        if (!$confirm_clear) {
+            if ($subject === '' && $existing_subject !== '') {
+                $subject = $existing_subject;
+            }
+            $incoming_body_empty = trim((string) wp_strip_all_tags($html_body)) === '' && trim((string) $text_body) === '';
+            $existing_body_available = trim((string) wp_strip_all_tags($existing_html_body)) !== '' || trim((string) $existing_text_body) !== '';
+            if ($incoming_body_empty && $existing_body_available) {
+                $html_body = $existing_html_body;
+                $text_body = $existing_text_body;
+            }
+        }
+
+        $from_email = $this->sanitize_mail_header_email((string) wp_unslash($_POST['cmn_template_from_email'] ?? ''));
+        $reply_to_email = $this->sanitize_mail_header_email((string) wp_unslash($_POST['cmn_template_reply_to_email'] ?? ''));
+        $status = sanitize_key((string) wp_unslash($_POST['cmn_template_status'] ?? 'draft'));
+        if (!in_array($status, ['draft', 'published'], true)) {
+            $status = 'draft';
+        }
+        if ($subject === '') {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Subject is required.'));
+            exit;
+        }
+        if (trim((string) wp_strip_all_tags($html_body)) === '' && trim((string) $text_body) === '' && !$confirm_clear) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Template body cannot be blank unless clear confirmation is provided.'));
+            exit;
+        }
+        if (function_exists('mb_strlen') ? mb_strlen($subject) > 255 : strlen($subject) > 255) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Subject must be 255 characters or fewer.'));
+            exit;
+        }
+        $sender_rows = $this->get_email_sender_directory_rows(true);
+        $sender_lookup = [];
+        foreach ((array) $sender_rows as $sender_row) {
+            $sender_email = strtolower($this->sanitize_mail_header_email((string) ($sender_row['email_address'] ?? '')));
+            if ($sender_email === '') {
+                continue;
+            }
+            $sender_lookup[$sender_email] = [
+                'id' => (int) ($sender_row['id'] ?? 0),
+                'email_address' => $this->sanitize_mail_header_email((string) ($sender_row['email_address'] ?? '')),
+                'display_name' => $this->sanitize_mail_header_text((string) ($sender_row['display_name'] ?? '')),
+            ];
+        }
+        if (empty($sender_lookup)) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Add and activate at least one sender in Email Centre before saving templates.'));
+            exit;
+        }
+        if ($from_email === '') {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Select an approved sender for this template.'));
+            exit;
+        }
+        $selected_sender_key = strtolower($from_email);
+        if (empty($sender_lookup[$selected_sender_key])) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Selected sender is not approved or active.'));
+            exit;
+        }
+        if ($reply_to_email !== '' && empty($sender_lookup[strtolower($reply_to_email)])) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Reply-to must be an approved active sender.'));
+            exit;
+        }
+        if ($reply_to_email === '') {
+            $reply_to_email = $from_email;
+        }
+
+        $selected_sender_id = 0;
+        $selected_sender_name = '';
+        $selected_sender = (array) ($sender_lookup[$selected_sender_key] ?? []);
+        $selected_sender_id = max(0, (int) ($selected_sender['id'] ?? 0));
+        $selected_sender_name = $this->sanitize_mail_header_text((string) ($selected_sender['display_name'] ?? ''));
+        if ($selected_sender_id < 1) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Selected sender is invalid.'));
+            exit;
+        }
+
+        $registry_entry = $this->get_email_registry_entry_by_key($template_key);
+        $module = sanitize_key((string) ($existing_template['module'] ?? ($registry_entry['module'] ?? 'system')));
+        if ($module === '') {
+            $module = 'system';
+        }
+        $recipient_role = sanitize_key((string) ($existing_template['recipient_role'] ?? ($registry_entry['recipient_role'] ?? 'system')));
+        if ($recipient_role === '') {
+            $recipient_role = 'system';
+        }
+
+        $from_name = $selected_sender_name;
+        if ($from_name === '') {
+            $from_name_local = strstr($from_email, '@', true);
+            $from_name = $this->sanitize_mail_header_text(ucwords(trim(str_replace(['.', '_', '-'], ' ', (string) $from_name_local))));
+        }
+        if ($from_name === '') {
+            $from_name = 'CoverMeNow ONE';
+        }
+
+        global $wpdb;
+        $templates_table = $this->get_email_templates_storage_table();
+        $versions_table = self::get_email_template_versions_table_name();
+        if (!self::table_has_column($templates_table, 'template_key')) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Email template storage is unavailable.'));
+            exit;
+        }
+        if (!self::table_has_column($versions_table, 'template_id')) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Email template version storage is unavailable.'));
+            exit;
+        }
+
+        $has_default_sender_id = self::table_has_column($templates_table, 'default_sender_id');
+        $now = current_time('mysql');
+        $template_id = (int) ($existing_template['id'] ?? 0);
+        $actor_user_id = (int) get_current_user_id();
+        $version_number = 0;
+
+        $wpdb->query('START TRANSACTION');
+
+        if ($template_id > 0) {
+            $update_data = [
+                'subject' => $subject,
+                'html_body' => $html_body,
+                'text_body' => $text_body,
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'reply_to_email' => $reply_to_email,
+                'module' => $module,
+                'recipient_role' => $recipient_role,
+                'status' => $status,
+                'updated_at' => $now,
+            ];
+            $update_format = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'];
+            if ($has_default_sender_id) {
+                $update_data['default_sender_id'] = $selected_sender_id > 0 ? $selected_sender_id : 0;
+                $update_format[] = '%d';
+            }
+            $updated = $wpdb->update(
+                $templates_table,
+                $update_data,
+                ['id' => $template_id],
+                $update_format,
+                ['%d']
+            );
+            if ($updated === false) {
+                $wpdb->query('ROLLBACK');
+                wp_safe_redirect($build_redirect($redirect, 'error', 'Template could not be saved.'));
+                exit;
+            }
+        } else {
+            $insert_data = [
+                'template_key' => $template_key,
+                'subject' => $subject,
+                'html_body' => $html_body,
+                'text_body' => $text_body,
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'reply_to_email' => $reply_to_email,
+                'module' => $module,
+                'recipient_role' => $recipient_role,
+                'status' => $status,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            $insert_format = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'];
+            if ($has_default_sender_id) {
+                $insert_data['default_sender_id'] = $selected_sender_id > 0 ? $selected_sender_id : 0;
+                $insert_format[] = '%d';
+            }
+            $inserted = $wpdb->insert($templates_table, $insert_data, $insert_format);
+            if ($inserted === false) {
+                $wpdb->query('ROLLBACK');
+                wp_safe_redirect($build_redirect($redirect, 'error', 'Template could not be saved.'));
+                exit;
+            }
+            $template_id = (int) $wpdb->insert_id;
+        }
+
+        $version_number = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT MAX(version_number)
+             FROM {$versions_table}
+             WHERE template_id = %d",
+            $template_id
+        ));
+        $version_number = max(0, $version_number) + 1;
+
+        $version_inserted = $wpdb->insert(
+            $versions_table,
+            [
+                'template_id' => $template_id,
+                'subject' => $subject,
+                'html_body' => $html_body,
+                'text_body' => $text_body,
+                'version_number' => $version_number,
+                'created_by' => $actor_user_id > 0 ? $actor_user_id : null,
+                'created_at' => $now,
+            ],
+            ['%d', '%s', '%s', '%s', '%d', '%d', '%s']
+        );
+        if ($version_inserted === false) {
+            $wpdb->query('ROLLBACK');
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Template save failed while creating version history.'));
+            exit;
+        }
+
+        $wpdb->query('COMMIT');
+
+        $this->add_audit_log('email_template_saved', 'email_template', $template_key, [
+            'template_id' => $template_id,
+            'template_key' => $template_key,
+            'status' => $status,
+            'version_number' => $version_number,
+        ], $actor_user_id);
+
+        wp_safe_redirect($build_redirect($redirect, 'success', 'Template saved. Version ' . $version_number . ' created.'));
+        exit;
+    }
+
+    public function handle_email_template_preview() {
+        if (!is_user_logged_in() || !($this->is_admin_user() || $this->is_staff_role())) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        $template_key = sanitize_key((string) wp_unslash($_POST['template_key'] ?? ''));
+        if ($template_key === '') {
+            wp_send_json_error(['message' => 'Template key is required.'], 400);
+        }
+
+        $nonce = isset($_POST['nonce']) ? (string) wp_unslash($_POST['nonce']) : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_email_template_preview_' . $template_key)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+
+        $subject = sanitize_text_field((string) wp_unslash($_POST['subject'] ?? ''));
+        $html_body = wp_kses_post((string) wp_unslash($_POST['html_body'] ?? ''));
+        $text_body = sanitize_textarea_field((string) wp_unslash($_POST['text_body'] ?? ''));
+        $preview = $this->render_email_template_preview_payload($template_key, $subject, $html_body, $text_body);
+
+        $this->add_audit_log('email_template_previewed', 'email_template', $template_key, [
+            'template_key' => $template_key,
+            'has_subject' => $subject !== '' ? 1 : 0,
+            'has_html_body' => $html_body !== '' ? 1 : 0,
+            'has_text_body' => $text_body !== '' ? 1 : 0,
+        ], (int) get_current_user_id());
+
+        wp_send_json_success($preview);
+    }
+
+    public function handle_email_template_send_test() {
+        if (!is_user_logged_in() || !($this->is_admin_user() || $this->is_staff_role())) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        $template_key = sanitize_key((string) wp_unslash($_POST['template_key'] ?? ''));
+        if ($template_key === '') {
+            wp_send_json_error(['message' => 'Template key is required.'], 400);
+        }
+        $nonce = isset($_POST['nonce']) ? (string) wp_unslash($_POST['nonce']) : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_email_template_send_test_' . $template_key)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+
+        $recipient_email = sanitize_email((string) wp_unslash($_POST['recipient_email'] ?? ''));
+        if ($recipient_email === '' || !is_email($recipient_email)) {
+            wp_send_json_error(['message' => 'Enter a valid recipient email address.'], 400);
+        }
+
+        $subject = sanitize_text_field((string) wp_unslash($_POST['subject'] ?? ''));
+        $html_body = wp_kses_post((string) wp_unslash($_POST['html_body'] ?? ''));
+        $text_body = sanitize_textarea_field((string) wp_unslash($_POST['text_body'] ?? ''));
+        $registry_entry = $this->get_email_registry_entry_by_key($template_key);
+        $template_row = $this->get_email_template_storage_full_row($template_key);
+        $template_id = max(0, (int) ($template_row['id'] ?? 0));
+        $template_module = sanitize_key((string) ($template_row['module'] ?? ($registry_entry['module'] ?? 'system')));
+        if ($template_module === '') {
+            $template_module = 'system';
+        }
+        $recipient_role = sanitize_key((string) ($template_row['recipient_role'] ?? ($registry_entry['recipient_role'] ?? 'system')));
+        if ($recipient_role === '') {
+            $recipient_role = 'system';
+        }
+        $sample_data = $this->get_email_template_preview_sample_data($template_key);
+        $send_result = (array) $this->send_email($template_key, $recipient_email, $sample_data, [
+            'module' => $template_module,
+            'recipient_role' => $recipient_role,
+            'subject_override' => $subject,
+            'html_body_override' => $html_body,
+            'text_body_override' => $text_body,
+            'related_entity_type' => 'email_template_test',
+            'related_entity_id' => $template_id,
+        ]);
+        $send_status = sanitize_key((string) ($send_result['send_status'] ?? 'failed'));
+        $send_error = sanitize_text_field((string) ($send_result['error_message'] ?? ''));
+
+        $this->add_audit_log('email_template_test_sent', 'email_template', $template_key, [
+            'template_key' => $template_key,
+            'recipient_email' => $recipient_email,
+            'send_status' => $send_status,
+        ], (int) get_current_user_id());
+
+        if (empty($send_result['success'])) {
+            wp_send_json_error([
+                'message' => $send_error !== '' ? $send_error : 'Test email failed to send.',
+                'send_status' => 'failed',
+            ], 500);
+        }
+
+        wp_send_json_success([
+            'message' => 'Test email sent successfully.',
+            'send_status' => 'sent',
+        ]);
+    }
+
+    public function handle_email_centre_send_test() {
+        if (!is_user_logged_in()) {
+            wp_die('Unauthorized', 403);
+        }
+        $current_user_id = (int) get_current_user_id();
+        if (!$this->is_admin_user($current_user_id) && !$this->is_staff_role($current_user_id)) {
+            wp_die('Unauthorized', 403);
+        }
+
+        $redirect = $this->resolve_email_centre_redirect_target((string) ($_POST['cmn_redirect'] ?? ''));
+        $build_redirect = static function ($target, $status, $message) {
+            return add_query_arg([
+                'cmn_email_centre_status' => sanitize_key((string) $status),
+                'cmn_email_centre_msg' => rawurlencode((string) $message),
+            ], (string) $target);
+        };
+
+        $nonce = isset($_POST['cmn_email_centre_send_test_nonce']) ? (string) $_POST['cmn_email_centre_send_test_nonce'] : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_email_centre_send_test')) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Invalid request. Please refresh and try again.'));
+            exit;
+        }
+
+        self::migrate_schema_v64_email_sender_directory();
+        self::migrate_schema_v67_email_sender_table_normalization();
+        $this->ensure_email_sender_directory_seeded(true);
+        self::migrate_schema_v66_email_logs_table_hardening();
+        self::migrate_schema_v68_email_logs_canonical_backfill();
+
+        $recipient_email = sanitize_email((string) wp_unslash($_POST['cmn_email_test_recipient'] ?? ''));
+        if ($recipient_email === '' || !is_email($recipient_email)) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Enter a valid recipient email address.'));
+            exit;
+        }
+
+        $sender_email = $this->sanitize_mail_header_email((string) wp_unslash($_POST['cmn_email_test_sender'] ?? ''));
+        if ($sender_email === '' || !is_email($sender_email)) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Select a valid sender.'));
+            exit;
+        }
+
+        $approved_sender = $this->get_active_email_sender_row_by_email($sender_email);
+        if (empty($approved_sender['id'])) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Selected sender is not active.'));
+            exit;
+        }
+
+        $sender_name = $this->sanitize_mail_header_text((string) ($approved_sender['display_name'] ?? ''));
+        if ($sender_name === '') {
+            $sender_name = 'CoverMeNow ONE';
+        }
+
+        $subject = sanitize_text_field((string) wp_unslash($_POST['cmn_email_test_subject'] ?? 'CMN Test Email'));
+        if ($subject === '') {
+            $subject = 'CMN Test Email';
+        }
+        if (strlen($subject) > 255) {
+            $subject = substr($subject, 0, 255);
+        }
+
+        $headers = [
+            'Content-Type: text/plain; charset=UTF-8',
+            'From: ' . $sender_name . ' <' . $sender_email . '>',
+            'Reply-To: ' . $sender_email,
+        ];
+
+        $mail_result = $this->send_wp_mail_with_email_log(
+            $recipient_email,
+            $subject,
+            'This is a test email from CoverMeNow ONE.',
+            $headers,
+            [],
+            [
+                'template_key' => 'system_test',
+                'module' => 'system',
+                'recipient_role' => 'system',
+                'from_email' => $sender_email,
+                'from_name' => $sender_name,
+                'related_entity_type' => 'email_centre',
+                'related_entity_id' => $current_user_id,
+                'metadata' => [
+                    'actor_user_id' => $current_user_id,
+                    'source' => 'email_centre_logs_tab',
+                ],
+            ]
+        );
+
+        $sent = !empty($mail_result['success']);
+        $send_status = sanitize_key((string) ($mail_result['send_status'] ?? ($sent ? 'sent' : 'failed')));
+        $send_error = sanitize_text_field((string) ($mail_result['error_message'] ?? ''));
+
+        $this->add_audit_log('email_test_sent', 'email', 'system_test', [
+            'recipient_email' => $recipient_email,
+            'sender_email' => $sender_email,
+            'send_status' => $send_status,
+        ], $current_user_id);
+
+        if (!$sent) {
+            $message = $send_error !== '' ? $send_error : 'Test email failed to send.';
+            wp_safe_redirect($build_redirect($redirect, 'error', $message));
+            exit;
+        }
+
+        wp_safe_redirect($build_redirect($redirect, 'success', 'Test email sent and logged.'));
+        exit;
+    }
+
+    /*
+     * Verification checks:
+     * 1) Email Centre > Templates shows templates and existing From Email values without regression.
+     * 2) Changing only sender on template save preserves existing subject/body unless confirm clear is explicitly checked.
+     * 3) Missing subject/body POST fields never blank stored template content during save.
+     * 4) Email Centre > Senders auto-populates at least school@covermenow.co.uk, candidate@covermenow.co.uk, support@covermenow.co.uk and template-inferred senders.
+     * 5) Sending a test email writes a queued/sent(or failed) row to cmn_email_logs immediately.
+     * 6) Real module emails written through wp_mail are logged via wrapper or wp_mail hook token correlation.
+     */
+
     public function render_staff_settings_shortcode() {
         if (!is_user_logged_in()) {
             return $this->render_login_shortcode();
@@ -27905,6 +37884,26 @@ final class CMN_One_Plugin {
                 <div class="cmn-settings-actions">
                     <button class="cmn-primary" type="button" data-theme-save>Save scheme</button>
                     <span class="cmn-muted" data-theme-message></span>
+                </div>
+            </div>
+            <div class="cmn-dashboard-card" data-notification-preferences>
+                <h3>Notification Preferences</h3>
+                <p class="cmn-muted">Portal + email channels, quiet hours, and urgency rules.</p>
+                <div class="cmn-settings-grid">
+                    <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_portal_enabled"> Portal notifications</label>
+                    <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_email_enabled"> Email notifications</label>
+                    <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_quiet_hours_enabled"> Enable quiet hours</label>
+                    <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_allow_urgent_quiet"> Allow urgent alerts during quiet hours</label>
+                    <label>Quiet hours start
+                        <input type="time" data-notify-time="cmn_notify_quiet_start" step="300">
+                    </label>
+                    <label>Quiet hours end
+                        <input type="time" data-notify-time="cmn_notify_quiet_end" step="300">
+                    </label>
+                </div>
+                <div class="cmn-settings-actions">
+                    <button class="cmn-primary" type="button" data-notify-settings-save>Save notification preferences</button>
+                    <span class="cmn-muted" data-notify-settings-message></span>
                 </div>
             </div>
             <div class="cmn-dashboard-card">
@@ -28055,6 +38054,7 @@ final class CMN_One_Plugin {
                     <select name="cmn_email_test_type" data-email-test-type>
                         <option value="candidate">Candidate</option>
                         <option value="school">School</option>
+                        <option value="support">Support</option>
                     </select>
                 </label>
                 <label>Send test emails to
@@ -28317,8 +38317,13 @@ final class CMN_One_Plugin {
         if (!$school || $school->post_type !== 'cmn_school') {
             return '<div class="cmn-panel-card"><p>School not found.</p></div>';
         }
+        $render_started_at = microtime(true);
         $meta = function ($key) use ($school_id) {
             return get_post_meta($school_id, $key, true);
+        };
+        $display = function ($value) {
+            $value = trim((string) $value);
+            return $value !== '' ? $value : '—';
         };
         $portal_page = get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
@@ -28326,11 +38331,27 @@ final class CMN_One_Plugin {
         if ($school_code === '') {
             $school_code = $this->upsert_school_index($school_id);
         }
+        if ($school_code === '') {
+            $school_code = (string) $school_id;
+        }
         $redirect_url = add_query_arg(['view' => 'schools', 'school_id' => $school_code], $portal_url);
-        $school_domain = $this->get_email_domain($meta('cmn_email'));
+        $school_email = (string) $meta('cmn_email');
+        $school_domain = $this->get_email_domain($school_email);
         if ($school_domain === '') {
             $school_domain = $meta('cmn_school_email_domain');
         }
+        $missing_profile_fields = $this->get_school_profile_missing_fields($school_id);
+        $school_postcode = trim((string) $meta('cmn_postcode'));
+        $school_coords = $this->get_geo_coordinates_for_post($school_id);
+        $status_raw = trim((string) $meta('cmn_status'));
+        $status_display = $status_raw !== '' ? $status_raw : 'pending';
+        $this->log_school_debug('school_profile_render_start', [
+            'school_post_id' => (int) $school_id,
+            'school_id_meta' => (string) $meta('cmn_school_id'),
+            'school_email' => $school_email,
+            'school_domain' => (string) $school_domain,
+            'missing_fields' => $missing_profile_fields,
+        ]);
         $request_status = $this->get_school_access_request_status($school_id);
         $request_status_label = 'Not requested';
         $request_status_class = 'is-muted';
@@ -28369,19 +38390,59 @@ final class CMN_One_Plugin {
         $current_user_id = (int) get_current_user_id();
         $can_update_assignment = $this->is_admin_user($current_user_id);
         $account_managers = $can_update_assignment ? $this->get_account_manager_users() : [];
-        $contacts = $this->get_school_contacts_by_domain($school_domain);
-        $open_tasks = $this->get_school_tasks($school_code, 5);
-        $activities = $this->get_school_activities($school_code, 20);
+        $contacts = [];
+        $open_tasks = [];
+        $activities = [];
+        try {
+            $contacts = $this->get_school_contacts_by_domain($school_domain);
+            $open_tasks = $this->get_school_tasks($school_domain, 5);
+            $activities = $this->get_school_activities($school_domain, 20);
+        } catch (Throwable $e) {
+            $this->log_school_debug('school_profile_related_data_failed', [
+                'school_post_id' => (int) $school_id,
+                'school_domain' => (string) $school_domain,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
         $feedback_summary = $this->get_feedback_summary_for_entity('school', (int) $school_id);
         $convert_msg = isset($_GET['cmn_convert_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_convert_msg'])) : '';
         $request_msg = isset($_GET['cmn_school_request_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_request_msg'])) : '';
-        $request_timeline = $this->get_school_request_timeline($school_id, 30);
+        $request_timeline = [];
+        try {
+            $request_timeline = $this->get_school_request_timeline($school_id, 30);
+        } catch (Throwable $e) {
+            $this->log_school_debug('school_profile_timeline_failed', [
+                'school_post_id' => (int) $school_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
         ob_start();
         ?>
         <header class="cmn-school-header">
             <h2><?php echo esc_html($school->post_title); ?></h2>
             <p>School profile</p>
         </header>
+        <?php if ($missing_profile_fields) : ?>
+            <section class="cmn-panel-card">
+                <h3>School profile incomplete</h3>
+                <p>Profile incomplete: <?php echo esc_html(implode(', ', $missing_profile_fields)); ?>.</p>
+                <a class="cmn-ghost cmn-btn-mini" href="#cmn-school-details">Fix now</a>
+            </section>
+        <?php endif; ?>
+        <?php if ($school_postcode === '') : ?>
+            <section class="cmn-panel-card">
+                <h3>Missing postcode</h3>
+                <p>Add a postcode to enable accurate location matching.</p>
+            </section>
+        <?php endif; ?>
+        <?php if (!$school_coords) : ?>
+            <section class="cmn-panel-card">
+                <h3>Location not verified yet</h3>
+                <p>Geo coordinates are missing. Once a postcode is set, we will verify location automatically.</p>
+            </section>
+        <?php endif; ?>
         <?php if ($convert_msg) : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($convert_msg); ?></strong></div>
         <?php endif; ?>
@@ -28418,27 +38479,27 @@ final class CMN_One_Plugin {
             <?php endif; ?>
         </section>
         <div class="cmn-profile-grid">
-            <div class="cmn-panel-card">
+            <div class="cmn-panel-card" id="cmn-school-details">
                 <h3>Details</h3>
                 <div class="cmn-meta-grid">
-                    <div><strong>Status:</strong> <?php echo esc_html($meta('cmn_status')); ?></div>
+                    <div><strong>Status:</strong> <?php echo esc_html(ucfirst($status_display)); ?><?php echo $status_raw === '' ? ' (assumed)' : ''; ?></div>
                     <div><strong>Request Status:</strong> <span class="cmn-status-chip <?php echo esc_attr($request_status_class); ?>"><?php echo esc_html($request_status_label); ?></span></div>
-                    <div><strong>School ID:</strong> <?php echo esc_html($meta('cmn_school_id')); ?></div>
-                    <div><strong>Location:</strong> <?php echo esc_html($meta('cmn_location')); ?></div>
-                    <div><strong>Phone:</strong> <?php echo esc_html($meta('cmn_phone')); ?></div>
-                    <div><strong>Switchboard:</strong> <?php echo esc_html($meta('cmn_switchboard')); ?></div>
-                    <div><strong>Email:</strong> <?php echo esc_html($meta('cmn_email')); ?></div>
-                    <div><strong>Email Greeting Name:</strong> <?php echo esc_html($meta('cmn_email_name')); ?></div>
-                    <div><strong>Website:</strong> <?php echo esc_html($meta('cmn_website')); ?></div>
-                    <div><strong>Account Manager:</strong> <?php echo esc_html($meta('cmn_account_manager')); ?></div>
-                    <div><strong>Cover Manager:</strong> <?php echo esc_html($meta('cmn_cover_manager')); ?></div>
-                    <div><strong>Cover Manager Email:</strong> <?php echo esc_html($meta('cmn_cover_manager_email')); ?></div>
-                    <div><strong>Spoke to CM:</strong> <?php echo esc_html($meta('cmn_spoke_to_cm')); ?></div>
-                    <div><strong>School Type:</strong> <?php echo esc_html($meta('cmn_school_type')); ?></div>
-                    <div><strong>Pupil Count:</strong> <?php echo esc_html($meta('cmn_pupil_count')); ?></div>
-                    <div><strong>Supply Frequency:</strong> <?php echo esc_html($meta('cmn_supply_frequency')); ?></div>
-                    <div><strong>Use Agencies:</strong> <?php echo esc_html($meta('cmn_use_agencies')); ?></div>
-                    <div><strong>Agency Count:</strong> <?php echo esc_html($meta('cmn_agency_count')); ?></div>
+                    <div><strong>School ID:</strong> <?php echo esc_html($display($meta('cmn_school_id'))); ?></div>
+                    <div><strong>Location:</strong> <?php echo esc_html($display($meta('cmn_location'))); ?></div>
+                    <div><strong>Phone:</strong> <?php echo esc_html($display($meta('cmn_phone'))); ?></div>
+                    <div><strong>Switchboard:</strong> <?php echo esc_html($display($meta('cmn_switchboard'))); ?></div>
+                    <div><strong>Email:</strong> <?php echo esc_html($display($meta('cmn_email'))); ?></div>
+                    <div><strong>Email Greeting Name:</strong> <?php echo esc_html($display($meta('cmn_email_name'))); ?></div>
+                    <div><strong>Website:</strong> <?php echo esc_html($display($meta('cmn_website'))); ?></div>
+                    <div><strong>Account Manager:</strong> <?php echo esc_html($display($meta('cmn_account_manager'))); ?></div>
+                    <div><strong>Cover Manager:</strong> <?php echo esc_html($display($meta('cmn_cover_manager'))); ?></div>
+                    <div><strong>Cover Manager Email:</strong> <?php echo esc_html($display($meta('cmn_cover_manager_email'))); ?></div>
+                    <div><strong>Spoke to CM:</strong> <?php echo esc_html($display($meta('cmn_spoke_to_cm'))); ?></div>
+                    <div><strong>School Type:</strong> <?php echo esc_html($display($meta('cmn_school_type'))); ?></div>
+                    <div><strong>Pupil Count:</strong> <?php echo esc_html($display($meta('cmn_pupil_count'))); ?></div>
+                    <div><strong>Supply Frequency:</strong> <?php echo esc_html($display($meta('cmn_supply_frequency'))); ?></div>
+                    <div><strong>Use Agencies:</strong> <?php echo esc_html($display($meta('cmn_use_agencies'))); ?></div>
+                    <div><strong>Agency Count:</strong> <?php echo esc_html($display($meta('cmn_agency_count'))); ?></div>
                 </div>
                 <?php if ($request_note !== '') : ?>
                     <p class="cmn-muted">Latest note: <?php echo esc_html($request_note); ?></p>
@@ -28499,13 +38560,13 @@ final class CMN_One_Plugin {
             <div class="cmn-panel-card">
                 <h3>Contacts</h3>
                 <div class="cmn-meta-grid">
-                    <div><strong>Primary Contact:</strong> <?php echo esc_html($meta('cmn_contact1')); ?></div>
-                    <div><strong>Role:</strong> <?php echo esc_html($meta('cmn_contact_role')); ?></div>
-                    <div><strong>Contact Email:</strong> <?php echo esc_html($meta('cmn_contact1_email') ?: $meta('cmn_email')); ?></div>
-                    <div><strong>Contact 2:</strong> <?php echo esc_html($meta('cmn_contact2')); ?></div>
-                    <div><strong>Contact 2 Email:</strong> <?php echo esc_html($meta('cmn_contact2_email')); ?></div>
-                    <div><strong>Contact 3:</strong> <?php echo esc_html($meta('cmn_contact3')); ?></div>
-                    <div><strong>Contact 3 Email:</strong> <?php echo esc_html($meta('cmn_contact3_email')); ?></div>
+                    <div><strong>Primary Contact:</strong> <?php echo esc_html($display($meta('cmn_contact1'))); ?></div>
+                    <div><strong>Role:</strong> <?php echo esc_html($display($meta('cmn_contact_role'))); ?></div>
+                    <div><strong>Contact Email:</strong> <?php echo esc_html($display($meta('cmn_contact1_email') ?: $meta('cmn_email'))); ?></div>
+                    <div><strong>Contact 2:</strong> <?php echo esc_html($display($meta('cmn_contact2'))); ?></div>
+                    <div><strong>Contact 2 Email:</strong> <?php echo esc_html($display($meta('cmn_contact2_email'))); ?></div>
+                    <div><strong>Contact 3:</strong> <?php echo esc_html($display($meta('cmn_contact3'))); ?></div>
+                    <div><strong>Contact 3 Email:</strong> <?php echo esc_html($display($meta('cmn_contact3_email'))); ?></div>
                 </div>
             </div>
             <div class="cmn-panel-card">
@@ -28549,13 +38610,13 @@ final class CMN_One_Plugin {
             <div class="cmn-panel-card cmn-panel-card-wide">
                 <h3>Address</h3>
                 <div class="cmn-meta-grid">
-                    <div><strong>House / Number:</strong> <?php echo esc_html($meta('cmn_house_number')); ?></div>
-                    <div><strong>Address Line 1:</strong> <?php echo esc_html($meta('cmn_address_line1')); ?></div>
-                    <div><strong>Address Line 2:</strong> <?php echo esc_html($meta('cmn_address_line2')); ?></div>
-                    <div><strong>Address Line 3:</strong> <?php echo esc_html($meta('cmn_address_line3')); ?></div>
-                    <div><strong>Town:</strong> <?php echo esc_html($meta('cmn_town')); ?></div>
-                    <div><strong>County:</strong> <?php echo esc_html($meta('cmn_county')); ?></div>
-                    <div><strong>Postcode:</strong> <?php echo esc_html($meta('cmn_postcode')); ?></div>
+                    <div><strong>House / Number:</strong> <?php echo esc_html($display($meta('cmn_house_number'))); ?></div>
+                    <div><strong>Address Line 1:</strong> <?php echo esc_html($display($meta('cmn_address_line1'))); ?></div>
+                    <div><strong>Address Line 2:</strong> <?php echo esc_html($display($meta('cmn_address_line2'))); ?></div>
+                    <div><strong>Address Line 3:</strong> <?php echo esc_html($display($meta('cmn_address_line3'))); ?></div>
+                    <div><strong>Town:</strong> <?php echo esc_html($display($meta('cmn_town'))); ?></div>
+                    <div><strong>County:</strong> <?php echo esc_html($display($meta('cmn_county'))); ?></div>
+                    <div><strong>Postcode:</strong> <?php echo esc_html($display($meta('cmn_postcode'))); ?></div>
                 </div>
             </div>
             <div class="cmn-panel-card">
@@ -28655,6 +38716,11 @@ final class CMN_One_Plugin {
         </div>
         <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'schools'], $portal_url)); ?>">Back to Schools</a>
         <?php
+        $this->log_school_debug('school_profile_render_complete', [
+            'school_post_id' => (int) $school_id,
+            'missing_fields_count' => count($missing_profile_fields),
+            'render_duration_ms' => (int) round((microtime(true) - $render_started_at) * 1000),
+        ]);
         return ob_get_clean();
     }
 
@@ -28766,6 +38832,16 @@ final class CMN_One_Plugin {
     private function get_booking_feedback_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_booking_feedback';
+    }
+
+    private function get_candidate_feedback_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_candidate_feedback';
+    }
+
+    private function get_candidate_rating_stats_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_candidate_rating_stats';
     }
 
     private function get_feedback_table() {
@@ -28961,6 +39037,16 @@ final class CMN_One_Plugin {
     private function get_payroll_adjustments_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_payroll_adjustments';
+    }
+
+    private function get_priority_allocations_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_priority_allocations';
+    }
+
+    private function get_priority_interest_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_priority_interest';
     }
 
     public function migrate_bank_details_plain_to_encrypted() {
@@ -31982,6 +42068,7 @@ final class CMN_One_Plugin {
         if (is_wp_error($recalculated)) {
             return $recalculated;
         }
+        $this->reconcile_single_school_list_visibility($school_id, false, (int) get_current_user_id(), 'partner_credit_increment');
         $this->add_audit_log('school_partner_credit_incremented', 'school', (string) $school_id, [
             'delta' => $delta,
             'booking_id' => $booking_id,
@@ -34155,7 +44242,52 @@ final class CMN_One_Plugin {
         return ['legacy_note' => $notes];
     }
 
-    private function get_candidate_shift_credits_for_bonus_block($candidate_user_id, $academic_year_label, $block_index) {
+    private function get_candidate_rewards_bonus_window_for_block($block_index, $elite_block_index = 4) {
+        $block_index = max(1, (int) $block_index);
+        $elite_block_index = max(1, (int) $elite_block_index);
+        // Rolling windows scale with tier milestones then stay fixed at 120 for elite recurring milestones.
+        if ($block_index <= 1) {
+            return 30;
+        }
+        if ($block_index === 2) {
+            return 60;
+        }
+        if ($block_index === 3 && $block_index < $elite_block_index) {
+            return 90;
+        }
+        return 120;
+    }
+
+    private function get_candidate_rewards_bonus_multiplier_for_block($block_index, array $config_row = [], $elite_block_index = 4) {
+        $block_index = max(1, (int) $block_index);
+        $elite_block_index = max(1, (int) $elite_block_index);
+        $multiplier_map = $this->get_candidate_rewards_tier_multiplier_map($config_row);
+        $bronze_multiplier = round((float) ($multiplier_map['bronze'] ?? 1.10), 2);
+        $silver_multiplier = round((float) ($multiplier_map['silver'] ?? 1.20), 2);
+        $gold_multiplier = round((float) ($multiplier_map['gold'] ?? 1.30), 2);
+        $elite_multiplier = round((float) ($multiplier_map['elite'] ?? 1.50), 2);
+        $elite_recurring_multiplier = round(max(
+            $elite_multiplier,
+            (float) ($config_row['elite_recurring_multiplier'] ?? $elite_multiplier)
+        ), 2);
+
+        // Tier multipliers align with 30/60/90/120 milestones; elite+ recurring stays on the elite multiplier.
+        if ($block_index <= 1) {
+            return max(1.00, $bronze_multiplier);
+        }
+        if ($block_index === 2) {
+            return max(1.00, $silver_multiplier);
+        }
+        if ($block_index === 3) {
+            return max(1.00, $gold_multiplier);
+        }
+        if ($block_index === $elite_block_index) {
+            return max(1.00, $elite_multiplier);
+        }
+        return max(1.00, $elite_recurring_multiplier);
+    }
+
+    private function get_candidate_shift_credits_for_bonus_block($candidate_user_id, $academic_year_label, $block_index, $rolling_window = 0) {
         $candidate_user_id = (int) $candidate_user_id;
         $block_index = max(1, (int) $block_index);
         if ($candidate_user_id < 1) {
@@ -34170,10 +44302,17 @@ final class CMN_One_Plugin {
             return new WP_Error('cmn_rewards_bonus_invalid_year', 'Academic year is invalid for bonus block calculation.');
         }
 
-        $offset = ($block_index - 1) * 30;
+        $milestone_shift_total = $block_index * 30;
+        $rolling_window = (int) $rolling_window;
+        if ($rolling_window < 1) {
+            $rolling_window = $this->get_candidate_rewards_bonus_window_for_block($block_index, 4);
+        }
+        $rolling_window = max(1, $rolling_window);
+        $rolling_window = min($rolling_window, $milestone_shift_total);
+
         global $wpdb;
         $table = $this->get_candidate_shift_credits_table();
-        $rows = $wpdb->get_results($wpdb->prepare(
+        $milestone_rows = $wpdb->get_results($wpdb->prepare(
             "SELECT id, candidate_user_id, booking_id, booking_day_date, status, credited_at, voided_at, void_reason
              FROM {$table}
              WHERE candidate_user_id = %d
@@ -34181,25 +44320,34 @@ final class CMN_One_Plugin {
                AND booking_day_date >= %s
                AND booking_day_date <= %s
              ORDER BY booking_day_date ASC, id ASC
-             LIMIT %d OFFSET %d",
+             LIMIT %d",
             $candidate_user_id,
             'credited',
             $start_date,
             $end_date,
-            30,
-            $offset
+            $milestone_shift_total
         ), ARRAY_A);
+        if (!is_array($milestone_rows)) {
+            $milestone_rows = [];
+        }
+        if (count($milestone_rows) < $milestone_shift_total) {
+            return new WP_Error('cmn_rewards_bonus_insufficient_shifts', 'Insufficient credited shifts for requested bonus block.');
+        }
+
+        $rows = array_slice($milestone_rows, (-1 * $rolling_window));
         if (!is_array($rows)) {
             $rows = [];
         }
-        if (count($rows) < 30) {
-            return new WP_Error('cmn_rewards_bonus_insufficient_shifts', 'Insufficient credited shifts for requested bonus block.');
+        if (count($rows) < $rolling_window) {
+            return new WP_Error('cmn_rewards_bonus_insufficient_shifts', 'Insufficient credited shifts for requested rolling bonus window.');
         }
 
         return [
             'academic_year' => $academic_year,
             'start_date' => $start_date,
             'end_date' => $end_date,
+            'rolling_window' => $rolling_window,
+            'milestone_shift_total' => $milestone_shift_total,
             'rows' => $rows,
         ];
     }
@@ -34245,7 +44393,7 @@ final class CMN_One_Plugin {
         if ($block_index <= 0) {
             return 1.00;
         }
-        return $block_index >= ($elite_block_index + 1) ? 1.50 : 1.00;
+        return $this->get_candidate_rewards_bonus_multiplier_for_block($block_index, [], $elite_block_index);
     }
 
     private function calculate_bonus_block_payload($candidate_user_id, $academic_year_label, $block_index) {
@@ -34255,13 +44403,14 @@ final class CMN_One_Plugin {
             return new WP_Error('cmn_rewards_bonus_invalid_candidate_user', 'Candidate user is required.');
         }
 
-        $credit_bundle = $this->get_candidate_shift_credits_for_bonus_block($candidate_user_id, $academic_year_label, $block_index);
+        $rolling_window = $this->get_candidate_rewards_bonus_window_for_block($block_index, 4);
+        $credit_bundle = $this->get_candidate_shift_credits_for_bonus_block($candidate_user_id, $academic_year_label, $block_index, $rolling_window);
         if (is_wp_error($credit_bundle)) {
             return $credit_bundle;
         }
         $credit_rows = (array) ($credit_bundle['rows'] ?? []);
-        if (count($credit_rows) < 30) {
-            return new WP_Error('cmn_rewards_bonus_insufficient_shifts', 'Insufficient credited shifts for requested bonus block.');
+        if (count($credit_rows) < $rolling_window) {
+            return new WP_Error('cmn_rewards_bonus_insufficient_shifts', 'Insufficient credited shifts for requested rolling bonus window.');
         }
 
         $total_day_pay = 0.00;
@@ -34279,14 +44428,17 @@ final class CMN_One_Plugin {
             $booking_day_refs[] = $booking_id . ':' . $booking_day_date;
         }
         $total_day_pay = round($total_day_pay, 2);
-        $average_day_pay = round($total_day_pay / 30, 2);
+        $average_day_pay = round($total_day_pay / max(1, $rolling_window), 2);
         $normalized_academic_year = (string) ($credit_bundle['academic_year'] ?? $this->normalize_candidate_rewards_academic_year_label((string) $academic_year_label, current_time('Y-m-d')));
+        $milestone_shift_total = max($block_index * 30, (int) ($credit_bundle['milestone_shift_total'] ?? 0));
 
         return [
             'academic_year' => $normalized_academic_year,
             'block_index' => $block_index,
             'block_start_shift' => (($block_index - 1) * 30) + 1,
             'block_end_shift' => $block_index * 30,
+            'rolling_window' => $rolling_window,
+            'milestone_shift_total' => $milestone_shift_total,
             'average_day_pay' => $average_day_pay,
             'total_day_pay' => $total_day_pay,
             'credit_rows' => $credit_rows,
@@ -34395,10 +44547,12 @@ final class CMN_One_Plugin {
     }
 
     /*
-     * Prompt 8 acceptance checks:
-     * 1) At 30/60/120/150 shifts, completed block index resolves to 1/2/4/5.
-     * 2) Blocks 1-4 use 1.0 multiplier; blocks 5+ use 1.5.
-     * 3) Re-running awards is idempotent due unique candidate+year+block key.
+     * Prompt 58 acceptance checks:
+     * 1) Candidate at 30/60/90/120 shifts receives 1.1x/1.2x/1.3x/1.5x bonus multiplier.
+     * 2) Candidate at 150+ shifts receives recurring 1.5x bonuses every additional 30 completed shifts.
+     * 3) Rolling windows are 30/60/90/120 and remain 120 for elite recurring milestones.
+     * 4) Re-running awards is idempotent due unique candidate+year+block key.
+     * 5) Historical bonus rows are never recalculated or overwritten.
      */
     public function rewards_award_bonus_if_needed($candidate_user_id, $academic_year_label, $actor_user_id = null) {
         $candidate_user_id = (int) $candidate_user_id;
@@ -34420,6 +44574,7 @@ final class CMN_One_Plugin {
         if ($rewards_label === '') {
             return new WP_Error('cmn_rewards_bonus_invalid_year_label', 'Academic year label could not be resolved for bonus calculation.');
         }
+        $config_row = $this->get_rewards_config_row_for_academic_year($academic_year, current_time('Y-m-d'));
 
         $rewards_row = $this->get_or_create_candidate_rewards($candidate_id, $academic_year);
         if (is_wp_error($rewards_row)) {
@@ -34486,16 +44641,23 @@ final class CMN_One_Plugin {
             if (is_wp_error($payload)) {
                 return $payload;
             }
-            $multiplier = $this->rewards_block_multiplier($block_index, 4);
+            $rolling_window = max(1, (int) ($payload['rolling_window'] ?? $this->get_candidate_rewards_bonus_window_for_block($block_index, 4)));
+            $multiplier = $this->get_candidate_rewards_bonus_multiplier_for_block($block_index, is_array($config_row) ? $config_row : [], 4);
             $average_day_pay = round((float) ($payload['average_day_pay'] ?? 0), 2);
             $bonus_amount = round($average_day_pay * $multiplier, 2);
+            $milestone_shift_total = max($block_index * 30, (int) ($payload['milestone_shift_total'] ?? 0));
+            $rolling_window_start_shift = max(1, ($milestone_shift_total - $rolling_window) + 1);
             $notes_payload = [
                 'block_index' => $block_index,
                 'block_start_shift' => (int) ($payload['block_start_shift'] ?? ((($block_index - 1) * 30) + 1)),
                 'block_end_shift' => (int) ($payload['block_end_shift'] ?? ($block_index * 30)),
+                'rolling_window_shifts' => $rolling_window,
+                'rolling_window_start_shift' => $rolling_window_start_shift,
+                'rolling_window_end_shift' => $milestone_shift_total,
+                'milestone_shift_total' => $milestone_shift_total,
                 'credit_ids' => array_values(array_filter(array_map('intval', (array) ($payload['credit_ids'] ?? [])))),
                 'booking_day_refs' => array_values(array_map('strval', (array) ($payload['booking_day_refs'] ?? []))),
-                'total_day_pay' => round((float) ($payload['total_day_pay'] ?? ($average_day_pay * 30)), 2),
+                'total_day_pay' => round((float) ($payload['total_day_pay'] ?? ($average_day_pay * $rolling_window)), 2),
                 'pay_source' => 'booking_rates.candidate_pay_rate|booking_meta.cmn_candidate_pay_rate|booking_meta.cmn_rate',
             ];
 
@@ -34545,6 +44707,10 @@ final class CMN_One_Plugin {
                             'candidate_id' => $candidate_id,
                             'block_start_shift' => (int) ($payload['block_start_shift'] ?? ((($block_index - 1) * 30) + 1)),
                             'block_end_shift' => (int) ($payload['block_end_shift'] ?? ($block_index * 30)),
+                            'rolling_window_shifts' => $rolling_window,
+                            'rolling_window_start_shift' => $rolling_window_start_shift,
+                            'rolling_window_end_shift' => $milestone_shift_total,
+                            'milestone_shift_total' => $milestone_shift_total,
                         ],
                     ]);
                 }
@@ -35233,6 +45399,8 @@ final class CMN_One_Plugin {
         if ($multiplier <= 0 && $block_index > 0) {
             $multiplier = $this->rewards_block_multiplier($block_index, 4);
         }
+        $award_notes = $this->decode_candidate_bonus_award_notes((string) ($latest_award['notes'] ?? ''));
+        $rolling_window = max(1, (int) ($award_notes['rolling_window_shifts'] ?? ($block_index > 0 ? $this->get_candidate_rewards_bonus_window_for_block($block_index, 4) : 30)));
 
         return [
             'triggered' => $triggered,
@@ -35247,7 +45415,7 @@ final class CMN_One_Plugin {
             'shift_cycle_count_at_trigger' => (int) ($rewards_row['shift_cycle_count'] ?? 0),
             'tier' => $this->normalize_candidate_rewards_tier((string) ($row_after['tier'] ?? ($rewards_row['tier'] ?? 'standard'))),
             'multiplier' => $multiplier,
-            'total_gross_pay_cycle' => round($average_daily_pay * 30, 2),
+            'total_gross_pay_cycle' => round($average_daily_pay * $rolling_window, 2),
             'average_daily_pay' => $average_daily_pay,
             'bonus_amount' => $bonus_amount,
             'row' => $row_after,
@@ -40457,29 +50625,34 @@ final class CMN_One_Plugin {
             }
         }
 
-        $mail_error = '';
         $phpmailer_alt_body = static function ($phpmailer) use ($plain_body) {
             if (is_object($phpmailer) && $plain_body !== '') {
                 $phpmailer->AltBody = $plain_body;
             }
         };
-        $mail_failed = static function ($wp_error) use (&$mail_error) {
-            if ($wp_error instanceof WP_Error) {
-                $mail_error = $wp_error->get_error_message();
-            } else {
-                $mail_error = 'Unknown mail error.';
-            }
-        };
         add_action('phpmailer_init', $phpmailer_alt_body, 20, 1);
-        add_action('wp_mail_failed', $mail_failed, 20, 1);
-        $sent = wp_mail($to, $subject, $html_body, $default_headers, $attachments);
-        remove_action('phpmailer_init', $phpmailer_alt_body, 20);
-        remove_action('wp_mail_failed', $mail_failed, 20);
-
-        if (!$sent && $mail_error === '') {
-            $mail_error = 'wp_mail returned false.';
-        }
         $log_type = !empty($GLOBALS['cmn_school_mail_log_type']) ? $GLOBALS['cmn_school_mail_log_type'] : 'school_email';
+        $mail_result = $this->send_wp_mail_with_email_log(
+            $to,
+            $subject,
+            $html_body,
+            $default_headers,
+            $attachments,
+            [
+                'template_key' => sanitize_key((string) ($log_type !== '' ? $log_type : 'school_email')),
+                'recipient_role' => 'school',
+                'from_email' => $from_email,
+                'from_name' => $from_name,
+                'metadata' => [
+                    'log_type' => sanitize_key((string) $log_type),
+                    'has_alt_body' => $plain_body !== '' ? 1 : 0,
+                    'has_attachments' => !empty($attachments) ? 1 : 0,
+                ],
+            ]
+        );
+        remove_action('phpmailer_init', $phpmailer_alt_body, 20);
+        $sent = !empty($mail_result['success']);
+        $mail_error = sanitize_text_field((string) ($mail_result['error_message'] ?? ''));
         $this->log_email($to, $subject, ['type' => $log_type], $sent ? 'sent' : 'failed', $mail_error);
 
         if ($had_context) {
@@ -41763,11 +51936,19 @@ final class CMN_One_Plugin {
         $posts_table = $wpdb->posts;
         $partner_table = $this->get_school_partner_table();
         $invoices_table = $this->get_invoices_table();
+        $school_list_post_statuses = $this->get_school_list_post_statuses();
+        $status_placeholders = implode(',', array_fill(0, count($school_list_post_statuses), '%s'));
+        /*
+         * Eligibility contract: Partner Programme list
+         * - Entity source: cmn_school posts joined to cmn_school_partner state/savings rows.
+         * - Inclusion: all school CRM records with internal post status in portal-visible school statuses.
+         * - Optional filters: tier and free-text school search.
+         */
         $where = [
             "p.post_type = %s",
-            "p.post_status IN ('publish','private','draft','pending','future')",
+            "p.post_status IN ({$status_placeholders})",
         ];
-        $params = ['cmn_school'];
+        $params = array_merge(['cmn_school'], $school_list_post_statuses);
 
         if ($tier_filter !== '') {
             $where[] = "COALESCE(sp.tier, 'standard') = %s";
@@ -42103,6 +52284,7 @@ final class CMN_One_Plugin {
             return $after;
         }
         $after = is_array($after) ? $after : [];
+        $this->reconcile_single_school_list_visibility($school_id, false, $actor_user_id, 'partner_admin_credit_adjustment');
 
         $this->add_audit_log('school_partner_admin_credit_adjusted', 'school', (string) $school_id, [
             'reason' => $reason,
@@ -45618,6 +55800,396 @@ final class CMN_One_Plugin {
         return $booking_date < $today;
     }
 
+    private function get_candidate_feedback_module_fields() {
+        return [
+            'score_punctuality' => 'Punctuality',
+            'score_classroom_management' => 'Classroom Management',
+            'score_professionalism' => 'Professionalism',
+            'score_communication' => 'Communication',
+            'score_adaptability' => 'Adaptability',
+            'score_lesson_delivery' => 'Lesson Delivery / Engagement',
+            'score_safeguarding' => 'Safeguarding Awareness',
+        ];
+    }
+
+    private function is_school_candidate_feedback_eligible($booking_id) {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1 || get_post_type($booking_id) !== 'cmn_booking') {
+            return false;
+        }
+
+        $status = sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
+        if ($status === 'completed') {
+            return true;
+        }
+
+        global $wpdb;
+        $confirmation_table = self::get_booking_completion_confirmations_table_name();
+        if (!self::table_exists($confirmation_table) || !self::table_has_column($confirmation_table, 'booking_id')) {
+            return false;
+        }
+
+        $confirmed_count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(1)
+             FROM {$confirmation_table}
+             WHERE booking_id = %d
+               AND status IN ('confirmed','auto_confirmed')",
+            $booking_id
+        ));
+        return $confirmed_count > 0;
+    }
+
+    private function get_candidate_feedback_row_by_booking($booking_id, $candidate_user_id = 0) {
+        global $wpdb;
+        $table = $this->get_candidate_feedback_table();
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1 || !self::table_exists($table)) {
+            return [];
+        }
+
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id > 0) {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$table}
+                 WHERE booking_id = %d
+                   AND candidate_user_id = %d
+                 LIMIT 1",
+                $booking_id,
+                $candidate_user_id
+            ), ARRAY_A);
+        } else {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$table}
+                 WHERE booking_id = %d
+                 LIMIT 1",
+                $booking_id
+            ), ARRAY_A);
+        }
+        return is_array($row) ? $row : [];
+    }
+
+    private function school_has_submitted_candidate_feedback($booking_id, $school_user_id = 0) {
+        $booking_id = (int) $booking_id;
+        $school_user_id = $school_user_id > 0 ? (int) $school_user_id : (int) get_current_user_id();
+        if ($booking_id < 1 || $school_user_id < 1) {
+            return false;
+        }
+        $row = $this->get_candidate_feedback_row_by_booking($booking_id);
+        if (!$row) {
+            return false;
+        }
+        return (int) ($row['school_user_id'] ?? 0) === $school_user_id;
+    }
+
+    private function format_candidate_feedback_row($row) {
+        $row = is_array($row) ? $row : [];
+        $module_fields = $this->get_candidate_feedback_module_fields();
+        $module_scores = [];
+        foreach ($module_fields as $field => $label) {
+            $module_scores[] = [
+                'field' => $field,
+                'label' => $label,
+                'score' => max(1, min(5, (int) ($row[$field] ?? 0))),
+            ];
+        }
+
+        return [
+            'id' => (int) ($row['id'] ?? 0),
+            'booking_id' => (int) ($row['booking_id'] ?? 0),
+            'school_user_id' => (int) ($row['school_user_id'] ?? 0),
+            'candidate_user_id' => (int) ($row['candidate_user_id'] ?? 0),
+            'average_rating' => round((float) ($row['average_rating'] ?? 0), 2),
+            'comments' => sanitize_textarea_field((string) ($row['comments'] ?? '')),
+            'created_at' => sanitize_text_field((string) ($row['created_at'] ?? '')),
+            'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
+            'module_scores' => $module_scores,
+        ];
+    }
+
+    private function upsert_candidate_rating_stats($candidate_user_id) {
+        global $wpdb;
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id < 1) {
+            return false;
+        }
+
+        $feedback_table = $this->get_candidate_feedback_table();
+        $stats_table = $this->get_candidate_rating_stats_table();
+        if (!self::table_exists($feedback_table) || !self::table_exists($stats_table)) {
+            return false;
+        }
+
+        $aggregate = $wpdb->get_row($wpdb->prepare(
+            "SELECT AVG(average_rating) AS avg_rating, COUNT(1) AS feedback_count
+             FROM {$feedback_table}
+             WHERE candidate_user_id = %d",
+            $candidate_user_id
+        ), ARRAY_A);
+
+        $avg_rating = round((float) ($aggregate['avg_rating'] ?? 0), 2);
+        $feedback_count = max(0, (int) ($aggregate['feedback_count'] ?? 0));
+        $wpdb->replace($stats_table, [
+            'candidate_user_id' => $candidate_user_id,
+            'avg_rating' => $avg_rating,
+            'feedback_count' => $feedback_count,
+            'updated_at' => current_time('mysql'),
+        ], ['%d', '%f', '%d', '%s']);
+
+        $candidate_id = (int) $this->get_candidate_id_for_user($candidate_user_id);
+        if ($candidate_id > 0) {
+            update_post_meta($candidate_id, 'cmn_candidate_avg_rating', $avg_rating);
+            update_post_meta($candidate_id, 'cmn_candidate_feedback_count', $feedback_count);
+        }
+        update_user_meta($candidate_user_id, 'cmn_candidate_avg_rating', $avg_rating);
+        update_user_meta($candidate_user_id, 'cmn_candidate_feedback_count', $feedback_count);
+        return true;
+    }
+
+    private function get_candidate_average_rating_payload($candidate_user_id) {
+        static $cache = [];
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id < 1) {
+            return [
+                'avg_rating' => 0.0,
+                'avg_rating_raw' => 0.0,
+                'feedback_count' => 0,
+            ];
+        }
+        if (isset($cache[$candidate_user_id])) {
+            return $cache[$candidate_user_id];
+        }
+
+        global $wpdb;
+        $avg_rating = 0.0;
+        $feedback_count = 0;
+        $stats_table = $this->get_candidate_rating_stats_table();
+        if (self::table_exists($stats_table)) {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT avg_rating, feedback_count
+                 FROM {$stats_table}
+                 WHERE candidate_user_id = %d
+                 LIMIT 1",
+                $candidate_user_id
+            ), ARRAY_A);
+            if (is_array($row)) {
+                $avg_rating = (float) ($row['avg_rating'] ?? 0);
+                $feedback_count = max(0, (int) ($row['feedback_count'] ?? 0));
+            }
+        }
+
+        if ($feedback_count < 1) {
+            $feedback_table = $this->get_candidate_feedback_table();
+            if (self::table_exists($feedback_table)) {
+                $aggregate = $wpdb->get_row($wpdb->prepare(
+                    "SELECT AVG(average_rating) AS avg_rating, COUNT(1) AS feedback_count
+                     FROM {$feedback_table}
+                     WHERE candidate_user_id = %d",
+                    $candidate_user_id
+                ), ARRAY_A);
+                if (is_array($aggregate)) {
+                    $avg_rating = (float) ($aggregate['avg_rating'] ?? 0);
+                    $feedback_count = max(0, (int) ($aggregate['feedback_count'] ?? 0));
+                }
+            }
+        }
+
+        if ($avg_rating < 0) {
+            $avg_rating = 0.0;
+        } elseif ($avg_rating > 5) {
+            $avg_rating = 5.0;
+        }
+
+        $cache[$candidate_user_id] = [
+            'avg_rating' => round($avg_rating, 1),
+            'avg_rating_raw' => round($avg_rating, 2),
+            'feedback_count' => $feedback_count,
+        ];
+        return $cache[$candidate_user_id];
+    }
+
+    public function cmn_get_candidate_average_rating($candidate_user_id) {
+        return $this->get_candidate_average_rating_payload((int) $candidate_user_id);
+    }
+
+    private function get_candidate_feedback_entries_for_candidate_user($candidate_user_id, $limit = 100) {
+        global $wpdb;
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id < 1) {
+            return [];
+        }
+        $table = $this->get_candidate_feedback_table();
+        if (!self::table_exists($table)) {
+            return [];
+        }
+        $limit = max(1, min(500, (int) $limit));
+        return (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE candidate_user_id = %d
+             ORDER BY created_at DESC, id DESC
+             LIMIT %d",
+            $candidate_user_id,
+            $limit
+        ), ARRAY_A);
+    }
+
+    private function get_candidate_feedback_breakdown_for_candidate_user($candidate_user_id) {
+        global $wpdb;
+        $candidate_user_id = (int) $candidate_user_id;
+        $module_fields = $this->get_candidate_feedback_module_fields();
+        $empty = [];
+        foreach ($module_fields as $field => $label) {
+            $empty[] = [
+                'field' => $field,
+                'label' => $label,
+                'average' => 0.0,
+            ];
+        }
+        if ($candidate_user_id < 1) {
+            return $empty;
+        }
+
+        $table = $this->get_candidate_feedback_table();
+        if (!self::table_exists($table)) {
+            return $empty;
+        }
+
+        $select_parts = [];
+        foreach ($module_fields as $field => $label) {
+            $select_parts[] = "AVG({$field}) AS {$field}";
+        }
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT " . implode(', ', $select_parts) . "
+             FROM {$table}
+             WHERE candidate_user_id = %d",
+            $candidate_user_id
+        ), ARRAY_A);
+        if (!is_array($row)) {
+            return $empty;
+        }
+
+        $out = [];
+        foreach ($module_fields as $field => $label) {
+            $out[] = [
+                'field' => $field,
+                'label' => $label,
+                'average' => round((float) ($row[$field] ?? 0), 1),
+            ];
+        }
+        return $out;
+    }
+
+    private function get_school_user_label_for_feedback($school_user_id) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1) {
+            return 'School';
+        }
+        $school_id = (int) $this->resolve_school_id_for_user($school_user_id);
+        if ($school_id > 0) {
+            $school_title = trim((string) get_the_title($school_id));
+            if ($school_title !== '') {
+                return $school_title;
+            }
+        }
+        $user = get_user_by('id', $school_user_id);
+        if ($user instanceof WP_User) {
+            $display = trim((string) $user->display_name);
+            if ($display !== '') {
+                return $display;
+            }
+        }
+        return 'School';
+    }
+
+    private function get_school_candidate_feedback_payload($booking_id, $viewer_user_id) {
+        $booking_id = (int) $booking_id;
+        $viewer_user_id = (int) $viewer_user_id;
+        $candidate_user_id = (int) $this->get_booking_candidate_user_id($booking_id);
+        $candidate_id = (int) $this->get_candidate_id_for_user($candidate_user_id);
+        $school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
+        $existing = $this->get_candidate_feedback_row_by_booking($booking_id, $candidate_user_id);
+        $viewer_feedback = $existing ? $this->format_candidate_feedback_row($existing) : null;
+
+        return [
+            'booking_id' => $booking_id,
+            'booking_status' => (string) get_post_meta($booking_id, 'cmn_status', true),
+            'booking_date' => $this->get_booking_service_date($booking_id),
+            'eligible' => $this->is_school_candidate_feedback_eligible($booking_id),
+            'viewer_role' => 'school',
+            'requires_feedback' => !$viewer_feedback,
+            'viewer_feedback' => $viewer_feedback,
+            'counterparty_feedback' => null,
+            'feedback_rows' => [],
+            'form' => [
+                'star_fields' => array_keys($this->get_candidate_feedback_module_fields()),
+                'star_labels' => $this->get_candidate_feedback_module_fields(),
+                'show_would_rebook' => false,
+                'tags' => [],
+                'submit_label' => 'Submit feedback',
+            ],
+            'candidate_name' => $candidate_id > 0 ? (string) get_the_title($candidate_id) : 'Candidate',
+            'school_name' => $school_id > 0 ? (string) get_the_title($school_id) : 'School',
+        ];
+    }
+
+    private function maybe_request_school_candidate_feedback_prompt($booking_id, $force = false) {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1) {
+            return;
+        }
+        if (!$force && !$this->is_school_candidate_feedback_eligible($booking_id)) {
+            return;
+        }
+        if (get_post_meta($booking_id, 'cmn_candidate_feedback_requested_at', true)) {
+            return;
+        }
+
+        $candidate_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+        $school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
+        $candidate_name = $candidate_id > 0 ? (string) get_the_title($candidate_id) : 'Candidate';
+        $school_name = $school_id > 0 ? (string) get_the_title($school_id) : 'School';
+        $school_user_id = (int) $this->get_booking_school_user_id($booking_id);
+        $feedback_link = add_query_arg([
+            'school' => 'requests',
+            'cmn_booking_chat' => $booking_id,
+            'cmn_thread_type' => 'booking_details',
+            'cmn_feedback_prompt' => '1',
+        ], $this->get_portal_base_url());
+
+        if ($school_user_id > 0) {
+            $this->add_notification(
+                $school_user_id,
+                'candidate_feedback_request',
+                'Rate your booking - help maintain quality and unlock partner benefits.',
+                'Please rate candidate ' . $candidate_name . ' for this completed booking.',
+                $feedback_link
+            );
+
+            $school_user = get_user_by('id', $school_user_id);
+            $to_email = $school_user instanceof WP_User ? sanitize_email((string) $school_user->user_email) : '';
+            if ($to_email !== '' && is_email($to_email)) {
+                $booking_date = $this->get_booking_service_date($booking_id);
+                $booking_role = trim((string) get_post_meta($booking_id, 'cmn_role', true));
+                cmn_send_email('school_candidate_feedback_request', $to_email, [
+                    'school_name' => $school_name,
+                    'candidate_name' => $candidate_name,
+                    'booking_date' => $booking_date !== '' ? date_i18n('l j M Y', strtotime($booking_date)) : '',
+                    'booking_role' => $booking_role,
+                    'portal_link' => $feedback_link,
+                    'company_name' => 'CoverMeNow ONE',
+                ], [
+                    'module' => 'feedback',
+                    'recipient_role' => 'school',
+                    'related_entity_type' => 'booking',
+                    'related_entity_id' => $booking_id,
+                    'recipient_user_id' => $school_user_id,
+                ]);
+            }
+        }
+
+        update_post_meta($booking_id, 'cmn_candidate_feedback_requested_at', current_time('mysql'));
+    }
+
     private function get_booking_chat_link_for_role($booking_id, $role = 'candidate') {
         $booking_id = (int) $booking_id;
         if (!$booking_id) {
@@ -45643,6 +56215,7 @@ final class CMN_One_Plugin {
         if (!$booking_id) {
             return;
         }
+        $this->maybe_request_school_candidate_feedback_prompt($booking_id, $force);
         if (!$force && !$this->is_booking_feedback_eligible($booking_id)) {
             return;
         }
@@ -46514,7 +57087,297 @@ final class CMN_One_Plugin {
         foreach ($rows as &$row) {
             $this->maybe_mark_request_expired($row);
         }
-        return $rows;
+        unset($row);
+        return $this->apply_weighted_routing_to_candidate_requests($candidate_id, $rows, 15);
+    }
+
+    private function get_school_routing_meta_by_tier($tier) {
+        $tier = $this->normalize_school_partner_lifetime_tier((string) $tier);
+        if ($tier === 'elite') {
+            return ['tier' => 'elite', 'weight' => 400, 'level' => 'Premier Priority'];
+        }
+        if ($tier === 'gold') {
+            return ['tier' => 'gold', 'weight' => 300, 'level' => 'Top Priority'];
+        }
+        if ($tier === 'silver') {
+            return ['tier' => 'silver', 'weight' => 200, 'level' => 'Priority'];
+        }
+        if ($tier === 'bronze') {
+            return ['tier' => 'bronze', 'weight' => 100, 'level' => 'Standard'];
+        }
+        return ['tier' => 'standard', 'weight' => 0, 'level' => 'Standard'];
+    }
+
+    private function get_school_routing_meta_map(array $school_user_ids) {
+        global $wpdb;
+        $map = [];
+        $school_user_ids = array_values(array_unique(array_filter(array_map('intval', (array) $school_user_ids), static function ($id) {
+            return $id > 0;
+        })));
+        if (!$school_user_ids) {
+            return $map;
+        }
+
+        $default_meta = $this->get_school_routing_meta_by_tier('standard');
+        foreach ($school_user_ids as $school_user_id) {
+            $map[$school_user_id] = $default_meta;
+        }
+
+        $table = $this->get_school_partner_state_table();
+        if (!$this->table_exists($table)) {
+            return $map;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($school_user_ids), '%d'));
+        $sql = "SELECT school_user_id, current_tier FROM {$table} WHERE school_user_id IN ({$placeholders})";
+        $rows = (array) $wpdb->get_results($wpdb->prepare($sql, $school_user_ids), ARRAY_A);
+        foreach ($rows as $row) {
+            $school_user_id = (int) ($row['school_user_id'] ?? 0);
+            if ($school_user_id < 1) {
+                continue;
+            }
+            $map[$school_user_id] = $this->get_school_routing_meta_by_tier((string) ($row['current_tier'] ?? 'standard'));
+        }
+
+        return $map;
+    }
+
+    public function get_school_routing_weight($school_user_id) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1) {
+            return 0;
+        }
+        $meta_map = $this->get_school_routing_meta_map([$school_user_id]);
+        $meta = (array) ($meta_map[$school_user_id] ?? $this->get_school_routing_meta_by_tier('standard'));
+        return max(0, (int) ($meta['weight'] ?? 0));
+    }
+
+    private function is_candidate_request_active_for_weighted_routing($status) {
+        $status = sanitize_key((string) $status);
+        if ($status === '') {
+            $status = 'requested';
+        }
+        return !in_array($status, ['accepted', 'declined', 'expired', 'cancelled', 'closed', 'confirmed'], true);
+    }
+
+    private function log_weighted_routing_applied_once($candidate_user_id, $window_minutes, $items_count, $top_school_user_id, $top_weight) {
+        $candidate_user_id = (int) $candidate_user_id;
+        $window_minutes = max(1, (int) $window_minutes);
+        $items_count = max(0, (int) $items_count);
+        $top_school_user_id = max(0, (int) $top_school_user_id);
+        $top_weight = max(0, (int) $top_weight);
+        if ($candidate_user_id < 1 || $items_count < 2 || !function_exists('cmn_audit_log_event')) {
+            return;
+        }
+
+        $window_seconds = $window_minutes * MINUTE_IN_SECONDS;
+        $bucket = (int) floor(time() / max(1, $window_seconds));
+        $transient_key = 'cmn_weighted_routing_' . $candidate_user_id . '_' . $bucket;
+        if (get_transient($transient_key)) {
+            return;
+        }
+
+        cmn_audit_log_event([
+            'module' => 'school_partner',
+            'entity_type' => 'candidate',
+            'entity_id' => $candidate_user_id,
+            'event_type' => 'weighted_routing_applied',
+            'metadata' => [
+                'window_minutes' => $window_minutes,
+                'items_count' => $items_count,
+                'top_school_user_id' => $top_school_user_id,
+                'top_weight' => $top_weight,
+            ],
+        ]);
+
+        set_transient($transient_key, 1, $window_seconds);
+    }
+
+    /*
+     * Acceptance checks:
+     * 1) Two schools targeting the same candidate within 15 minutes are ordered by routing_weight DESC.
+     * 2) Same-tier competing requests remain newest-first.
+     * 3) If there is no competing window, chronological ordering is unchanged.
+     * 4) Candidate can still accept any request (ordering only, no auto-assignment).
+     * 5) Audit writes only when weighted ordering actually changes the default order.
+     */
+    private function apply_weighted_routing_to_candidate_requests($candidate_id, array $rows, $window_minutes = 15) {
+        $candidate_id = (int) $candidate_id;
+        $window_minutes = max(1, (int) $window_minutes);
+        if ($candidate_id < 1 || empty($rows)) {
+            return $rows;
+        }
+
+        $school_user_ids = [];
+        foreach ($rows as $index => $row) {
+            $row = is_array($row) ? $row : [];
+            $school_user_id = max(0, (int) ($row['school_user_id'] ?? 0));
+            $school_id = max(0, (int) ($row['school_id'] ?? 0));
+            if ($school_user_id < 1) {
+                if ($school_id < 1 && !empty($row['school_email_domain'])) {
+                    $school_id = (int) $this->get_school_post_id_by_domain((string) $row['school_email_domain']);
+                }
+                if ($school_id > 0) {
+                    $school_user_id = max(0, (int) $this->get_school_user_id_for_request($row, $school_id));
+                }
+            }
+            $rows[$index]['school_user_id'] = $school_user_id;
+            if ($school_user_id > 0) {
+                $school_user_ids[] = $school_user_id;
+            }
+        }
+
+        $routing_meta_map = $this->get_school_routing_meta_map($school_user_ids);
+        $default_meta = $this->get_school_routing_meta_by_tier('standard');
+
+        foreach ($rows as $index => $row) {
+            $row = is_array($row) ? $row : [];
+            $school_user_id = max(0, (int) ($row['school_user_id'] ?? 0));
+            $routing_meta = (array) ($routing_meta_map[$school_user_id] ?? $default_meta);
+            $requested_at_raw = (string) ($row['requested_at'] ?? '');
+            if ($requested_at_raw === '') {
+                $requested_at_raw = (string) ($row['updated_at'] ?? '');
+            }
+            $requested_ts = $requested_at_raw !== '' ? (int) strtotime($requested_at_raw) : 0;
+            $rows[$index]['routing_weight'] = max(0, (int) ($routing_meta['weight'] ?? 0));
+            $rows[$index]['routing_level'] = sanitize_text_field((string) ($routing_meta['level'] ?? 'Standard'));
+            $rows[$index]['routing_tier'] = sanitize_key((string) ($routing_meta['tier'] ?? 'standard'));
+            $rows[$index]['created_at'] = $requested_at_raw;
+            $rows[$index]['routing_created_at'] = $requested_at_raw;
+            $rows[$index]['_routing_ts'] = $requested_ts;
+            $rows[$index]['_routing_active'] = $this->is_candidate_request_active_for_weighted_routing((string) ($row['status'] ?? 'requested'));
+        }
+
+        usort($rows, static function ($a, $b) {
+            $ts_a = (int) ($a['_routing_ts'] ?? 0);
+            $ts_b = (int) ($b['_routing_ts'] ?? 0);
+            if ($ts_a !== $ts_b) {
+                return ($ts_a > $ts_b) ? -1 : 1;
+            }
+            $id_a = max(0, (int) ($a['id'] ?? 0));
+            $id_b = max(0, (int) ($b['id'] ?? 0));
+            if ($id_a === $id_b) {
+                return 0;
+            }
+            return ($id_a > $id_b) ? -1 : 1;
+        });
+
+        $weighted_rows = $rows;
+        $window_seconds = $window_minutes * MINUTE_IN_SECONDS;
+        $active_indexes = [];
+        foreach ($weighted_rows as $idx => $row) {
+            if (!empty($row['_routing_active']) && (int) ($row['_routing_ts'] ?? 0) > 0) {
+                $active_indexes[] = (int) $idx;
+            }
+        }
+
+        $reordered = false;
+        $competing_items_count = 0;
+        if (count($active_indexes) >= 2) {
+            $clusters = [];
+            $current_cluster = [(int) $active_indexes[0]];
+            for ($i = 1, $max = count($active_indexes); $i < $max; $i++) {
+                $current_index = (int) $active_indexes[$i];
+                $previous_index = (int) $active_indexes[$i - 1];
+                $current_ts = (int) ($weighted_rows[$current_index]['_routing_ts'] ?? 0);
+                $previous_ts = (int) ($weighted_rows[$previous_index]['_routing_ts'] ?? 0);
+                if ($previous_ts > 0 && $current_ts > 0 && ($previous_ts - $current_ts) <= $window_seconds) {
+                    $current_cluster[] = $current_index;
+                } else {
+                    $clusters[] = $current_cluster;
+                    $current_cluster = [$current_index];
+                }
+            }
+            if ($current_cluster) {
+                $clusters[] = $current_cluster;
+            }
+
+            foreach ($clusters as $cluster) {
+                if (count($cluster) < 2) {
+                    continue;
+                }
+                $school_ids_in_cluster = [];
+                foreach ($cluster as $cluster_index) {
+                    $sid = max(0, (int) ($weighted_rows[$cluster_index]['school_user_id'] ?? 0));
+                    if ($sid > 0) {
+                        $school_ids_in_cluster[$sid] = true;
+                    }
+                }
+                if (count($school_ids_in_cluster) < 2) {
+                    continue;
+                }
+
+                $before_ids = [];
+                $cluster_rows = [];
+                foreach ($cluster as $cluster_index) {
+                    $before_ids[] = max(0, (int) ($weighted_rows[$cluster_index]['id'] ?? 0));
+                    $cluster_rows[] = $weighted_rows[$cluster_index];
+                }
+
+                usort($cluster_rows, static function ($a, $b) {
+                    $weight_a = max(0, (int) ($a['routing_weight'] ?? 0));
+                    $weight_b = max(0, (int) ($b['routing_weight'] ?? 0));
+                    if ($weight_a !== $weight_b) {
+                        return ($weight_a > $weight_b) ? -1 : 1;
+                    }
+                    $ts_a = (int) ($a['_routing_ts'] ?? 0);
+                    $ts_b = (int) ($b['_routing_ts'] ?? 0);
+                    if ($ts_a !== $ts_b) {
+                        return ($ts_a > $ts_b) ? -1 : 1;
+                    }
+                    $id_a = max(0, (int) ($a['id'] ?? 0));
+                    $id_b = max(0, (int) ($b['id'] ?? 0));
+                    if ($id_a === $id_b) {
+                        return 0;
+                    }
+                    return ($id_a > $id_b) ? -1 : 1;
+                });
+
+                $after_ids = array_map(static function ($row) {
+                    return max(0, (int) ($row['id'] ?? 0));
+                }, $cluster_rows);
+                if ($before_ids !== $after_ids) {
+                    $reordered = true;
+                }
+                $competing_items_count += count($cluster_rows);
+
+                foreach ($cluster as $position => $cluster_index) {
+                    if (!isset($cluster_rows[$position])) {
+                        continue;
+                    }
+                    $weighted_rows[$cluster_index] = $cluster_rows[$position];
+                    $weighted_rows[$cluster_index]['_routing_competing'] = 1;
+                }
+            }
+        }
+
+        if ($reordered) {
+            $top_school_user_id = 0;
+            $top_weight = 0;
+            foreach ($weighted_rows as $row) {
+                if (empty($row['_routing_competing'])) {
+                    continue;
+                }
+                $top_school_user_id = max(0, (int) ($row['school_user_id'] ?? 0));
+                $top_weight = max(0, (int) ($row['routing_weight'] ?? 0));
+                break;
+            }
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $this->log_weighted_routing_applied_once(
+                $candidate_user_id,
+                $window_minutes,
+                max(2, $competing_items_count),
+                $top_school_user_id,
+                $top_weight
+            );
+        }
+
+        foreach ($weighted_rows as &$row) {
+            unset($row['_routing_ts'], $row['_routing_active'], $row['_routing_competing']);
+        }
+        unset($row);
+
+        return $weighted_rows;
     }
 
     private function get_candidate_completed_booking_count($candidate_id) {
@@ -49364,7 +60227,7 @@ final class CMN_One_Plugin {
                         </div>
                     </div>
 
-                    <form class="cmn-form cmn-register-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <form class="cmn-form cmn-register-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" autocomplete="on">
                         <?php wp_nonce_field('cmn_register_school', 'cmn_register_school_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_register_school">
                         <?php if ($is_token_mode) : ?>
@@ -49372,23 +60235,23 @@ final class CMN_One_Plugin {
                         <?php endif; ?>
                         <div class="cmn-required-note">* Required</div>
                         <div class="cmn-form-grid">
-                            <label>School Name *<input type="text" name="cmn_school_name" placeholder="School Name" required value="<?php echo esc_attr($prefill['school_name']); ?>"></label>
-                            <label>Location *<input type="text" name="cmn_location" placeholder="Town / City" required value="<?php echo esc_attr($prefill['location']); ?>"></label>
-                            <label>Primary Contact *<input type="text" name="cmn_contact1" placeholder="Full Name" required value="<?php echo esc_attr($prefill['contact_name']); ?>"></label>
-                            <label>Role / Position *<input type="text" name="cmn_contact_role" placeholder="Headteacher / HR / Business Manager" required value="<?php echo esc_attr($prefill['contact_role']); ?>"></label>
-                            <label>Email *<input type="email" name="cmn_email" placeholder="Email" required value="<?php echo esc_attr($prefill['email']); ?>"<?php echo $is_token_mode ? ' readonly' : ''; ?>></label>
-                            <label>Phone *<input type="tel" name="cmn_phone" placeholder="Phone" required value="<?php echo esc_attr($prefill['phone']); ?>"></label>
-                            <label>Website<input type="url" name="cmn_website" placeholder="Website" value="<?php echo esc_attr($prefill['website']); ?>"></label>
+                            <label>School Name *<input type="text" name="cmn_school_name" placeholder="School Name" required autocomplete="organization" value="<?php echo esc_attr($prefill['school_name']); ?>"></label>
+                            <label>Location *<input type="text" name="cmn_location" placeholder="Town / City" required autocomplete="address-level2" value="<?php echo esc_attr($prefill['location']); ?>"></label>
+                            <label>Primary Contact *<input type="text" name="cmn_contact1" placeholder="Full Name" required autocomplete="name" value="<?php echo esc_attr($prefill['contact_name']); ?>"></label>
+                            <label>Role / Position *<input type="text" name="cmn_contact_role" placeholder="Headteacher / HR / Business Manager" required autocomplete="organization-title" value="<?php echo esc_attr($prefill['contact_role']); ?>"></label>
+                            <label>Email *<input type="email" name="cmn_email" placeholder="School email (must be school domain)" required autocomplete="email" value="<?php echo esc_attr($prefill['email']); ?>"<?php echo $is_token_mode ? ' readonly' : ''; ?>></label>
+                            <label>Phone *<input type="tel" name="cmn_phone" placeholder="Phone" required autocomplete="tel" value="<?php echo esc_attr($prefill['phone']); ?>"></label>
+                            <label>Website<input type="url" name="cmn_website" placeholder="Website" autocomplete="url" value="<?php echo esc_attr($prefill['website']); ?>"></label>
                         </div>
 
                         <div class="cmn-form-group">
                             <span class="cmn-form-label">School Address</span>
                             <div class="cmn-form-grid">
-                                <label>Address Line 1 *<input type="text" name="cmn_address_line1" placeholder="Address Line 1" required value="<?php echo esc_attr($prefill['address1']); ?>"></label>
-                                <label>Address Line 2<input type="text" name="cmn_address_line2" placeholder="Address Line 2" value="<?php echo esc_attr($prefill['address2']); ?>"></label>
-                                <label>Town / City *<input type="text" name="cmn_town" placeholder="Town / City" required value="<?php echo esc_attr($prefill['town']); ?>"></label>
-                                <label>County *<input type="text" name="cmn_county" placeholder="County" required value="<?php echo esc_attr($prefill['county']); ?>"></label>
-                                <label>Post Code *<input type="text" name="cmn_postcode" placeholder="Post Code" required value="<?php echo esc_attr($prefill['postcode']); ?>"></label>
+                                <label>Address Line 1 *<input type="text" name="cmn_address_line1" placeholder="Address Line 1" required autocomplete="address-line1" value="<?php echo esc_attr($prefill['address1']); ?>"></label>
+                                <label>Address Line 2<input type="text" name="cmn_address_line2" placeholder="Address Line 2" autocomplete="address-line2" value="<?php echo esc_attr($prefill['address2']); ?>"></label>
+                                <label>Town / City *<input type="text" name="cmn_town" placeholder="Town / City" required autocomplete="address-level2" value="<?php echo esc_attr($prefill['town']); ?>"></label>
+                                <label>County *<input type="text" name="cmn_county" placeholder="County" required autocomplete="address-level1" value="<?php echo esc_attr($prefill['county']); ?>"></label>
+                                <label>Post Code *<input type="text" name="cmn_postcode" placeholder="Post Code" required autocomplete="postal-code" value="<?php echo esc_attr($prefill['postcode']); ?>"></label>
                             </div>
                         </div>
 
@@ -49462,6 +60325,60 @@ final class CMN_One_Plugin {
         return ob_get_clean();
     }
 
+    public function render_request_received_shortcode() {
+        $portal_home = home_url('/covermenow-one');
+        $home_url = home_url('/');
+        $contact_url = $this->get_public_contact_page_url();
+        $rid_raw = isset($_GET['rid']) ? sanitize_text_field(wp_unslash((string) $_GET['rid'])) : '';
+        $rid = strtoupper(preg_replace('/[^A-Z0-9\-]/', '', $rid_raw));
+        if ($rid !== '' && !preg_match('/^CMN-SCH-[A-Z0-9]{6}$/', $rid)) {
+            $rid = '';
+        }
+        $is_duplicate = isset($_GET['duplicate']) && (string) $_GET['duplicate'] === '1';
+
+        ob_start();
+        ?>
+        <section class="cmn-portal cmn-portal-bg cmn-request-received-page">
+            <a class="cmn-back-link" href="<?php echo esc_url($portal_home); ?>">Back to portal</a>
+            <header class="cmn-portal-header">
+                <h2>Request received</h2>
+                <p>Thanks for registering your school with CoverMeNow ONE.</p>
+            </header>
+            <div class="cmn-register-shell">
+                <div class="cmn-register-success cmn-request-received-card">
+                    <?php if ($rid !== '') : ?>
+                        <p class="cmn-request-received-ref"><strong>Reference:</strong> <?php echo esc_html($rid); ?></p>
+                    <?php endif; ?>
+                    <p>We&rsquo;ll verify your school and confirm access shortly.</p>
+                    <p>Verification SLA: within 24 working hours.</p>
+                    <?php if ($is_duplicate) : ?>
+                        <p>We already had this request in progress, so we kept your existing reference.</p>
+                    <?php endif; ?>
+                    <div class="cmn-request-stepper" aria-label="What happens next">
+                        <div class="cmn-request-step is-active">
+                            <span class="cmn-request-step-dot" aria-hidden="true"></span>
+                            <span class="cmn-request-step-label">Request received</span>
+                        </div>
+                        <div class="cmn-request-step">
+                            <span class="cmn-request-step-dot" aria-hidden="true"></span>
+                            <span class="cmn-request-step-label">Verification in progress</span>
+                        </div>
+                        <div class="cmn-request-step">
+                            <span class="cmn-request-step-dot" aria-hidden="true"></span>
+                            <span class="cmn-request-step-label">Access granted</span>
+                        </div>
+                    </div>
+                    <div class="cmn-actions-grid cmn-request-received-actions">
+                        <a class="cmn-primary" href="<?php echo esc_url($home_url); ?>">Back to Home</a>
+                        <a class="cmn-ghost" href="<?php echo esc_url($contact_url); ?>">Contact Support</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
     public function render_register_candidate_shortcode() {
         ob_start();
         $submitted = isset($_GET['cmn_submitted']) && $_GET['cmn_submitted'] === '1';
@@ -49493,7 +60410,7 @@ final class CMN_One_Plugin {
                         <div class="cmn-benefit-grid">
                             <article class="cmn-benefit-card">
                                 <h5>Work only when you choose</h5>
-                                <p class="cmn-benefit-line"><span class="cmn-benefit-check">OK</span>Confirm your availability the night before</p>
+                                <p class="cmn-benefit-line"><span class="cmn-benefit-check" aria-hidden="true">&#10003;</span>Confirm your availability the night before</p>
                                 <div class="cmn-benefit-figure">
                                     <img src="<?php echo esc_url(plugin_dir_url(__FILE__) . 'assets/use1.png'); ?>" alt="" />
                                 </div>
@@ -49501,7 +60418,7 @@ final class CMN_One_Plugin {
                             </article>
                             <article class="cmn-benefit-card">
                                 <h5>Be visible to schools before the day starts</h5>
-                                <p class="cmn-benefit-line"><span class="cmn-benefit-check">OK</span>Get noticed first thing in the morning</p>
+                                <p class="cmn-benefit-line"><span class="cmn-benefit-check" aria-hidden="true">&#10003;</span>Get noticed first thing in the morning</p>
                                 <div class="cmn-benefit-figure">
                                     <img src="<?php echo esc_url(plugin_dir_url(__FILE__) . 'assets/use2.png'); ?>" alt="" />
                                 </div>
@@ -49509,7 +60426,7 @@ final class CMN_One_Plugin {
                             </article>
                             <article class="cmn-benefit-card">
                                 <h5>No job boards, no applications, no chasing</h5>
-                                <p class="cmn-benefit-line"><span class="cmn-benefit-check">OK</span>Mark availability and get approached directly</p>
+                                <p class="cmn-benefit-line"><span class="cmn-benefit-check" aria-hidden="true">&#10003;</span>Mark availability and get approached directly</p>
                                 <div class="cmn-benefit-figure">
                                     <img src="<?php echo esc_url(plugin_dir_url(__FILE__) . 'assets/use3.png'); ?>" alt="" />
                                 </div>
@@ -49517,7 +60434,7 @@ final class CMN_One_Plugin {
                             </article>
                             <article class="cmn-benefit-card">
                                 <h5>Free online courses and career growth</h5>
-                                <p class="cmn-benefit-line"><span class="cmn-benefit-check">OK</span>Upgrade your skills and boost your visibility</p>
+                                <p class="cmn-benefit-line"><span class="cmn-benefit-check" aria-hidden="true">&#10003;</span>Upgrade your skills and boost your visibility</p>
                                 <div class="cmn-benefit-figure">
                                     <img src="<?php echo esc_url(plugin_dir_url(__FILE__) . 'assets/courses.png'); ?>" alt="" />
                                 </div>
@@ -49525,35 +60442,35 @@ final class CMN_One_Plugin {
                             </article>
                         </div>
                     </div>
-                    <form class="cmn-form cmn-register-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data">
+                    <form class="cmn-form cmn-register-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" autocomplete="on">
                         <?php wp_nonce_field('cmn_register_candidate', 'cmn_register_candidate_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_register_candidate">
                         <div class="cmn-required-note">* Required</div>
                         <div class="cmn-form-grid">
-                            <label>Full Name *<input type="text" name="cmn_candidate_name" placeholder="Full Name" required></label>
-                            <label>Email *<input type="email" name="cmn_email" placeholder="Email" required></label>
-                            <label>Phone *<input type="tel" name="cmn_phone" placeholder="Phone" required></label>
-                            <label>Location *<input type="text" name="cmn_location" placeholder="Town / City" required></label>
+                            <label>Full Name *<input type="text" name="cmn_candidate_name" placeholder="Full Name" autocomplete="name" required></label>
+                            <label>Email *<input type="email" name="cmn_email" placeholder="Email" autocomplete="email" required></label>
+                            <label>Phone *<input type="tel" name="cmn_phone" placeholder="Phone" autocomplete="tel" required></label>
+                            <label>Location *<input type="text" name="cmn_location" placeholder="Town / City" autocomplete="address-level2" required></label>
                         </div>
                         <div class="cmn-form-group">
                             <span class="cmn-form-label">Address</span>
                             <div class="cmn-form-grid">
-                                <label>House Name / Number *<input type="text" name="cmn_house_number" placeholder="House Name / Number" required></label>
-                                <label>Address Line 1 *<input type="text" name="cmn_address_line1" placeholder="Address Line 1" required></label>
-                                <label>Address Line 2<input type="text" name="cmn_address_line2" placeholder="Address Line 2"></label>
-                                <label>Address Line 3<input type="text" name="cmn_address_line3" placeholder="Address Line 3"></label>
-                                <label>Town / City *<input type="text" name="cmn_town" placeholder="Town / City" required></label>
-                                <label>County *<input type="text" name="cmn_county" placeholder="County" required></label>
-                                <label>Post Code *<input type="text" name="cmn_postcode" placeholder="Post Code" required></label>
+                                <label>House Name / Number *<input type="text" name="cmn_house_number" placeholder="House Name / Number" autocomplete="address-line1" required></label>
+                                <label>Address Line 1 *<input type="text" name="cmn_address_line1" placeholder="Address Line 1" autocomplete="address-line1" required></label>
+                                <label>Address Line 2<input type="text" name="cmn_address_line2" placeholder="Address Line 2" autocomplete="address-line2"></label>
+                                <label>Address Line 3<input type="text" name="cmn_address_line3" placeholder="Address Line 3" autocomplete="address-line3"></label>
+                                <label>Town / City *<input type="text" name="cmn_town" placeholder="Town / City" autocomplete="address-level2" required></label>
+                                <label>County *<input type="text" name="cmn_county" placeholder="County" autocomplete="address-level1" required></label>
+                                <label>Post Code *<input type="text" name="cmn_postcode" placeholder="Post Code" autocomplete="postal-code" required></label>
                             </div>
                         </div>
                         <div class="cmn-form-group">
                             <span class="cmn-form-label">Uploads</span>
-                            <label>CV Upload *<input type="file" name="cmn_cv_file" required></label>
+                            <label>CV Upload *<input type="file" name="cmn_cv_file" accept=".pdf,.doc,.docx,.rtf,.txt,.odt,.jpg,.jpeg,.png,.webp" required></label>
                             <label>Identification Document (Passport / Driving Licence)
-                                <input type="file" name="cmn_id_file">
+                                <input type="file" name="cmn_id_file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx">
                             </label>
-                            <label class="cmn-dbs-upload">DBS Upload<input type="file" name="cmn_dbs_file"></label>
+                            <label class="cmn-dbs-upload">DBS Upload<input type="file" name="cmn_dbs_file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"></label>
                             <div class="cmn-radio-grid">
                                 <span class="cmn-radio-label">Is your DBS an enhanced DBS on the update service? <a class="cmn-link" href="https://www.gov.uk/dbs-update-service" target="_blank" rel="noopener">Click here</a> for more info.</span>
                                 <div class="cmn-inline-row">
@@ -49632,9 +60549,8 @@ final class CMN_One_Plugin {
     }
 
     public function render_school_landing_shortcode() {
-        $school_page = get_page_by_title('School Registration');
+        $school_url = add_query_arg(['view' => 'register-school'], $this->get_portal_base_url());
         $login_page = get_page_by_title('Login');
-        $school_url = $school_page ? get_permalink($school_page) : home_url('/school-registration');
         $login_url = $login_page ? get_permalink($login_page) : home_url('/login');
 
         ob_start();
@@ -49671,7 +60587,7 @@ final class CMN_One_Plugin {
                     <h3>Request access</h3>
                     <p>Approval required to keep safeguarding and control in place.</p>
                     <div class="cmn-actions-grid">
-                        <a class="cmn-ghost" href="<?php echo esc_url($school_url); ?>">Apply to Register (School)</a>
+                        <a class="cmn-ghost" href="<?php echo esc_url($school_url); ?>">Apply (School)</a>
                         <a class="cmn-ghost" href="<?php echo esc_url($login_url); ?>">Log In</a>
                     </div>
                 </div>
@@ -49682,9 +60598,8 @@ final class CMN_One_Plugin {
     }
 
     public function render_candidate_landing_shortcode() {
-        $candidate_page = get_page_by_title('Candidate Registration');
+        $candidate_url = add_query_arg(['view' => 'register-candidate'], $this->get_portal_base_url());
         $login_page = get_page_by_title('Login');
-        $candidate_url = $candidate_page ? get_permalink($candidate_page) : home_url('/candidate-registration');
         $login_url = $login_page ? get_permalink($login_page) : home_url('/login');
 
         ob_start();
@@ -49712,16 +60627,16 @@ final class CMN_One_Plugin {
                 <div class="cmn-panel-card">
                     <h3>How it works</h3>
                     <div class="cmn-actions-grid">
-                        <span>1. Apply to register.</span>
+                        <span>1. Register.</span>
                         <span>2. Complete vetting and DBS checks.</span>
                         <span>3. Mark availability to receive cover requests.</span>
                     </div>
                 </div>
                 <div class="cmn-panel-card">
-                    <h3>Apply to join</h3>
+                    <h3>Register to join</h3>
                     <p>Registration is reviewed-access is approved manually.</p>
                     <div class="cmn-actions-grid">
-                        <a class="cmn-ghost" href="<?php echo esc_url($candidate_url); ?>">Apply to Register (Candidate)</a>
+                        <a class="cmn-ghost" href="<?php echo esc_url($candidate_url); ?>">Register (Candidate)</a>
                         <a class="cmn-ghost" href="<?php echo esc_url($login_url); ?>">Log In</a>
                     </div>
                 </div>
@@ -49746,8 +60661,9 @@ final class CMN_One_Plugin {
                 $user_school_id = $preview_school_id;
             }
         }
-        $school_status = $user_school_id ? get_post_meta($user_school_id, 'cmn_status', true) : '';
-        if (!$is_preview && $school_status !== 'client') {
+        $school_status = $user_school_id ? (string) get_post_meta($user_school_id, 'cmn_status', true) : '';
+        $school_is_active_for_availability = $user_school_id > 0 && $this->is_school_active_for_availability($user_school_id);
+        if (!$is_preview && !$school_is_active_for_availability) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access pending</h3><p>Your school access will be enabled once your application is approved.</p></div></section>';
         }
         $school_location = $user_school_id ? get_post_meta($user_school_id, 'cmn_location', true) : '';
@@ -49761,6 +60677,11 @@ final class CMN_One_Plugin {
             $tab = 'partner_savings';
         }
         $availability_candidates = $this->get_school_dashboard_available_candidates($user_school_id ?: 0, 24);
+        $availability_debug_report = null;
+        if ($this->is_school_debug_enabled() && $this->is_admin_user(get_current_user_id()) && $user_school_id > 0) {
+            $availability_debug_report = $this->collect_school_availability_debug_report($user_school_id, $availability_candidates);
+            $this->log_school_debug('school_availability_debug_report', $availability_debug_report);
+        }
         $availability_label = 'today and tomorrow morning';
         $school_domain = $user_school_id ? get_post_meta($user_school_id, 'cmn_school_email_domain', true) : '';
         if (!$school_domain && $user_school_id) {
@@ -49795,6 +60716,8 @@ final class CMN_One_Plugin {
         $school_ready_responses = (!$is_preview && $this->is_school_user()) ? $this->get_school_ready_responses(get_current_user_id()) : [];
         $ready_response_notice = isset($_GET['cmn_ready_response_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_ready_response_msg'])) : '';
         $school_profile_notice = isset($_GET['cmn_school_profile_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_profile_msg'])) : '';
+        $priority_notice = isset($_GET['cmn_priority_notice']) ? sanitize_text_field(wp_unslash($_GET['cmn_priority_notice'])) : '';
+        $priority_notice_type = sanitize_key((string) ($_GET['cmn_priority_notice_type'] ?? ''));
         $can_request = !$is_preview && $user_school_id && $school_status === 'client';
         $nav_items = [
             [
@@ -49834,6 +60757,11 @@ final class CMN_One_Plugin {
                 'args' => ['school' => 'partner-programme', 'cmn_tab' => false],
             ],
             [
+                'key' => 'priority-allocation',
+                'label' => 'Priority Allocation',
+                'args' => ['school' => 'priority-allocation', 'cmn_tab' => false],
+            ],
+            [
                 'key' => 'team',
                 'label' => 'My Team',
                 'args' => ['school' => 'team', 'cmn_tab' => false],
@@ -49865,6 +60793,7 @@ final class CMN_One_Plugin {
             <div class="cmn-portal-topbar">
                 <div class="cmn-topbar-left"><?php echo $this->render_portal_branding(); ?></div>
                 <div class="cmn-topbar-right">
+                    <?php echo $this->render_topbar_livechat_button(); ?>
                     <?php echo $this->render_notifications_bell(get_current_user_id()); ?>
                     <span>Welcome, <?php echo esc_html(wp_get_current_user()->display_name); ?></span>
                     <a class="cmn-topbar-logout" href="<?php echo esc_url(wp_logout_url($portal_url)); ?>">Logout</a>
@@ -49908,6 +60837,12 @@ final class CMN_One_Plugin {
                             <h2>Candidates Available This and Next Morning</h2>
                             <p>Updated daily for <?php echo esc_html($availability_label); ?>.</p>
                         </header>
+                        <?php if (is_array($availability_debug_report)) : ?>
+                            <div class="cmn-dashboard-card">
+                                <h3>Debug: Availability Filters</h3>
+                                <pre style="max-height:280px;overflow:auto;background:rgba(8,11,17,0.76);border:1px solid rgba(255,255,255,0.12);padding:12px;border-radius:10px;"><?php echo esc_html(wp_json_encode($availability_debug_report, JSON_PRETTY_PRINT)); ?></pre>
+                            </div>
+                        <?php endif; ?>
                         <div class="cmn-available-list">
                             <?php
                             if ($availability_candidates) :
@@ -49920,6 +60855,8 @@ final class CMN_One_Plugin {
                                     $role_labels = $this->get_candidate_role_labels($candidate->ID);
                                     $role_label = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
                                     $location = get_post_meta($candidate->ID, 'cmn_location', true);
+                                    $candidate_card_user_id = (int) $this->get_candidate_user_id($candidate->ID);
+                                    $candidate_rating = $this->get_candidate_average_rating_payload($candidate_card_user_id);
                                     $name_parts = preg_split('/\\s+/', trim((string) $candidate->post_title));
                                     $first_name = $name_parts ? $name_parts[0] : $candidate->post_title;
                                     $profile_url = $this->get_school_candidate_profile_url($candidate->ID, get_current_user_id());
@@ -49934,6 +60871,10 @@ final class CMN_One_Plugin {
                                             <span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($item['availability_label'] ?? 'Available Morning')); ?></span>
                                         </div>
                                         <span class="cmn-muted"><?php echo esc_html($role_label . ($location ? ' - ' . $location : '')); ?></span>
+                                        <span class="cmn-muted">
+                                            Rating: <?php echo esc_html(number_format((float) ($candidate_rating['avg_rating'] ?? 0), 1)); ?>/5
+                                            (<?php echo esc_html((string) ((int) ($candidate_rating['feedback_count'] ?? 0))); ?> reviews)
+                                        </span>
                                         <?php if (!empty($profile_url)) : ?>
                                             <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url); ?>" target="_blank" rel="noopener noreferrer">View full profile</a>
                                         <?php endif; ?>
@@ -50050,6 +60991,12 @@ final class CMN_One_Plugin {
                             <h2>COVER ME NOW</h2>
                         </header>
                         <p>Candidates available for <?php echo esc_html($availability_label); ?>.</p>
+                        <?php if (is_array($availability_debug_report)) : ?>
+                            <div class="cmn-dashboard-card">
+                                <h3>Debug: Availability Filters</h3>
+                                <pre style="max-height:280px;overflow:auto;background:rgba(8,11,17,0.76);border:1px solid rgba(255,255,255,0.12);padding:12px;border-radius:10px;"><?php echo esc_html(wp_json_encode($availability_debug_report, JSON_PRETTY_PRINT)); ?></pre>
+                            </div>
+                        <?php endif; ?>
                         <div class="cmn-available-list">
                             <?php
                             if ($availability_candidates) :
@@ -50062,6 +61009,8 @@ final class CMN_One_Plugin {
                                     $role_labels = $this->get_candidate_role_labels($candidate->ID);
                                     $role_label = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
                                     $location = get_post_meta($candidate->ID, 'cmn_location', true);
+                                    $candidate_card_user_id = (int) $this->get_candidate_user_id($candidate->ID);
+                                    $candidate_rating = $this->get_candidate_average_rating_payload($candidate_card_user_id);
                                     $name_parts = preg_split('/\\s+/', trim((string) $candidate->post_title));
                                     $first_name = $name_parts ? $name_parts[0] : $candidate->post_title;
                                     $profile_url = $this->get_school_candidate_profile_url($candidate->ID, get_current_user_id());
@@ -50076,6 +61025,10 @@ final class CMN_One_Plugin {
                                             <span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($item['availability_label'] ?? 'Available Morning')); ?></span>
                                         </div>
                                         <span class="cmn-muted"><?php echo esc_html($role_label . ($location ? ' - ' . $location : '')); ?></span>
+                                        <span class="cmn-muted">
+                                            Rating: <?php echo esc_html(number_format((float) ($candidate_rating['avg_rating'] ?? 0), 1)); ?>/5
+                                            (<?php echo esc_html((string) ((int) ($candidate_rating['feedback_count'] ?? 0))); ?> reviews)
+                                        </span>
                                         <?php if (!empty($profile_url)) : ?>
                                             <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url); ?>" target="_blank" rel="noopener noreferrer">View full profile</a>
                                         <?php endif; ?>
@@ -50167,9 +61120,8 @@ final class CMN_One_Plugin {
                                         $charge_rate = isset($request['school_charge_rate']) ? (float) $request['school_charge_rate'] : 0.0;
                                         $request_status = strtolower((string) ($request['status'] ?? 'requested'));
                                         $request_booking_id = $this->get_booking_id_for_request((int) ($request['id'] ?? 0));
-                                        $is_completed_booking = $request_booking_id ? $this->is_booking_feedback_eligible($request_booking_id) : false;
-                                        $school_feedback_payload = $is_completed_booking ? $this->get_booking_feedback_payload($request_booking_id, get_current_user_id(), 'school') : null;
-                                        $school_feedback_submitted = !empty($school_feedback_payload['viewer_feedback']);
+                                        $is_completed_booking = $request_booking_id ? $this->is_school_candidate_feedback_eligible($request_booking_id) : false;
+                                        $school_feedback_submitted = $is_completed_booking ? $this->school_has_submitted_candidate_feedback($request_booking_id, get_current_user_id()) : false;
                                         ?>
                                         <div class="cmn-list-item">
                                             <strong><?php echo esc_html($candidate->post_title); ?></strong>
@@ -50256,43 +61208,49 @@ final class CMN_One_Plugin {
                                     <form class="cmn-booking-feedback-form" data-booking-feedback-form>
                                         <input type="hidden" name="booking_id" value="<?php echo esc_attr($school_chat_booking_id); ?>">
                                         <div class="cmn-feedback-question">
-                                            <label data-booking-feedback-label="stars_1">Punctuality</label>
-                                            <div class="cmn-star-picker" data-booking-feedback-stars="stars_1"></div>
-                                            <input type="hidden" name="stars_1" value="">
-                                            <span class="cmn-star-score" data-booking-feedback-score="stars_1">0/5</span>
+                                            <label data-booking-feedback-label="score_punctuality">Punctuality</label>
+                                            <div class="cmn-star-picker" data-booking-feedback-stars="score_punctuality"></div>
+                                            <input type="hidden" name="score_punctuality" value="">
+                                            <span class="cmn-star-score" data-booking-feedback-score="score_punctuality">0/5</span>
                                         </div>
                                         <div class="cmn-feedback-question">
-                                            <label data-booking-feedback-label="stars_2">Professionalism</label>
-                                            <div class="cmn-star-picker" data-booking-feedback-stars="stars_2"></div>
-                                            <input type="hidden" name="stars_2" value="">
-                                            <span class="cmn-star-score" data-booking-feedback-score="stars_2">0/5</span>
+                                            <label data-booking-feedback-label="score_classroom_management">Classroom Management</label>
+                                            <div class="cmn-star-picker" data-booking-feedback-stars="score_classroom_management"></div>
+                                            <input type="hidden" name="score_classroom_management" value="">
+                                            <span class="cmn-star-score" data-booking-feedback-score="score_classroom_management">0/5</span>
                                         </div>
                                         <div class="cmn-feedback-question">
-                                            <label data-booking-feedback-label="stars_3">Classroom management</label>
-                                            <div class="cmn-star-picker" data-booking-feedback-stars="stars_3"></div>
-                                            <input type="hidden" name="stars_3" value="">
-                                            <span class="cmn-star-score" data-booking-feedback-score="stars_3">0/5</span>
+                                            <label data-booking-feedback-label="score_professionalism">Professionalism</label>
+                                            <div class="cmn-star-picker" data-booking-feedback-stars="score_professionalism"></div>
+                                            <input type="hidden" name="score_professionalism" value="">
+                                            <span class="cmn-star-score" data-booking-feedback-score="score_professionalism">0/5</span>
                                         </div>
                                         <div class="cmn-feedback-question">
-                                            <label data-booking-feedback-label="stars_overall">Overall</label>
-                                            <div class="cmn-star-picker" data-booking-feedback-stars="stars_overall"></div>
-                                            <input type="hidden" name="stars_overall" value="">
-                                            <span class="cmn-star-score" data-booking-feedback-score="stars_overall">0/5</span>
-                                        </div>
-                                        <div class="cmn-feedback-question" data-booking-feedback-would-rebook hidden>
-                                            <label>Would you work here again?</label>
-                                            <div class="cmn-feedback-toggle" data-booking-feedback-toggle>
-                                                <button type="button" class="cmn-ghost" data-booking-feedback-toggle-value="1">Yes</button>
-                                                <button type="button" class="cmn-ghost" data-booking-feedback-toggle-value="0">No</button>
-                                            </div>
-                                            <input type="hidden" name="would_rebook" value="">
+                                            <label data-booking-feedback-label="score_communication">Communication</label>
+                                            <div class="cmn-star-picker" data-booking-feedback-stars="score_communication"></div>
+                                            <input type="hidden" name="score_communication" value="">
+                                            <span class="cmn-star-score" data-booking-feedback-score="score_communication">0/5</span>
                                         </div>
                                         <div class="cmn-feedback-question">
-                                            <label>Tags</label>
-                                            <div class="cmn-feedback-tags" data-booking-feedback-tags></div>
+                                            <label data-booking-feedback-label="score_adaptability">Adaptability</label>
+                                            <div class="cmn-star-picker" data-booking-feedback-stars="score_adaptability"></div>
+                                            <input type="hidden" name="score_adaptability" value="">
+                                            <span class="cmn-star-score" data-booking-feedback-score="score_adaptability">0/5</span>
                                         </div>
                                         <div class="cmn-feedback-question">
-                                            <label>Optional comments</label>
+                                            <label data-booking-feedback-label="score_lesson_delivery">Lesson Delivery / Engagement</label>
+                                            <div class="cmn-star-picker" data-booking-feedback-stars="score_lesson_delivery"></div>
+                                            <input type="hidden" name="score_lesson_delivery" value="">
+                                            <span class="cmn-star-score" data-booking-feedback-score="score_lesson_delivery">0/5</span>
+                                        </div>
+                                        <div class="cmn-feedback-question">
+                                            <label data-booking-feedback-label="score_safeguarding">Safeguarding Awareness</label>
+                                            <div class="cmn-star-picker" data-booking-feedback-stars="score_safeguarding"></div>
+                                            <input type="hidden" name="score_safeguarding" value="">
+                                            <span class="cmn-star-score" data-booking-feedback-score="score_safeguarding">0/5</span>
+                                        </div>
+                                        <div class="cmn-feedback-question">
+                                            <label>Additional comments (optional)</label>
                                             <textarea name="comment" rows="3"></textarea>
                                         </div>
                                         <div class="cmn-settings-actions">
@@ -50723,6 +61681,8 @@ final class CMN_One_Plugin {
                         }
                         $partner_tier = (string) ($partner_stats['tier'] ?? 'standard');
                         $partner_tier_label = $this->get_school_partner_tier_label($partner_tier);
+                        $partner_routing_meta = $this->get_school_routing_meta_by_tier($partner_tier);
+                        $partner_routing_label = (string) ($partner_routing_meta['level'] ?? 'Standard');
                         $partner_lifetime_credits = max(0, (int) ($partner_stats['lifetime_credits'] ?? 0));
                         $partner_discount_percent = round((float) ($partner_stats['discount_percent'] ?? 0), 2);
                         $partner_lifetime_savings = round((float) ($partner_stats['lifetime_savings'] ?? 0), 2);
@@ -50814,6 +61774,11 @@ final class CMN_One_Plugin {
                                             <p class="cmn-muted" data-partner-credits-remaining><?php echo esc_html((string) ((int) ($partner_progress['credits_remaining'] ?? 0))); ?> credits to next tier</p>
                                         </div>
                                     </article>
+
+                                    <article class="cmn-dashboard-card cmn-partner-routing-card">
+                                        <h3>Weighted Routing</h3>
+                                        <p>Your tier gives you <strong><?php echo esc_html($partner_routing_label); ?></strong> priority when schools compete for the same candidate.</p>
+                                    </article>
                                 </div>
 
                                 <article class="cmn-dashboard-card cmn-partner-invoices">
@@ -50856,6 +61821,133 @@ final class CMN_One_Plugin {
                                 </article>
                             </section>
                         <?php endif; ?>
+                    <?php elseif ($tab === 'priority-allocation') : ?>
+                        <?php
+                        $priority_school_user_id = (!$is_preview && $this->is_school_user()) ? (int) get_current_user_id() : 0;
+                        $priority_month_key = $this->get_priority_month_key();
+                        $priority_limit = $priority_school_user_id > 0 ? (int) $this->get_priority_allocation_limit($priority_school_user_id) : 0;
+                        $priority_usage = $priority_school_user_id > 0 ? (int) $this->get_priority_allocation_usage($priority_school_user_id, $priority_month_key) : 0;
+                        $priority_remaining = max(0, $priority_limit - $priority_usage);
+                        $priority_is_locked = $priority_limit < 1;
+                        $priority_tier_label = 'Standard';
+                        if ($priority_school_user_id > 0) {
+                            $priority_state_row = $this->ensure_school_partner_state_for_user($priority_school_user_id);
+                            if (!is_wp_error($priority_state_row)) {
+                                $priority_tier_label = $this->get_school_partner_tier_label((string) ($priority_state_row['current_tier'] ?? 'standard'));
+                            }
+                        }
+                        $priority_booking_options = $this->get_school_priority_allocation_booking_options((int) $user_school_id, 150);
+                        $priority_allocations = $priority_school_user_id > 0 ? $this->get_priority_allocation_rows_for_school($priority_school_user_id, 60) : [];
+                        $priority_allocation_ids = array_values(array_filter(array_map(static function ($row) {
+                            return max(0, (int) ($row['id'] ?? 0));
+                        }, (array) $priority_allocations)));
+                        $priority_interest_count_map = $this->get_priority_interest_count_map($priority_allocation_ids);
+                        $priority_selected_allocation_id = isset($_GET['cmn_priority_allocation_id']) ? max(0, (int) $_GET['cmn_priority_allocation_id']) : 0;
+                        $priority_notice_class = $priority_notice_type === 'success' ? 'cmn-register-success' : 'cmn-register-warning';
+                        ?>
+                        <header class="cmn-school-header">
+                            <h2>Priority Allocation</h2>
+                            <p>Send urgent availability alerts to eligible candidates within 30 miles.</p>
+                        </header>
+                        <?php if ($priority_notice !== '') : ?>
+                            <div class="<?php echo esc_attr($priority_notice_class); ?>"><?php echo esc_html($priority_notice); ?></div>
+                        <?php endif; ?>
+                        <div class="cmn-portal-grid">
+                            <div class="cmn-dashboard-card">
+                                <h3>Monthly allowance</h3>
+                                <p><strong>Tier:</strong> <?php echo esc_html($priority_tier_label); ?></p>
+                                <p><strong>Month:</strong> <?php echo esc_html($priority_month_key); ?></p>
+                                <p><strong>Used:</strong> <?php echo esc_html((string) $priority_usage); ?> / <?php echo esc_html((string) $priority_limit); ?></p>
+                                <p><strong>Remaining:</strong> <?php echo esc_html((string) $priority_remaining); ?></p>
+                            </div>
+                            <div class="cmn-dashboard-card">
+                                <h3>Send Priority Alert</h3>
+                                <?php if ($is_preview || $priority_school_user_id < 1) : ?>
+                                    <div class="cmn-empty">Preview mode: sending is disabled.</div>
+                                <?php elseif ($priority_is_locked) : ?>
+                                    <div class="cmn-empty">Unlock Priority Allocation at 30 completed bookings.</div>
+                                <?php elseif (!$priority_booking_options) : ?>
+                                    <div class="cmn-empty">No bookings found for your school yet.</div>
+                                <?php else : ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
+                                        <?php wp_nonce_field('cmn_priority_allocation_send', 'cmn_priority_allocation_send_nonce'); ?>
+                                        <input type="hidden" name="action" value="cmn_priority_allocation_send">
+                                        <label>Booking
+                                            <select name="cmn_priority_booking_id" required>
+                                                <option value="">Select booking</option>
+                                                <?php foreach ($priority_booking_options as $priority_booking_row) : ?>
+                                                    <option value="<?php echo esc_attr((int) ($priority_booking_row['booking_id'] ?? 0)); ?>">
+                                                        <?php echo esc_html((string) ($priority_booking_row['label'] ?? 'Booking')); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </label>
+                                        <label>Urgency message (optional)
+                                            <input type="text" name="cmn_priority_message" maxlength="200" placeholder="Optional message for candidates">
+                                        </label>
+                                        <button class="cmn-primary" type="submit">Send Priority Alert</button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <div class="cmn-dashboard-card">
+                            <h3>History</h3>
+                            <?php if (!$priority_allocations) : ?>
+                                <div class="cmn-empty">No priority allocations sent yet.</div>
+                            <?php else : ?>
+                                <div class="cmn-list">
+                                    <?php foreach ($priority_allocations as $allocation_row) : ?>
+                                        <?php
+                                        $allocation_id = max(0, (int) ($allocation_row['id'] ?? 0));
+                                        if ($allocation_id < 1) {
+                                            continue;
+                                        }
+                                        $booking_id = max(0, (int) ($allocation_row['booking_id'] ?? 0));
+                                        $booking_date = $this->normalize_invoice_date((string) get_post_meta($booking_id, 'cmn_date', true));
+                                        $booking_date_label = $booking_date !== '' ? date_i18n('D j M Y', strtotime($booking_date)) : 'Date TBC';
+                                        $booking_message = sanitize_text_field((string) ($allocation_row['message'] ?? ''));
+                                        $interested_total = max(0, (int) ($priority_interest_count_map[$allocation_id] ?? 0));
+                                        $is_open = $priority_selected_allocation_id > 0 && $priority_selected_allocation_id === $allocation_id;
+                                        $interested_rows = $this->get_priority_interest_candidates($allocation_id, 100);
+                                        ?>
+                                        <details class="cmn-list-item cmn-dashboard-card" <?php echo $is_open ? 'open' : ''; ?>>
+                                            <summary>
+                                                <strong>Booking #<?php echo esc_html((string) $booking_id); ?></strong>
+                                                <span class="cmn-muted"><?php echo esc_html($booking_date_label); ?></span>
+                                                <span class="cmn-pill cmn-pill--status"><?php echo esc_html(ucfirst((string) ($allocation_row['status'] ?? 'active'))); ?></span>
+                                                <span class="cmn-pill cmn-pill--approved"><?php echo esc_html((string) $interested_total); ?> interested</span>
+                                            </summary>
+                                            <?php if ($booking_message !== '') : ?>
+                                                <p class="cmn-muted"><?php echo esc_html($booking_message); ?></p>
+                                            <?php endif; ?>
+                                            <?php if (!$interested_rows) : ?>
+                                                <div class="cmn-empty">No candidate interest registered yet.</div>
+                                            <?php else : ?>
+                                                <div class="cmn-list">
+                                                    <?php foreach ($interested_rows as $interest_row) : ?>
+                                                        <?php
+                                                        $interest_name = (string) ($interest_row['candidate_name'] ?? 'Candidate');
+                                                        $interest_location = (string) ($interest_row['location'] ?? '');
+                                                        $interest_roles = is_array($interest_row['role_labels'] ?? null) ? (array) $interest_row['role_labels'] : [];
+                                                        $interest_created_at = (string) ($interest_row['created_at'] ?? '');
+                                                        $interest_created_label = $interest_created_at !== '' ? date_i18n('j M Y g:ia', strtotime($interest_created_at)) : '';
+                                                        ?>
+                                                        <div class="cmn-list-item">
+                                                            <strong><?php echo esc_html($interest_name); ?></strong>
+                                                            <span><?php echo esc_html($interest_location !== '' ? $interest_location : 'Location not set'); ?></span>
+                                                            <span><?php echo esc_html($interest_roles ? implode(', ', $interest_roles) : 'Role not specified'); ?></span>
+                                                            <?php if ($interest_created_label !== '') : ?>
+                                                                <small class="cmn-muted"><?php echo esc_html('Registered ' . $interest_created_label); ?></small>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </details>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     <?php elseif ($tab === 'team') : ?>
                         <header class="cmn-school-header">
                             <h2>My Team</h2>
@@ -51011,6 +62103,7 @@ final class CMN_One_Plugin {
                                 </div>
                                 <button class="cmn-primary" type="button" data-support-open>Open Support Ticket</button>
                             </div>
+                            <?php echo $this->render_support_whats_new_panel('school'); ?>
                             <div class="cmn-support-dashboard" data-support-dashboard>
                                 <button class="cmn-support-tile is-active" type="button" data-support-tile="all">
                                     <span>All tickets</span>
@@ -51285,10 +62378,25 @@ final class CMN_One_Plugin {
                                 Available smart tags: <code>{candidate_name}</code>, <code>{school_name}</code>, <code>{booking_date}</code>, <code>{start_time}</code>, <code>{end_time}</code>, <code>{location_name}</code>, <code>{location_address}</code>, <code>{reception_instructions}</code>, <code>{parking_info}</code>, <code>{teacher_name}</code>, <code>{contact_name}</code>, <code>{contact_phone}</code>, <code>{notes}</code>.
                             </div>
                         </div>
-                        <div class="cmn-dashboard-card">
+                        <div class="cmn-dashboard-card" data-notification-preferences>
                             <h3>Notifications</h3>
-                            <label class="cmn-inline-check"><input type="checkbox" checked> Email notifications</label>
-                            <label class="cmn-inline-check"><input type="checkbox" checked> Booking updates</label>
+                            <p class="cmn-muted">Manage portal + email delivery and quiet hours.</p>
+                            <div class="cmn-settings-grid">
+                                <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_portal_enabled"> Portal notifications</label>
+                                <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_email_enabled"> Email notifications</label>
+                                <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_quiet_hours_enabled"> Enable quiet hours</label>
+                                <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_allow_urgent_quiet"> Allow urgent alerts during quiet hours</label>
+                                <label>Quiet hours start
+                                    <input type="time" data-notify-time="cmn_notify_quiet_start" step="300">
+                                </label>
+                                <label>Quiet hours end
+                                    <input type="time" data-notify-time="cmn_notify_quiet_end" step="300">
+                                </label>
+                            </div>
+                            <div class="cmn-settings-actions">
+                                <button class="cmn-primary" type="button" data-notify-settings-save>Save notification preferences</button>
+                                <span class="cmn-muted" data-notify-settings-message></span>
+                            </div>
                         </div>
                     <?php else : ?>
                         <header class="cmn-school-header">
@@ -51330,6 +62438,7 @@ final class CMN_One_Plugin {
                 </main>
             </div>
         </section>
+        <div id="cmn-portal-overlay-root" aria-live="polite" aria-atomic="true"></div>
         <?php
         return ob_get_clean();
     }
@@ -51338,8 +62447,7 @@ final class CMN_One_Plugin {
         $user = wp_get_current_user();
         $candidate_id = 0;
         $is_preview = isset($_GET['as']) && sanitize_text_field($_GET['as']) === 'candidate' && $this->can_preview_dashboards();
-        $candidate_page = get_page_by_title('Candidate Registration');
-        $candidate_url = $candidate_page ? get_permalink($candidate_page) : home_url('/candidate-registration');
+        $candidate_url = add_query_arg(['view' => 'register-candidate'], $this->get_portal_base_url());
         if ($user && $user->user_email) {
             $candidate = get_posts([
                 'post_type' => 'cmn_candidate',
@@ -51646,6 +62754,7 @@ final class CMN_One_Plugin {
             'profile' => 'Profile',
             'rewards' => 'CMN Rewards',
             'candidate_finance' => 'Finance',
+            'feedback_ratings' => 'Feedback & Ratings',
             'learning' => 'Learning Centre',
             'bookings' => 'Bookings',
             'calendar' => 'Calendar',
@@ -51698,6 +62807,7 @@ final class CMN_One_Plugin {
             <div class="cmn-portal-topbar">
                 <div class="cmn-topbar-left"><?php echo $this->render_portal_branding(); ?></div>
                 <div class="cmn-topbar-right">
+                    <?php echo $this->render_topbar_livechat_button(); ?>
                     <div data-tour-target="bell"><?php echo $this->render_notifications_bell($user ? $user->ID : 0); ?></div>
                     <span>Welcome, <?php echo esc_html($user ? $user->display_name : 'Candidate'); ?></span>
                     <a class="cmn-topbar-logout" href="<?php echo esc_url(wp_logout_url($portal_url)); ?>" data-tour-target="logout-top">Logout</a>
@@ -52182,6 +63292,8 @@ final class CMN_One_Plugin {
                         <?php echo $this->render_candidate_rewards_tab($candidate_id, $portal_url); ?>
                     <?php elseif ($tab === 'candidate_finance') : ?>
                         <?php echo $this->render_candidate_finance_tab(); ?>
+                    <?php elseif ($tab === 'feedback_ratings') : ?>
+                        <?php echo $this->render_candidate_feedback_ratings_tab($candidate_user_id); ?>
                     <?php elseif ($tab === 'settings') : ?>
                         <?php
                         $current_candidate_user_id = get_current_user_id();
@@ -52206,6 +63318,20 @@ final class CMN_One_Plugin {
                                     <?php endforeach; ?>
                                 </select>
                             </label>
+                            <h3>Notification Centre</h3>
+                            <p class="cmn-muted">Portal + email channels, quiet hours, and urgency rules.</p>
+                            <div class="cmn-settings-grid">
+                                <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_portal_enabled"> Portal notifications</label>
+                                <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_email_enabled"> Email notifications</label>
+                                <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_quiet_hours_enabled"> Enable quiet hours</label>
+                                <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_allow_urgent_quiet"> Allow urgent alerts during quiet hours</label>
+                                <label>Quiet hours start
+                                    <input type="time" data-settings-notify-time="cmn_notify_quiet_start" step="300">
+                                </label>
+                                <label>Quiet hours end
+                                    <input type="time" data-settings-notify-time="cmn_notify_quiet_end" step="300">
+                                </label>
+                            </div>
                             <h3>Email Notifications</h3>
                             <p class="cmn-muted">Control which email updates you receive.</p>
                             <div class="cmn-settings-grid">
@@ -52269,13 +63395,35 @@ final class CMN_One_Plugin {
                                         if (!$school_id_for_request && !empty($request['school_email_domain'])) {
                                             $school_id_for_request = $this->get_school_post_id_by_domain((string) $request['school_email_domain']);
                                         }
+                                        $school_name_for_request = 'School';
+                                        if ($school_id_for_request > 0) {
+                                            $resolved_school_name = (string) get_the_title($school_id_for_request);
+                                            if ($resolved_school_name !== '') {
+                                                $school_name_for_request = $resolved_school_name;
+                                            }
+                                        }
+                                        if ($school_name_for_request === 'School' && !empty($request['school_email_domain'])) {
+                                            $resolved_school_name = (string) $this->get_school_name_by_domain((string) $request['school_email_domain']);
+                                            if ($resolved_school_name !== '') {
+                                                $school_name_for_request = $resolved_school_name;
+                                            }
+                                        }
                                         if ($school_id_for_request) {
                                             $location_label = (string) get_post_meta($school_id_for_request, 'cmn_location', true);
+                                        }
+                                        $routing_level_label = sanitize_text_field((string) ($request['routing_level'] ?? 'Standard'));
+                                        $routing_tier_key = sanitize_key((string) ($request['routing_tier'] ?? 'standard'));
+                                        if (!in_array($routing_tier_key, ['standard', 'bronze', 'silver', 'gold', 'elite'], true)) {
+                                            $routing_tier_key = 'standard';
                                         }
                                         $booking_id_for_request = $this->get_booking_id_for_request($request_id);
                                         ?>
                                         <div class="cmn-list-item cmn-request-card">
                                             <strong><?php echo esc_html($requested_label); ?></strong>
+                                            <span class="cmn-request-school">
+                                                <?php echo esc_html($school_name_for_request); ?>
+                                                <span class="cmn-spp-routing-badge is-<?php echo esc_attr($routing_tier_key); ?>"><?php echo esc_html($routing_level_label); ?></span>
+                                            </span>
                                             <span><?php echo esc_html($location_label ?: 'Location shared after acceptance'); ?></span>
                                             <span class="cmn-pill cmn-pill--status">Pay: GBP <?php echo esc_html(number_format($candidate_rate, 2)); ?></span>
                                             <span class="cmn-pill cmn-pill--<?php echo esc_attr($request_status); ?>"><?php echo esc_html(ucfirst(str_replace('_', ' ', $request_status))); ?></span>
@@ -52571,6 +63719,7 @@ final class CMN_One_Plugin {
                                 </div>
                                 <button class="cmn-primary" type="button" data-support-open>Open Support Ticket</button>
                             </div>
+                            <?php echo $this->render_support_whats_new_panel('candidate'); ?>
                             <div class="cmn-support-dashboard" data-support-dashboard>
                                 <button class="cmn-support-tile is-active" type="button" data-support-tile="all">
                                     <span>All tickets</span>
@@ -52941,12 +64090,13 @@ final class CMN_One_Plugin {
                     <?php endif; ?>
                     <?php if ($is_preview) : ?>
                         <div class="cmn-preview-register">
-                            <a class="cmn-primary" href="<?php echo esc_url($candidate_url); ?>">Apply to Register (Candidate)</a>
+                            <a class="cmn-primary" href="<?php echo esc_url($candidate_url); ?>">Register (Candidate)</a>
                         </div>
                     <?php endif; ?>
                 </main>
             </div>
         </section>
+        <div id="cmn-portal-overlay-root" aria-live="polite" aria-atomic="true"></div>
         <?php
         return ob_get_clean();
     }
@@ -55616,7 +66766,9 @@ final class CMN_One_Plugin {
                 $portal_link = $this->get_support_link_for_user($owner_user_id, $ticket_id, $ticket_ref);
                 $subject_line = 'Update on your payroll ticket: ' . $ticket_ref;
                 $email_body = "We've requested more information on your payroll query.\n\n{$request_info_message}\n\nReply in your portal:\n{$portal_link}";
-                $this->send_support_email_to_user($owner_user_id, $subject_line, $email_body, 'support_ticket_reply');
+                $this->send_support_email_to_user($owner_user_id, $subject_line, $email_body, 'support_ticket_reply', [
+                    'ticket_id' => $ticket_id,
+                ]);
                 $this->add_notification($owner_user_id, 'support_reply', 'Payroll support update', $ticket_ref . ' needs more information.', $portal_link);
             }
         }
@@ -56702,6 +67854,137 @@ final class CMN_One_Plugin {
         return $this->render_staff_shell('staff_payroll', ob_get_clean());
     }
 
+    /*
+     * School->Candidate feedback acceptance tests:
+     * 1) Candidate can view all submitted feedback entries and comments in Feedback & Ratings.
+     * 2) Overall average and feedback count reflect current aggregated stats.
+     * 3) Module breakdown displays the 7 required school rating modules.
+     */
+    private function render_candidate_feedback_ratings_tab($candidate_user_id) {
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id < 1) {
+            $candidate_user_id = (int) get_current_user_id();
+        }
+        if ($candidate_user_id < 1 || !$this->is_candidate_user($candidate_user_id)) {
+            return '<div class="cmn-dashboard-card"><h3>Access denied</h3><p>You do not have permission to access this page.</p></div>';
+        }
+        if ((int) get_current_user_id() !== $candidate_user_id) {
+            return '<div class="cmn-dashboard-card"><h3>Access denied</h3><p>You can only view your own feedback.</p></div>';
+        }
+
+        $rating_payload = $this->get_candidate_average_rating_payload($candidate_user_id);
+        $breakdown_rows = $this->get_candidate_feedback_breakdown_for_candidate_user($candidate_user_id);
+        $feedback_rows = $this->get_candidate_feedback_entries_for_candidate_user($candidate_user_id, 250);
+        $entry_rows = [];
+        foreach ((array) $feedback_rows as $row) {
+            $formatted_row = $this->format_candidate_feedback_row($row);
+            $booking_id = (int) ($formatted_row['booking_id'] ?? 0);
+            $booking_date = $booking_id > 0 ? $this->get_booking_service_date($booking_id) : '';
+            if ($booking_date === '') {
+                $booking_date = sanitize_text_field((string) ($formatted_row['created_at'] ?? ''));
+            }
+            $entry_rows[] = [
+                'id' => (int) ($formatted_row['id'] ?? 0),
+                'booking_id' => $booking_id,
+                'booking_date' => $booking_date,
+                'school_name' => $this->get_school_user_label_for_feedback((int) ($formatted_row['school_user_id'] ?? 0)),
+                'average_rating' => round((float) ($formatted_row['average_rating'] ?? 0), 2),
+                'comments' => sanitize_textarea_field((string) ($formatted_row['comments'] ?? '')),
+                'module_scores' => (array) ($formatted_row['module_scores'] ?? []),
+                'created_at' => sanitize_text_field((string) ($formatted_row['created_at'] ?? '')),
+            ];
+        }
+
+        ob_start();
+        ?>
+        <section class="cmn-candidate-feedback-page">
+            <header class="cmn-candidate-header">
+                <h2>Feedback & Ratings</h2>
+                <p>See every school review, module score, and comment for your completed bookings.</p>
+            </header>
+            <div class="cmn-profile-grid">
+                <article class="cmn-dashboard-card">
+                    <div class="cmn-card-header">
+                        <h3>Overall Rating</h3>
+                        <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
+                    </div>
+                    <p class="cmn-muted">Based on <?php echo esc_html((string) ((int) ($rating_payload['feedback_count'] ?? 0))); ?> completed feedback submission(s).</p>
+                    <p><strong><?php echo esc_html(number_format((float) ($rating_payload['avg_rating_raw'] ?? 0), 2)); ?>/5</strong> average across all 7 modules.</p>
+                </article>
+                <article class="cmn-dashboard-card">
+                    <div class="cmn-card-header">
+                        <h3>Module Breakdown</h3>
+                    </div>
+                    <ul class="cmn-status-list">
+                        <?php foreach ((array) $breakdown_rows as $breakdown_row) : ?>
+                            <?php
+                            $module_label = sanitize_text_field((string) ($breakdown_row['label'] ?? 'Module'));
+                            $module_average = round((float) ($breakdown_row['average'] ?? 0), 1);
+                            ?>
+                            <li>
+                                <span><?php echo esc_html($module_label); ?></span>
+                                <strong><?php echo esc_html(number_format($module_average, 1)); ?>/5</strong>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </article>
+            </div>
+            <article class="cmn-dashboard-card cmn-dashboard-card-wide">
+                <div class="cmn-card-header">
+                    <h3>All Feedback</h3>
+                    <span class="cmn-muted"><?php echo esc_html((string) count($entry_rows)); ?> entries</span>
+                </div>
+                <?php if ($entry_rows) : ?>
+                    <div class="cmn-list cmn-candidate-feedback-list">
+                        <?php foreach ($entry_rows as $entry_row) : ?>
+                            <?php
+                            $booking_date_display = '';
+                            if (!empty($entry_row['booking_date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $entry_row['booking_date'])) {
+                                $booking_date_display = date_i18n('D j M Y', strtotime((string) $entry_row['booking_date']));
+                            } elseif (!empty($entry_row['booking_date'])) {
+                                $booking_date_display = date_i18n('D j M Y', strtotime((string) $entry_row['booking_date']));
+                            }
+                            ?>
+                            <div class="cmn-list-item cmn-candidate-feedback-entry">
+                                <div class="cmn-card-header">
+                                    <strong><?php echo esc_html((string) ($entry_row['school_name'] ?? 'School')); ?></strong>
+                                    <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($entry_row['average_rating'] ?? 0), 1)); ?>/5</span>
+                                </div>
+                                <div class="cmn-profile-meta-grid">
+                                    <div class="cmn-profile-meta-item">
+                                        <span class="cmn-profile-meta-label">Booking</span>
+                                        <strong class="cmn-profile-meta-value"><?php echo esc_html((int) ($entry_row['booking_id'] ?? 0) > 0 ? ('#' . (int) ($entry_row['booking_id'] ?? 0)) : '—'); ?></strong>
+                                    </div>
+                                    <div class="cmn-profile-meta-item">
+                                        <span class="cmn-profile-meta-label">Date</span>
+                                        <strong class="cmn-profile-meta-value"><?php echo esc_html($booking_date_display !== '' ? $booking_date_display : '—'); ?></strong>
+                                    </div>
+                                </div>
+                                <ul class="cmn-status-list">
+                                    <?php foreach ((array) ($entry_row['module_scores'] ?? []) as $module_row) : ?>
+                                        <li>
+                                            <span><?php echo esc_html((string) ($module_row['label'] ?? 'Module')); ?></span>
+                                            <strong><?php echo esc_html((string) ((int) ($module_row['score'] ?? 0))); ?>/5</strong>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                                <?php if (!empty($entry_row['comments'])) : ?>
+                                    <p class="cmn-muted"><?php echo esc_html((string) $entry_row['comments']); ?></p>
+                                <?php else : ?>
+                                    <p class="cmn-muted">No additional comments.</p>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else : ?>
+                    <div class="cmn-empty">No feedback submitted yet. Ratings will appear here after schools complete reviews for finished bookings.</div>
+                <?php endif; ?>
+            </article>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
     private function render_candidate_rewards_tab($candidate_id, $portal_url) {
         $candidate_id = (int) $candidate_id;
         $portal_url = (string) $portal_url;
@@ -57020,8 +68303,12 @@ final class CMN_One_Plugin {
 
 
     private function get_school_dashboard_available_candidates($school_id = 0, $limit = 24) {
-        $today = current_time('Y-m-d');
-        $tomorrow = $this->get_tomorrow_date();
+        $today = function_exists('cmn_today_ymd') ? cmn_today_ymd() : current_time('Y-m-d');
+        if (function_exists('cmn_now')) {
+            $tomorrow = cmn_now()->setTimezone(wp_timezone())->modify('+1 day')->format('Y-m-d');
+        } else {
+            $tomorrow = $this->get_tomorrow_date();
+        }
 
         $today_rows = $today ? $this->get_available_candidates_with_times($today, $school_id, $limit) : [];
         $tomorrow_rows = $tomorrow ? $this->get_available_candidates_with_times($tomorrow, $school_id, $limit) : [];
@@ -57062,7 +68349,7 @@ final class CMN_One_Plugin {
         return $out;
     }
     private function get_available_candidates_with_times($date, $school_id = 0, $limit = 6) {
-        $rows = $this->get_available_candidate_rows($date, $school_id, $limit);
+        $rows = $this->get_available_candidate_rows($date, 0, $limit);
         if (!$rows) {
             return [];
         }
@@ -57168,13 +68455,11 @@ final class CMN_One_Plugin {
             return true;
         }
 
-        $candidate_location = (string) get_post_meta($candidate_id, 'cmn_location', true);
-        $school_location = (string) get_post_meta($school_id, 'cmn_location', true);
-        $location_match = $this->locations_roughly_match($candidate_location, $school_location);
+        $location_match = $this->candidate_matches_school_location_fallback($candidate_id, $school_id);
 
         $travel_miles = $this->get_candidate_travel_radius_miles($candidate_id);
         $candidate_coords = $this->get_geo_coordinates_for_post($candidate_id);
-        $school_coords = $this->get_geo_coordinates_for_post($school_id);
+        $school_coords = $this->ensure_school_geo_coordinates($school_id);
         if ($travel_miles > 0 && $candidate_coords && $school_coords) {
             $distance = $this->marketing_haversine_miles(
                 (float) $candidate_coords['lat'],
@@ -57184,7 +68469,277 @@ final class CMN_One_Plugin {
             );
             return $distance <= $travel_miles;
         }
+
+        // When coordinate data is incomplete, do not collapse to zero results.
+        // Fall back to location/town/postcode matching until geocoding is available.
         return $location_match;
+    }
+
+    private function extract_uk_postcode_outward_code($postcode) {
+        $postcode = strtoupper(preg_replace('/\s+/', '', trim((string) $postcode)));
+        if ($postcode === '') {
+            return '';
+        }
+        if (preg_match('/^([A-Z]{1,2}\d[A-Z\d]?)/', $postcode, $matches) !== 1) {
+            return '';
+        }
+        return (string) ($matches[1] ?? '');
+    }
+
+    private function normalize_uk_postcode_for_lookup($postcode) {
+        $postcode = strtoupper(preg_replace('/\s+/', '', trim((string) $postcode)));
+        if ($postcode === '') {
+            return '';
+        }
+        if (!preg_match('/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/', $postcode)) {
+            return '';
+        }
+        return $postcode;
+    }
+
+    private function geocode_uk_postcode_coordinates($postcode) {
+        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
+        if ($normalized_postcode === '') {
+            return null;
+        }
+        $cache_key = 'cmn_geo_postcode_' . md5($normalized_postcode);
+        $cached = get_transient($cache_key);
+        if (is_array($cached) && isset($cached['lat'], $cached['lng'])) {
+            return [
+                'lat' => (float) $cached['lat'],
+                'lng' => (float) $cached['lng'],
+                'source' => 'postcodes_io_cache',
+            ];
+        }
+
+        $response = wp_remote_get('https://api.postcodes.io/postcodes/' . rawurlencode($normalized_postcode), [
+            'timeout' => 4,
+            'redirection' => 2,
+            'user-agent' => 'CoverMeNow ONE',
+        ]);
+        if (is_wp_error($response)) {
+            return null;
+        }
+        $status_code = (int) wp_remote_retrieve_response_code($response);
+        if ($status_code !== 200) {
+            return null;
+        }
+        $body = json_decode((string) wp_remote_retrieve_body($response), true);
+        if (!is_array($body) || (int) ($body['status'] ?? 0) !== 200 || !is_array($body['result'] ?? null)) {
+            return null;
+        }
+        $lat = isset($body['result']['latitude']) ? (float) $body['result']['latitude'] : null;
+        $lng = isset($body['result']['longitude']) ? (float) $body['result']['longitude'] : null;
+        if ($lat === null || $lng === null || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return null;
+        }
+        set_transient($cache_key, ['lat' => $lat, 'lng' => $lng], DAY_IN_SECONDS * 7);
+        return [
+            'lat' => $lat,
+            'lng' => $lng,
+            'source' => 'postcodes_io',
+        ];
+    }
+
+    private function persist_geo_coordinates_for_post($post_id, $lat, $lng, $source = 'manual') {
+        $post_id = (int) $post_id;
+        if ($post_id < 1) {
+            return;
+        }
+        $lat = (float) $lat;
+        $lng = (float) $lng;
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return;
+        }
+        update_post_meta($post_id, 'cmn_lat', $lat);
+        update_post_meta($post_id, 'cmn_lng', $lng);
+        update_post_meta($post_id, 'cmn_geo_lat', $lat);
+        update_post_meta($post_id, 'cmn_geo_lng', $lng);
+        update_post_meta($post_id, 'cmn_geo_source', sanitize_key((string) $source));
+        update_post_meta($post_id, 'cmn_geo_updated_at', current_time('mysql'));
+    }
+
+    private function ensure_school_geo_coordinates($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return null;
+        }
+        $existing = $this->get_geo_coordinates_for_post($school_id);
+        if ($existing) {
+            return $existing;
+        }
+
+        $postcode = (string) get_post_meta($school_id, 'cmn_postcode', true);
+        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
+        if ($normalized_postcode === '') {
+            return null;
+        }
+
+        $attempted_postcode = strtoupper(trim((string) get_post_meta($school_id, 'cmn_geo_lookup_postcode', true)));
+        $attempted_at = (string) get_post_meta($school_id, 'cmn_geo_lookup_attempted_at', true);
+        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < HOUR_IN_SECONDS * 24) {
+            return null;
+        }
+
+        $geocoded = $this->geocode_uk_postcode_coordinates($normalized_postcode);
+        update_post_meta($school_id, 'cmn_geo_lookup_postcode', $normalized_postcode);
+        update_post_meta($school_id, 'cmn_geo_lookup_attempted_at', current_time('mysql'));
+        if (!is_array($geocoded) || !isset($geocoded['lat'], $geocoded['lng'])) {
+            $this->log_school_debug('school_geo_lookup_failed', [
+                'school_post_id' => $school_id,
+                'postcode' => $normalized_postcode,
+            ]);
+            return null;
+        }
+
+        $lat = (float) $geocoded['lat'];
+        $lng = (float) $geocoded['lng'];
+        $this->persist_geo_coordinates_for_post($school_id, $lat, $lng, (string) ($geocoded['source'] ?? 'postcodes_io'));
+        $this->log_school_debug('school_geo_lookup_success', [
+            'school_post_id' => $school_id,
+            'postcode' => $normalized_postcode,
+            'lat' => $lat,
+            'lng' => $lng,
+            'source' => (string) ($geocoded['source'] ?? 'postcodes_io'),
+        ]);
+        return ['lat' => $lat, 'lng' => $lng];
+    }
+
+    private function candidate_matches_school_location_fallback($candidate_id, $school_id) {
+        $candidate_id = (int) $candidate_id;
+        $school_id = (int) $school_id;
+        if ($candidate_id < 1 || $school_id < 1) {
+            return true;
+        }
+
+        $candidate_location_values = array_filter([
+            (string) get_post_meta($candidate_id, 'cmn_location', true),
+            (string) get_post_meta($candidate_id, 'cmn_town', true),
+            (string) get_post_meta($candidate_id, 'cmn_county', true),
+        ], static function ($value) {
+            return trim((string) $value) !== '';
+        });
+        $school_location_values = array_filter([
+            (string) get_post_meta($school_id, 'cmn_location', true),
+            (string) get_post_meta($school_id, 'cmn_town', true),
+            (string) get_post_meta($school_id, 'cmn_county', true),
+        ], static function ($value) {
+            return trim((string) $value) !== '';
+        });
+
+        foreach ($candidate_location_values as $candidate_location_value) {
+            foreach ($school_location_values as $school_location_value) {
+                if ($this->locations_roughly_match($candidate_location_value, $school_location_value)) {
+                    return true;
+                }
+            }
+        }
+
+        $candidate_outward = $this->extract_uk_postcode_outward_code((string) get_post_meta($candidate_id, 'cmn_postcode', true));
+        $school_outward = $this->extract_uk_postcode_outward_code((string) get_post_meta($school_id, 'cmn_postcode', true));
+        if ($candidate_outward !== '' && $school_outward !== '' && $candidate_outward === $school_outward) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function collect_school_availability_debug_report($school_id, $availability_candidates = []) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return [];
+        }
+
+        $timezone = wp_timezone();
+        $now = function_exists('cmn_now') ? cmn_now()->setTimezone($timezone) : new DateTimeImmutable('now', $timezone);
+        $today = $now->format('Y-m-d');
+        $tomorrow = $now->modify('+1 day')->format('Y-m-d');
+
+        $base_candidate_ids = get_posts([
+            'post_type' => 'cmn_candidate',
+            'post_status' => ['publish', 'private', 'draft'],
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+        ]);
+        $base_candidate_ids = array_values(array_unique(array_filter(array_map('intval', (array) $base_candidate_ids))));
+
+        $today_rows = $this->get_available_candidate_rows($today, 0, 0);
+        $tomorrow_rows = $this->get_available_candidate_rows($tomorrow, 0, 0);
+        $availability_candidate_ids = array_values(array_unique(array_filter(array_map('intval', array_merge(
+            array_column((array) $today_rows, 'candidate_id'),
+            array_column((array) $tomorrow_rows, 'candidate_id')
+        )))));
+
+        $verified_candidate_ids = [];
+        foreach ($base_candidate_ids as $candidate_id) {
+            $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+            if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                continue;
+            }
+            $verified_candidate_ids[] = $candidate_id;
+        }
+        $verified_candidate_ids = array_values(array_unique($verified_candidate_ids));
+
+        $distance_filtered_candidate_ids = [];
+        foreach ($verified_candidate_ids as $candidate_id) {
+            if ($this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
+                $distance_filtered_candidate_ids[] = $candidate_id;
+            }
+        }
+        $distance_filtered_candidate_ids = array_values(array_unique($distance_filtered_candidate_ids));
+
+        $availability_filtered_candidate_ids = array_values(array_intersect($distance_filtered_candidate_ids, $availability_candidate_ids));
+        $role_filtered_candidate_ids = $availability_filtered_candidate_ids; // No explicit role filter is currently applied in this widget.
+
+        $manager_assigned_user_id = (int) get_post_meta($school_id, 'cmn_account_manager_user', true);
+        if ($manager_assigned_user_id < 1) {
+            $manager_assigned_user_id = (int) get_post_meta($school_id, 'cmn_account_manager_user_id', true);
+        }
+        $admin_approved = ((string) $this->get_school_access_request_status($school_id)) === 'approved';
+        $school_coords = $this->get_geo_coordinates_for_post($school_id);
+        $final_display_count = 0;
+        foreach ((array) $availability_candidates as $availability_item) {
+            $candidate_post = $availability_item['post'] ?? null;
+            $candidate_id = ($candidate_post instanceof WP_Post) ? (int) $candidate_post->ID : 0;
+            if ($candidate_id < 1) {
+                continue;
+            }
+            $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+            if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                continue;
+            }
+            $final_display_count++;
+        }
+
+        return [
+            'school_id' => $school_id,
+            'school_status' => (string) get_post_meta($school_id, 'cmn_status', true),
+            'admin_approved' => $admin_approved ? 1 : 0,
+            'manager_assigned' => $manager_assigned_user_id > 0 ? 1 : 0,
+            'manager_assigned_user_id' => $manager_assigned_user_id,
+            'manager_decision' => (string) get_post_meta($school_id, 'cmn_access_request_status', true),
+            'school_location_inputs' => [
+                'location' => (string) get_post_meta($school_id, 'cmn_location', true),
+                'town' => (string) get_post_meta($school_id, 'cmn_town', true),
+                'postcode' => (string) get_post_meta($school_id, 'cmn_postcode', true),
+                'lat' => $school_coords ? (float) ($school_coords['lat'] ?? 0) : null,
+                'lng' => $school_coords ? (float) ($school_coords['lng'] ?? 0) : null,
+                'radius_rule' => 'candidate_travel_radius_miles',
+            ],
+            'query_window' => [
+                'timezone' => $timezone->getName(),
+                'today' => $today,
+                'tomorrow' => $tomorrow,
+            ],
+            'candidate_counts' => [
+                'base_candidates' => count($base_candidate_ids),
+                'after_verification_doc_status_filter' => count($verified_candidate_ids),
+                'after_distance_filter' => count($distance_filtered_candidate_ids),
+                'after_availability_flag_filter' => count($availability_filtered_candidate_ids),
+                'after_role_filter' => count($role_filtered_candidate_ids),
+                'final_candidates_count' => $final_display_count,
+            ],
+        ];
     }
 
     public function register_meta_boxes() {
@@ -57784,7 +69339,7 @@ final class CMN_One_Plugin {
         }
 
         echo '</tbody></table>';
-        echo '<p>Tip: Use Tools â CMN Import to load your spreadsheet CSV.</p>';
+        echo '<p>Tip: Use Tools -> CMN Import to load your spreadsheet CSV.</p>';
         echo '</div>';
     }
 
@@ -61089,6 +72644,173 @@ p{margin:0;line-height:1.5}
         exit;
     }
 
+    private function get_request_received_page_url() {
+        $request_page = get_page_by_path('request-received', OBJECT, 'page');
+        if ($request_page instanceof WP_Post) {
+            return get_permalink((int) $request_page->ID);
+        }
+        $request_page = get_page_by_title('Request Received', OBJECT, 'page');
+        if ($request_page instanceof WP_Post) {
+            return get_permalink((int) $request_page->ID);
+        }
+        return home_url('/request-received/');
+    }
+
+    private function get_public_contact_page_url() {
+        $paths = ['contact-us', 'contact'];
+        foreach ($paths as $path) {
+            $page = get_page_by_path($path, OBJECT, 'page');
+            if ($page instanceof WP_Post) {
+                return get_permalink((int) $page->ID);
+            }
+        }
+        return home_url('/contact-us/');
+    }
+
+    private function normalize_school_registration_signature($school_name, $email, $email_domain) {
+        $normalized_name = strtolower(trim(preg_replace('/\s+/', ' ', sanitize_text_field((string) $school_name))));
+        $normalized_email = strtolower(trim(sanitize_email((string) $email)));
+        $normalized_domain = strtolower(trim(sanitize_text_field((string) $email_domain)));
+        return hash('sha256', $normalized_name . '|' . $normalized_email . '|' . $normalized_domain);
+    }
+
+    private function get_school_registration_idempotency_key($signature_hash) {
+        $signature_hash = strtolower(preg_replace('/[^a-f0-9]/', '', (string) $signature_hash));
+        if ($signature_hash === '') {
+            return '';
+        }
+        return 'cmn_school_reg_recent_' . substr($signature_hash, 0, 32);
+    }
+
+    private function get_school_request_reference_for_post($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return '';
+        }
+        $public_ref = strtoupper(trim(sanitize_text_field((string) get_post_meta($school_id, 'cmn_public_reference', true))));
+        if ($public_ref !== '') {
+            return $public_ref;
+        }
+        $legacy_ref = strtoupper(trim(sanitize_text_field((string) get_post_meta($school_id, 'cmn_registration_ref', true))));
+        if ($legacy_ref !== '') {
+            update_post_meta($school_id, 'cmn_public_reference', $legacy_ref);
+            return $legacy_ref;
+        }
+        return '';
+    }
+
+    private function cache_recent_school_registration($signature_hash, $school_id, $public_ref, $ttl_seconds = 600) {
+        $cache_key = $this->get_school_registration_idempotency_key($signature_hash);
+        if ($cache_key === '') {
+            return;
+        }
+        $school_id = (int) $school_id;
+        $public_ref = sanitize_text_field((string) $public_ref);
+        if ($school_id < 1 || $public_ref === '') {
+            return;
+        }
+        set_transient($cache_key, [
+            'ref' => $public_ref,
+            'post_id' => $school_id,
+            'signature' => $signature_hash,
+        ], max(60, (int) $ttl_seconds));
+    }
+
+    private function get_recent_school_registration($signature_hash, $window_seconds = 600) {
+        $signature_hash = strtolower(trim((string) $signature_hash));
+        if ($signature_hash === '') {
+            return null;
+        }
+        $cache_key = $this->get_school_registration_idempotency_key($signature_hash);
+        if ($cache_key !== '') {
+            $cached = get_transient($cache_key);
+            if (is_array($cached) && !empty($cached['ref']) && !empty($cached['post_id'])) {
+                $cached_school_id = (int) $cached['post_id'];
+                if ($cached_school_id > 0 && get_post_type($cached_school_id) === 'cmn_school') {
+                    return [
+                        'post_id' => $cached_school_id,
+                        'ref' => sanitize_text_field((string) $cached['ref']),
+                    ];
+                }
+            }
+        }
+
+        $threshold_ts = max(0, current_time('timestamp') - max(60, (int) $window_seconds));
+        $threshold = date('Y-m-d H:i:s', $threshold_ts);
+        $query = new WP_Query([
+            'post_type' => 'cmn_school',
+            'post_status' => 'publish',
+            'fields' => 'ids',
+            'posts_per_page' => 1,
+            'orderby' => 'date',
+            'order' => 'DESC',
+            'meta_query' => [
+                [
+                    'key' => 'cmn_registration_signature_hash',
+                    'value' => $signature_hash,
+                ],
+                [
+                    'key' => 'cmn_registration_requested_at',
+                    'value' => $threshold,
+                    'compare' => '>=',
+                    'type' => 'DATETIME',
+                ],
+            ],
+        ]);
+        if (empty($query->posts)) {
+            return null;
+        }
+        $school_id = (int) $query->posts[0];
+        $public_ref = $this->get_school_request_reference_for_post($school_id);
+        if ($public_ref === '') {
+            return null;
+        }
+        $this->cache_recent_school_registration($signature_hash, $school_id, $public_ref, $window_seconds);
+        return [
+            'post_id' => $school_id,
+            'ref' => $public_ref,
+        ];
+    }
+
+    private function generate_school_request_public_reference() {
+        $prefix = 'CMN-SCH-';
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $max_index = strlen($alphabet) - 1;
+        for ($attempt = 0; $attempt < 32; $attempt++) {
+            $raw = '';
+            for ($i = 0; $i < 6; $i++) {
+                try {
+                    $idx = random_int(0, $max_index);
+                } catch (Throwable $e) {
+                    $idx = wp_rand(0, $max_index);
+                }
+                $raw .= $alphabet[$idx];
+            }
+            $candidate_ref = $prefix . $raw;
+            $existing = get_posts([
+                'post_type' => 'cmn_school',
+                'post_status' => 'any',
+                'posts_per_page' => 1,
+                'fields' => 'ids',
+                'meta_query' => [
+                    'relation' => 'OR',
+                    [
+                        'key' => 'cmn_public_reference',
+                        'value' => $candidate_ref,
+                    ],
+                    [
+                        'key' => 'cmn_registration_ref',
+                        'value' => $candidate_ref,
+                    ],
+                ],
+            ]);
+            if (empty($existing)) {
+                return $candidate_ref;
+            }
+        }
+        return $prefix . strtoupper(substr(wp_hash((string) microtime(true)), 0, 6));
+    }
+
     public function handle_register_school() {
         $started_at = microtime(true);
         $log = function ($stage, $extra = '') use ($started_at) {
@@ -61099,6 +72821,8 @@ p{margin:0;line-height:1.5}
         $log('start');
 
         $referer_url = wp_get_referer() ?: home_url('/school-registration/');
+        $request_received_url = $this->get_request_received_page_url();
+
         $redirect_error = function ($message) use ($referer_url, $log) {
             $log('validation_failed', $message);
             wp_safe_redirect(add_query_arg([
@@ -61108,10 +72832,10 @@ p{margin:0;line-height:1.5}
             exit;
         };
 
+        $validation_started = microtime(true);
         if (!isset($_POST['cmn_register_school_nonce']) || !wp_verify_nonce((string) $_POST['cmn_register_school_nonce'], 'cmn_register_school')) {
             $redirect_error('Invalid request. Please try again.');
         }
-        $log('nonce_check_ok');
 
         $client_token = sanitize_text_field((string) ($_POST['cmn_client_token'] ?? ''));
         $school_name = sanitize_text_field((string) ($_POST['cmn_school_name'] ?? ''));
@@ -61123,10 +72847,17 @@ p{margin:0;line-height:1.5}
         if ($email_domain === '') {
             $redirect_error('Valid email is required.');
         }
-        $log('validation_ok', 'domain=' . $email_domain);
+        if (!$this->is_school_registration_domain($email_domain)) {
+            $redirect_error('Please use your official school email address (school domain required).');
+        }
+        $signature_hash = $this->normalize_school_registration_signature($school_name, $email, $email_domain);
+        $log(
+            'validation_complete',
+            'duration=' . number_format(microtime(true) - $validation_started, 4, '.', '') . 's | domain=' . $email_domain
+        );
 
-        $idempotency_key = 'cmn_school_reg_recent_' . md5(strtolower($email_domain));
-        $existing_ref = get_transient($idempotency_key);
+        $idempotency_started = microtime(true);
+        $existing_ref = $this->get_recent_school_registration($signature_hash, 10 * MINUTE_IN_SECONDS);
         if (is_array($existing_ref) && !empty($existing_ref['ref'])) {
             $existing_post_id = (int) ($existing_ref['post_id'] ?? 0);
             if ($existing_post_id > 0 && get_post_type($existing_post_id) === 'cmn_school') {
@@ -61137,19 +72868,27 @@ p{margin:0;line-height:1.5}
                 delete_post_meta($existing_post_id, 'cmn_access_request_processed_ref');
                 delete_post_meta($existing_post_id, 'cmn_access_request_reject_reason');
                 delete_post_meta($existing_post_id, 'cmn_access_request_more_info_note');
-                $this->maybe_notify_staff_about_school_request($existing_post_id, (string) ($existing_ref['ref'] ?? ''));
             }
-            $log('idempotency_hit', 'ref=' . (string) $existing_ref['ref']);
+            $this->cache_recent_school_registration($signature_hash, $existing_post_id, (string) $existing_ref['ref'], 10 * MINUTE_IN_SECONDS);
+            $log(
+                'idempotency_hit',
+                'duration=' . number_format(microtime(true) - $idempotency_started, 4, '.', '') . 's | ref=' . (string) $existing_ref['ref']
+            );
             wp_safe_redirect(add_query_arg([
-                'cmn_submitted' => '1',
-                'cmn_registration_ref' => (string) $existing_ref['ref'],
-                'cmn_duplicate' => '1',
-            ], $referer_url));
+                'rid' => (string) $existing_ref['ref'],
+                'duplicate' => '1',
+            ], $request_received_url));
             exit;
         }
+        $log('idempotency_miss', 'duration=' . number_format(microtime(true) - $idempotency_started, 4, '.', '') . 's');
+
+        $post_id = 0;
+        $user_id = 0;
+        $registration_ref = '';
+        $registration_source = $client_token !== '' ? 'token_form' : 'public_form';
 
         try {
-            $post_id = 0;
+            $db_started = microtime(true);
             if ($client_token !== '') {
                 $token_data = $this->validate_client_token($client_token);
                 if (!$token_data || empty($token_data['school_email_domain']) || (string) $token_data['school_email_domain'] !== $email_domain) {
@@ -61169,19 +72908,16 @@ p{margin:0;line-height:1.5}
                     ], true);
                     if (is_wp_error($inserted) || (int) $inserted < 1) {
                         $log('school_insert_failed', is_wp_error($inserted) ? $inserted->get_error_message() : 'unknown');
-                        wp_die('<h2>Request received but delayed</h2><p>We could not finish your request just now. Please try again shortly.</p>');
+                        $redirect_error('We could not submit your request. Please try again.');
                     }
                     $post_id = (int) $inserted;
-                    $log('school_insert', 'post_id=' . $post_id);
                 } else {
                     wp_update_post([
                         'ID' => $post_id,
                         'post_title' => $school_name !== '' ? $school_name : (string) get_the_title($post_id),
                     ]);
-                    $log('school_found_existing', 'post_id=' . $post_id);
                 }
             }
-            $log('school_insert_update_done', 'post_id=' . $post_id);
 
             $meta_payload = [
                 'cmn_location' => sanitize_text_field((string) ($_POST['cmn_location'] ?? '')),
@@ -61220,49 +72956,24 @@ p{margin:0;line-height:1.5}
             if (!get_post_meta($post_id, 'cmn_school_id', true)) {
                 update_post_meta($post_id, 'cmn_school_id', $this->generate_school_id());
             }
-            $this->upsert_school_index($post_id);
-            $log('meta_updates_done', 'post_id=' . $post_id);
 
-            $user_id = 0;
             $existing_user = get_user_by('email', $email);
             if ($existing_user && !empty($existing_user->ID)) {
                 $user_id = (int) $existing_user->ID;
                 update_user_meta($user_id, 'cmn_school_id', (int) $post_id);
-                $log('user_attach_existing', 'user_id=' . $user_id);
-            } else {
-                $log('user_creation_skipped', 'no existing user for email');
             }
 
-            $registration_ref = strtoupper(substr(wp_hash($email_domain . '|' . microtime(true)), 0, 10));
+            $registration_ref = $this->generate_school_request_public_reference();
+            update_post_meta($post_id, 'cmn_public_reference', $registration_ref);
             update_post_meta($post_id, 'cmn_registration_ref', $registration_ref);
             update_post_meta($post_id, 'cmn_registration_requested_at', current_time('mysql'));
-            // Every new registration submission should re-enter the pending review queue.
+            update_post_meta($post_id, 'cmn_registration_signature_hash', $signature_hash);
             update_post_meta($post_id, 'cmn_access_request_status', 'pending');
             delete_post_meta($post_id, 'cmn_access_request_processed_at');
             delete_post_meta($post_id, 'cmn_access_request_processed_by');
             delete_post_meta($post_id, 'cmn_access_request_processed_ref');
             delete_post_meta($post_id, 'cmn_access_request_reject_reason');
             delete_post_meta($post_id, 'cmn_access_request_more_info_note');
-            $notified_count = $this->maybe_notify_staff_about_school_request($post_id, $registration_ref);
-
-            $this->insert_audit('school_request_submitted', 'school', $post_id, [
-                'school_id' => (int) $post_id,
-                'ref' => (string) $registration_ref,
-                'source' => $client_token !== '' ? 'token_form' : 'public_form',
-                'notifications_sent' => (int) $notified_count,
-            ], 0);
-
-            set_transient($idempotency_key, [
-                'ref' => $registration_ref,
-                'post_id' => $post_id,
-            ], 5 * MINUTE_IN_SECONDS);
-
-            wp_schedule_single_event(time() + 10, 'cmn_send_school_registration_emails', [
-                (int) $post_id,
-                (int) $user_id,
-                (string) $registration_ref,
-            ]);
-            $log('email_deferred', 'ref=' . $registration_ref);
 
             if ($client_token !== '') {
                 $this->upsert_client_profile($email_domain, [
@@ -61276,18 +72987,89 @@ p{margin:0;line-height:1.5}
                 ]);
                 $this->mark_client_token_used($client_token);
             }
-            $log('file_operations_none');
-            $log('redirect_success', 'ref=' . $registration_ref);
 
-            wp_safe_redirect(add_query_arg([
-                'cmn_submitted' => '1',
-                'cmn_registration_ref' => $registration_ref,
-            ], $referer_url));
+            $this->cache_recent_school_registration($signature_hash, $post_id, $registration_ref, 10 * MINUTE_IN_SECONDS);
+            $log('db_save_complete', 'duration=' . number_format(microtime(true) - $db_started, 4, '.', '') . 's | post_id=' . $post_id);
+
+            $side_effects_started = microtime(true);
+            $side_effect_args = [
+                (int) $post_id,
+                (int) $user_id,
+                (string) $registration_ref,
+                (string) $registration_source,
+            ];
+            if (!wp_next_scheduled('cmn_process_school_registration_side_effects', $side_effect_args)) {
+                wp_schedule_single_event(time() + 2, 'cmn_process_school_registration_side_effects', $side_effect_args);
+            }
+
+            $email_args = [
+                (int) $post_id,
+                (int) $user_id,
+                (string) $registration_ref,
+            ];
+            if (!wp_next_scheduled('cmn_send_school_registration_emails', $email_args)) {
+                wp_schedule_single_event(time() + 5, 'cmn_send_school_registration_emails', $email_args);
+            }
+            $log(
+                'side_effects_queued',
+                'duration=' . number_format(microtime(true) - $side_effects_started, 4, '.', '') . 's | ref=' . $registration_ref
+            );
+
+            wp_safe_redirect(add_query_arg(['rid' => $registration_ref], $request_received_url));
             exit;
         } catch (Throwable $e) {
             $log('exception', $e->getMessage());
-            wp_die('<h2>We received your request</h2><p>There was a temporary delay completing it. Please retry in a moment.</p>');
+            if ($registration_ref !== '') {
+                wp_safe_redirect(add_query_arg([
+                    'rid' => $registration_ref,
+                    'partial' => '1',
+                ], $request_received_url));
+                exit;
+            }
+            $redirect_error('There was a temporary issue submitting your request. Please try again.');
         }
+    }
+
+    public function handle_school_registration_side_effects($school_id, $user_id = 0, $registration_ref = '', $source = 'public_form') {
+        $school_id = (int) $school_id;
+        $user_id = (int) $user_id;
+        $registration_ref = sanitize_text_field((string) $registration_ref);
+        $source = sanitize_key((string) $source);
+        if ($source === '') {
+            $source = 'public_form';
+        }
+        $started_at = microtime(true);
+        $log = function ($stage, $extra = '') use ($started_at, $school_id, $registration_ref) {
+            $elapsed = number_format(microtime(true) - $started_at, 4, '.', '');
+            $suffix = $extra !== '' ? (' | ' . $extra) : '';
+            error_log('[CMN_SCHOOL_REG] side_effects ' . $stage . ' @' . $elapsed . 's | school_id=' . $school_id . ' | ref=' . $registration_ref . $suffix);
+        };
+
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            $log('invalid_school');
+            return;
+        }
+        if ($registration_ref === '') {
+            $registration_ref = $this->get_school_request_reference_for_post($school_id);
+        }
+
+        $index_started = microtime(true);
+        $this->upsert_school_index($school_id);
+        $log('index_upserted', 'duration=' . number_format(microtime(true) - $index_started, 4, '.', '') . 's');
+
+        $notify_started = microtime(true);
+        $notified_count = $this->maybe_notify_staff_about_school_request($school_id, $registration_ref);
+        $log('staff_notified', 'duration=' . number_format(microtime(true) - $notify_started, 4, '.', '') . 's | count=' . (int) $notified_count);
+
+        $audit_started = microtime(true);
+        $this->insert_audit('school_request_submitted', 'school', $school_id, [
+            'school_id' => (int) $school_id,
+            'ref' => (string) $registration_ref,
+            'source' => $source,
+            'notifications_sent' => (int) $notified_count,
+            'async' => true,
+        ], $user_id > 0 ? $user_id : 0);
+        $log('audit_written', 'duration=' . number_format(microtime(true) - $audit_started, 4, '.', '') . 's');
     }
 
     public function handle_deferred_school_registration_emails($school_id, $user_id = 0, $ref = '') {
@@ -62355,9 +74137,585 @@ p{margin:0;line-height:1.5}
         return $domain;
     }
 
+    private function is_school_registration_domain($domain) {
+        $domain = strtolower(trim((string) $domain));
+        if ($domain === '') {
+            return false;
+        }
+        if (!preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/', $domain)) {
+            return false;
+        }
+
+        $blocked_domains = [
+            'gmail.com',
+            'googlemail.com',
+            'yahoo.com',
+            'hotmail.com',
+            'outlook.com',
+            'live.com',
+            'icloud.com',
+            'me.com',
+            'msn.com',
+            'aol.com',
+            'gmx.com',
+            'mail.com',
+            'proton.me',
+            'protonmail.com',
+            'yandex.com',
+            'zoho.com',
+        ];
+
+        return !in_array($domain, $blocked_domains, true);
+    }
+
     private function get_school_index_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_school_index';
+    }
+
+    private function get_school_list_post_statuses() {
+        return ['publish', 'private', 'draft', 'pending', 'future'];
+    }
+
+    private function get_school_list_status_values() {
+        return ['lead', 'client'];
+    }
+
+    private function normalize_school_status_for_lists($status) {
+        $status = sanitize_key((string) $status);
+        if (in_array($status, $this->get_school_list_status_values(), true)) {
+            return $status;
+        }
+        return '';
+    }
+
+    private function get_school_user_ids_for_school_list_visibility($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [];
+        }
+        $user_ids = $this->get_school_user_ids_for_school_request($school_id);
+        return array_values(array_unique(array_filter(array_map('intval', (array) $user_ids))));
+    }
+
+    private function get_school_client_activity_snapshot($school_id) {
+        $school_id = (int) $school_id;
+        $snapshot = [
+            'school_id' => $school_id,
+            'invoice_count' => 0,
+            'completed_booking_count' => 0,
+            'confirmed_completed_days' => 0,
+            'partner_lifetime_credits' => 0,
+            'partner_lifetime_savings' => 0.0,
+            'partner_academic_year_savings' => 0.0,
+            'partner_event_count' => 0,
+            'has_client_activity' => false,
+            'client_activity_signals' => [],
+        ];
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return $snapshot;
+        }
+
+        global $wpdb;
+
+        $invoices_table = $this->get_invoices_table();
+        $snapshot['invoice_count'] = max(0, (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+             FROM {$invoices_table}
+             WHERE school_id = %d
+               AND status <> %s",
+            $school_id,
+            'void'
+        )));
+
+        $partner_row = $this->get_school_partner_record($school_id);
+        $snapshot['partner_lifetime_credits'] = max(0, (int) ($partner_row['lifetime_credits'] ?? 0));
+        $snapshot['partner_lifetime_savings'] = round(max(0, (float) ($partner_row['lifetime_savings'] ?? 0)), 2);
+        $snapshot['partner_academic_year_savings'] = round(max(0, (float) ($partner_row['academic_year_savings'] ?? 0)), 2);
+
+        $events_table = $this->get_school_partner_events_table();
+        $events_table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $events_table));
+        if ($events_table_exists === $events_table) {
+            $snapshot['partner_event_count'] = max(0, (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*)
+                 FROM {$events_table}
+                 WHERE school_id = %d",
+                $school_id
+            )));
+        }
+
+        $school_user_ids = $this->get_school_user_ids_for_school_list_visibility($school_id);
+        foreach ($school_user_ids as $school_user_id) {
+            $snapshot['confirmed_completed_days'] += max(0, (int) $this->school_partner_get_confirmed_completed_days($school_user_id));
+        }
+
+        $posts_table = $wpdb->posts;
+        $meta_table = $wpdb->postmeta;
+        $payable_statuses = $this->get_completed_payable_booking_statuses();
+        $status_placeholders = implode(',', array_fill(0, count($payable_statuses), '%s'));
+        $snapshot['completed_booking_count'] = max(0, (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(DISTINCT p.ID)
+             FROM {$posts_table} p
+             INNER JOIN {$meta_table} school_meta
+               ON school_meta.post_id = p.ID
+              AND school_meta.meta_key = 'cmn_school_id'
+             LEFT JOIN {$meta_table} status_meta
+               ON status_meta.post_id = p.ID
+              AND status_meta.meta_key = 'cmn_status'
+             WHERE p.post_type = %s
+               AND p.post_status NOT IN ('trash', 'auto-draft')
+               AND school_meta.meta_value = %s
+               AND (
+                    status_meta.meta_value IN ({$status_placeholders})
+                    OR status_meta.meta_value IS NULL
+                    OR status_meta.meta_value = ''
+               )",
+            array_merge(['cmn_booking', (string) $school_id], $payable_statuses)
+        )));
+
+        $signals = [];
+        if ($snapshot['invoice_count'] > 0) {
+            $signals[] = 'non_void_invoices';
+        }
+        if ($snapshot['completed_booking_count'] > 0) {
+            $signals[] = 'completed_payable_bookings';
+        }
+        if ($snapshot['confirmed_completed_days'] > 0) {
+            $signals[] = 'confirmed_completed_days';
+        }
+        if ($snapshot['partner_lifetime_credits'] > 0) {
+            $signals[] = 'partner_lifetime_credits';
+        }
+        if ($snapshot['partner_lifetime_savings'] > 0 || $snapshot['partner_academic_year_savings'] > 0) {
+            $signals[] = 'partner_savings';
+        }
+        if ($snapshot['partner_event_count'] > 0) {
+            $signals[] = 'partner_events';
+        }
+        $snapshot['client_activity_signals'] = $signals;
+        $snapshot['has_client_activity'] = !empty($signals);
+
+        return $snapshot;
+    }
+
+    private function resolve_school_status_target_for_lists($current_status, $activity_snapshot = []) {
+        $current_status = sanitize_key((string) $current_status);
+        $activity_snapshot = is_array($activity_snapshot) ? $activity_snapshot : [];
+        $has_client_activity = !empty($activity_snapshot['has_client_activity']);
+        $terminal_statuses = ['archived', 'merged', 'deleted'];
+
+        if (in_array($current_status, $terminal_statuses, true)) {
+            return [
+                'target_status' => $current_status,
+                'reason' => 'terminal_status_preserved',
+            ];
+        }
+        if ($has_client_activity) {
+            return [
+                'target_status' => 'client',
+                'reason' => 'client_activity_detected',
+            ];
+        }
+        if ($current_status === 'lead' || $current_status === 'client') {
+            return [
+                'target_status' => $current_status,
+                'reason' => 'existing_list_status_kept',
+            ];
+        }
+        return [
+            'target_status' => 'lead',
+            'reason' => 'default_sales_pipeline_status',
+        ];
+    }
+
+    /*
+     * Acceptance tests:
+     * - A partner school that is also a client appears in Clients -> Schools.
+     * - A partner-eligible school appears in Partner Programme.
+     * - A lead school appears in Sales -> Schools.
+     * - Debug report clearly explains inclusion/exclusion for any school user.
+     * - No hardcoded school names.
+     */
+    private function get_school_visibility_report($school_user_id) {
+        $school_user_id = (int) $school_user_id;
+        $school_user = $school_user_id > 0 ? get_user_by('id', $school_user_id) : null;
+        $user_roles = $school_user instanceof WP_User ? array_values((array) $school_user->roles) : [];
+        $mapped_school_id = $school_user_id > 0 ? (int) get_user_meta($school_user_id, 'cmn_school_id', true) : 0;
+        $resolved_school_id = $school_user_id > 0 ? (int) $this->resolve_school_id_for_user($school_user_id) : 0;
+        $school_id = $resolved_school_id > 0 ? $resolved_school_id : $mapped_school_id;
+
+        $report = [
+            'school_user_id' => $school_user_id,
+            'school_post_id' => $school_id,
+            'role' => $user_roles,
+            'key_meta_fields' => [
+                'user_cmn_school_id' => $mapped_school_id,
+                'resolved_school_id' => $resolved_school_id,
+                'post_status' => '',
+                'cmn_status' => '',
+                'cmn_pipeline_stage' => '',
+                'cmn_school_id' => '',
+                'cmn_school_email_domain' => '',
+                'cmn_email' => '',
+            ],
+            'partner_tier_state' => [
+                'partner_table' => [],
+                'school_partner_state' => [],
+            ],
+            'client_status_flag' => [
+                'has_client_activity' => false,
+                'target_status' => '',
+                'target_reason' => 'missing_school_record',
+                'activity_snapshot' => [],
+            ],
+            'sales_pipeline_stage' => '',
+            'in_partner_programme' => [
+                'included' => false,
+                'reason' => 'No mapped school record.',
+            ],
+            'in_sales_schools' => [
+                'included' => false,
+                'reason' => 'No mapped school record.',
+            ],
+            'in_client_schools' => [
+                'included' => false,
+                'reason' => 'No mapped school record.',
+            ],
+        ];
+
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return $report;
+        }
+
+        $post = get_post($school_id);
+        $post_status = $post ? (string) $post->post_status : '';
+        $status_meta_raw = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+        $pipeline_stage = sanitize_key((string) get_post_meta($school_id, 'cmn_pipeline_stage', true));
+        $status_for_list = $this->normalize_school_status_for_lists($status_meta_raw);
+        $allowed_post_statuses = $this->get_school_list_post_statuses();
+
+        $activity_snapshot = $this->get_school_client_activity_snapshot($school_id);
+        $target_payload = $this->resolve_school_status_target_for_lists($status_meta_raw, $activity_snapshot);
+        $target_status = sanitize_key((string) ($target_payload['target_status'] ?? ''));
+        $target_reason = sanitize_key((string) ($target_payload['reason'] ?? ''));
+
+        $report['key_meta_fields'] = [
+            'user_cmn_school_id' => $mapped_school_id,
+            'resolved_school_id' => $resolved_school_id,
+            'post_status' => $post_status,
+            'cmn_status' => $status_meta_raw,
+            'cmn_pipeline_stage' => $pipeline_stage,
+            'cmn_school_id' => (string) get_post_meta($school_id, 'cmn_school_id', true),
+            'cmn_school_email_domain' => (string) get_post_meta($school_id, 'cmn_school_email_domain', true),
+            'cmn_email' => (string) get_post_meta($school_id, 'cmn_email', true),
+        ];
+
+        $partner_row = $this->get_school_partner_record($school_id);
+        $report['partner_tier_state']['partner_table'] = [
+            'tier' => (string) ($partner_row['tier'] ?? 'standard'),
+            'lifetime_credits' => max(0, (int) ($partner_row['lifetime_credits'] ?? 0)),
+            'discount_percent' => round((float) ($partner_row['discount_percent'] ?? 0), 2),
+            'lifetime_savings' => round((float) ($partner_row['lifetime_savings'] ?? 0), 2),
+            'academic_year_savings' => round((float) ($partner_row['academic_year_savings'] ?? 0), 2),
+        ];
+
+        $state_rows = [];
+        $state_table = $this->get_school_partner_state_table();
+        global $wpdb;
+        $state_table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $state_table));
+        $school_user_ids = $this->get_school_user_ids_for_school_list_visibility($school_id);
+        if ($state_table_exists === $state_table && !empty($school_user_ids)) {
+            $ids_placeholders = implode(',', array_fill(0, count($school_user_ids), '%d'));
+            $query = $wpdb->prepare(
+                "SELECT school_user_id, current_tier, discount_pct, confirmed_completed_days, manual_days_adjustment, updated_at
+                 FROM {$state_table}
+                 WHERE school_user_id IN ({$ids_placeholders})
+                 ORDER BY school_user_id ASC",
+                ...$school_user_ids
+            );
+            $rows = (array) $wpdb->get_results($query, ARRAY_A);
+            foreach ($rows as $row) {
+                $state_rows[] = [
+                    'school_user_id' => (int) ($row['school_user_id'] ?? 0),
+                    'current_tier' => (string) ($row['current_tier'] ?? 'standard'),
+                    'discount_pct' => round((float) ($row['discount_pct'] ?? 0), 2),
+                    'confirmed_completed_days' => max(0, (int) ($row['confirmed_completed_days'] ?? 0)),
+                    'manual_days_adjustment' => (int) ($row['manual_days_adjustment'] ?? 0),
+                    'updated_at' => (string) ($row['updated_at'] ?? ''),
+                ];
+            }
+        }
+        $report['partner_tier_state']['school_partner_state'] = $state_rows;
+
+        $report['client_status_flag'] = [
+            'has_client_activity' => !empty($activity_snapshot['has_client_activity']),
+            'target_status' => $target_status,
+            'target_reason' => $target_reason,
+            'activity_snapshot' => $activity_snapshot,
+        ];
+        $report['sales_pipeline_stage'] = $pipeline_stage;
+
+        $partner_included = in_array($post_status, $allowed_post_statuses, true);
+        if ($partner_included) {
+            $report['in_partner_programme'] = [
+                'included' => true,
+                'reason' => 'cmn_school record uses a partner-programme-visible internal post status.',
+            ];
+        } else {
+            $report['in_partner_programme'] = [
+                'included' => false,
+                'reason' => "Post status '{$post_status}' is outside the Partner Programme contract.",
+            ];
+        }
+
+        if (!$partner_included) {
+            $report['in_sales_schools'] = [
+                'included' => false,
+                'reason' => 'School record is outside Sales/Clients post-status contract.',
+            ];
+            $report['in_client_schools'] = [
+                'included' => false,
+                'reason' => 'School record is outside Sales/Clients post-status contract.',
+            ];
+            return $report;
+        }
+
+        if ($status_for_list === 'lead') {
+            $report['in_sales_schools'] = [
+                'included' => true,
+                'reason' => "cmn_status='lead' satisfies Sales -> Schools contract.",
+            ];
+        } else {
+            $report['in_sales_schools'] = [
+                'included' => false,
+                'reason' => "cmn_status='{$status_meta_raw}' does not satisfy Sales -> Schools (expected 'lead').",
+            ];
+        }
+
+        if ($status_for_list === 'client') {
+            $report['in_client_schools'] = [
+                'included' => true,
+                'reason' => "cmn_status='client' satisfies Clients -> Schools contract.",
+            ];
+        } else {
+            $report['in_client_schools'] = [
+                'included' => false,
+                'reason' => "cmn_status='{$status_meta_raw}' does not satisfy Clients -> Schools (expected 'client').",
+            ];
+        }
+
+        return $report;
+    }
+
+    private function reconcile_single_school_list_visibility($school_id, $dry_run = true, $actor_user_id = 0, $trigger = 'manual') {
+        $school_id = (int) $school_id;
+        $actor_user_id = max(0, (int) $actor_user_id);
+        $trigger = sanitize_key((string) $trigger);
+        if ($trigger === '') {
+            $trigger = 'manual';
+        }
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return [
+                'school_id' => $school_id,
+                'updated' => false,
+                'would_update' => false,
+                'reason' => 'invalid_school',
+                'before' => [],
+                'after' => [],
+                'activity_snapshot' => [],
+            ];
+        }
+
+        $current_status = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+        $current_pipeline_stage = sanitize_key((string) get_post_meta($school_id, 'cmn_pipeline_stage', true));
+        $activity_snapshot = $this->get_school_client_activity_snapshot($school_id);
+        $target_payload = $this->resolve_school_status_target_for_lists($current_status, $activity_snapshot);
+        $target_status = sanitize_key((string) ($target_payload['target_status'] ?? $current_status));
+        $target_reason = sanitize_key((string) ($target_payload['reason'] ?? 'no_change'));
+        $target_pipeline_stage = $current_pipeline_stage;
+
+        if ($target_status === 'client' && $current_pipeline_stage !== 'lost') {
+            $target_pipeline_stage = 'won';
+        } elseif ($target_status === 'lead' && $current_pipeline_stage === '') {
+            $target_pipeline_stage = 'new_lead';
+        }
+
+        $before = [
+            'cmn_status' => $current_status,
+            'cmn_pipeline_stage' => $current_pipeline_stage,
+        ];
+        $after = [
+            'cmn_status' => $target_status,
+            'cmn_pipeline_stage' => $target_pipeline_stage,
+        ];
+        $would_update = ($before['cmn_status'] !== $after['cmn_status']) || ($before['cmn_pipeline_stage'] !== $after['cmn_pipeline_stage']);
+        $updated = false;
+
+        if ($would_update && !$dry_run) {
+            if ($before['cmn_status'] !== $after['cmn_status']) {
+                update_post_meta($school_id, 'cmn_status', $after['cmn_status']);
+            }
+            if ($before['cmn_pipeline_stage'] !== $after['cmn_pipeline_stage']) {
+                update_post_meta($school_id, 'cmn_pipeline_stage', $after['cmn_pipeline_stage']);
+            }
+            $updated = true;
+
+            $audit_metadata = [
+                'trigger' => $trigger,
+                'before' => $before,
+                'after' => $after,
+                'target_reason' => $target_reason,
+                'client_activity_signals' => (array) ($activity_snapshot['client_activity_signals'] ?? []),
+            ];
+            $this->add_audit_log('school_list_visibility_reconciled', 'school', (string) $school_id, $audit_metadata, $actor_user_id);
+            if (function_exists('cmn_audit_log_event')) {
+                cmn_audit_log_event([
+                    'module' => 'crm',
+                    'entity_type' => 'school',
+                    'entity_id' => $school_id,
+                    'event_type' => 'school_list_visibility_reconciled',
+                    'actor_user_id' => $actor_user_id > 0 ? $actor_user_id : null,
+                    'metadata' => $audit_metadata,
+                ]);
+            }
+        }
+
+        return [
+            'school_id' => $school_id,
+            'updated' => $updated,
+            'would_update' => $would_update,
+            'reason' => $target_reason,
+            'before' => $before,
+            'after' => $after,
+            'activity_snapshot' => $activity_snapshot,
+        ];
+    }
+
+    /*
+     * Acceptance tests:
+     * - Reconcile scan can run dry-run without changing school status metadata.
+     * - Apply mode updates stale list flags and logs before/after state changes.
+     * - Unmapped school users are surfaced in summary for follow-up.
+     */
+    private function run_school_list_visibility_reconciliation($dry_run = true, $actor_user_id = 0, $trigger = 'manual') {
+        $dry_run = (bool) $dry_run;
+        $actor_user_id = max(0, (int) $actor_user_id);
+        $trigger = sanitize_key((string) $trigger);
+        if ($trigger === '') {
+            $trigger = 'manual';
+        }
+
+        $school_ids = get_posts([
+            'post_type' => 'cmn_school',
+            'post_status' => $this->get_school_list_post_statuses(),
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+        ]);
+        $school_ids = array_values(array_unique(array_filter(array_map('intval', (array) $school_ids))));
+
+        // Also include school accounts that may have stale/missing post mappings.
+        $school_users = get_users([
+            'role__in' => ['cmn_school_manager', 'cmn_school_staff'],
+            'fields' => ['ID'],
+            'number' => -1,
+        ]);
+        $missing_mapped_school_users = [];
+        foreach ((array) $school_users as $school_user) {
+            $uid = (int) ($school_user->ID ?? 0);
+            if ($uid < 1) {
+                continue;
+            }
+            $resolved_school_id = (int) $this->resolve_school_id_for_user($uid);
+            if ($resolved_school_id > 0) {
+                $school_ids[] = $resolved_school_id;
+            } else {
+                $missing_mapped_school_users[] = $uid;
+            }
+        }
+        $school_ids = array_values(array_unique(array_filter(array_map('intval', $school_ids))));
+
+        $summary = [
+            'dry_run' => $dry_run,
+            'trigger' => $trigger,
+            'scanned_schools' => 0,
+            'would_update' => 0,
+            'updated' => 0,
+            'unchanged' => 0,
+            'missing_mapped_school_users' => $missing_mapped_school_users,
+            'changes' => [],
+        ];
+
+        foreach ($school_ids as $school_id) {
+            $result = $this->reconcile_single_school_list_visibility($school_id, $dry_run, $actor_user_id, $trigger);
+            $summary['scanned_schools']++;
+            if (!empty($result['would_update'])) {
+                $summary['would_update']++;
+            } elseif (empty($result['updated'])) {
+                $summary['unchanged']++;
+            }
+            if (!empty($result['updated'])) {
+                $summary['updated']++;
+            }
+            if (!empty($result['would_update']) || !empty($result['updated'])) {
+                $summary['changes'][] = $result;
+            }
+        }
+
+        $run_audit = [
+            'dry_run' => $dry_run ? 1 : 0,
+            'trigger' => $trigger,
+            'scanned_schools' => (int) $summary['scanned_schools'],
+            'would_update' => (int) $summary['would_update'],
+            'updated' => (int) $summary['updated'],
+            'unchanged' => (int) $summary['unchanged'],
+            'missing_mapped_school_users' => array_values(array_map('intval', (array) $summary['missing_mapped_school_users'])),
+        ];
+        $this->add_audit_log('school_list_visibility_reconcile_run', 'system', 'school_lists', $run_audit, $actor_user_id);
+        if (function_exists('cmn_audit_log_event')) {
+            cmn_audit_log_event([
+                'module' => 'crm',
+                'entity_type' => 'system',
+                'entity_id' => 'school_lists',
+                'event_type' => 'school_list_visibility_reconcile_run',
+                'actor_user_id' => $actor_user_id > 0 ? $actor_user_id : null,
+                'metadata' => $run_audit,
+            ]);
+        }
+
+        return $summary;
+    }
+
+    public function handle_reconcile_school_lists() {
+        if (!is_user_logged_in() || !$this->is_admin_user(get_current_user_id()) || !current_user_can('manage_options')) {
+            wp_die('Not authorised.');
+        }
+        if (!isset($_POST['cmn_reconcile_school_lists_nonce']) || !wp_verify_nonce($_POST['cmn_reconcile_school_lists_nonce'], 'cmn_reconcile_school_lists')) {
+            wp_die('Invalid request');
+        }
+
+        $dry_run = !empty($_POST['cmn_dry_run']);
+        $actor_user_id = (int) get_current_user_id();
+        $summary = $this->run_school_list_visibility_reconciliation($dry_run, $actor_user_id, 'admin_reconcile_button');
+
+        $portal_fallback = add_query_arg(['view' => 'school-partner-admin'], $this->get_portal_base_url());
+        $return_url_raw = esc_url_raw((string) ($_POST['cmn_return_url'] ?? $portal_fallback));
+        $return_url = wp_validate_redirect($return_url_raw, $portal_fallback);
+        $msg = sprintf(
+            '%s complete. Scanned: %d, Would update: %d, Updated: %d, Unchanged: %d, Unmapped school users: %d.',
+            $dry_run ? 'Dry-run reconcile' : 'Reconcile',
+            (int) ($summary['scanned_schools'] ?? 0),
+            (int) ($summary['would_update'] ?? 0),
+            (int) ($summary['updated'] ?? 0),
+            (int) ($summary['unchanged'] ?? 0),
+            count((array) ($summary['missing_mapped_school_users'] ?? []))
+        );
+        $msg_type = (!empty($summary['missing_mapped_school_users'])) ? 'warning' : 'success';
+        $args = [
+            'cmn_sp_admin_msg' => rawurlencode($msg),
+            'cmn_sp_admin_msg_type' => $msg_type,
+        ];
+        wp_safe_redirect(add_query_arg($args, $return_url));
+        exit;
     }
 
     private function upsert_school_index($post_id) {
@@ -62482,6 +74840,127 @@ p{margin:0;line-height:1.5}
             return $by_domain;
         }
         return $this->find_school_by_name($identifier);
+    }
+
+    private function is_school_debug_enabled() {
+        if (defined('CMN_DEBUG_SCHOOLS')) {
+            $raw_value = CMN_DEBUG_SCHOOLS;
+            if (is_bool($raw_value)) {
+                return $raw_value;
+            }
+            $normalized = strtolower(trim((string) $raw_value));
+            return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+        }
+        $env_value = getenv('CMN_DEBUG_SCHOOLS');
+        $normalized_env = strtolower(trim((string) $env_value));
+        return in_array($normalized_env, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private function log_school_debug($event, $context = []) {
+        $event_key = sanitize_key((string) $event);
+        $always_log = (strpos($event_key, 'staff_school_view_') === 0)
+            || in_array($event_key, ['school_profile_related_data_failed', 'school_profile_timeline_failed'], true);
+        if (!$always_log && !$this->is_school_debug_enabled()) {
+            return;
+        }
+        $payload = [
+            'event' => $event_key,
+            'user_id' => (int) get_current_user_id(),
+            'role' => $this->get_current_user_role(),
+            'timestamp' => current_time('mysql'),
+            'context' => is_array($context) ? $context : [],
+        ];
+        error_log('[CMN_SCHOOL_DEBUG] ' . wp_json_encode($payload));
+    }
+
+    private function log_school_view_event($req_id, $step, $context = [], $start_time = null) {
+        $payload = [
+            'req_id' => (string) $req_id,
+            'step' => sanitize_key((string) $step),
+            'timestamp' => current_time('mysql'),
+            'context' => is_array($context) ? $context : [],
+        ];
+        if ($start_time !== null) {
+            $payload['elapsed_ms'] = (int) round((microtime(true) - (float) $start_time) * 1000);
+        }
+        error_log('[CMN_SCHVIEW] ' . wp_json_encode($payload));
+    }
+
+    private function log_school_view_crash($req_id, $reference_code, $context = []) {
+        $payload = [
+            'req_id' => (string) $req_id,
+            'reference' => (string) $reference_code,
+            'timestamp' => current_time('mysql'),
+            'context' => is_array($context) ? $context : [],
+        ];
+        error_log('[CMN_SCHOOL_VIEW_CRASH] ' . wp_json_encode($payload));
+    }
+
+    private function build_school_view_error_card($reference_code, $reason, $requested_identifier, $resolved_school_id) {
+        $reference_code = sanitize_text_field((string) $reference_code);
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            $reason = 'An unexpected error occurred.';
+        }
+        $requested_identifier = sanitize_text_field((string) $requested_identifier);
+        $resolved_school_id = (int) $resolved_school_id;
+        if (function_exists('mb_strimwidth')) {
+            $reason_short = mb_strimwidth($reason, 0, 160, '...');
+        } else {
+            $reason_short = strlen($reason) > 160 ? (substr($reason, 0, 157) . '...') : $reason;
+        }
+        $lines = [
+            '<div class="cmn-panel-card">',
+            '<h3>School profile could not render</h3>',
+            '<p>' . esc_html($reason_short) . '</p>',
+            '<p class="cmn-muted">Reference: ' . esc_html($reference_code) . '</p>',
+            '<p class="cmn-muted">Requested school_id: ' . esc_html($requested_identifier !== '' ? $requested_identifier : '—') . '</p>',
+            '<p class="cmn-muted">Resolved post ID: ' . esc_html($resolved_school_id > 0 ? (string) $resolved_school_id : '—') . '</p>',
+            '</div>',
+        ];
+        return implode('', $lines);
+    }
+
+    private function is_school_active_for_availability($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return false;
+        }
+        $school_status = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+        if ($school_status === 'client') {
+            return true;
+        }
+        $access_request_status = (string) $this->get_school_access_request_status($school_id);
+        return $access_request_status === 'approved';
+    }
+
+    private function get_school_profile_missing_fields($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return [];
+        }
+        $missing = [];
+        $school_identifier = trim((string) get_post_meta($school_id, 'cmn_school_id', true));
+        $school_email = sanitize_email((string) get_post_meta($school_id, 'cmn_email', true));
+        $school_location = trim((string) get_post_meta($school_id, 'cmn_location', true));
+        $school_postcode = trim((string) get_post_meta($school_id, 'cmn_postcode', true));
+        $school_domain = trim((string) get_post_meta($school_id, 'cmn_school_email_domain', true));
+        if ($school_identifier === '') {
+            $missing[] = 'School ID';
+        }
+        if ($school_email === '' || !is_email($school_email)) {
+            $missing[] = 'School Email';
+        }
+        if ($school_location === '') {
+            $missing[] = 'Location';
+        }
+        if ($school_postcode === '') {
+            $missing[] = 'Postcode';
+        }
+        if ($school_domain === '' && $this->get_email_domain($school_email) === '') {
+            $missing[] = 'School Email Domain';
+        }
+        return $missing;
     }
 
     private function get_school_id_by_name($name) {
@@ -63620,6 +76099,7 @@ p{margin:0;line-height:1.5}
         wp_send_json_success([
             'theme' => $theme,
             'preferences' => $prefs,
+            'notification_preferences' => $this->get_user_notification_preferences($user_id),
             'deletion_requested' => get_user_meta($user_id, 'cmn_deletion_requested', true) ? 1 : 0,
             'deletion_requested_at' => (string) get_user_meta($user_id, 'cmn_deletion_requested_at', true),
         ]);
@@ -63644,9 +76124,90 @@ p{margin:0;line-height:1.5}
             }
             update_user_meta($user_id, $meta_key, $value === '0' ? '0' : '1');
         }
+        $raw_notification_prefs = isset($_POST['notification_preferences']) ? (array) $_POST['notification_preferences'] : [];
+        foreach (array_keys($this->get_notification_preference_defaults()) as $meta_key) {
+            if (array_key_exists($meta_key, $_POST)) {
+                $raw_notification_prefs[$meta_key] = (string) $_POST[$meta_key];
+            }
+        }
+        $notification_preferences = $this->save_user_notification_preferences($user_id, $raw_notification_prefs);
+        $this->add_audit_log('notification_preferences_updated', 'user', (string) $user_id, [
+            'scope' => 'candidate_settings',
+            'portal_enabled' => (int) ($notification_preferences['portal_enabled'] ?? 1),
+            'email_enabled' => (int) ($notification_preferences['email_enabled'] ?? 1),
+            'quiet_hours_enabled' => (int) ($notification_preferences['quiet_hours_enabled'] ?? 0),
+            'quiet_start' => (string) ($notification_preferences['quiet_start'] ?? '22:00'),
+            'quiet_end' => (string) ($notification_preferences['quiet_end'] ?? '07:00'),
+            'allow_urgent_quiet' => (int) ($notification_preferences['allow_urgent_quiet'] ?? 1),
+            'timezone' => (string) ($notification_preferences['timezone'] ?? $this->get_notification_default_timezone()),
+        ], $user_id);
         wp_send_json_success([
             'message' => 'Settings saved.',
             'theme' => $theme,
+            'notification_preferences' => $notification_preferences,
+        ]);
+    }
+
+    private function can_user_manage_notification_preferences($user_id) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            return false;
+        }
+        return $this->is_candidate_user($user_id)
+            || $this->is_school_user($user_id)
+            || $this->is_staff_user($user_id)
+            || $this->is_admin_user($user_id);
+    }
+
+    public function handle_get_notification_preferences() {
+        if (!check_ajax_referer('cmn_notification_preferences', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $user_id = (int) get_current_user_id();
+        if (!$this->can_user_manage_notification_preferences($user_id)) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        wp_send_json_success([
+            'preferences' => $this->get_user_notification_preferences($user_id),
+        ]);
+    }
+
+    public function handle_save_notification_preferences() {
+        if (!check_ajax_referer('cmn_notification_preferences', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $user_id = (int) get_current_user_id();
+        if (!$this->can_user_manage_notification_preferences($user_id)) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+
+        $raw_preferences = isset($_POST['notification_preferences']) ? (array) $_POST['notification_preferences'] : [];
+        foreach (array_keys($this->get_notification_preference_defaults()) as $meta_key) {
+            if (array_key_exists($meta_key, $_POST)) {
+                $raw_preferences[$meta_key] = (string) $_POST[$meta_key];
+            }
+        }
+        $saved = $this->save_user_notification_preferences($user_id, $raw_preferences);
+        $this->add_audit_log('notification_preferences_updated', 'user', (string) $user_id, [
+            'scope' => 'notification_preferences_centre',
+            'portal_enabled' => (int) ($saved['portal_enabled'] ?? 1),
+            'email_enabled' => (int) ($saved['email_enabled'] ?? 1),
+            'quiet_hours_enabled' => (int) ($saved['quiet_hours_enabled'] ?? 0),
+            'quiet_start' => (string) ($saved['quiet_start'] ?? '22:00'),
+            'quiet_end' => (string) ($saved['quiet_end'] ?? '07:00'),
+            'allow_urgent_quiet' => (int) ($saved['allow_urgent_quiet'] ?? 1),
+            'timezone' => (string) ($saved['timezone'] ?? $this->get_notification_default_timezone()),
+        ], $user_id);
+
+        wp_send_json_success([
+            'message' => 'Notification preferences saved.',
+            'preferences' => $saved,
         ]);
     }
 
@@ -65392,6 +77953,785 @@ p{margin:0;line-height:1.5}
         exit;
     }
 
+    private function normalize_priority_month_key($month_key = '') {
+        $month_key = trim((string) $month_key);
+        if ($month_key === '') {
+            return $this->get_priority_month_key();
+        }
+        if (preg_match('/^\d{4}-\d{2}$/', $month_key) !== 1) {
+            return $this->get_priority_month_key();
+        }
+        return $month_key;
+    }
+
+    private function get_priority_month_key(DateTimeImmutable $reference = null) {
+        if (!$reference instanceof DateTimeImmutable) {
+            $reference = function_exists('cmn_now')
+                ? cmn_now()
+                : new DateTimeImmutable('now', wp_timezone());
+        }
+        return $reference->setTimezone(wp_timezone())->format('Y-m');
+    }
+
+    private function get_priority_allocation_limit_map() {
+        return [
+            'standard' => 0,
+            'bronze' => 3,
+            'silver' => 5,
+            'gold' => 10,
+            'elite' => 25,
+        ];
+    }
+
+    public function get_priority_allocation_limit($school_user_id) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1) {
+            return 0;
+        }
+        $state = $this->ensure_school_partner_state_for_user($school_user_id);
+        if (is_wp_error($state)) {
+            return 0;
+        }
+        $tier = sanitize_key((string) ($state['current_tier'] ?? 'standard'));
+        $limits = $this->get_priority_allocation_limit_map();
+        return max(0, (int) ($limits[$tier] ?? 0));
+    }
+
+    public function get_priority_allocation_usage($school_user_id, $month_key) {
+        global $wpdb;
+        $school_user_id = (int) $school_user_id;
+        $month_key = $this->normalize_priority_month_key($month_key);
+        if ($school_user_id < 1 || $month_key === '') {
+            return 0;
+        }
+        $table = $this->get_priority_allocations_table();
+        $table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            return 0;
+        }
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+             FROM {$table}
+             WHERE school_user_id = %d
+               AND month_key = %s",
+            $school_user_id,
+            $month_key
+        ));
+    }
+
+    private function get_priority_coordinates_for_user_meta($user_id) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            return null;
+        }
+        $lat_keys = ['cmn_lat', 'cmn_latitude', 'cmn_location_lat', 'cmn_geo_lat', 'lat', 'latitude'];
+        $lng_keys = ['cmn_lng', 'cmn_long', 'cmn_longitude', 'cmn_location_lng', 'cmn_geo_lng', 'lng', 'longitude'];
+        $lat = null;
+        $lng = null;
+        foreach ($lat_keys as $key) {
+            $parsed = $this->parse_marketing_coordinate_value(get_user_meta($user_id, $key, true));
+            if ($parsed !== null) {
+                $lat = $parsed;
+                break;
+            }
+        }
+        foreach ($lng_keys as $key) {
+            $parsed = $this->parse_marketing_coordinate_value(get_user_meta($user_id, $key, true));
+            if ($parsed !== null) {
+                $lng = $parsed;
+                break;
+            }
+        }
+        if ($lat === null || $lng === null) {
+            return null;
+        }
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return null;
+        }
+        return [
+            'lat' => (float) $lat,
+            'lng' => (float) $lng,
+        ];
+    }
+
+    private function get_priority_coordinates_for_school_user($school_user_id) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1) {
+            return null;
+        }
+        $school_id = (int) $this->resolve_school_id_for_user($school_user_id);
+        if ($school_id > 0) {
+            $coords = $this->get_geo_coordinates_for_post($school_id);
+            if (is_array($coords)) {
+                return $coords;
+            }
+        }
+        return $this->get_priority_coordinates_for_user_meta($school_user_id);
+    }
+
+    private function get_priority_coordinates_for_candidate($candidate_id, $candidate_user_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id > 0) {
+            $coords = $this->get_geo_coordinates_for_post($candidate_id);
+            if (is_array($coords)) {
+                return $coords;
+            }
+        }
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id > 0) {
+            $coords = $this->get_priority_coordinates_for_user_meta($candidate_user_id);
+            if (is_array($coords)) {
+                return $coords;
+            }
+        }
+        return null;
+    }
+
+    private function candidate_matches_priority_booking_role($candidate_id, $booking_role_label = '') {
+        $candidate_id = (int) $candidate_id;
+        $booking_role_label = sanitize_text_field((string) $booking_role_label);
+        if ($candidate_id < 1 || $booking_role_label === '') {
+            return true;
+        }
+        $booking_role_key = sanitize_title($booking_role_label);
+        if ($booking_role_key === '') {
+            return true;
+        }
+        $role_labels = $this->get_candidate_role_labels($candidate_id);
+        foreach ((array) $role_labels as $label) {
+            if (sanitize_title((string) $label) === $booking_role_key) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function get_candidates_within_radius($school_user_id, $radius_miles = 30, $booking_id = 0) {
+        $school_user_id = (int) $school_user_id;
+        $radius_miles = max(1.0, min(100.0, (float) $radius_miles));
+        $booking_id = (int) $booking_id;
+        if ($school_user_id < 1 || !$this->is_school_user($school_user_id)) {
+            return [];
+        }
+
+        $school_id = (int) $this->resolve_school_id_for_user($school_user_id);
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return [];
+        }
+
+        $school_coords = $this->get_priority_coordinates_for_school_user($school_user_id);
+        if (!is_array($school_coords)) {
+            return [];
+        }
+
+        $booking_role_label = '';
+        if ($booking_id > 0 && get_post_type($booking_id) === 'cmn_booking') {
+            $booking_school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
+            if ($booking_school_id !== $school_id) {
+                return [];
+            }
+            $booking_role_label = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_role', true));
+        }
+
+        $candidate_ids = get_posts([
+            'post_type' => 'cmn_candidate',
+            'post_status' => ['publish', 'private', 'draft', 'pending'],
+            'posts_per_page' => 5000,
+            'fields' => 'ids',
+            'no_found_rows' => true,
+            'meta_query' => [
+                [
+                    'key' => 'cmn_status',
+                    'value' => 'approved',
+                ],
+                [
+                    'key' => 'cmn_user_id',
+                    'compare' => 'EXISTS',
+                ],
+            ],
+        ]);
+        if (!$candidate_ids) {
+            return [];
+        }
+
+        $lat_delta = $radius_miles / 69.0;
+        $lng_divisor = cos(deg2rad((float) $school_coords['lat']));
+        if (abs($lng_divisor) < 0.01) {
+            $lng_divisor = 0.01;
+        }
+        $lng_delta = $radius_miles / (69.0 * abs($lng_divisor));
+        $matches = [];
+
+        foreach ((array) $candidate_ids as $candidate_id) {
+            $candidate_id = (int) $candidate_id;
+            if ($candidate_id < 1) {
+                continue;
+            }
+            $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+            if ($candidate_status !== 'approved') {
+                continue;
+            }
+            if ((string) get_post_meta($candidate_id, 'cmn_deactivated', true) === '1') {
+                continue;
+            }
+            if (!$this->candidate_matches_priority_booking_role($candidate_id, $booking_role_label)) {
+                continue;
+            }
+
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            if ($candidate_user_id < 1 || !$this->is_candidate_user($candidate_user_id)) {
+                continue;
+            }
+            if ((string) get_user_meta($candidate_user_id, 'cmn_deactivated', true) === '1') {
+                continue;
+            }
+
+            $candidate_coords = $this->get_priority_coordinates_for_candidate($candidate_id, $candidate_user_id);
+            if (!is_array($candidate_coords)) {
+                continue;
+            }
+            if (abs((float) $candidate_coords['lat'] - (float) $school_coords['lat']) > $lat_delta) {
+                continue;
+            }
+            if (abs((float) $candidate_coords['lng'] - (float) $school_coords['lng']) > $lng_delta) {
+                continue;
+            }
+
+            $distance_miles = (float) $this->marketing_haversine_miles(
+                (float) $school_coords['lat'],
+                (float) $school_coords['lng'],
+                (float) $candidate_coords['lat'],
+                (float) $candidate_coords['lng']
+            );
+            if ($distance_miles > $radius_miles) {
+                continue;
+            }
+
+            $matches[$candidate_user_id] = [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'candidate_name' => (string) get_the_title($candidate_id),
+                'distance_miles' => round($distance_miles, 2),
+                'role_labels' => $this->get_candidate_role_labels($candidate_id),
+            ];
+        }
+
+        if (!$matches) {
+            return [];
+        }
+        uasort($matches, static function ($a, $b) {
+            return ((float) ($a['distance_miles'] ?? 0)) <=> ((float) ($b['distance_miles'] ?? 0));
+        });
+
+        return array_values($matches);
+    }
+
+    private function get_school_priority_allocation_booking_options($school_id, $limit = 120) {
+        $school_id = (int) $school_id;
+        $limit = max(1, min(300, (int) $limit));
+        if ($school_id < 1) {
+            return [];
+        }
+
+        $bookings = get_posts([
+            'post_type' => 'cmn_booking',
+            'post_status' => ['publish', 'private', 'draft', 'pending'],
+            'posts_per_page' => $limit,
+            'meta_query' => [
+                [
+                    'key' => 'cmn_school_id',
+                    'value' => $school_id,
+                ],
+            ],
+            'meta_key' => 'cmn_date',
+            'orderby' => 'meta_value',
+            'order' => 'DESC',
+        ]);
+        if (!$bookings) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ((array) $bookings as $booking) {
+            if (!$booking instanceof WP_Post) {
+                continue;
+            }
+            $booking_id = (int) $booking->ID;
+            if ($booking_id < 1) {
+                continue;
+            }
+            $booking_status = sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
+            if (in_array($booking_status, ['cancelled', 'canceled', 'void', 'deleted'], true)) {
+                continue;
+            }
+            $booking_date = $this->normalize_invoice_date((string) get_post_meta($booking_id, 'cmn_date', true));
+            $role_label = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_role', true));
+            $date_label = $booking_date !== '' ? date_i18n('D j M Y', strtotime($booking_date)) : 'Date TBC';
+            $rows[] = [
+                'booking_id' => $booking_id,
+                'booking_date' => $booking_date,
+                'role_label' => $role_label,
+                'label' => 'Booking #' . $booking_id . ' - ' . $date_label . ($role_label !== '' ? ' - ' . $role_label : ''),
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function get_priority_allocation_rows_for_school($school_user_id, $limit = 50) {
+        global $wpdb;
+        $school_user_id = (int) $school_user_id;
+        $limit = max(1, min(250, (int) $limit));
+        if ($school_user_id < 1) {
+            return [];
+        }
+        $table = $this->get_priority_allocations_table();
+        $table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            return [];
+        }
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE school_user_id = %d
+             ORDER BY created_at DESC, id DESC
+             LIMIT %d",
+            $school_user_id,
+            $limit
+        ), ARRAY_A);
+        return is_array($rows) ? $rows : [];
+    }
+
+    private function get_priority_interest_count_map(array $allocation_ids) {
+        global $wpdb;
+        $allocation_ids = array_values(array_filter(array_map('intval', $allocation_ids), static function ($id) {
+            return $id > 0;
+        }));
+        if (!$allocation_ids) {
+            return [];
+        }
+        $table = $this->get_priority_interest_table();
+        $table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($allocation_ids), '%d'));
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT allocation_id, COUNT(*) AS interested_total
+             FROM {$table}
+             WHERE allocation_id IN ({$placeholders})
+             GROUP BY allocation_id",
+            ...$allocation_ids
+        ), ARRAY_A);
+        $map = [];
+        foreach ((array) $rows as $row) {
+            $allocation_id = (int) ($row['allocation_id'] ?? 0);
+            if ($allocation_id < 1) {
+                continue;
+            }
+            $map[$allocation_id] = max(0, (int) ($row['interested_total'] ?? 0));
+        }
+        return $map;
+    }
+
+    private function get_priority_interest_candidates($allocation_id, $limit = 100) {
+        global $wpdb;
+        $allocation_id = (int) $allocation_id;
+        $limit = max(1, min(500, (int) $limit));
+        if ($allocation_id < 1) {
+            return [];
+        }
+        $table = $this->get_priority_interest_table();
+        $table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            return [];
+        }
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT candidate_user_id, created_at
+             FROM {$table}
+             WHERE allocation_id = %d
+             ORDER BY created_at DESC, id DESC
+             LIMIT %d",
+            $allocation_id,
+            $limit
+        ), ARRAY_A);
+        if (!is_array($rows) || !$rows) {
+            return [];
+        }
+
+        $output = [];
+        foreach ($rows as $row) {
+            $candidate_user_id = max(0, (int) ($row['candidate_user_id'] ?? 0));
+            if ($candidate_user_id < 1) {
+                continue;
+            }
+            $candidate_id = (int) $this->get_candidate_id_for_user($candidate_user_id);
+            $candidate_name = '';
+            $location = '';
+            $role_labels = [];
+            if ($candidate_id > 0 && get_post_type($candidate_id) === 'cmn_candidate') {
+                $candidate_name = (string) get_the_title($candidate_id);
+                $location = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_location', true));
+                $role_labels = $this->get_candidate_role_labels($candidate_id);
+            }
+            if ($candidate_name === '') {
+                $user = get_user_by('id', $candidate_user_id);
+                $candidate_name = $user instanceof WP_User ? (string) $user->display_name : ('Candidate #' . $candidate_user_id);
+            }
+            $output[] = [
+                'candidate_user_id' => $candidate_user_id,
+                'candidate_id' => $candidate_id,
+                'candidate_name' => $candidate_name,
+                'location' => $location,
+                'role_labels' => $role_labels,
+                'created_at' => (string) ($row['created_at'] ?? ''),
+            ];
+        }
+        return $output;
+    }
+
+    private function get_priority_allocation_by_id($allocation_id) {
+        global $wpdb;
+        $allocation_id = (int) $allocation_id;
+        if ($allocation_id < 1) {
+            return [];
+        }
+        $table = $this->get_priority_allocations_table();
+        $table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            return [];
+        }
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE id = %d
+             LIMIT 1",
+            $allocation_id
+        ), ARRAY_A);
+        return is_array($row) ? $row : [];
+    }
+
+    private function priority_allocation_notification_exists($candidate_user_id, $allocation_id) {
+        global $wpdb;
+        $candidate_user_id = (int) $candidate_user_id;
+        $allocation_id = (int) $allocation_id;
+        if ($candidate_user_id < 1 || $allocation_id < 1) {
+            return false;
+        }
+        $table = $this->get_notifications_table();
+        $pattern = '%cmn_priority_allocation_id=' . $allocation_id . '%';
+        $existing = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+             FROM {$table}
+             WHERE user_id = %d
+               AND type = %s
+               AND link_url LIKE %s",
+            $candidate_user_id,
+            'priority_allocation_alert',
+            $pattern
+        ));
+        return $existing > 0;
+    }
+
+    private function build_priority_interest_action_url($allocation_id, $candidate_user_id = 0) {
+        $allocation_id = (int) $allocation_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        $url = add_query_arg([
+            'action' => 'cmn_priority_interest_register',
+            'cmn_priority_allocation_id' => $allocation_id,
+        ], admin_url('admin-post.php'));
+        $nonce_action = 'cmn_priority_interest_register_' . $allocation_id;
+        return wp_nonce_url($url, $nonce_action, 'cmn_priority_interest_nonce');
+    }
+
+    /*
+     * Prompt acceptance tests:
+     * - Tier limits enforced correctly.
+     * - Standard cannot send.
+     * - Monthly reset works through month_key changes.
+     * - Only candidates within 30 miles are notified.
+     * - Duplicate notification per allocation/candidate is prevented.
+     * - Audit event priority_allocation_sent is written.
+     */
+    public function handle_priority_allocation_send() {
+        if (!is_user_logged_in() || !$this->is_school_user()) {
+            wp_die('Unauthorized');
+        }
+        $nonce = isset($_POST['cmn_priority_allocation_send_nonce'])
+            ? sanitize_text_field(wp_unslash((string) $_POST['cmn_priority_allocation_send_nonce']))
+            : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_priority_allocation_send')) {
+            wp_die('Invalid request');
+        }
+
+        $school_user_id = (int) get_current_user_id();
+        $portal_url = $this->get_portal_base_url();
+        $redirect_url = add_query_arg(['school' => 'priority-allocation'], $portal_url);
+        $school_id = (int) $this->resolve_school_id_for_user($school_user_id);
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            wp_safe_redirect(add_query_arg([
+                'cmn_priority_notice' => rawurlencode('School profile is not available.'),
+                'cmn_priority_notice_type' => 'error',
+            ], $redirect_url));
+            exit;
+        }
+
+        $booking_id = isset($_POST['cmn_priority_booking_id']) ? (int) $_POST['cmn_priority_booking_id'] : 0;
+        if ($booking_id < 1 || get_post_type($booking_id) !== 'cmn_booking') {
+            wp_safe_redirect(add_query_arg([
+                'cmn_priority_notice' => rawurlencode('Select a valid booking before sending.'),
+                'cmn_priority_notice_type' => 'error',
+            ], $redirect_url));
+            exit;
+        }
+        $booking_school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
+        if ($booking_school_id !== $school_id) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_priority_notice' => rawurlencode('That booking does not belong to your school account.'),
+                'cmn_priority_notice_type' => 'error',
+            ], $redirect_url));
+            exit;
+        }
+
+        $message = isset($_POST['cmn_priority_message']) ? sanitize_text_field(wp_unslash((string) $_POST['cmn_priority_message'])) : '';
+        if (function_exists('mb_substr')) {
+            $message = mb_substr($message, 0, 200);
+        } else {
+            $message = substr($message, 0, 200);
+        }
+
+        $limit = $this->get_priority_allocation_limit($school_user_id);
+        if ($limit < 1) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_priority_notice' => rawurlencode('Unlock Priority Allocation at 30 completed bookings.'),
+                'cmn_priority_notice_type' => 'error',
+            ], $redirect_url));
+            exit;
+        }
+
+        $month_key = $this->get_priority_month_key();
+        $usage = $this->get_priority_allocation_usage($school_user_id, $month_key);
+        if ($usage >= $limit) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_priority_notice' => rawurlencode('Monthly Priority Allocation limit reached for this tier.'),
+                'cmn_priority_notice_type' => 'error',
+            ], $redirect_url));
+            exit;
+        }
+
+        global $wpdb;
+        $allocations_table = $this->get_priority_allocations_table();
+        $recent_cutoff_ts = max(0, (int) current_time('timestamp') - 120);
+        $recent_cutoff = gmdate('Y-m-d H:i:s', $recent_cutoff_ts);
+        $recent_duplicate_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id
+             FROM {$allocations_table}
+             WHERE school_user_id = %d
+               AND booking_id = %d
+               AND month_key = %s
+               AND COALESCE(message, '') = %s
+               AND created_at >= %s
+             ORDER BY id DESC
+             LIMIT 1",
+            $school_user_id,
+            $booking_id,
+            $month_key,
+            $message,
+            $recent_cutoff
+        ));
+        if ($recent_duplicate_id > 0) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_priority_notice' => rawurlencode('Priority alert already sent recently for this booking.'),
+                'cmn_priority_notice_type' => 'error',
+            ], $redirect_url));
+            exit;
+        }
+        $inserted = $wpdb->insert($allocations_table, [
+            'school_user_id' => $school_user_id,
+            'booking_id' => $booking_id,
+            'message' => $message !== '' ? $message : null,
+            'status' => 'active',
+            'month_key' => $month_key,
+            'created_at' => current_time('mysql'),
+        ], ['%d', '%d', '%s', '%s', '%s', '%s']);
+        if ($inserted === false) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_priority_notice' => rawurlencode('Unable to send priority allocation right now.'),
+                'cmn_priority_notice_type' => 'error',
+            ], $redirect_url));
+            exit;
+        }
+        $allocation_id = (int) $wpdb->insert_id;
+
+        $eligible_candidates = $this->get_candidates_within_radius($school_user_id, 30, $booking_id);
+        $recipient_count = 0;
+        $school_name = (string) get_the_title($school_id);
+        if ($school_name === '') {
+            $school_name = 'School';
+        }
+        $booking_date = $this->normalize_invoice_date((string) get_post_meta($booking_id, 'cmn_date', true));
+        $booking_date_label = $booking_date !== ''
+            ? date_i18n('D j M Y', strtotime($booking_date))
+            : 'upcoming booking';
+        foreach ((array) $eligible_candidates as $candidate_row) {
+            $candidate_user_id = max(0, (int) ($candidate_row['candidate_user_id'] ?? 0));
+            if ($candidate_user_id < 1) {
+                continue;
+            }
+            if ($this->priority_allocation_notification_exists($candidate_user_id, $allocation_id)) {
+                continue;
+            }
+            $alert_message = $school_name . ' sent a priority allocation for ' . $booking_date_label . '.';
+            if ($message !== '') {
+                $alert_message .= ' ' . $message;
+            }
+            $this->add_notification(
+                $candidate_user_id,
+                'priority_allocation_alert',
+                'Register My Interest',
+                $alert_message,
+                $this->build_priority_interest_action_url($allocation_id, $candidate_user_id)
+            );
+            $recipient_count++;
+        }
+
+        if (function_exists('cmn_audit_log_event')) {
+            cmn_audit_log_event([
+                'module' => 'school_partner',
+                'entity_type' => 'school',
+                'entity_id' => $school_user_id,
+                'event_type' => 'priority_allocation_sent',
+                'metadata' => [
+                    'booking_id' => $booking_id,
+                    'recipient_count' => $recipient_count,
+                ],
+            ]);
+        }
+
+        wp_safe_redirect(add_query_arg([
+            'cmn_priority_notice' => rawurlencode('Priority alert sent to ' . $recipient_count . ' candidate(s).'),
+            'cmn_priority_notice_type' => 'success',
+        ], $redirect_url));
+        exit;
+    }
+
+    /*
+     * Prompt acceptance tests:
+     * - Candidate can register interest once per allocation.
+     * - Duplicate interest attempts are prevented by unique key.
+     * - School is notified when interest is registered.
+     * - Audit event priority_interest_registered is written.
+     * - No auto-booking is triggered.
+     */
+    public function handle_priority_interest_register() {
+        $allocation_id = isset($_REQUEST['cmn_priority_allocation_id']) ? (int) wp_unslash($_REQUEST['cmn_priority_allocation_id']) : 0;
+        $candidate_redirect = add_query_arg(['candidate' => 'bookings'], $this->get_portal_base_url());
+        if (!is_user_logged_in()) {
+            wp_safe_redirect(wp_login_url($candidate_redirect));
+            exit;
+        }
+        $candidate_user_id = (int) get_current_user_id();
+        if (!$this->is_candidate_user($candidate_user_id)) {
+            wp_die('Unauthorized');
+        }
+        if ($allocation_id < 1) {
+            wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('Priority allocation link is invalid.')], $candidate_redirect));
+            exit;
+        }
+
+        $nonce = isset($_REQUEST['cmn_priority_interest_nonce'])
+            ? sanitize_text_field(wp_unslash((string) $_REQUEST['cmn_priority_interest_nonce']))
+            : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_priority_interest_register_' . $allocation_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('Priority allocation link has expired.')], $candidate_redirect));
+            exit;
+        }
+
+        $allocation = $this->get_priority_allocation_by_id($allocation_id);
+        if (!$allocation) {
+            wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('Priority allocation no longer exists.')], $candidate_redirect));
+            exit;
+        }
+        $allocation_status = sanitize_key((string) ($allocation['status'] ?? 'active'));
+        if (!in_array($allocation_status, ['active'], true)) {
+            wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('This priority allocation is closed.')], $candidate_redirect));
+            exit;
+        }
+
+        $school_user_id = max(0, (int) ($allocation['school_user_id'] ?? 0));
+        $booking_id = max(0, (int) ($allocation['booking_id'] ?? 0));
+        if ($school_user_id < 1 || $booking_id < 1) {
+            wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('Priority allocation data is incomplete.')], $candidate_redirect));
+            exit;
+        }
+
+        $eligible = $this->get_candidates_within_radius($school_user_id, 30, $booking_id);
+        $allowed_user_ids = array_map(static function ($row) {
+            return max(0, (int) ($row['candidate_user_id'] ?? 0));
+        }, (array) $eligible);
+        if (!in_array($candidate_user_id, $allowed_user_ids, true)) {
+            wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('You are not eligible for this priority allocation.')], $candidate_redirect));
+            exit;
+        }
+
+        global $wpdb;
+        $interest_table = $this->get_priority_interest_table();
+        $inserted = $wpdb->insert($interest_table, [
+            'allocation_id' => $allocation_id,
+            'candidate_user_id' => $candidate_user_id,
+            'created_at' => current_time('mysql'),
+        ], ['%d', '%d', '%s']);
+        if ($inserted === false) {
+            $already_registered = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*)
+                 FROM {$interest_table}
+                 WHERE allocation_id = %d
+                   AND candidate_user_id = %d",
+                $allocation_id,
+                $candidate_user_id
+            )) > 0;
+            if ($already_registered) {
+                wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('Your interest is already registered.')], $candidate_redirect));
+                exit;
+            }
+            wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('Unable to register interest right now.')], $candidate_redirect));
+            exit;
+        }
+
+        $candidate_id = (int) $this->get_candidate_id_for_user($candidate_user_id);
+        $candidate_name = $candidate_id > 0 ? (string) get_the_title($candidate_id) : '';
+        if ($candidate_name === '') {
+            $user = get_user_by('id', $candidate_user_id);
+            $candidate_name = $user instanceof WP_User ? (string) $user->display_name : ('Candidate #' . $candidate_user_id);
+        }
+        $school_link = add_query_arg([
+            'school' => 'priority-allocation',
+            'cmn_priority_allocation_id' => $allocation_id,
+        ], $this->get_portal_base_url());
+        $this->add_notification(
+            $school_user_id,
+            'priority_interest_registered',
+            'Priority interest received',
+            $candidate_name . ' registered interest for Booking #' . $booking_id . '.',
+            $school_link
+        );
+
+        if (function_exists('cmn_audit_log_event')) {
+            cmn_audit_log_event([
+                'module' => 'candidate',
+                'entity_type' => 'candidate',
+                'entity_id' => $candidate_user_id,
+                'event_type' => 'priority_interest_registered',
+                'metadata' => [
+                    'allocation_id' => $allocation_id,
+                ],
+            ]);
+        }
+
+        wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('Your interest has been registered.')], $candidate_redirect));
+        exit;
+    }
+
     public function handle_request_candidate() {
         if (!check_ajax_referer('cmn_request_candidate', 'nonce', false)) {
             wp_send_json_error(['message' => 'Invalid request.'], 403);
@@ -66515,6 +79855,9 @@ p{margin:0;line-height:1.5}
             wp_send_json_error(['message' => 'Unauthorized.'], 403);
         }
         $this->maybe_request_booking_feedback_notifications($booking_id);
+        if ($viewer_role === 'school') {
+            wp_send_json_success($this->get_school_candidate_feedback_payload($booking_id, $viewer_user_id));
+        }
         wp_send_json_success($this->get_booking_feedback_payload($booking_id, $viewer_user_id, $viewer_role));
     }
 
@@ -66537,6 +79880,125 @@ p{margin:0;line-height:1.5}
         if (!$this->user_can_access_booking_feedback($booking_id, $viewer_user_id, $viewer_role)) {
             wp_send_json_error(['message' => 'Unauthorized.'], 403);
         }
+        if ($viewer_role === 'school') {
+            $booking_school_user_id = (int) $this->get_booking_school_user_id($booking_id);
+            if ($booking_school_user_id < 1 || $booking_school_user_id !== $viewer_user_id) {
+                wp_send_json_error(['message' => 'You can only submit feedback for your own school bookings.'], 403);
+            }
+            if (!$this->is_school_candidate_feedback_eligible($booking_id)) {
+                wp_send_json_error(['message' => 'Feedback is available only after booking completion is confirmed.'], 400);
+            }
+
+            $candidate_user_id = (int) $this->get_booking_candidate_user_id($booking_id);
+            if ($candidate_user_id < 1) {
+                wp_send_json_error(['message' => 'Unable to resolve candidate for this booking.'], 400);
+            }
+            $existing_feedback = $this->get_candidate_feedback_row_by_booking($booking_id, $candidate_user_id);
+            if (!empty($existing_feedback)) {
+                wp_send_json_success([
+                    'message' => 'Feedback already submitted.',
+                    'feedback' => $this->get_school_candidate_feedback_payload($booking_id, $viewer_user_id),
+                ]);
+            }
+
+            $module_fields = $this->get_candidate_feedback_module_fields();
+            $scores = [];
+            foreach ($module_fields as $field => $label) {
+                $score = (int) ($_POST[$field] ?? 0);
+                if ($score < 1 || $score > 5) {
+                    wp_send_json_error(['message' => 'Please complete all module ratings (1-5).'], 400);
+                }
+                $scores[$field] = $score;
+            }
+            $comment = sanitize_textarea_field((string) ($_POST['comment'] ?? ''));
+            $average_rating = round(array_sum($scores) / max(1, count($scores)), 2);
+
+            global $wpdb;
+            $candidate_feedback_table = $this->get_candidate_feedback_table();
+            $inserted = $wpdb->insert($candidate_feedback_table, [
+                'booking_id' => $booking_id,
+                'school_user_id' => $viewer_user_id,
+                'candidate_user_id' => $candidate_user_id,
+                'score_punctuality' => (int) $scores['score_punctuality'],
+                'score_classroom_management' => (int) $scores['score_classroom_management'],
+                'score_professionalism' => (int) $scores['score_professionalism'],
+                'score_communication' => (int) $scores['score_communication'],
+                'score_adaptability' => (int) $scores['score_adaptability'],
+                'score_lesson_delivery' => (int) $scores['score_lesson_delivery'],
+                'score_safeguarding' => (int) $scores['score_safeguarding'],
+                'average_rating' => $average_rating,
+                'comments' => $comment !== '' ? $comment : null,
+                'created_at' => current_time('mysql'),
+                'updated_at' => current_time('mysql'),
+            ], ['%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%f', '%s', '%s', '%s']);
+
+            if ($inserted === false) {
+                if (strpos((string) $wpdb->last_error, 'Duplicate') !== false) {
+                    wp_send_json_success([
+                        'message' => 'Feedback already submitted.',
+                        'feedback' => $this->get_school_candidate_feedback_payload($booking_id, $viewer_user_id),
+                    ]);
+                }
+                wp_send_json_error(['message' => 'Unable to save feedback right now.'], 500);
+            }
+
+            $this->upsert_candidate_rating_stats($candidate_user_id);
+
+            $candidate_post_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+            if ($candidate_post_id > 0) {
+                $legacy_overall = max(1, min(5, (int) round($average_rating)));
+                $legacy_table = $this->get_booking_feedback_table();
+                $wpdb->replace($legacy_table, [
+                    'booking_id' => $booking_id,
+                    'rater_user_id' => $viewer_user_id,
+                    'rated_entity_type' => 'candidate',
+                    'rated_entity_id' => $candidate_post_id,
+                    'stars_overall' => $legacy_overall,
+                    'stars_1' => (int) $scores['score_punctuality'],
+                    'stars_2' => (int) $scores['score_professionalism'],
+                    'stars_3' => (int) $scores['score_classroom_management'],
+                    'tags' => null,
+                    'would_rebook' => null,
+                    'comment' => $comment,
+                    'created_at' => current_time('mysql'),
+                ], ['%d', '%d', '%s', '%d', '%d', '%d', '%d', '%d', '%s', '%d', '%s', '%s']);
+
+                $this->sync_feedback_insights_entry_from_booking_feedback(
+                    $booking_id,
+                    'school',
+                    'candidate',
+                    $candidate_post_id,
+                    $legacy_overall,
+                    (int) $scores['score_punctuality'],
+                    (int) $scores['score_professionalism'],
+                    null,
+                    $comment
+                );
+                $this->maybe_process_candidate_feedback_risk_alerts($candidate_post_id, $booking_id);
+                $this->maybe_notify_low_booking_feedback($booking_id, 'school', $legacy_overall, $viewer_user_id);
+            }
+
+            if (function_exists('cmn_audit_log_event')) {
+                cmn_audit_log_event([
+                    'module' => 'feedback',
+                    'entity_type' => 'booking',
+                    'entity_id' => $booking_id,
+                    'event_type' => 'candidate_feedback_submitted',
+                    'actor_user_id' => $viewer_user_id,
+                    'metadata' => [
+                        'candidate_user_id' => $candidate_user_id,
+                        'school_user_id' => $viewer_user_id,
+                        'average_rating' => $average_rating,
+                    ],
+                ]);
+            }
+
+            wp_send_json_success([
+                'message' => 'Feedback submitted.',
+                'feedback' => $this->get_school_candidate_feedback_payload($booking_id, $viewer_user_id),
+            ]);
+        }
+
         if (!$this->is_booking_feedback_eligible($booking_id)) {
             wp_send_json_error(['message' => 'Feedback is available after a booking has completed.'], 400);
         }
@@ -69058,9 +82520,16 @@ p{margin:0;line-height:1.5}
 
     private function is_training_simulator_enabled() {
         if (!defined('CMN_ENABLE_TRAINING_SIMULATOR')) {
-            return false;
+            // Acceptance tests:
+            // - constant undefined + env undefined => OFF
+            // - constant undefined + env=1 => ON
+            $env_value = getenv('CMN_ENABLE_TRAINING_SIMULATOR');
+            $normalized_env = strtolower(trim((string) $env_value));
+            return in_array($normalized_env, ['1', 'true', 'yes', 'on'], true);
         }
 
+        // Acceptance test:
+        // - constant=true + env=0 => ON (constant wins)
         $raw_value = CMN_ENABLE_TRAINING_SIMULATOR;
         if (is_bool($raw_value)) {
             return $raw_value;
@@ -70246,11 +83715,13 @@ p{margin:0;line-height:1.5}
         ]);
 
         $this->record_candidate_payroll_query_submission($candidate_user_id, DAY_IN_SECONDS);
-        $this->notify_admins_support($ticket_id, $ticket_ref, $subject);
+        $this->notify_admins_support($ticket_id, $ticket_ref, $subject, $message);
 
         $subject_line = 'Support ticket received: ' . $ticket_ref;
         $email_body = "Thanks for contacting CoverMeNow ONE.\n\nReference: {$ticket_ref}\nSubject: {$subject}\n\nYou can reply inside your portal. We will update you shortly.";
-        $this->send_support_email_to_user($candidate_user_id, $subject_line, $email_body, 'support_ticket_received');
+        $this->send_support_email_to_user($candidate_user_id, $subject_line, $email_body, 'support_ticket_received', [
+            'ticket_id' => $ticket_id,
+        ]);
 
         $this->trigger_automation_event('support_ticket_opened', 'support_ticket', (int) $ticket_id, [
             'ticket_ref' => $ticket_ref,
@@ -70347,11 +83818,13 @@ p{margin:0;line-height:1.5}
             'message_preview_source' => $message,
         ]);
 
-        $this->notify_admins_support($ticket_id, $ticket_ref, $subject);
+        $this->notify_admins_support($ticket_id, $ticket_ref, $subject, $message);
 
         $subject_line = 'Support ticket received: ' . $ticket_ref;
         $body = "Thanks for contacting CoverMeNow ONE.\n\nReference: {$ticket_ref}\nSubject: {$subject}\n\nYou can reply inside your portal. We will update you shortly.";
-        $this->send_support_email_to_user($user_id, $subject_line, $body, 'support_ticket_received');
+        $this->send_support_email_to_user($user_id, $subject_line, $body, 'support_ticket_received', [
+            'ticket_id' => $ticket_id,
+        ]);
 
         $this->trigger_automation_event('support_ticket_opened', 'support_ticket', (int) $ticket_id, [
             'ticket_ref' => $ticket_ref,
@@ -70462,6 +83935,7 @@ p{margin:0;line-height:1.5}
         global $wpdb;
         $table = $this->get_support_ticket_table();
         $columns = $this->get_support_ticket_columns();
+        $this->maybe_expire_support_feedback_requests();
         $has_created_by = in_array('created_by_user_id', $columns, true);
         $has_user_id = in_array('user_id', $columns, true);
         $owner_scope = $has_created_by && $has_user_id
@@ -70486,7 +83960,16 @@ p{margin:0;line-height:1.5}
         $limit = $this->is_staff_user() ? 200 : 50;
         $feedback_table = $this->get_support_feedback_table();
         $is_new_expr = in_array('is_new_for_admin', $columns, true) ? 't.is_new_for_admin' : '0';
-        $sql = "SELECT t.id, t.ticket_ref, t.subject, t.status, {$is_new_expr} AS is_new_for_admin, t.updated_at, (SELECT COUNT(1) FROM {$feedback_table} sf WHERE sf.ticket_id = t.id) AS feedback_count FROM {$table} t {$where_sql} ORDER BY t.updated_at DESC LIMIT {$limit}";
+        $feedback_request_status_expr = in_array('feedback_request_status', $columns, true)
+            ? 't.feedback_request_status'
+            : "'none' AS feedback_request_status";
+        $feedback_requested_at_expr = in_array('feedback_requested_at', $columns, true)
+            ? 't.feedback_requested_at'
+            : "NULL AS feedback_requested_at";
+        $feedback_request_expires_at_expr = in_array('feedback_request_expires_at', $columns, true)
+            ? 't.feedback_request_expires_at'
+            : "NULL AS feedback_request_expires_at";
+        $sql = "SELECT t.id, t.ticket_ref, t.subject, t.status, {$is_new_expr} AS is_new_for_admin, t.updated_at, {$feedback_request_status_expr}, {$feedback_requested_at_expr}, {$feedback_request_expires_at_expr}, (SELECT COUNT(1) FROM {$feedback_table} sf WHERE sf.ticket_id = t.id) AS feedback_count FROM {$table} t {$where_sql} ORDER BY t.updated_at DESC LIMIT {$limit}";
         $prepared = $params ? $wpdb->prepare($sql, $params) : $sql;
         $rows = (array) $wpdb->get_results($prepared, ARRAY_A);
         if (!empty($wpdb->last_error)) {
@@ -70500,9 +83983,42 @@ p{margin:0;line-height:1.5}
                 'status' => $this->normalize_support_ticket_for_view($row, $this->is_staff_user())['status'],
                 'is_new_for_admin' => isset($row['is_new_for_admin']) ? (int) $row['is_new_for_admin'] : 0,
                 'feedback_count' => isset($row['feedback_count']) ? (int) $row['feedback_count'] : 0,
+                'feedback_request_status' => $this->normalize_support_feedback_request_status((string) ($row['feedback_request_status'] ?? 'none')),
+                'feedback_requested_at' => (string) ($row['feedback_requested_at'] ?? ''),
+                'feedback_request_expires_at' => (string) ($row['feedback_request_expires_at'] ?? ''),
+                'linked_user_id' => 0,
                 'updated_at' => $row['updated_at'],
             ];
         }, $rows);
+        $livechat_source_map = [];
+        if ($this->is_staff_user($user_id)) {
+            $livechat_source_map = $this->get_livechat_source_map_for_tickets(array_map(function ($ticket_row) {
+                return (int) ($ticket_row['id'] ?? 0);
+            }, $tickets_all));
+            if ($livechat_source_map) {
+                foreach ($tickets_all as &$ticket_row) {
+                    $ticket_row_id = (int) ($ticket_row['id'] ?? 0);
+                    if ($ticket_row_id < 1 || empty($livechat_source_map[$ticket_row_id])) {
+                        continue;
+                    }
+                    $meta = (array) $livechat_source_map[$ticket_row_id];
+                    $ticket_row['channel_key'] = sanitize_key((string) ($meta['source_key'] ?? ''));
+                    $ticket_row['channel_label'] = sanitize_text_field((string) ($meta['source_label'] ?? ''));
+                    $ticket_row['livechat_guest_name'] = sanitize_text_field((string) ($meta['guest_name'] ?? ''));
+                    $ticket_row['livechat_guest_email'] = sanitize_email((string) ($meta['guest_email'] ?? ''));
+                    $ticket_row['livechat_guest_type'] = sanitize_key((string) ($meta['guest_type'] ?? 'other'));
+                    $ticket_row['linked_user_id'] = max(0, (int) ($meta['linked_user_id'] ?? 0));
+                }
+                unset($ticket_row);
+            }
+        }
+        foreach ($tickets_all as &$ticket_row) {
+            if (!isset($ticket_row['linked_user_id'])) {
+                $ticket_row['linked_user_id'] = 0;
+            }
+            $ticket_row['requires_feedback'] = $this->support_ticket_requires_feedback($ticket_row) ? 1 : 0;
+        }
+        unset($ticket_row);
         $dashboard_counts = [
             'all' => count($tickets_all),
             'open' => 0,
@@ -70516,7 +84032,7 @@ p{margin:0;line-height:1.5}
             }
             if ($ticket_status === 'closed') {
                 $dashboard_counts['closed']++;
-                if ((int) ($ticket_row['feedback_count'] ?? 0) < 1) {
+                if (!empty($ticket_row['requires_feedback'])) {
                     $dashboard_counts['needs_feedback']++;
                 }
             }
@@ -70565,18 +84081,51 @@ p{margin:0;line-height:1.5}
                         "SELECT COUNT(1) FROM {$feedback_table} WHERE ticket_id = %d",
                         $selected_id
                     ));
-                    $tickets = array_merge([[
+                    $selected_ticket_payload = [
                         'id' => (int) $selected_normalized['id'],
                         'ref' => (string) ($selected_normalized['ticket_ref'] ?? ''),
                         'subject' => (string) ($selected_normalized['subject'] ?? ''),
                         'status' => (string) ($selected_normalized['status'] ?? 'open'),
                         'is_new_for_admin' => isset($selected_normalized['is_new_for_admin']) ? (int) $selected_normalized['is_new_for_admin'] : 0,
                         'feedback_count' => $selected_feedback_count,
+                        'feedback_request_status' => $this->normalize_support_feedback_request_status((string) ($selected_normalized['feedback_request_status'] ?? 'none')),
+                        'feedback_requested_at' => (string) ($selected_normalized['feedback_requested_at'] ?? ''),
+                        'feedback_request_expires_at' => (string) ($selected_normalized['feedback_request_expires_at'] ?? ''),
+                        'linked_user_id' => 0,
+                        'requires_feedback' => 0,
                         'updated_at' => (string) ($selected_normalized['updated_at'] ?? ''),
-                    ]], $tickets);
+                    ];
+                    $selected_ticket_payload['requires_feedback'] = $this->support_ticket_requires_feedback($selected_ticket_payload) ? 1 : 0;
+                    $tickets = array_merge([$selected_ticket_payload], $tickets);
+                    if ($this->is_staff_user($user_id)) {
+                        $selected_id = (int) ($selected_normalized['id'] ?? 0);
+                        $selected_source = $livechat_source_map[$selected_id] ?? $this->get_livechat_thread_by_ticket_id($selected_id);
+                        if (is_array($selected_source) && !empty($selected_source['source_key']) && isset($tickets[0])) {
+                            $tickets[0]['channel_key'] = sanitize_key((string) ($selected_source['source_key'] ?? ''));
+                            $tickets[0]['channel_label'] = sanitize_text_field((string) ($selected_source['source_label'] ?? 'Website Live Chat'));
+                            $tickets[0]['livechat_guest_name'] = sanitize_text_field((string) ($selected_source['guest_name'] ?? ''));
+                            $tickets[0]['livechat_guest_email'] = sanitize_email((string) ($selected_source['guest_email'] ?? ''));
+                            $tickets[0]['livechat_guest_type'] = sanitize_key((string) ($selected_source['guest_type'] ?? 'other'));
+                            $tickets[0]['linked_user_id'] = max(0, (int) ($selected_source['linked_user_id'] ?? 0));
+                        }
+                        if (isset($tickets[0]) && is_array($tickets[0])) {
+                            $tickets[0]['requires_feedback'] = $this->support_ticket_requires_feedback($tickets[0]) ? 1 : 0;
+                        }
+                    }
                 }
             }
         }
+
+        foreach ($tickets as &$ticket_row) {
+            if (!is_array($ticket_row)) {
+                continue;
+            }
+            if (!isset($ticket_row['linked_user_id'])) {
+                $ticket_row['linked_user_id'] = 0;
+            }
+            $ticket_row['requires_feedback'] = $this->support_ticket_requires_feedback($ticket_row) ? 1 : 0;
+        }
+        unset($ticket_row);
 
         $feedback_scope_where = [];
         $feedback_scope_params = [];
@@ -70705,6 +84254,7 @@ p{margin:0;line-height:1.5}
         if (!is_user_logged_in()) {
             wp_send_json_error(['message' => 'Unauthorized.'], 403);
         }
+        $this->maybe_expire_support_feedback_requests();
         $ticket_id = intval($_POST['ticket_id'] ?? 0);
         $ticket_ref = sanitize_text_field($_POST['ticket_ref'] ?? '');
         $ticket = null;
@@ -70731,10 +84281,16 @@ p{margin:0;line-height:1.5}
             $ticket['is_new_for_admin'] = 0;
         }
         $ticket = $this->normalize_support_ticket_for_view($ticket, $this->is_staff_user());
+        $livechat_meta = $this->get_livechat_thread_by_ticket_id($ticket_id);
+        $livechat_guest_name = $livechat_meta ? sanitize_text_field((string) ($livechat_meta['guest_name'] ?? '')) : '';
         $messages = $this->get_support_ticket_messages($ticket_id);
         $formatted = [];
         foreach ($messages as $msg) {
-            $sender_name = 'Support';
+            $sender_type = sanitize_key((string) ($msg['sender_type'] ?? ''));
+            $sender_name = $sender_type === 'admin' ? 'Support' : 'Requester';
+            if ($sender_type !== 'admin' && $livechat_guest_name !== '') {
+                $sender_name = $livechat_guest_name;
+            }
             if (!empty($msg['sender_user_id'])) {
                 $user = get_user_by('id', (int) $msg['sender_user_id']);
                 if ($user) {
@@ -70751,8 +84307,34 @@ p{margin:0;line-height:1.5}
             ];
         }
         $feedback = $this->get_support_feedback($ticket_id, $this->is_staff_user() ? 0 : get_current_user_id());
+        global $wpdb;
+        $feedback_table = $this->get_support_feedback_table();
+        $feedback_count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(1) FROM {$feedback_table} WHERE ticket_id = %d",
+            $ticket_id
+        ));
+        $ticket['feedback_count'] = $feedback_count;
+        $ticket['feedback_request_status'] = $this->normalize_support_feedback_request_status((string) ($ticket['feedback_request_status'] ?? 'none'));
+        $ticket['feedback_requested_at'] = (string) ($ticket['feedback_requested_at'] ?? '');
+        $ticket['feedback_request_expires_at'] = (string) ($ticket['feedback_request_expires_at'] ?? '');
+        $ticket['feedback_request_active'] = $this->is_support_feedback_request_active($ticket) ? 1 : 0;
+        $ticket['feedback_request_can_send'] = $this->support_ticket_can_request_feedback($ticket) ? 1 : 0;
+        $ticket['requires_feedback'] = $this->support_ticket_requires_feedback($ticket) ? 1 : 0;
+        if (!empty($ticket['feedback_request_expires_at'])) {
+            $expires_ts = strtotime((string) $ticket['feedback_request_expires_at']);
+            if ($expires_ts !== false) {
+                $ticket['feedback_request_expires_label'] = date_i18n('M j, Y g:ia', (int) $expires_ts);
+            }
+        }
         $payroll_query_meta = $this->get_support_payroll_query_metadata_by_ticket($ticket_id);
         $payroll_context = [];
+        if ($this->is_staff_user() && $livechat_meta) {
+            $ticket['channel_key'] = sanitize_key((string) ($livechat_meta['source_key'] ?? 'website_live_chat'));
+            $ticket['channel_label'] = 'Website Live Chat';
+            $ticket['livechat_guest_name'] = sanitize_text_field((string) ($livechat_meta['guest_name'] ?? ''));
+            $ticket['livechat_guest_email'] = sanitize_email((string) ($livechat_meta['guest_email'] ?? ''));
+            $ticket['livechat_guest_type'] = sanitize_key((string) ($livechat_meta['guest_type'] ?? 'other'));
+        }
         if ($this->is_staff_user()) {
             $payroll_context = $this->build_staff_payroll_ticket_context($ticket, $payroll_query_meta);
         }
@@ -70762,6 +84344,7 @@ p{margin:0;line-height:1.5}
             'feedback' => $feedback ?: null,
             'payroll_query' => $payroll_query_meta ?: null,
             'payroll_context' => $payroll_context ?: null,
+            'livechat' => $livechat_meta ?: null,
         ]);
     }
 
@@ -70799,22 +84382,70 @@ p{margin:0;line-height:1.5}
 
         $ticket_table = $this->get_support_ticket_table();
         $new_status = 'open';
-        $wpdb->update($ticket_table, [
+        $ticket_update = [
             'status' => $new_status,
             'is_new_for_admin' => $sender_type === 'admin' ? 0 : 1,
             'updated_at' => $now,
             'closed_at' => null,
-        ], ['id' => $ticket_id], ['%s', '%d', '%s', '%s'], ['%d']);
+        ];
+        $ticket_update_format = ['%s', '%d', '%s', '%s'];
+        if (
+            $this->support_ticket_has_column('feedback_request_status')
+            && $this->support_ticket_has_column('feedback_requested_at')
+            && $this->support_ticket_has_column('feedback_request_expires_at')
+        ) {
+            $ticket_update['feedback_request_status'] = 'none';
+            $ticket_update['feedback_requested_at'] = null;
+            $ticket_update['feedback_request_expires_at'] = null;
+            $ticket_update_format[] = '%s';
+            $ticket_update_format[] = '%s';
+            $ticket_update_format[] = '%s';
+        }
+        $wpdb->update($ticket_table, $ticket_update, ['id' => $ticket_id], $ticket_update_format, ['%d']);
 
         if ($sender_type === 'admin') {
             $owner_id = (int) $this->get_support_owner_user_id($ticket);
             $subject_line = 'Update on your support ticket: ' . $ticket['ticket_ref'];
             $portal_link = $this->get_support_link_for_user($owner_id, $ticket_id, $ticket['ticket_ref'] ?? '');
             $body = "We've replied to your support ticket.\n\n{$message}\n\nYou can reply in your portal:\n{$portal_link}";
-            $this->send_support_email_to_user($owner_id, $subject_line, $body, 'support_ticket_reply');
-            $this->add_notification($owner_id, 'support_reply', 'Support ticket reply', $ticket['ticket_ref'] . ' updated.', $portal_link);
+            if ($owner_id > 0) {
+                $this->send_support_email_to_user($owner_id, $subject_line, $body, 'support_ticket_reply', [
+                    'ticket_id' => $ticket_id,
+                ]);
+                $this->add_notification($owner_id, 'support_reply', 'Support ticket reply', $ticket['ticket_ref'] . ' updated.', $portal_link);
+            } else {
+                $livechat_meta = $this->get_livechat_thread_by_ticket_id($ticket_id);
+                if (is_array($livechat_meta) && sanitize_key((string) ($livechat_meta['source_key'] ?? '')) === 'website_live_chat') {
+                    $guest_email = sanitize_email((string) ($livechat_meta['guest_email'] ?? ''));
+                    if ($guest_email !== '' && is_email($guest_email)) {
+                        $guest_name = sanitize_text_field((string) ($livechat_meta['guest_name'] ?? 'there'));
+                        $guest_subject = 'Update on your live chat: ' . $ticket['ticket_ref'];
+                        $guest_body = implode("\n", [
+                            'Hi ' . ($guest_name !== '' ? $guest_name : 'there') . ',',
+                            '',
+                            'We have replied to your live chat message.',
+                            '',
+                            $message,
+                            '',
+                            'You can continue this conversation on the Contact page:',
+                            home_url('/contact'),
+                        ]);
+                        $this->send_support_email($guest_email, $guest_subject, $guest_body, [
+                            'type' => 'livechat_reply',
+                            'template_key' => 'website_livechat_reply',
+                            'recipient_role' => 'system',
+                            'module' => 'support',
+                            'related_entity_type' => 'support_ticket',
+                            'related_entity_id' => $ticket_id,
+                            'metadata' => [
+                                'source' => 'website_live_chat',
+                            ],
+                        ]);
+                    }
+                }
+            }
         } else {
-            $this->notify_admins_support_reply($ticket_id, $ticket['ticket_ref']);
+            $this->notify_admins_support_reply($ticket_id, $ticket['ticket_ref'], $message, $user_id);
         }
 
         wp_send_json_success([
@@ -70862,12 +84493,31 @@ p{margin:0;line-height:1.5}
         if ($current_status === $target_status) {
             wp_send_json_success(['status' => $target_status, 'unchanged' => true]);
         }
-        $wpdb->update($table, [
+        $ticket_update = [
             'status' => $target_status,
             'updated_at' => $now,
             'closed_at' => $status === 'closed' ? $now : null,
             'is_new_for_admin' => 0,
-        ], ['id' => $ticket_id], ['%s', '%s', '%s', '%d'], ['%d']);
+        ];
+        $ticket_update_format = ['%s', '%s', '%s', '%d'];
+        if (
+            $target_status === 'open'
+            && $this->support_ticket_has_column('feedback_request_status')
+            && $this->support_ticket_has_column('feedback_requested_at')
+            && $this->support_ticket_has_column('feedback_request_expires_at')
+        ) {
+            $ticket_update['feedback_request_status'] = 'none';
+            $ticket_update['feedback_requested_at'] = null;
+            $ticket_update['feedback_request_expires_at'] = null;
+            $ticket_update_format[] = '%s';
+            $ticket_update_format[] = '%s';
+            $ticket_update_format[] = '%s';
+        }
+        $wpdb->update($table, $ticket_update, ['id' => $ticket_id], $ticket_update_format, ['%d']);
+        $livechat_meta = $this->get_livechat_thread_by_ticket_id($ticket_id);
+        if (is_array($livechat_meta) && !empty($livechat_meta['id'])) {
+            $this->update_livechat_thread_status((int) $livechat_meta['id'], $target_status === 'closed' ? 'closed' : 'open');
+        }
         if ($is_staff) {
             if ($target_status === 'closed') {
                 $this->insert_support_system_message_once($ticket_id, 'Ticket closed by support.', $current_user, 'admin');
@@ -70879,14 +84529,52 @@ p{margin:0;line-height:1.5}
             $owner_link = $this->get_support_link_for_user($owner_id, $ticket_id, $ticket_ref);
             if ($target_status === 'closed') {
                 $this->add_notification($owner_id, 'support_ticket_closed', 'Ticket closed', $ticket_ref . ' has been closed.', $owner_link);
+                if ($is_staff && (int) $owner_id !== (int) $current_user) {
+                    $owner_subject = 'Support ticket closed: ' . $ticket_ref;
+                    $owner_message = implode("\n", [
+                        'Your support ticket has been closed by support.',
+                        '',
+                        'Reference: ' . $ticket_ref,
+                        'View ticket: ' . $owner_link,
+                    ]);
+                    $this->send_support_email_to_user($owner_id, $owner_subject, $owner_message, 'support_ticket_closed', [
+                        'ticket_id' => $ticket_id,
+                    ]);
+                }
             } else {
                 $this->add_notification($owner_id, 'support_ticket_reopened', 'Ticket reopened', $ticket_ref . ' has been reopened.', $owner_link);
+                if ($is_staff && (int) $owner_id !== (int) $current_user) {
+                    $owner_subject = 'Support ticket reopened: ' . $ticket_ref;
+                    $owner_message = implode("\n", [
+                        'Your support ticket has been reopened by support.',
+                        '',
+                        'Reference: ' . $ticket_ref,
+                        'View ticket: ' . $owner_link,
+                    ]);
+                    $this->send_support_email_to_user($owner_id, $owner_subject, $owner_message, 'support_ticket_reopened', [
+                        'ticket_id' => $ticket_id,
+                    ]);
+                }
             }
         }
         if ($target_status === 'open' && !$is_staff) {
             foreach ($this->get_admin_users_for_support() as $admin_id) {
+                $admin_id = (int) $admin_id;
+                if ($admin_id < 1) {
+                    continue;
+                }
                 $admin_link = $this->get_support_link_for_user($admin_id, $ticket_id, $ticket_ref);
                 $this->add_notification($admin_id, 'support_ticket_reopened', 'Ticket reopened', $ticket_ref . ' was reopened by the ticket owner.', $admin_link);
+                $admin_subject = 'Support ticket reopened: ' . $ticket_ref;
+                $admin_message = implode("\n", [
+                    'A ticket owner has reopened a support ticket.',
+                    '',
+                    'Reference: ' . $ticket_ref,
+                    'Open in portal: ' . $admin_link,
+                ]);
+                $this->send_support_email_to_user($admin_id, $admin_subject, $admin_message, 'support_ticket_reopened_admin', [
+                    'ticket_id' => $ticket_id,
+                ]);
             }
         }
         $this->add_audit_log(
@@ -70900,6 +84588,157 @@ p{margin:0;line-height:1.5}
             $current_user
         );
         wp_send_json_success(['status' => $target_status]);
+    }
+
+    public function handle_support_request_feedback() {
+        if (!check_ajax_referer('cmn_support', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in() || !$this->is_staff_user()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $ticket_id = max(0, (int) ($_POST['ticket_id'] ?? 0));
+        if ($ticket_id < 1) {
+            wp_send_json_error(['message' => 'Ticket not found.'], 404);
+        }
+
+        self::migrate_schema_v73_support_feedback_request_lifecycle();
+        $this->maybe_expire_support_feedback_requests();
+
+        $ticket = $this->get_support_ticket($ticket_id);
+        if (!$ticket || !$this->can_access_support_ticket($ticket)) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if ($this->normalize_support_status((string) ($ticket['status'] ?? 'open')) !== 'closed') {
+            wp_send_json_error(['message' => 'Feedback can only be requested for closed tickets.'], 400);
+        }
+
+        global $wpdb;
+        $feedback_table = $this->get_support_feedback_table();
+        $feedback_count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(1) FROM {$feedback_table} WHERE ticket_id = %d",
+            $ticket_id
+        ));
+        if ($feedback_count > 0) {
+            wp_send_json_error(['message' => 'Feedback is already submitted for this ticket.'], 400);
+        }
+
+        $ticket['feedback_count'] = $feedback_count;
+        $ticket['feedback_request_status'] = $this->normalize_support_feedback_request_status((string) ($ticket['feedback_request_status'] ?? 'none'));
+        $ticket['feedback_request_expires_at'] = (string) ($ticket['feedback_request_expires_at'] ?? '');
+        if ($this->is_support_feedback_request_active($ticket)) {
+            wp_send_json_success([
+                'message' => 'Feedback request already active.',
+                'already_requested' => true,
+                'expires_at' => (string) ($ticket['feedback_request_expires_at'] ?? ''),
+            ]);
+        }
+        if (!$this->support_ticket_can_request_feedback($ticket)) {
+            wp_send_json_error(['message' => 'Unable to request feedback for this ticket.'], 400);
+        }
+
+        $ticket_ref = (string) ($ticket['ticket_ref'] ?? '');
+        $owner_id = (int) $this->get_support_owner_user_id($ticket);
+        $subject = 'We value your feedback: ' . ($ticket_ref !== '' ? $ticket_ref : 'Support ticket');
+        $hours = max(1, (int) self::SUPPORT_FEEDBACK_REQUEST_WINDOW_HOURS);
+        $sent = false;
+        $recipient_email = '';
+        $owner_link = '';
+
+        if ($owner_id > 0) {
+            $owner = get_user_by('id', $owner_id);
+            if ($owner instanceof WP_User && is_email((string) $owner->user_email)) {
+                $owner_link = $this->get_support_feedback_link_for_user($owner_id, $ticket_id, $ticket_ref);
+                $body = implode("\n", [
+                    'Your support ticket has been closed and support has requested your feedback.',
+                    '',
+                    'Reference: ' . $ticket_ref,
+                    'Please submit feedback within ' . $hours . ' hours using your portal:',
+                    $owner_link,
+                ]);
+                $sent = (bool) $this->send_support_email_to_user($owner_id, $subject, $body, 'support_feedback_request', [
+                    'ticket_id' => $ticket_id,
+                    'template_key' => 'support_feedback_request',
+                ]);
+                $recipient_email = sanitize_email((string) $owner->user_email);
+            }
+        }
+
+        if (!$sent) {
+            $livechat_meta = $this->get_livechat_thread_by_ticket_id($ticket_id);
+            $guest_email = sanitize_email((string) ($livechat_meta['guest_email'] ?? ''));
+            if ($guest_email !== '' && is_email($guest_email)) {
+                $contact_link = home_url('/contact');
+                $body = implode("\n", [
+                    'Support has closed your live chat ticket and requested feedback.',
+                    '',
+                    'Reference: ' . $ticket_ref,
+                    'Please submit feedback within ' . $hours . ' hours by returning to:',
+                    $contact_link,
+                ]);
+                $sent = (bool) $this->send_support_email($guest_email, $subject, $body, [
+                    'type' => 'support_feedback_request',
+                    'template_key' => 'support_feedback_request',
+                    'recipient_role' => 'system',
+                    'module' => 'support',
+                    'related_entity_type' => 'support_ticket',
+                    'related_entity_id' => $ticket_id,
+                    'metadata' => [
+                        'source' => 'website_live_chat',
+                    ],
+                ]);
+                $recipient_email = $guest_email;
+            }
+        }
+
+        if (!$sent) {
+            wp_send_json_error(['message' => 'Unable to send feedback request email for this ticket.'], 500);
+        }
+
+        $ticket_table = $this->get_support_ticket_table();
+        $now = current_time('mysql');
+        $expires_at = wp_date('Y-m-d H:i:s', ((int) current_time('timestamp')) + ($hours * HOUR_IN_SECONDS), wp_timezone());
+        if (
+            $this->support_ticket_has_column('feedback_request_status')
+            && $this->support_ticket_has_column('feedback_requested_at')
+            && $this->support_ticket_has_column('feedback_request_expires_at')
+        ) {
+            $wpdb->update($ticket_table, [
+                'feedback_request_status' => 'requested',
+                'feedback_requested_at' => $now,
+                'feedback_request_expires_at' => $expires_at,
+                'updated_at' => $now,
+            ], [
+                'id' => $ticket_id,
+            ], ['%s', '%s', '%s', '%s'], ['%d']);
+        }
+        $this->insert_support_system_message_once(
+            $ticket_id,
+            'Support requested feedback from the requester (48 hour window).',
+            (int) get_current_user_id(),
+            'admin'
+        );
+
+        if ($owner_id > 0 && $owner_link !== '') {
+            $this->add_notification(
+                $owner_id,
+                'support_feedback',
+                'Feedback requested',
+                ($ticket_ref !== '' ? $ticket_ref : 'Support ticket') . ' is awaiting your feedback.',
+                $owner_link
+            );
+        }
+
+        $this->add_audit_log('support_feedback_requested', 'support_ticket', (string) $ticket_id, [
+            'ticket_ref' => $ticket_ref,
+            'recipient_email' => $recipient_email,
+            'expires_at' => $expires_at,
+        ], get_current_user_id());
+
+        wp_send_json_success([
+            'message' => 'Feedback request sent.',
+            'expires_at' => $expires_at,
+        ]);
     }
 
     public function handle_support_submit_feedback() {
@@ -70945,6 +84784,21 @@ p{margin:0;line-height:1.5}
             'comments' => $comments,
             'created_at' => $now,
         ], ['%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s']);
+        if (
+            $this->support_ticket_has_column('feedback_request_status')
+            && $this->support_ticket_has_column('feedback_requested_at')
+            && $this->support_ticket_has_column('feedback_request_expires_at')
+        ) {
+            $ticket_table = $this->get_support_ticket_table();
+            $wpdb->update($ticket_table, [
+                'feedback_request_status' => 'completed',
+                'feedback_requested_at' => null,
+                'feedback_request_expires_at' => null,
+                'updated_at' => $now,
+            ], [
+                'id' => $ticket_id,
+            ], ['%s', '%s', '%s', '%s'], ['%d']);
+        }
         $ticket_ref = (string) ($ticket['ticket_ref'] ?? '');
         foreach ($this->get_admin_users_for_support() as $admin_id) {
             $admin_link = $this->get_support_link_for_user($admin_id, $ticket_id, $ticket_ref);
@@ -71048,7 +84902,9 @@ p{margin:0;line-height:1.5}
         }
         $transcript_text = $this->build_support_transcript_text($ticket, $formatted);
         $subject = 'Support transcript: ' . (string) ($ticket['ticket_ref'] ?? 'CMN Ticket');
-        $sent = $this->send_support_email_to_user($owner_id, $subject, $transcript_text, 'support_transcript');
+        $sent = $this->send_support_email_to_user($owner_id, $subject, $transcript_text, 'support_transcript', [
+            'ticket_id' => $ticket_id,
+        ]);
         global $wpdb;
         $table = $this->get_support_transcript_email_table();
         $wpdb->insert($table, [
@@ -75203,6 +89059,173 @@ if (!function_exists('cmn_send_school_email')) {
     }
 }
 
+if (!function_exists('cmn_email_registry')) {
+    function cmn_email_registry($force_refresh = false) {
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if ($plugin instanceof CMN_One_Plugin && is_callable([$plugin, 'get_email_registry_manifest'])) {
+            return (array) $plugin->get_email_registry_manifest(!empty($force_refresh));
+        }
+        return [];
+    }
+}
+
+if (!function_exists('cmn_get_supported_smart_tags')) {
+    function cmn_get_supported_smart_tags($template_key) {
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if ($plugin instanceof CMN_One_Plugin && is_callable([$plugin, 'get_supported_smart_tags'])) {
+            return (array) $plugin->get_supported_smart_tags($template_key);
+        }
+        return [];
+    }
+}
+
+if (!function_exists('cmn_render_email_template')) {
+    function cmn_render_email_template($template_key, $data_array) {
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if ($plugin instanceof CMN_One_Plugin && is_callable([$plugin, 'render_email_template'])) {
+            return (array) $plugin->render_email_template($template_key, is_array($data_array) ? $data_array : []);
+        }
+        return [
+            'template_key' => sanitize_key((string) $template_key),
+            'module' => '',
+            'subject' => '',
+            'html_body' => '',
+            'text_body' => '',
+            'supported_smart_tags' => [],
+        ];
+    }
+}
+
+if (!function_exists('cmn_send_email')) {
+    function cmn_send_email($template_key, $recipient_email, $data = [], $context_meta = []) {
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if ($plugin instanceof CMN_One_Plugin && is_callable([$plugin, 'send_email'])) {
+            return (array) $plugin->send_email($template_key, $recipient_email, is_array($data) ? $data : [], is_array($context_meta) ? $context_meta : []);
+        }
+
+        $template_key = sanitize_key((string) $template_key);
+        $recipient_email = sanitize_email((string) $recipient_email);
+        if ($template_key === '' || $recipient_email === '' || !is_email($recipient_email)) {
+            return [
+                'success' => false,
+                'send_status' => 'failed',
+                'template_key' => $template_key,
+                'recipient_email' => $recipient_email,
+                'log_id' => 0,
+                'error_message' => 'Template key or recipient email is invalid.',
+            ];
+        }
+
+        $rendered = function_exists('cmn_render_email_template')
+            ? (array) cmn_render_email_template($template_key, is_array($data) ? $data : [])
+            : [];
+        $subject = sanitize_text_field((string) ($rendered['subject'] ?? ''));
+        $html_body = (string) ($rendered['html_body'] ?? '');
+        $text_body = sanitize_textarea_field((string) ($rendered['text_body'] ?? ''));
+        if ($subject === '') {
+            $subject = ucwords(trim(str_replace('_', ' ', $template_key)));
+        }
+        if ($subject === '') {
+            $subject = 'CoverMeNow ONE notification';
+        }
+        if ($text_body === '' && $html_body !== '') {
+            $text_body = trim((string) wp_strip_all_tags($html_body));
+        }
+        $message = $html_body !== '' ? $html_body : $text_body;
+        if ($message === '') {
+            return [
+                'success' => false,
+                'send_status' => 'failed',
+                'template_key' => $template_key,
+                'recipient_email' => $recipient_email,
+                'log_id' => 0,
+                'error_message' => 'Template body is empty.',
+            ];
+        }
+
+        $headers = [$html_body !== '' ? 'Content-Type: text/html; charset=UTF-8' : 'Content-Type: text/plain; charset=UTF-8'];
+        $message_token = function_exists('wp_generate_uuid4') ? ('cmn-' . wp_generate_uuid4()) : ('cmn-' . uniqid('', true));
+        $headers[] = 'X-CMN-Email-Log-Token: ' . $message_token;
+        $headers[] = 'X-CMN-Template-Key: ' . $template_key;
+        $headers[] = 'X-CMN-Email-Module: system';
+        $log_id = function_exists('cmn_email_log_insert') ? (int) cmn_email_log_insert([
+            'template_key' => $template_key,
+            'module' => 'system',
+            'recipient_email' => $recipient_email,
+            'recipient_role' => 'system',
+            'from_email' => 'school@covermenow.co.uk',
+            'sender_email' => 'school@covermenow.co.uk',
+            'from_name' => 'CoverMeNow ONE',
+            'sender_name' => 'CoverMeNow ONE',
+            'subject' => $subject,
+            'status' => 'queued',
+            'metadata' => [
+                'source' => 'fallback_wrapper',
+                'message_token' => $message_token,
+            ],
+        ]) : 0;
+        $mail_error = '';
+        $mail_failed = static function ($wp_error) use (&$mail_error) {
+            if ($wp_error instanceof WP_Error) {
+                $mail_error = sanitize_text_field((string) $wp_error->get_error_message());
+            }
+        };
+        add_action('wp_mail_failed', $mail_failed, 20, 1);
+        $sent = wp_mail($recipient_email, $subject, $message, $headers);
+        remove_action('wp_mail_failed', $mail_failed, 20);
+        if (!$sent && $mail_error === '') {
+            $mail_error = 'wp_mail returned false.';
+        }
+        if ($log_id > 0 && function_exists('cmn_email_log_update_status')) {
+            cmn_email_log_update_status($log_id, $sent ? 'sent' : 'failed', $mail_error);
+        }
+        return [
+            'success' => (bool) $sent,
+            'send_status' => $sent ? 'sent' : 'failed',
+            'template_key' => $template_key,
+            'recipient_email' => $recipient_email,
+            'log_id' => $log_id,
+            'error_message' => $sent ? '' : $mail_error,
+        ];
+    }
+}
+
+if (!function_exists('cmn_email_log_insert')) {
+    function cmn_email_log_insert($args = []) {
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if ($plugin instanceof CMN_One_Plugin && is_callable([$plugin, 'email_log_insert'])) {
+            return (int) $plugin->email_log_insert(is_array($args) ? $args : []);
+        }
+        return 0;
+    }
+}
+
+if (!function_exists('cmn_email_log_update_status')) {
+    function cmn_email_log_update_status($log_id, $status, $error_message = null) {
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if ($plugin instanceof CMN_One_Plugin && is_callable([$plugin, 'email_log_update_status'])) {
+            return (bool) $plugin->email_log_update_status((int) $log_id, (string) $status, $error_message);
+        }
+        return false;
+    }
+}
+
+if (!function_exists('cmn_email_log_list')) {
+    function cmn_email_log_list($filters = [], $page = 1, $per_page = 20) {
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if ($plugin instanceof CMN_One_Plugin && is_callable([$plugin, 'email_log_list'])) {
+            return (array) $plugin->email_log_list(is_array($filters) ? $filters : [], (int) $page, (int) $per_page);
+        }
+        return [
+            'rows' => [],
+            'total' => 0,
+            'page' => 1,
+            'per_page' => 20,
+            'total_pages' => 0,
+        ];
+    }
+}
+
 /*
  * Centralized portal authorization layer for Rewards / School Partner / Finance / Payroll.
  *
@@ -75748,7 +89771,7 @@ if (!function_exists('cmn_json_error')) {
 if (!function_exists('cmn_audit_allowed_modules')) {
     function cmn_audit_allowed_modules() {
         // Allowed modules for the immutable ledger.
-        return ['rewards', 'school_partner', 'finance', 'payroll', 'support', 'security'];
+        return ['rewards', 'school_partner', 'finance', 'payroll', 'support', 'security', 'candidate', 'feedback'];
     }
 }
 
@@ -76456,6 +90479,96 @@ if (!function_exists('cmn_get_school_partner_dashboard_data')) {
     }
 }
 
+if (!function_exists('cmn_get_priority_allocation_limit')) {
+    function cmn_get_priority_allocation_limit($school_user_id) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1) {
+            return 0;
+        }
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if (!$plugin instanceof CMN_One_Plugin || !is_callable([$plugin, 'get_priority_allocation_limit'])) {
+            return 0;
+        }
+        return max(0, (int) $plugin->get_priority_allocation_limit($school_user_id));
+    }
+}
+
+if (!function_exists('cmn_get_priority_allocation_usage')) {
+    function cmn_get_priority_allocation_usage($school_user_id, $month_key) {
+        $school_user_id = (int) $school_user_id;
+        $month_key = sanitize_text_field((string) $month_key);
+        if ($school_user_id < 1 || $month_key === '') {
+            return 0;
+        }
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if (!$plugin instanceof CMN_One_Plugin || !is_callable([$plugin, 'get_priority_allocation_usage'])) {
+            return 0;
+        }
+        return max(0, (int) $plugin->get_priority_allocation_usage($school_user_id, $month_key));
+    }
+}
+
+if (!function_exists('cmn_get_candidates_within_radius')) {
+    function cmn_get_candidates_within_radius($school_user_id, $radius_miles = 30) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1) {
+            return [];
+        }
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if (!$plugin instanceof CMN_One_Plugin || !is_callable([$plugin, 'get_candidates_within_radius'])) {
+            return [];
+        }
+        return (array) $plugin->get_candidates_within_radius($school_user_id, (float) $radius_miles);
+    }
+}
+
+if (!function_exists('cmn_get_candidate_average_rating')) {
+    function cmn_get_candidate_average_rating($candidate_user_id) {
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id < 1) {
+            return [
+                'avg_rating' => 0.0,
+                'avg_rating_raw' => 0.0,
+                'feedback_count' => 0,
+            ];
+        }
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if (!$plugin instanceof CMN_One_Plugin || !is_callable([$plugin, 'cmn_get_candidate_average_rating'])) {
+            return [
+                'avg_rating' => 0.0,
+                'avg_rating_raw' => 0.0,
+                'feedback_count' => 0,
+            ];
+        }
+        $payload = $plugin->cmn_get_candidate_average_rating($candidate_user_id);
+        return is_array($payload) ? $payload : [
+            'avg_rating' => 0.0,
+            'avg_rating_raw' => 0.0,
+            'feedback_count' => 0,
+        ];
+    }
+}
+
+if (!function_exists('cmn_get_school_routing_weight')) {
+    /*
+     * Acceptance checks:
+     * 1) Higher-tier school requests within 15 minutes are ordered above lower-tier requests.
+     * 2) Same-tier competing requests fall back to newest-first ordering.
+     * 3) Non-competing requests keep default chronological ordering.
+     */
+    function cmn_get_school_routing_weight($school_user_id) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1) {
+            return 0;
+        }
+        $plugin = $GLOBALS['cmn_one_plugin'] ?? null;
+        if (!$plugin instanceof CMN_One_Plugin || !is_callable([$plugin, 'get_school_routing_weight'])) {
+            return 0;
+        }
+        return max(0, (int) $plugin->get_school_routing_weight($school_user_id));
+    }
+}
+
 if (!function_exists('cmn_calculate_partner_credit_for_booking_day')) {
     function cmn_calculate_partner_credit_for_booking_day($school_user_id, $booking_id, $booking_day_date) {
         $auth_check = function_exists('cmn_require_login') ? cmn_require_login() : (is_user_logged_in() ? true : new WP_Error('cmn_auth_required', 'Not authorised', ['status' => 401]));
@@ -76609,7 +90722,22 @@ if (!function_exists('cmn_rewards_block_multiplier')) {
         }
         $block_index = max(0, (int) $block_index);
         $elite_block_index = max(1, (int) $elite_block_index);
-        return $block_index >= ($elite_block_index + 1) ? 1.50 : 1.00;
+        if ($block_index <= 0) {
+            return 1.00;
+        }
+        if ($block_index <= 1) {
+            return 1.10;
+        }
+        if ($block_index === 2) {
+            return 1.20;
+        }
+        if ($block_index === 3) {
+            return 1.30;
+        }
+        if ($block_index >= $elite_block_index) {
+            return 1.50;
+        }
+        return 1.50;
     }
 }
 
