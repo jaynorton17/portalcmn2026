@@ -18,6 +18,128 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
+  var bindSchoolRegistrationSubmitGuard = function () {
+    var forms = document.querySelectorAll('form.cmn-register-form');
+    if (!forms.length) {
+      return;
+    }
+    forms.forEach(function (form) {
+      var actionField = form.querySelector('input[name="action"]');
+      if (!actionField || actionField.value !== 'cmn_register_school') {
+        return;
+      }
+      var submitButton = form.querySelector('button[type="submit"], input[type="submit"]');
+      if (!submitButton) {
+        return;
+      }
+      form.addEventListener('submit', function (event) {
+        if (form.getAttribute('data-cmn-submitting') === '1') {
+          event.preventDefault();
+          return;
+        }
+        form.setAttribute('data-cmn-submitting', '1');
+        form.classList.add('is-submitting');
+        if ('disabled' in submitButton) {
+          submitButton.disabled = true;
+        }
+        if (submitButton.tagName && submitButton.tagName.toLowerCase() === 'input') {
+          submitButton.value = 'Submitting...';
+          return;
+        }
+        submitButton.textContent = 'Submitting...';
+      });
+    });
+  };
+  bindSchoolRegistrationSubmitGuard();
+
+  var bindSchoolContactSearch = function () {
+    var buttons = document.querySelectorAll('[data-cmn-contact-search]');
+    if (!buttons.length) {
+      return;
+    }
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        var form = button.closest('form');
+        if (!form) {
+          return;
+        }
+        var input = form.querySelector('.cmn-contact-search-input');
+        var select = form.querySelector('[data-cmn-contact-results]');
+        var status = form.querySelector('[data-cmn-contact-status]');
+        var schoolDomain = button.getAttribute('data-cmn-contact-school') || '';
+        var nonce = button.getAttribute('data-cmn-contact-nonce') || '';
+        var ajaxUrl = button.getAttribute('data-cmn-contact-ajax') || '';
+        var query = input ? String(input.value || '').trim() : '';
+        if (!ajaxUrl || !nonce || !schoolDomain || query.length < 2) {
+          if (status) {
+            status.textContent = query.length < 2 ? 'Enter at least 2 characters.' : 'Unable to search.';
+          }
+          return;
+        }
+        if (status) {
+          status.textContent = 'Searching...';
+        }
+        if ('disabled' in button) {
+          button.disabled = true;
+        }
+        var payload = new URLSearchParams();
+        payload.append('action', 'cmn_school_contact_search');
+        payload.append('nonce', nonce);
+        payload.append('school_domain', schoolDomain);
+        payload.append('query', query);
+        fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          },
+          body: payload.toString(),
+        })
+          .then(function (response) {
+            return response.json();
+          })
+          .then(function (data) {
+            if (!select) {
+              return;
+            }
+            var results = data && data.success && data.data ? data.data.results || [] : [];
+            select.innerHTML = '';
+            if (!results.length) {
+              var empty = document.createElement('option');
+              empty.value = '';
+              empty.textContent = 'No contacts found.';
+              select.appendChild(empty);
+            } else {
+              var placeholder = document.createElement('option');
+              placeholder.value = '';
+              placeholder.textContent = 'Select contact';
+              select.appendChild(placeholder);
+              results.forEach(function (row) {
+                var option = document.createElement('option');
+                option.value = row.id;
+                option.textContent = row.label;
+                select.appendChild(option);
+              });
+            }
+            if (status) {
+              status.textContent = results.length ? results.length + ' contact(s) found.' : 'No contacts found.';
+            }
+          })
+          .catch(function () {
+            if (status) {
+              status.textContent = 'Search failed. Try again.';
+            }
+          })
+          .finally(function () {
+            if ('disabled' in button) {
+              button.disabled = false;
+            }
+          });
+      });
+    });
+  };
+  bindSchoolContactSearch();
+
   var portal = document.querySelector('.cmn-portal-light');
   var themeButtons = document.querySelectorAll('[data-theme]');
   var cmnThemeClasses = ['cmn-theme-default', 'cmn-theme-contrast', 'cmn-theme-light', 'cmn-theme-teal'];
@@ -44,10 +166,200 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var ensurePortalOverlayRoot = function () {
+    if (!document.body || !document.body.classList.contains('cmn-portal-page')) {
+      return null;
+    }
+    var root = document.getElementById('cmn-portal-overlay-root');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'cmn-portal-overlay-root';
+      root.setAttribute('aria-live', 'polite');
+      root.setAttribute('aria-atomic', 'true');
+    }
+    if (root.parentNode !== document.body) {
+      document.body.appendChild(root);
+    }
+    return root;
+  };
+  var portalOverlayRoot = ensurePortalOverlayRoot();
+
+  var cmnPollManager = (function () {
+    var tasks = {};
+    var globalEventsBound = false;
+
+    var clearTaskTimer = function (task) {
+      if (!task || !task.timer) {
+        return;
+      }
+      window.clearTimeout(task.timer);
+      task.timer = null;
+    };
+
+    var getTaskDelay = function (task) {
+      if (!task || !task.backoffOnError || task.errorCount < 1) {
+        return task && task.intervalMs ? task.intervalMs : 5000;
+      }
+      var factor = Math.pow(2, Math.max(0, task.errorCount - 1));
+      return Math.min(task.maxIntervalMs || 120000, Math.round(task.intervalMs * factor));
+    };
+
+    var scheduleTask = function (task) {
+      if (!task || task.destroyed) {
+        return;
+      }
+      if (task.visibleOnly && document.hidden) {
+        clearTaskTimer(task);
+        return;
+      }
+      clearTaskTimer(task);
+      task.timer = window.setTimeout(function () {
+        runTask(task, 'interval');
+      }, Math.max(500, getTaskDelay(task)));
+    };
+
+    var runTask = function (task, reason) {
+      if (!task || task.destroyed) {
+        return Promise.resolve(false);
+      }
+      if (task.visibleOnly && document.hidden) {
+        scheduleTask(task);
+        return Promise.resolve(false);
+      }
+      if (task.inFlight) {
+        return Promise.resolve(false);
+      }
+      task.inFlight = true;
+      var runResult = null;
+      try {
+        runResult = task.callback(reason || 'manual');
+      } catch (error) {
+        runResult = Promise.reject(error);
+      }
+      return Promise.resolve(runResult)
+        .then(function () {
+          task.errorCount = 0;
+          return true;
+        })
+        .catch(function () {
+          if (task.backoffOnError) {
+            task.errorCount = Math.min(task.errorCount + 1, 8);
+          }
+          return false;
+        })
+        .finally(function () {
+          task.inFlight = false;
+          scheduleTask(task);
+        });
+    };
+
+    var register = function (options) {
+      if (!options || !options.key || typeof options.callback !== 'function') {
+        return null;
+      }
+      var key = String(options.key);
+      if (tasks[key]) {
+        tasks[key].destroyed = true;
+        clearTaskTimer(tasks[key]);
+        delete tasks[key];
+      }
+      var task = {
+        key: key,
+        callback: options.callback,
+        intervalMs: Math.max(500, parseInt(options.intervalMs || 5000, 10) || 5000),
+        maxIntervalMs: Math.max(1000, parseInt(options.maxIntervalMs || 120000, 10) || 120000),
+        visibleOnly: options.visibleOnly !== false,
+        triggerOnFocus: options.triggerOnFocus !== false,
+        triggerOnVisibility: options.triggerOnVisibility !== false,
+        backoffOnError: options.backoffOnError !== false,
+        immediate: options.immediate !== false,
+        timer: null,
+        inFlight: false,
+        errorCount: 0,
+        destroyed: false,
+      };
+      tasks[key] = task;
+      if (task.immediate && !(task.visibleOnly && document.hidden)) {
+        runTask(task, 'init');
+      } else if (!(task.visibleOnly && document.hidden)) {
+        scheduleTask(task);
+      }
+      return key;
+    };
+
+    var unregister = function (key) {
+      var normalized = String(key || '');
+      if (!normalized || !tasks[normalized]) {
+        return;
+      }
+      tasks[normalized].destroyed = true;
+      clearTaskTimer(tasks[normalized]);
+      delete tasks[normalized];
+    };
+
+    var trigger = function (key, reason) {
+      var normalized = String(key || '');
+      if (!normalized || !tasks[normalized]) {
+        return Promise.resolve(false);
+      }
+      return runTask(tasks[normalized], reason || 'manual');
+    };
+
+    var bindGlobalEvents = function () {
+      if (globalEventsBound) {
+        return;
+      }
+      globalEventsBound = true;
+
+      document.addEventListener('visibilitychange', function () {
+        var isHidden = document.hidden;
+        Object.keys(tasks).forEach(function (key) {
+          var task = tasks[key];
+          if (!task || task.destroyed) {
+            return;
+          }
+          if (isHidden) {
+            if (task.visibleOnly) {
+              clearTaskTimer(task);
+            }
+            return;
+          }
+          if (task.triggerOnVisibility) {
+            runTask(task, 'visibility');
+            return;
+          }
+          scheduleTask(task);
+        });
+      });
+
+      window.addEventListener('focus', function () {
+        Object.keys(tasks).forEach(function (key) {
+          var task = tasks[key];
+          if (!task || task.destroyed || !task.triggerOnFocus) {
+            return;
+          }
+          runTask(task, 'focus');
+        });
+      });
+    };
+
+    bindGlobalEvents();
+
+    return {
+      register: register,
+      unregister: unregister,
+      trigger: trigger,
+    };
+  })();
+
   var staffNav = document.querySelector('[data-staff-nav]');
   if (staffNav) {
     var staffNavUserId = staffNav.getAttribute('data-user-id') || '0';
-    var staffNavStorageKey = 'cmn_staff_nav_state_v1_' + staffNavUserId;
+    var staffNavStorageKey = 'cmn_staff_nav_state_v2_' + staffNavUserId;
+    var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
+    var staffShell = staffNav.closest('.cmn-staff-shell');
+    var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
+    var staffNavPeekOpen = false;
     var readServerStaffNavState = function () {
       var raw = staffNav.getAttribute('data-nav-state') || '';
       if (!raw) {
@@ -62,7 +374,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     var readStaffNavState = function () {
       try {
-        var raw = window.localStorage.getItem(staffNavStorageKey);
+        var raw = window.sessionStorage.getItem(staffNavStorageKey);
         if (!raw) {
           return {};
         }
@@ -74,9 +386,46 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     var writeStaffNavState = function (state) {
       try {
-        window.localStorage.setItem(staffNavStorageKey, JSON.stringify(state || {}));
+        window.sessionStorage.setItem(staffNavStorageKey, JSON.stringify(state || {}));
       } catch (e) {
-        // Ignore localStorage failures.
+        // Ignore storage failures.
+      }
+    };
+    var readStaffNavCompactState = function () {
+      try {
+        return window.sessionStorage.getItem(staffNavCompactKey) === '1';
+      } catch (e) {
+        return false;
+      }
+    };
+    var writeStaffNavCompactState = function (isCompact) {
+      try {
+        window.sessionStorage.setItem(staffNavCompactKey, isCompact ? '1' : '0');
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    };
+    var setStaffNavPeekState = function (isPeek) {
+      staffNavPeekOpen = !!isPeek;
+      staffNav.classList.toggle('is-peek-open', staffNavPeekOpen);
+      if (staffShell) {
+        staffShell.classList.toggle('is-nav-peek-open', staffNavPeekOpen);
+      }
+    };
+    var setStaffNavCompactState = function (isCompact) {
+      if (!isCompact) {
+        setStaffNavPeekState(false);
+      }
+      staffNav.classList.toggle('is-collapsed', !!isCompact);
+      if (staffShell) {
+        staffShell.classList.toggle('is-nav-collapsed', !!isCompact);
+        if (!isCompact) {
+          staffShell.classList.remove('is-nav-peek-open');
+        }
+      }
+      if (staffNavMinimizeBtn) {
+        staffNavMinimizeBtn.setAttribute('aria-pressed', isCompact ? 'true' : 'false');
+        staffNavMinimizeBtn.setAttribute('data-tooltip', isCompact ? 'Expand sidebar' : 'Minimise sidebar');
       }
     };
     var persistStaffNavState = function (state) {
@@ -124,7 +473,8 @@ document.addEventListener('DOMContentLoaded', function () {
       if (Object.prototype.hasOwnProperty.call(navState, key)) {
         setStaffGroupState(groupEl, !!navState[key]);
       } else {
-        setStaffGroupState(groupEl, true);
+        setStaffGroupState(groupEl, false);
+        navState[key] = 0;
       }
     });
     persistStaffNavState(navState);
@@ -135,12 +485,70 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!groupEl) {
           return;
         }
-        var willOpen = !groupEl.classList.contains('is-open');
+        var openedFromCollapsed = false;
+        if (staffNav.classList.contains('is-collapsed') && !staffNavPeekOpen) {
+          setStaffNavPeekState(true);
+          openedFromCollapsed = true;
+        }
+        var willOpen = openedFromCollapsed ? true : !groupEl.classList.contains('is-open');
         setStaffGroupState(groupEl, willOpen);
         navState[key] = willOpen ? 1 : 0;
         persistStaffNavState(navState);
       });
     });
+    setStaffNavCompactState(readStaffNavCompactState());
+    if (staffNavMinimizeBtn) {
+      staffNavMinimizeBtn.addEventListener('click', function () {
+        var willCompact = !staffNav.classList.contains('is-collapsed');
+        if (willCompact) {
+          setStaffNavPeekState(false);
+        }
+        setStaffNavCompactState(willCompact);
+        writeStaffNavCompactState(willCompact);
+      });
+    }
+    staffNav.querySelectorAll('.cmn-school-nav-link').forEach(function (linkEl) {
+      linkEl.addEventListener('click', function () {
+        if (staffNav.classList.contains('is-collapsed')) {
+          setStaffNavPeekState(false);
+        }
+      });
+    });
+    document.addEventListener('click', function (event) {
+      if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
+        return;
+      }
+      if (staffNav.contains(event.target)) {
+        return;
+      }
+      setStaffNavPeekState(false);
+    });
+    document.addEventListener('keydown', function (event) {
+      if ((event.key || '') !== 'Escape') {
+        return;
+      }
+      if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
+        return;
+      }
+      setStaffNavPeekState(false);
+    });
+  }
+
+  if (window.cmnPortal && Number(window.cmnPortal.isStaffUser || 0) === 1 && window.cmnPortal.ajaxUrl && window.cmnPortal.staffPresenceNonce) {
+    var touchStaffPresence = function () {
+      var fd = new FormData();
+      fd.append('action', 'cmn_touch_staff_presence');
+      fd.append('nonce', window.cmnPortal.staffPresenceNonce);
+      fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      }).catch(function () {
+        // Ignore transient network failures.
+      });
+    };
+    touchStaffPresence();
+    window.setInterval(touchStaffPresence, 120000);
   }
 
   var actionMenus = document.querySelectorAll('[data-action-menu]');
@@ -304,6 +712,459 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var schoolRequestForms = document.querySelectorAll('[data-school-request-form]');
+  if (schoolRequestForms.length) {
+    schoolRequestForms.forEach(function (form) {
+      var decisionSelect = form.querySelector('[data-school-request-decision]');
+      var noteWrap = form.querySelector('[data-school-request-note]');
+      var noteInput = form.querySelector('[data-school-request-note-input]');
+      var convertToClientField = form.querySelector('.cmn-convert-client-flag');
+      var convertWrap = form.querySelector('[data-school-request-convert]');
+      var convertCheckbox = form.querySelector('[data-school-request-convert-input]');
+      var schoolName = form.getAttribute('data-school-name') || 'this school';
+      if (!decisionSelect) {
+        return;
+      }
+      var syncSchoolRequestNoteState = function () {
+        var decision = decisionSelect.value || 'assign_only';
+        var needsNote = decision === 'more_info_needed' || decision === 'rejected';
+        var isApproved = decision === 'approved';
+        if (noteWrap) {
+          noteWrap.hidden = !needsNote;
+        }
+        if (noteInput) {
+          noteInput.required = needsNote;
+        }
+        if (convertWrap) {
+          convertWrap.hidden = !isApproved;
+        }
+        if (convertToClientField) {
+          if (isApproved) {
+            convertToClientField.value = (convertCheckbox && convertCheckbox.checked) ? '1' : '0';
+          } else {
+            convertToClientField.value = '0';
+          }
+        }
+      };
+      decisionSelect.addEventListener('change', syncSchoolRequestNoteState);
+      if (convertCheckbox) {
+        convertCheckbox.addEventListener('change', syncSchoolRequestNoteState);
+      }
+      form.addEventListener('submit', function (event) {
+        var decision = decisionSelect.value || 'assign_only';
+        var needsNote = decision === 'more_info_needed' || decision === 'rejected';
+        if (noteInput) {
+          noteInput.required = needsNote;
+          if (needsNote && !noteInput.value.trim()) {
+            event.preventDefault();
+            window.alert(decision === 'rejected' ? 'Please add a reason for declining.' : 'Please add what information is needed.');
+            noteInput.focus();
+            return;
+          }
+        }
+        if (convertToClientField) {
+          if (decision === 'approved') {
+            convertToClientField.value = (convertCheckbox && convertCheckbox.checked) ? '1' : '0';
+          } else {
+            convertToClientField.value = '0';
+          }
+        }
+      });
+      syncSchoolRequestNoteState();
+    });
+  }
+
+  var schoolRequestChatRoots = document.querySelectorAll('[data-school-request-chat]');
+  if (schoolRequestChatRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl) {
+    schoolRequestChatRoots.forEach(function (chatRoot) {
+      var entityType = chatRoot.getAttribute('data-entity-type') || 'school_request';
+      var entityId = parseInt(chatRoot.getAttribute('data-entity-id') || '0', 10);
+      if (!entityId) {
+        return;
+      }
+      var viewerRole = chatRoot.getAttribute('data-viewer-role') || 'staff';
+      var messagesWrap = chatRoot.querySelector('[data-thread-messages]');
+      var form = chatRoot.querySelector('[data-thread-form]');
+      var messageInput = form ? form.querySelector('textarea[name="body"]') : null;
+      var attachmentInput = form ? form.querySelector('input[name="attachments[]"]') : null;
+      var sendButton = form ? form.querySelector('button[type="submit"]') : null;
+      var feedbackEl = chatRoot.querySelector('[data-thread-feedback]');
+      var statusEl = chatRoot.querySelector('[data-thread-status]');
+      var unreadEl = chatRoot.querySelector('[data-thread-unread]');
+      var setStatusButtons = chatRoot.querySelectorAll('[data-thread-set-status]');
+      var pollSeconds = parseInt((window.cmnPortal && window.cmnPortal.threadPollSeconds) || '20', 10);
+      if (!pollSeconds || pollSeconds < 10) {
+        pollSeconds = 20;
+      }
+      var basePollMs = pollSeconds * 1000;
+      var pollDelayMs = basePollMs;
+      var maxPollMs = 120000;
+      var pollTimer = null;
+      var activeToken = chatRoot.getAttribute('data-thread-token') || '';
+      var threadNonce = (window.cmnPortal && window.cmnPortal.threadNonce) ? String(window.cmnPortal.threadNonce) : '';
+      var requestInFlight = false;
+      var sendInFlight = false;
+      var terminalError = false;
+
+      var setFeedback = function (message, isError) {
+        if (!feedbackEl) {
+          return;
+        }
+        feedbackEl.textContent = message || '';
+        feedbackEl.classList.toggle('is-error', !!isError);
+      };
+
+      var setComposerEnabled = function (enabled) {
+        if (messageInput) {
+          messageInput.disabled = !enabled;
+        }
+        if (sendButton) {
+          sendButton.disabled = !enabled;
+        }
+        if (attachmentInput) {
+          attachmentInput.disabled = !enabled;
+        }
+      };
+
+      var escapeHtml = function (value) {
+        return String(value || '').replace(/[&<>\"']/g, function (char) {
+          if (char === '&') {
+            return '&amp;';
+          }
+          if (char === '<') {
+            return '&lt;';
+          }
+          if (char === '>') {
+            return '&gt;';
+          }
+          if (char === '"') {
+            return '&quot;';
+          }
+          return '&#39;';
+        });
+      };
+
+
+      var escapeAttr = function (value) {
+        return escapeHtml(value);
+      };
+
+      var isNearBottom = function () {
+        if (!messagesWrap) {
+          return true;
+        }
+        var remaining = messagesWrap.scrollHeight - (messagesWrap.scrollTop + messagesWrap.clientHeight);
+        return remaining < 80;
+      };
+
+      var scrollMessagesToBottom = function () {
+        if (!messagesWrap) {
+          return;
+        }
+        messagesWrap.scrollTop = messagesWrap.scrollHeight;
+      };
+
+      var applyRotationToken = function (payload) {
+        if (!payload || typeof payload !== 'object') {
+          return;
+        }
+        if (payload.token) {
+          activeToken = String(payload.token);
+          chatRoot.setAttribute('data-thread-token', activeToken);
+        }
+      };
+
+      var renderMessages = function (messages) {
+        if (!messagesWrap) {
+          return;
+        }
+        if (!Array.isArray(messages) || !messages.length) {
+          messagesWrap.innerHTML = '<div class="cmn-empty">No messages yet.</div>';
+          return;
+        }
+        var shouldScroll = isNearBottom();
+        var html = '';
+        messages.forEach(function (message) {
+          var bubbleClass = String(message && message.bubble_class ? message.bubble_class : 'is-system');
+          var sender = String(message && message.sender_label ? message.sender_label : 'System');
+          var created = String(message && message.created_at_label ? message.created_at_label : '');
+          var body = String(message && message.body ? message.body : '');
+          var attachments = Array.isArray(message && message.attachments) ? message.attachments : [];
+          html += '<div class="cmn-support-bubble cmn-booking-bubble ' + escapeHtml(bubbleClass) + '">';
+          html += '<div class="cmn-support-meta">' + escapeHtml(sender + (created ? (' - ' + created) : '')) + '</div>';
+          html += '<div class="cmn-support-text">' + escapeHtml(body).replace(/\n/g, '<br>') + '</div>';
+          if (attachments.length) {
+            html += '<div class="cmn-support-attachments">';
+            attachments.forEach(function (attachment) {
+              var url = attachment && attachment.url ? String(attachment.url) : '';
+              var filename = attachment && attachment.filename ? String(attachment.filename) : 'Attachment';
+              if (!url) {
+                return;
+              }
+              html += '<a class="cmn-support-attachment-chip" href="' + escapeAttr(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(filename) + '</a>';
+            });
+            html += '</div>';
+          }
+          html += '</div>';
+        });
+        messagesWrap.innerHTML = html;
+        if (shouldScroll) {
+          scrollMessagesToBottom();
+        }
+      };
+
+      var applyStatusState = function (thread) {
+        var status = String(thread && thread.status ? thread.status : 'open');
+        var isClosed = status === 'closed';
+        if (statusEl) {
+          statusEl.classList.remove('is-warning', 'is-verified');
+          statusEl.classList.add(isClosed ? 'is-warning' : 'is-verified');
+          statusEl.textContent = String(thread && thread.status_label ? thread.status_label : (isClosed ? 'Closed' : 'Open'));
+        }
+        if (unreadEl) {
+          var unread = parseInt((thread && thread.unread_count) || '0', 10) || 0;
+          unreadEl.textContent = unread > 0 ? (unread + ' unread') : 'No unread';
+          unreadEl.classList.toggle('is-muted', unread < 1);
+        }
+        if (setStatusButtons && setStatusButtons.length) {
+          setStatusButtons.forEach(function (button) {
+            var target = button.getAttribute('data-thread-set-status') || '';
+            button.disabled = sendInFlight || target === status;
+          });
+        }
+        if (viewerRole === 'school' && isClosed) {
+          setFeedback('Thread is closed right now. Sending a message will reopen it.', false);
+        }
+      };
+
+      var applyThread = function (thread) {
+        if (!thread || typeof thread !== 'object') {
+          return;
+        }
+        if (thread.thread_id) {
+          chatRoot.setAttribute('data-thread-id', String(thread.thread_id));
+        }
+        renderMessages(thread.messages || []);
+        applyStatusState(thread);
+      };
+
+      var sendThreadRequest = function (actionName, payload) {
+        var fd = new FormData();
+        fd.append('action', actionName);
+        fd.append('entity_type', entityType);
+        fd.append('entity_id', String(entityId));
+        if (activeToken) {
+          fd.append('token', activeToken);
+        }
+        if (threadNonce) {
+          fd.append('nonce', threadNonce);
+        }
+        if (payload && typeof payload === 'object') {
+          Object.keys(payload).forEach(function (key) {
+            var value = payload[key];
+            if (value === undefined || value === null) {
+              return;
+            }
+            if (key === 'attachments' && Array.isArray(value)) {
+              value.forEach(function (file) {
+                if (file instanceof File) {
+                  fd.append('attachments[]', file, file.name || 'attachment');
+                }
+              });
+              return;
+            }
+            fd.append(key, String(value));
+          });
+        }
+        return fetch(window.cmnPortal.ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd,
+        }).then(function (response) {
+          return response.text();
+        }).then(function (text) {
+          try {
+            return JSON.parse(text);
+          } catch (error) {
+            return {
+              success: false,
+              data: {
+                message: 'Unexpected server response.'
+              }
+            };
+          }
+        });
+      };
+
+      var scheduleNextPoll = function (delayMs) {
+        if (pollTimer) {
+          window.clearTimeout(pollTimer);
+        }
+        pollTimer = window.setTimeout(function () {
+          if (terminalError) {
+            return;
+          }
+          if (document.hidden) {
+            scheduleNextPoll(basePollMs);
+            return;
+          }
+          refreshThread(false).then(function () {
+            pollDelayMs = basePollMs;
+            scheduleNextPoll(basePollMs);
+          }).catch(function () {
+            pollDelayMs = Math.min(maxPollMs, Math.max(basePollMs, pollDelayMs * 2));
+            scheduleNextPoll(pollDelayMs);
+          });
+        }, Math.max(1500, delayMs));
+      };
+
+      var refreshThread = function (showErrors) {
+        if (requestInFlight || terminalError) {
+          return Promise.resolve();
+        }
+        requestInFlight = true;
+        return sendThreadRequest('cmn_thread_get', {}).then(function (data) {
+          requestInFlight = false;
+          if (!data || !data.success || !data.data) {
+            var message = (data && data.data && data.data.message) ? String(data.data.message) : 'Unable to refresh chat.';
+            if (showErrors) {
+              setFeedback(message, true);
+            }
+            var lowered = message.toLowerCase();
+            if (lowered.indexOf('expired') !== -1 || lowered.indexOf('unauthorized') !== -1 || lowered.indexOf('invalid secure chat link') !== -1) {
+              terminalError = true;
+              setComposerEnabled(false);
+            }
+            return Promise.reject(new Error(message));
+          }
+          applyRotationToken(data.data);
+          applyThread(data.data.thread || {});
+          if (!sendInFlight && (!viewerRole || viewerRole !== 'school' || String((data.data.thread || {}).status || 'open') !== 'closed')) {
+            setFeedback('', false);
+          }
+          return data;
+        }).catch(function (error) {
+          requestInFlight = false;
+          if (showErrors) {
+            setFeedback(error && error.message ? error.message : 'Unable to refresh chat.', true);
+          }
+          return Promise.reject(error);
+        });
+      };
+
+      if (form && messageInput) {
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          if (sendInFlight || terminalError) {
+            return;
+          }
+          var body = messageInput.value ? messageInput.value.trim() : '';
+          var files = [];
+          if (attachmentInput && attachmentInput.files && attachmentInput.files.length) {
+            files = Array.prototype.slice.call(attachmentInput.files);
+          }
+          if (!body && !files.length) {
+            setFeedback('Message or attachment is required.', true);
+            messageInput.focus();
+            return;
+          }
+          sendInFlight = true;
+          setComposerEnabled(false);
+          setFeedback('Sending message...', false);
+          sendThreadRequest('cmn_thread_post_message', {
+            body: body,
+            attachments: files,
+          }).then(function (data) {
+            sendInFlight = false;
+            setComposerEnabled(true);
+            if (!data || !data.success || !data.data) {
+              setFeedback((data && data.data && data.data.message) ? String(data.data.message) : 'Unable to send message.', true);
+              return;
+            }
+            applyRotationToken(data.data);
+            applyThread(data.data.thread || {});
+            messageInput.value = '';
+            if (attachmentInput) {
+              attachmentInput.value = '';
+            }
+            var attachmentErrors = Array.isArray(data.data.attachment_errors) ? data.data.attachment_errors : [];
+            if (attachmentErrors.length) {
+              setFeedback('Message sent. Some files were skipped: ' + attachmentErrors.join('; '), true);
+            } else {
+              setFeedback('Message sent.', false);
+            }
+            pollDelayMs = basePollMs;
+            scheduleNextPoll(basePollMs);
+          }).catch(function () {
+            sendInFlight = false;
+            setComposerEnabled(true);
+            setFeedback('Unable to send message.', true);
+          });
+        });
+      }
+
+      if (setStatusButtons && setStatusButtons.length) {
+        setStatusButtons.forEach(function (button) {
+          button.addEventListener('click', function () {
+            if (sendInFlight || terminalError) {
+              return;
+            }
+            var nextStatus = button.getAttribute('data-thread-set-status') || '';
+            if (!nextStatus) {
+              return;
+            }
+            sendInFlight = true;
+            setStatusButtons.forEach(function (innerButton) {
+              innerButton.disabled = true;
+            });
+            setFeedback('Updating thread status...', false);
+            sendThreadRequest('cmn_thread_set_status', {
+              status: nextStatus,
+            }).then(function (data) {
+              sendInFlight = false;
+              if (!data || !data.success || !data.data) {
+                setFeedback((data && data.data && data.data.message) ? String(data.data.message) : 'Unable to update thread status.', true);
+                setStatusButtons.forEach(function (innerButton) {
+                  innerButton.disabled = false;
+                });
+                return;
+              }
+              applyThread(data.data.thread || {});
+              setFeedback('Thread status updated.', false);
+              pollDelayMs = basePollMs;
+              scheduleNextPoll(basePollMs);
+            }).catch(function () {
+              sendInFlight = false;
+              setFeedback('Unable to update thread status.', true);
+              setStatusButtons.forEach(function (innerButton) {
+                innerButton.disabled = false;
+              });
+            });
+          });
+        });
+      }
+
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden || terminalError) {
+          return;
+        }
+        refreshThread(false).then(function () {
+          pollDelayMs = basePollMs;
+          scheduleNextPoll(basePollMs);
+        }).catch(function () {
+          pollDelayMs = Math.min(maxPollMs, Math.max(basePollMs, pollDelayMs * 2));
+          scheduleNextPoll(pollDelayMs);
+        });
+      });
+
+      refreshThread(false).then(function () {
+        scheduleNextPoll(basePollMs);
+      }).catch(function () {
+        scheduleNextPoll(basePollMs);
+      });
+    });
+  }
+
   var cleanupStaleTourElements = function () {
     var activeTourRoot = document.querySelector('[data-candidate-tour="1"]');
     if (activeTourRoot) {
@@ -333,11 +1194,99 @@ document.addEventListener('DOMContentLoaded', function () {
       var availabilityMessage = document.querySelector('[data-availability-message]');
       var availabilityCard = document.querySelector('[data-availability-card]');
       var availabilityHelper = document.querySelector('[data-availability-helper]');
+      var availabilityDot = document.querySelector('[data-availability-dot]');
+      var availabilityDotLabel = document.querySelector('[data-availability-dot-label]');
+      var unavailableButton = document.querySelector('[data-availability-unavailable-button]');
+      var availabilityImpact = document.querySelector('[data-availability-impact]');
       var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
+      var availabilityPeriodLabel = availabilityButton.getAttribute('data-availability-period-label') || 'tomorrow morning';
+      var countdownEl = document.querySelector('[data-availability-countdown]');
+      var openAtRaw = availabilityButton.getAttribute('data-availability-open-at') || '';
+      var closeAtRaw = availabilityButton.getAttribute('data-availability-close-at') || '';
+      var openAtTs = openAtRaw ? Date.parse(openAtRaw) : NaN;
+      var closeAtTs = closeAtRaw ? Date.parse(closeAtRaw) : NaN;
+      var availabilityNextOpenLabel = (availabilityButton.getAttribute('data-availability-next-open-label') || '').trim();
+      if (!availabilityNextOpenLabel && !Number.isNaN(openAtTs)) {
+        try {
+          var openLabelDay = new Date(openAtTs).toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+          if (openLabelDay) {
+            availabilityNextOpenLabel = 'Confirm from ' + openLabelDay + ' 7:00PM';
+          }
+        } catch (e) {}
+      }
+      var availabilityCountdownTimer = null;
       var unlockAtRaw = availabilityButton.getAttribute('data-availability-unlock-at') || '';
       var unlockAtTs = unlockAtRaw ? Date.parse(unlockAtRaw) : NaN;
       var availabilityUnlockTimer = null;
+      var availabilityPrimaryButtonLabel = (availabilityButton.textContent || '').trim();
+      var availabilityLabelSwapTimer = null;
+      var availabilityLabelSwapState = false;
       availabilityButton.style.pointerEvents = 'auto';
+      var syncAvailabilityButtonLabel = function () {
+        if (!availabilityPrimaryButtonLabel) {
+          availabilityPrimaryButtonLabel = (availabilityButton.textContent || '').trim();
+        }
+        if (availabilityButton.disabled && availabilityNextOpenLabel) {
+          if (!availabilityLabelSwapTimer) {
+            availabilityLabelSwapState = false;
+            availabilityButton.textContent = availabilityPrimaryButtonLabel;
+            availabilityLabelSwapTimer = window.setInterval(function () {
+              if (!availabilityButton.disabled || !availabilityNextOpenLabel) {
+                if (availabilityLabelSwapTimer) {
+                  window.clearInterval(availabilityLabelSwapTimer);
+                  availabilityLabelSwapTimer = null;
+                }
+                availabilityButton.textContent = availabilityPrimaryButtonLabel;
+                return;
+              }
+              availabilityLabelSwapState = !availabilityLabelSwapState;
+              availabilityButton.textContent = availabilityLabelSwapState ? availabilityNextOpenLabel : availabilityPrimaryButtonLabel;
+            }, 2200);
+          }
+          return;
+        }
+        if (availabilityLabelSwapTimer) {
+          window.clearInterval(availabilityLabelSwapTimer);
+          availabilityLabelSwapTimer = null;
+        }
+        availabilityButton.textContent = availabilityPrimaryButtonLabel;
+      };
+      var setAvailabilityButtonLabel = function (text) {
+        availabilityPrimaryButtonLabel = (text || '').trim();
+        availabilityButton.textContent = availabilityPrimaryButtonLabel;
+      };
+      var renderAvailabilityCountdown = function () {
+        if (!countdownEl || Number.isNaN(openAtTs) || Number.isNaN(closeAtTs)) {
+          return;
+        }
+        var nowMs = Date.now();
+        if (nowMs < openAtTs) {
+          var toOpen = Math.max(0, Math.floor((openAtTs - nowMs) / 1000));
+          var hOpen = Math.floor(toOpen / 3600);
+          var mOpen = Math.floor((toOpen % 3600) / 60);
+          var sOpen = toOpen % 60;
+          countdownEl.textContent = 'Opens in: ' + hOpen + 'h ' + mOpen + 'm ' + (sOpen < 10 ? '0' : '') + sOpen + 's';
+          return;
+        }
+        var toClose = Math.max(0, Math.floor((closeAtTs - nowMs) / 1000));
+        if (toClose <= 0) {
+          countdownEl.textContent = 'Window closed at 7:30am.';
+          return;
+        }
+        var h = Math.floor(toClose / 3600);
+        var m = Math.floor((toClose % 3600) / 60);
+        var s = toClose % 60;
+        countdownEl.textContent = 'Time left to confirm: ' + h + 'h ' + m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+      };
+      renderAvailabilityCountdown();
+      availabilityCountdownTimer = window.setInterval(renderAvailabilityCountdown, 1000);
+      if (availabilityCard && availabilityCard.classList.contains('is-blocked')) {
+        if (availabilityDot && availabilityDotLabel) {
+          availabilityDot.classList.remove('is-confirmed', 'is-neutral');
+          availabilityDot.classList.add('is-blocked');
+          availabilityDotLabel.textContent = "I'm not available";
+        }
+      }
       var maybeUnlockAvailabilityButton = function () {
         if (!availabilityButton.disabled || calendarBlocked || Number.isNaN(unlockAtTs)) {
           return;
@@ -352,38 +1301,88 @@ document.addEventListener('DOMContentLoaded', function () {
           availabilityHelper.textContent = '';
         }
         if (availabilityMessage && availabilityMessage.textContent.trim().toLowerCase() === 'not confirmed yet.') {
-          availabilityMessage.textContent = 'Not confirmed yet.';
+          availabilityMessage.textContent = 'Not confirmed yet';
         }
         if (availabilityUnlockTimer) {
           window.clearInterval(availabilityUnlockTimer);
           availabilityUnlockTimer = null;
         }
+        syncAvailabilityButtonLabel();
       };
       maybeUnlockAvailabilityButton();
       if (availabilityButton.disabled && !calendarBlocked) {
-        var now = new Date();
-        var nowHour = now.getHours();
-        var nowMinute = now.getMinutes();
-        // Fail-open in UI when stale disabled state is rendered; server still enforces availability rules.
-        if (nowHour >= 19 || nowHour < 8 || (nowHour === 8 && nowMinute === 0)) {
-          availabilityButton.disabled = false;
-        } else if (availabilityHelper && !availabilityHelper.textContent.trim()) {
-          availabilityHelper.textContent = 'You can confirm availability from 7pm until 8:00am.';
+        if (availabilityHelper && !availabilityHelper.textContent.trim()) {
+          availabilityHelper.textContent = 'You can confirm availability from 7:00pm on the previous day until 7:30am.';
         }
       }
       if (availabilityButton.disabled && !Number.isNaN(unlockAtTs)) {
         availabilityUnlockTimer = window.setInterval(maybeUnlockAvailabilityButton, 30000);
       }
+      syncAvailabilityButtonLabel();
+      var setStatusDot = function (state, text) {
+        if (!availabilityDot || !availabilityDotLabel) {
+          return;
+        }
+        availabilityDot.classList.remove('is-confirmed', 'is-neutral', 'is-blocked');
+        availabilityDot.classList.add(state);
+        availabilityDotLabel.textContent = text;
+      };
+
       var setAvailabilityVisualState = function (isAvailable) {
         availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
-        availabilityButton.textContent = isAvailable ? 'I’m NOT available tomorrow morning' : 'I’m available tomorrow morning';
+        setAvailabilityButtonLabel(isAvailable ? ('Confirmed for ' + availabilityPeriodLabel) : ('Confirm availability for ' + availabilityPeriodLabel));
         if (availabilityCard) {
           availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
           if (!isAvailable) {
             availabilityCard.classList.remove('is-blocked');
           }
         }
+        setStatusDot(isAvailable ? 'is-confirmed' : 'is-neutral', isAvailable ? 'Confirmed' : 'Not confirmed yet');
+        if (availabilityImpact) {
+          availabilityImpact.textContent = isAvailable ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.';
+        }
       };
+      if (unavailableButton) {
+        unavailableButton.addEventListener('click', function () {
+          unavailableButton.disabled = true;
+          var formDataUnavailable = new FormData();
+          formDataUnavailable.append('action', 'cmn_mark_unavailable_morning');
+          formDataUnavailable.append('nonce', availabilityNonce);
+          fetch(availabilityAjaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: formDataUnavailable,
+          })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              unavailableButton.disabled = false;
+              if (data && data.success) {
+                setAvailabilityVisualState(false);
+                if (availabilityCard) {
+                  availabilityCard.classList.add('is-blocked');
+                }
+                setStatusDot('is-blocked', "I'm not available");
+                if (availabilityImpact) { availabilityImpact.textContent = 'You are hidden from manager searches.'; }
+                if (availabilityMessage) {
+                  availabilityMessage.textContent = (data.data && data.data.status_text) ? data.data.status_text : "I'm not available";
+                }
+                if (data.data && typeof data.data.button_text === 'string') {
+                  setAvailabilityButtonLabel(data.data.button_text);
+                }
+                syncAvailabilityButtonLabel();
+              } else if (availabilityMessage) {
+                availabilityMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to update availability.';
+              }
+            })
+            .catch(function () {
+              unavailableButton.disabled = false;
+              if (availabilityMessage) {
+                availabilityMessage.textContent = 'Unable to update availability.';
+              }
+            });
+        });
+      }
+
       availabilityButton.addEventListener('click', function () {
         if (availabilityButton.disabled) {
           if (availabilityHelper && availabilityHelper.textContent.trim()) {
@@ -418,7 +1417,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 setAvailabilityVisualState(true);
               }
               if (data.data && typeof data.data.button_text === 'string') {
-                availabilityButton.textContent = data.data.button_text;
+                setAvailabilityButtonLabel(data.data.button_text);
               }
               if (data.data && typeof data.data.button_enabled !== 'undefined') {
                 availabilityButton.disabled = !data.data.button_enabled;
@@ -432,6 +1431,7 @@ document.addEventListener('DOMContentLoaded', function () {
               if (availabilityHelper) {
                 availabilityHelper.textContent = '';
               }
+              syncAvailabilityButtonLabel();
             } else {
               availabilityButton.disabled = false;
               if (availabilityMessage) {
@@ -441,7 +1441,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 availabilityButton.disabled = !data.data.button_enabled;
               }
               if (data && data.data && typeof data.data.button_text === 'string') {
-                availabilityButton.textContent = data.data.button_text;
+                setAvailabilityButtonLabel(data.data.button_text);
               }
               if (availabilityHelper && data && data.data && data.data.message) {
                 availabilityHelper.textContent = data.data.message;
@@ -449,6 +1449,7 @@ document.addEventListener('DOMContentLoaded', function () {
               if (availabilityCard && data && data.data && data.data.message && data.data.message.toLowerCase().indexOf('unavailable') !== -1) {
                 availabilityCard.classList.add('is-blocked');
               }
+              syncAvailabilityButtonLabel();
             }
           })
           .catch(function () {
@@ -456,6 +1457,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (availabilityMessage) {
               availabilityMessage.textContent = 'Unable to save availability.';
             }
+            syncAvailabilityButtonLabel();
           });
       });
     }
@@ -501,27 +1503,80 @@ document.addEventListener('DOMContentLoaded', function () {
     }, refreshEvery * 1000);
   }
 
+  var acceptWarningForms = document.querySelectorAll('[data-cmn-accept-warning]');
+  if (acceptWarningForms.length) {
+    acceptWarningForms.forEach(function (form) {
+      form.addEventListener('submit', function (event) {
+        var ok = window.confirm('You are about to be placed into a documented booking chat with the school and CoverMeNow. Please do not discuss pay in booking chat. Continue?');
+        if (!ok) {
+          event.preventDefault();
+        }
+      });
+    });
+  }
+
   var requestButtons = document.querySelectorAll('[data-request-candidate]');
   if (requestButtons.length && window.cmnPortal && window.cmnPortal.ajaxUrl) {
     requestButtons.forEach(function (btn) {
+      var card = btn.closest('.cmn-available-card') || btn.parentElement;
+      var roleSelect = card ? card.querySelector('[data-request-role-select]') : null;
+      var schoolRateEl = card ? card.querySelector('[data-request-school-rate]') : null;
+      var refreshRateDisplay = function () {
+        if (!roleSelect || !schoolRateEl) {
+          return;
+        }
+        var option = roleSelect.options[roleSelect.selectedIndex];
+        var rawRate = option ? (option.getAttribute('data-school-rate') || '0') : '0';
+        var parsedRate = parseFloat(rawRate || '0');
+        if (!isFinite(parsedRate) || parsedRate < 0) {
+          parsedRate = 0;
+        }
+        schoolRateEl.textContent = 'GBP ' + parsedRate.toFixed(2);
+      };
+      refreshRateDisplay();
+      if (roleSelect) {
+        roleSelect.addEventListener('change', refreshRateDisplay);
+      }
+
       btn.addEventListener('click', function () {
         if (btn.disabled) {
           return;
         }
         btn.disabled = true;
-        var card = btn.closest('.cmn-available-card') || btn.parentElement;
         var messageEl = card ? card.querySelector('[data-request-message]') : null;
         if (messageEl) {
           messageEl.textContent = 'Sending request...';
         }
+
+        var selectedRoleLabel = '';
+        var selectedSchoolRate = '';
+        var selectedCandidateRate = '';
+        if (roleSelect && roleSelect.options.length) {
+          var selectedOption = roleSelect.options[roleSelect.selectedIndex];
+          selectedRoleLabel = selectedOption ? (selectedOption.value || '') : '';
+          selectedSchoolRate = selectedOption ? (selectedOption.getAttribute('data-school-rate') || '') : '';
+          selectedCandidateRate = selectedOption ? (selectedOption.getAttribute('data-candidate-rate') || '') : '';
+        }
+
         var formData = new FormData();
         formData.append('action', 'cmn_request_candidate');
         formData.append('nonce', window.cmnPortal.requestCandidateNonce || '');
         formData.append('candidate_id', btn.getAttribute('data-candidate-id') || '');
+        formData.append('requested_date', btn.getAttribute('data-request-date') || '');
+        if (selectedRoleLabel) {
+          formData.append('role_label', selectedRoleLabel);
+        }
+        if (selectedSchoolRate) {
+          formData.append('school_charge_rate', selectedSchoolRate);
+        }
+        if (selectedCandidateRate) {
+          formData.append('candidate_pay_rate', selectedCandidateRate);
+        }
         var readyResponseSelect = card ? card.querySelector('[data-request-ready-response]') : null;
         if (readyResponseSelect) {
           formData.append('ready_response_id', readyResponseSelect.value || '');
         }
+
         fetch(window.cmnPortal.ajaxUrl, {
           method: 'POST',
           credentials: 'same-origin',
@@ -532,6 +1587,8 @@ document.addEventListener('DOMContentLoaded', function () {
           })
           .then(function (data) {
             if (data && data.success) {
+              btn.textContent = 'Request sent';
+              btn.setAttribute('data-requested', '1');
               if (messageEl) {
                 messageEl.textContent = data.data && data.data.message ? data.data.message : 'Your request has been sent.';
               }
@@ -550,6 +1607,916 @@ document.addEventListener('DOMContentLoaded', function () {
           });
       });
     });
+  }
+
+  var partnerProgrammeRoot = document.querySelector('[data-partner-programme-root]');
+  if (partnerProgrammeRoot) {
+    var partnerStatsEndpoint = partnerProgrammeRoot.getAttribute('data-partner-stats-endpoint') || '';
+    var partnerRestNonce = partnerProgrammeRoot.getAttribute('data-partner-rest-nonce') || '';
+    var partnerErrorEl = partnerProgrammeRoot.querySelector('[data-partner-error]');
+    var tierLabel = function (tier) {
+      var key = String(tier || '').toLowerCase();
+      if (!key) {
+        return 'Standard';
+      }
+      return key.charAt(0).toUpperCase() + key.slice(1);
+    };
+    var formatCurrencyGbp = function (value) {
+      var amount = parseFloat(value || '0');
+      if (!isFinite(amount)) {
+        amount = 0;
+      }
+      try {
+        return new Intl.NumberFormat('en-GB', {
+          style: 'currency',
+          currency: 'GBP',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(amount);
+      } catch (error) {
+        return 'GBP ' + amount.toFixed(2);
+      }
+    };
+    var formatWhole = function (value) {
+      var amount = parseInt(value || '0', 10);
+      if (!isFinite(amount)) {
+        amount = 0;
+      }
+      try {
+        return new Intl.NumberFormat('en-GB', {
+          maximumFractionDigits: 0
+        }).format(amount);
+      } catch (error) {
+        return String(amount);
+      }
+    };
+    var formatPercent = function (value) {
+      var amount = parseFloat(value || '0');
+      if (!isFinite(amount)) {
+        amount = 0;
+      }
+      var rounded = Math.round(amount * 100) / 100;
+      var text = (Math.abs(rounded - Math.round(rounded)) < 0.0001) ? String(Math.round(rounded)) : rounded.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+      return text + '%';
+    };
+    var setText = function (selector, value) {
+      var node = partnerProgrammeRoot.querySelector(selector);
+      if (node) {
+        node.textContent = value;
+      }
+    };
+    var setHidden = function (node, hidden) {
+      if (!node) {
+        return;
+      }
+      node.hidden = !!hidden;
+      node.classList.toggle('is-hidden', !!hidden);
+    };
+    var getProgressData = function (credits) {
+      var value = parseInt(credits || '0', 10);
+      if (!isFinite(value) || value < 0) {
+        value = 0;
+      }
+      if (value >= 1500) {
+        return {
+          topTier: true,
+          nextTier: '',
+          remaining: 0,
+          progressPercent: 100
+        };
+      }
+      var ranges = [
+        { min: 700, max: 1500, next: 'Elite' },
+        { min: 300, max: 700, next: 'Gold' },
+        { min: 100, max: 300, next: 'Silver' },
+        { min: 0, max: 100, next: 'Bronze' }
+      ];
+      var selected = ranges[ranges.length - 1];
+      ranges.forEach(function (item) {
+        if (value >= item.min && value < item.max) {
+          selected = item;
+        }
+      });
+      var span = Math.max(1, selected.max - selected.min);
+      var pct = ((value - selected.min) / span) * 100;
+      if (!isFinite(pct)) {
+        pct = 0;
+      }
+      pct = Math.max(0, Math.min(100, pct));
+      return {
+        topTier: false,
+        nextTier: selected.next,
+        remaining: Math.max(0, selected.max - value),
+        progressPercent: pct
+      };
+    };
+    var renderProgress = function (credits) {
+      var progress = getProgressData(credits);
+      var topEl = partnerProgrammeRoot.querySelector('[data-partner-progress-top]');
+      var bodyEl = partnerProgrammeRoot.querySelector('[data-partner-progress-body]');
+      var fillEl = partnerProgrammeRoot.querySelector('[data-partner-progress-fill]');
+      setHidden(topEl, !progress.topTier);
+      setHidden(bodyEl, progress.topTier);
+      if (progress.topTier) {
+        return;
+      }
+      setText('[data-partner-next-tier]', progress.nextTier);
+      setText('[data-partner-credits-remaining]', formatWhole(progress.remaining) + ' credits to next tier');
+      if (fillEl) {
+        fillEl.style.width = progress.progressPercent.toFixed(2) + '%';
+      }
+    };
+    var renderStats = function (stats) {
+      if (!stats || typeof stats !== 'object') {
+        return;
+      }
+      setText('[data-partner-tier]', tierLabel(stats.tier));
+      setText('[data-partner-tier-badge]', tierLabel(stats.tier));
+      setText('[data-partner-lifetime-credits]', formatWhole(stats.lifetime_credits));
+      setText('[data-partner-discount]', formatPercent(stats.discount_percent));
+      setText('[data-partner-lifetime-savings]', formatCurrencyGbp(stats.lifetime_savings));
+      setText('[data-partner-academic-savings]', formatCurrencyGbp(stats.academic_year_savings));
+      var projectionStatus = String(stats.projection_status || 'insufficient_data').toLowerCase();
+      if (projectionStatus === 'ok') {
+        setText('[data-partner-projection-message]', 'Projected savings this academic year');
+        setText('[data-partner-projected-savings]', formatCurrencyGbp(stats.projected_academic_year_savings));
+      } else {
+        setText('[data-partner-projection-message]', 'Projection available after 2 months of activity');
+        setText('[data-partner-projected-savings]', '—');
+      }
+      if (stats.academic_year_label) {
+        setText('[data-partner-academic-year-label]', 'Saved this academic year (' + String(stats.academic_year_label) + ')');
+      }
+      renderProgress(stats.lifetime_credits);
+    };
+    if (partnerStatsEndpoint) {
+      var requestHeaders = {};
+      if (partnerRestNonce) {
+        requestHeaders['X-WP-Nonce'] = partnerRestNonce;
+      }
+      fetch(partnerStatsEndpoint, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: requestHeaders
+      })
+        .then(function (response) {
+          return response.json().catch(function () {
+            return {};
+          }).then(function (payload) {
+            if (!response.ok || !payload || payload.ok === false) {
+              var message = (payload && payload.message) ? payload.message : 'Unable to load partner programme stats.';
+              throw new Error(message);
+            }
+            return payload;
+          });
+        })
+        .then(function (payload) {
+          renderStats(payload);
+          if (partnerErrorEl) {
+            partnerErrorEl.hidden = true;
+            partnerErrorEl.classList.add('is-hidden');
+            partnerErrorEl.textContent = '';
+          }
+        })
+        .catch(function (error) {
+          if (partnerErrorEl) {
+            partnerErrorEl.hidden = false;
+            partnerErrorEl.classList.remove('is-hidden');
+            partnerErrorEl.textContent = error && error.message ? error.message : 'Unable to load partner programme stats.';
+          }
+        });
+    }
+  }
+
+  var candidateRewardsRoot = document.querySelector('[data-cmn-rewards-root]');
+  if (candidateRewardsRoot) {
+    var rewardsFetchAction = candidateRewardsRoot.getAttribute('data-cmn-rewards-fetch-action') || 'cmn_candidate_rewards_overview';
+    var rewardsFetchNonce = candidateRewardsRoot.getAttribute('data-cmn-rewards-fetch-nonce') || ((window.cmnPortal && window.cmnPortal.candidateRewardsViewNonce) ? String(window.cmnPortal.candidateRewardsViewNonce) : '');
+    var rewardsAppealAction = candidateRewardsRoot.getAttribute('data-cmn-rewards-appeal-action') || 'cmn_candidate_rewards_open_appeal';
+    var rewardsAppealNonce = candidateRewardsRoot.getAttribute('data-cmn-rewards-appeal-nonce') || ((window.cmnPortal && window.cmnPortal.candidateRewardsAppealNonce) ? String(window.cmnPortal.candidateRewardsAppealNonce) : '');
+    var rewardsErrorEl = candidateRewardsRoot.querySelector('[data-cmn-rewards-error]');
+    var rewardsTierClasses = ['is-standard', 'is-bronze', 'is-silver', 'is-gold', 'is-elite'];
+    var ajaxUrl = (window.cmnPortal && window.cmnPortal.ajaxUrl) ? String(window.cmnPortal.ajaxUrl) : '';
+
+    var rewardsWhole = function (value) {
+      var amount = parseInt(value || '0', 10);
+      if (!isFinite(amount)) {
+        amount = 0;
+      }
+      try {
+        return new Intl.NumberFormat('en-GB', {
+          maximumFractionDigits: 0
+        }).format(amount);
+      } catch (error) {
+        return String(amount);
+      }
+    };
+
+    var rewardsMoney = function (value) {
+      var amount = parseFloat(value || '0');
+      if (!isFinite(amount)) {
+        amount = 0;
+      }
+      try {
+        return new Intl.NumberFormat('en-GB', {
+          style: 'currency',
+          currency: 'GBP',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(amount);
+      } catch (error) {
+        return 'GBP ' + amount.toFixed(2);
+      }
+    };
+
+    var rewardsSetText = function (selector, value) {
+      var node = candidateRewardsRoot.querySelector(selector);
+      if (node) {
+        node.textContent = String(value == null ? '' : value);
+      }
+    };
+
+    var setRewardsError = function (message) {
+      if (!rewardsErrorEl) {
+        return;
+      }
+      var text = String(message || '');
+      rewardsErrorEl.textContent = text;
+      rewardsErrorEl.hidden = text === '';
+      rewardsErrorEl.classList.toggle('is-hidden', text === '');
+    };
+
+    var rewardsEscape = function (value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    var renderRewardsAwards = function (awards) {
+      var host = candidateRewardsRoot.querySelector('[data-cmn-rewards-awards]');
+      if (!host) {
+        return;
+      }
+      var rows = Array.isArray(awards) ? awards.slice(0, 3) : [];
+      if (!rows.length) {
+        host.innerHTML = '<div class="cmn-empty">No bonus awards yet this year.</div>';
+        return;
+      }
+      host.innerHTML = rows.map(function (award) {
+        var block = parseInt(award && award.block_index ? award.block_index : '0', 10);
+        if (!isFinite(block) || block < 1) {
+          block = 1;
+        }
+        var amount = rewardsMoney(award && award.bonus_amount ? award.bonus_amount : 0);
+        var awardedOn = award && award.awarded_at_label ? String(award.awarded_at_label) : '—';
+        return '' +
+          '<div class="cmn-candidate-rewards-award-row">' +
+            '<span>Block ' + rewardsEscape(String(block)) + '</span>' +
+            '<strong>' + rewardsEscape(amount) + '</strong>' +
+            '<small>' + rewardsEscape(awardedOn) + '</small>' +
+          '</div>';
+      }).join('');
+    };
+
+    var renderConductHistory = function (events) {
+      var host = candidateRewardsRoot.querySelector('[data-cmn-rewards-recent-conduct]');
+      if (!host) {
+        return;
+      }
+      var rows = Array.isArray(events) ? events.slice(0, 4) : [];
+      if (!rows.length) {
+        host.innerHTML = '<div class="cmn-empty">No conduct events recorded.</div>';
+        return;
+      }
+      host.innerHTML = rows.map(function (event) {
+        var label = event && event.label ? String(event.label) : 'Event';
+        var when = event && event.occurred_at_label ? String(event.occurred_at_label) : '—';
+        return '' +
+          '<div class="cmn-candidate-rewards-conduct-row">' +
+            '<strong>' + rewardsEscape(label) + '</strong>' +
+            '<span>' + rewardsEscape(when) + '</span>' +
+          '</div>';
+      }).join('');
+    };
+
+    var renderAppealBookingChips = function (options) {
+      var host = candidateRewardsRoot.querySelector('[data-cmn-rewards-open-bookings]');
+      if (!host) {
+        return;
+      }
+      var rows = Array.isArray(options) ? options : [];
+      if (!rows.length) {
+        host.innerHTML = '';
+        return;
+      }
+      host.innerHTML = rows.map(function (row) {
+        var bookingId = parseInt(row && row.booking_id ? row.booking_id : '0', 10);
+        if (!isFinite(bookingId) || bookingId < 1) {
+          return '';
+        }
+        return '<span class="cmn-status-chip">Booking #' + rewardsEscape(String(bookingId)) + '</span>';
+      }).join('');
+    };
+
+    var renderAppealBookingSelect = function (options) {
+      var select = candidateRewardsRoot.querySelector('[data-cmn-rewards-appeal-booking]');
+      if (!select) {
+        return;
+      }
+      var rows = Array.isArray(options) ? options : [];
+      select.innerHTML = rows.map(function (row) {
+        var bookingId = parseInt(row && row.booking_id ? row.booking_id : '0', 10);
+        if (!isFinite(bookingId) || bookingId < 1) {
+          return '';
+        }
+        var label = row && row.label ? String(row.label) : ('Booking #' + bookingId);
+        return '<option value="' + rewardsEscape(String(bookingId)) + '">' + rewardsEscape(label) + '</option>';
+      }).join('');
+    };
+
+    var applyRewardsPayload = function (payload) {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+      var state = (payload.state && typeof payload.state === 'object') ? payload.state : {};
+      var bonus = (payload.bonus && typeof payload.bonus === 'object') ? payload.bonus : {};
+      var referral = (payload.referral && typeof payload.referral === 'object') ? payload.referral : {};
+      var conduct = (payload.conduct && typeof payload.conduct === 'object') ? payload.conduct : {};
+
+      var tier = String(state.tier || 'standard').toLowerCase();
+      var tierLabel = String(state.tier_label || 'Standard');
+      var badge = candidateRewardsRoot.querySelector('[data-cmn-rewards-tier-badge]');
+      if (badge) {
+        rewardsTierClasses.forEach(function (className) {
+          badge.classList.remove(className);
+        });
+        badge.classList.add('is-' + tier);
+        badge.textContent = tierLabel;
+      }
+
+      var conductClass = String(state.conduct_chip_class || 'is-approved');
+      var conductBadge = candidateRewardsRoot.querySelector('[data-cmn-rewards-conduct-badge]');
+      if (conductBadge) {
+        conductBadge.classList.remove('is-approved', 'is-pending', 'is-declined');
+        conductBadge.classList.add(conductClass);
+        conductBadge.textContent = String(state.conduct_label || 'Clear');
+      }
+
+      var shiftsCompleted = parseInt(state.shifts_completed || '0', 10);
+      if (!isFinite(shiftsCompleted)) {
+        shiftsCompleted = 0;
+      }
+      var nextTierThreshold = parseInt(state.next_tier_threshold || '0', 10);
+      if (!isFinite(nextTierThreshold)) {
+        nextTierThreshold = 0;
+      }
+      var shiftsToNextTier = parseInt(state.shifts_to_next_tier || '0', 10);
+      if (!isFinite(shiftsToNextTier) || shiftsToNextTier < 0) {
+        shiftsToNextTier = 0;
+      }
+
+      rewardsSetText('[data-cmn-rewards-year]', payload.academic_year_label || '');
+      rewardsSetText('[data-cmn-rewards-tier]', tierLabel);
+      rewardsSetText('[data-cmn-rewards-shifts]', rewardsWhole(shiftsCompleted));
+      rewardsSetText('[data-cmn-rewards-next-tier]', state.next_tier || 'Top tier achieved');
+      rewardsSetText(
+        '[data-cmn-rewards-next-tier-copy]',
+        nextTierThreshold > 0
+          ? (String(shiftsToNextTier) + ' shifts to go (target: ' + String(nextTierThreshold) + ')')
+          : 'Top tier achieved'
+      );
+
+      var lastBonusAmount = rewardsMoney(bonus.last_bonus_amount || 0);
+      rewardsSetText('[data-cmn-rewards-last-bonus]', lastBonusAmount);
+      rewardsSetText('[data-cmn-rewards-last-bonus-date]', bonus.last_bonus_awarded_at_label || 'Not yet awarded');
+
+      var nextBonusAt = parseInt(bonus.next_bonus_at || '30', 10);
+      if (!isFinite(nextBonusAt) || nextBonusAt < 30) {
+        nextBonusAt = 30;
+      }
+      var shiftsToNextBonus = parseInt(bonus.shifts_to_next_bonus || '0', 10);
+      if (!isFinite(shiftsToNextBonus) || shiftsToNextBonus < 0) {
+        shiftsToNextBonus = 0;
+      }
+      rewardsSetText('[data-cmn-rewards-next-bonus]', 'Next bonus at ' + String(nextBonusAt) + ' shifts (' + String(shiftsToNextBonus) + ' to go)');
+
+      var eliteNote = candidateRewardsRoot.querySelector('[data-cmn-rewards-elite-note]');
+      if (eliteNote) {
+        var eliteActive = !!bonus.elite_plus_active;
+        eliteNote.classList.toggle('is-hidden', !eliteActive);
+      }
+
+      rewardsSetText('[data-cmn-rewards-ticket-count]', String(parseInt(referral.ticket_count || '0', 10) || 0));
+      var codeInput = candidateRewardsRoot.querySelector('[data-cmn-rewards-referral-code]');
+      if (codeInput) {
+        codeInput.value = String(referral.referral_code || '');
+      }
+
+      renderRewardsAwards(Array.isArray(bonus.awards) ? bonus.awards : []);
+      renderAppealBookingSelect(Array.isArray(conduct.appeal_booking_options) ? conduct.appeal_booking_options : []);
+      renderAppealBookingChips(Array.isArray(conduct.appeal_booking_options) ? conduct.appeal_booking_options : []);
+      renderConductHistory(Array.isArray(conduct.recent_events) ? conduct.recent_events : []);
+
+      var openAppealBtn = candidateRewardsRoot.querySelector('[data-cmn-rewards-open-appeal]');
+      var appealAvailability = candidateRewardsRoot.querySelector('[data-cmn-rewards-appeal-availability]');
+      var canAppeal = !!(conduct && conduct.appeal_available);
+      if (openAppealBtn) {
+        openAppealBtn.disabled = !canAppeal;
+      }
+      if (appealAvailability) {
+        appealAvailability.textContent = canAppeal
+          ? 'Appeals are logged and reviewed by staff.'
+          : 'No active no-show records available for appeal right now.';
+      }
+    };
+
+    var postRewardsAction = function (actionName, nonceValue, payload) {
+      if (!ajaxUrl) {
+        return Promise.reject(new Error('Portal AJAX URL is not configured.'));
+      }
+      var formData = new FormData();
+      formData.append('action', String(actionName || ''));
+      if (nonceValue) {
+        formData.append('nonce', String(nonceValue));
+      }
+      if (payload && typeof payload === 'object') {
+        Object.keys(payload).forEach(function (key) {
+          var value = payload[key];
+          if (value === undefined || value === null) {
+            return;
+          }
+          formData.append(key, String(value));
+        });
+      }
+      return fetch(ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData
+      }).then(function (response) {
+        return response.json().catch(function () {
+          return {};
+        }).then(function (body) {
+          if (!response.ok) {
+            var fallback = (body && body.data && body.data.error && body.data.error.message)
+              ? body.data.error.message
+              : (body && body.data && body.data.message ? body.data.message : 'Request failed.');
+            throw new Error(fallback);
+          }
+          return body;
+        });
+      });
+    };
+
+    var reloadRewardsOverview = function () {
+      return postRewardsAction(rewardsFetchAction, rewardsFetchNonce, {})
+        .then(function (response) {
+          if (!response || !response.success || !response.data || response.data.ok === false) {
+            throw new Error((response && response.data && response.data.message) ? response.data.message : 'Unable to load rewards information.');
+          }
+          var payload = (response.data && response.data.data && typeof response.data.data === 'object')
+            ? response.data.data
+            : {};
+          applyRewardsPayload(payload);
+          setRewardsError('');
+          return payload;
+        })
+        .catch(function (error) {
+          setRewardsError(error && error.message ? error.message : 'Unable to load rewards information.');
+          throw error;
+        });
+    };
+
+    var copyButton = candidateRewardsRoot.querySelector('[data-cmn-rewards-copy-code]');
+    var copyInput = candidateRewardsRoot.querySelector('[data-cmn-rewards-referral-code]');
+    var copyFeedback = candidateRewardsRoot.querySelector('[data-cmn-rewards-copy-feedback]');
+    if (copyButton && copyInput) {
+      copyButton.addEventListener('click', function () {
+        var value = String(copyInput.value || '');
+        if (!value) {
+          return;
+        }
+        var done = function (message) {
+          if (copyFeedback) {
+            copyFeedback.textContent = message;
+          }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(value)
+            .then(function () {
+              done('Referral code copied.');
+            })
+            .catch(function () {
+              copyInput.focus();
+              copyInput.select();
+              try {
+                document.execCommand('copy');
+              } catch (error) {
+                // Fallback silently.
+              }
+              done('Referral code copied.');
+            });
+        } else {
+          copyInput.focus();
+          copyInput.select();
+          try {
+            document.execCommand('copy');
+          } catch (error) {
+            // Fallback silently.
+          }
+          done('Referral code copied.');
+        }
+      });
+    }
+
+    var appealModal = candidateRewardsRoot.querySelector('[data-cmn-rewards-appeal-modal]');
+    var openAppealBtn = candidateRewardsRoot.querySelector('[data-cmn-rewards-open-appeal]');
+    var closeAppealButtons = candidateRewardsRoot.querySelectorAll('[data-cmn-rewards-close-appeal]');
+    var appealForm = candidateRewardsRoot.querySelector('[data-cmn-rewards-appeal-form]');
+    var appealFeedback = candidateRewardsRoot.querySelector('[data-cmn-rewards-appeal-feedback]');
+    var closeAppealModal = function () {
+      if (!appealModal) {
+        return;
+      }
+      appealModal.classList.remove('is-open');
+      appealModal.setAttribute('aria-hidden', 'true');
+    };
+    var openAppealModal = function () {
+      if (!appealModal) {
+        return;
+      }
+      if (appealFeedback) {
+        appealFeedback.textContent = '';
+      }
+      appealModal.classList.add('is-open');
+      appealModal.setAttribute('aria-hidden', 'false');
+    };
+
+    if (openAppealBtn && appealModal) {
+      openAppealBtn.addEventListener('click', function () {
+        if (openAppealBtn.disabled) {
+          return;
+        }
+        openAppealModal();
+      });
+    }
+    if (closeAppealButtons.length) {
+      closeAppealButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          closeAppealModal();
+        });
+      });
+    }
+    if (appealModal) {
+      appealModal.addEventListener('click', function (event) {
+        if (event.target === appealModal) {
+          closeAppealModal();
+        }
+      });
+    }
+    if (appealForm) {
+      appealForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var bookingField = appealForm.querySelector('[name="booking_id"]');
+        var messageField = appealForm.querySelector('[name="message"]');
+        var bookingId = bookingField ? parseInt(bookingField.value || '0', 10) : 0;
+        var message = messageField ? String(messageField.value || '').trim() : '';
+        if (!bookingId || !message) {
+          if (appealFeedback) {
+            appealFeedback.textContent = 'Booking and appeal details are required.';
+          }
+          return;
+        }
+        if (appealFeedback) {
+          appealFeedback.textContent = 'Submitting appeal...';
+        }
+        postRewardsAction(rewardsAppealAction, rewardsAppealNonce, {
+          booking_id: bookingId,
+          message: message
+        }).then(function (response) {
+          if (!response || !response.success || !response.data || response.data.ok === false) {
+            throw new Error((response && response.data && response.data.message) ? response.data.message : 'Unable to submit appeal.');
+          }
+          if (appealFeedback) {
+            appealFeedback.textContent = response.data.message || 'Appeal submitted.';
+          }
+          if (messageField) {
+            messageField.value = '';
+          }
+          var payload = (response.data && response.data.data && typeof response.data.data === 'object')
+            ? response.data.data
+            : null;
+          if (payload) {
+            applyRewardsPayload(payload);
+          } else {
+            reloadRewardsOverview().catch(function () {});
+          }
+          window.setTimeout(function () {
+            closeAppealModal();
+          }, 600);
+        }).catch(function (error) {
+          if (appealFeedback) {
+            appealFeedback.textContent = error && error.message ? error.message : 'Unable to submit appeal.';
+          }
+        });
+      });
+    }
+
+    reloadRewardsOverview().catch(function () {});
+  }
+
+  var weeklyEarningsRoot = document.querySelector('[data-cmn-weekly-earnings-root]');
+  if (weeklyEarningsRoot) {
+    var weeklyAction = weeklyEarningsRoot.getAttribute('data-cmn-weekly-earnings-action') || 'cmn_candidate_weekly_earnings_overview';
+    var weeklyNonce = weeklyEarningsRoot.getAttribute('data-cmn-weekly-earnings-nonce') || ((window.cmnPortal && window.cmnPortal.candidateWeeklyEarningsNonce) ? String(window.cmnPortal.candidateWeeklyEarningsNonce) : '');
+    var weeklyAjaxUrl = (window.cmnPortal && window.cmnPortal.ajaxUrl) ? String(window.cmnPortal.ajaxUrl) : '';
+    var weeklyErrorEl = weeklyEarningsRoot.querySelector('[data-cmn-weekly-earnings-error]');
+    var weeklyChipEl = weeklyEarningsRoot.querySelector('[data-cmn-weekly-earnings-chip]');
+    var weeklyNoteEl = weeklyEarningsRoot.querySelector('[data-cmn-weekly-earnings-note]');
+
+    var weeklySetText = function (selector, value) {
+      var node = weeklyEarningsRoot.querySelector(selector);
+      if (node) {
+        node.textContent = String(value == null ? '' : value);
+      }
+    };
+
+    var weeklyMoney = function (value) {
+      var amount = parseFloat(value || '0');
+      if (!isFinite(amount)) {
+        amount = 0;
+      }
+      try {
+        return new Intl.NumberFormat('en-GB', {
+          style: 'currency',
+          currency: 'GBP',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(amount);
+      } catch (error) {
+        return 'GBP ' + amount.toFixed(2);
+      }
+    };
+
+    var weeklySetError = function (message) {
+      if (!weeklyErrorEl) {
+        return;
+      }
+      var text = String(message || '');
+      weeklyErrorEl.textContent = text;
+      weeklyErrorEl.hidden = text === '';
+      weeklyErrorEl.classList.toggle('is-hidden', text === '');
+    };
+
+    var weeklySetChip = function (label, chipClass) {
+      if (!weeklyChipEl) {
+        return;
+      }
+      var resolvedLabel = String(label || 'Estimate');
+      var resolvedClass = String(chipClass || 'is-pending').trim();
+      if (!resolvedClass) {
+        resolvedClass = 'is-pending';
+      }
+      weeklyChipEl.textContent = resolvedLabel;
+      weeklyChipEl.classList.remove('is-approved', 'is-pending', 'is-declined', 'is-warning');
+      weeklyChipEl.classList.add(resolvedClass);
+    };
+
+    var fetchWeeklyEarnings = function () {
+      if (!weeklyAjaxUrl) {
+        weeklySetError('Unable to load weekly earnings right now.');
+        return;
+      }
+      var formData = new FormData();
+      formData.append('action', weeklyAction);
+      if (weeklyNonce) {
+        formData.append('nonce', weeklyNonce);
+      }
+
+      fetch(weeklyAjaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData
+      }).then(function (response) {
+        return response.json().catch(function () {
+          return {};
+        }).then(function (body) {
+          if (!response.ok || !body || !body.success || !body.data || body.data.ok === false) {
+            var message = (body && body.data && body.data.error && body.data.error.message)
+              ? body.data.error.message
+              : (body && body.data && body.data.message ? body.data.message : 'Unable to load weekly earnings.');
+            throw new Error(message);
+          }
+          return body.data && body.data.data ? body.data.data : {};
+        });
+      }).then(function (payload) {
+        var weekRange = (payload && payload.week_range && payload.week_range.label)
+          ? String(payload.week_range.label) + ' (Fri-Thu)'
+          : 'Fri-Thu';
+        var expectedDisplay = '';
+        if (payload && Number(payload.expected_payout_is_hold || 0) === 1) {
+          expectedDisplay = payload.expected_payout_display
+            ? String(payload.expected_payout_display)
+            : 'On hold until bank details added';
+        } else {
+          expectedDisplay = weeklyMoney(payload.expected_payout || payload.total || 0);
+        }
+        weeklySetText('[data-cmn-weekly-earnings-range]', weekRange);
+        weeklySetText('[data-cmn-weekly-earnings-total]', weeklyMoney(payload.total || 0));
+        weeklySetText('[data-cmn-weekly-earnings-expected]', expectedDisplay);
+        weeklySetText('[data-cmn-weekly-earnings-last-week]', weeklyMoney(payload.last_week_total || 0));
+        if (weeklyNoteEl && payload && payload.payout_state_note) {
+          weeklyNoteEl.textContent = String(payload.payout_state_note);
+        }
+        weeklySetChip(
+          (payload && payload.payout_state_label) ? String(payload.payout_state_label) : 'Estimate',
+          (payload && payload.payout_state_chip_class) ? String(payload.payout_state_chip_class) : 'is-pending'
+        );
+        weeklySetError('');
+      }).catch(function (error) {
+        weeklySetError(error && error.message ? error.message : 'Unable to load weekly earnings.');
+      });
+    };
+
+    fetchWeeklyEarnings();
+  }
+
+  var payrollQueryCard = document.querySelector('.cmn-candidate-weekly-earnings-card');
+  if (payrollQueryCard) {
+    var payrollQueryOpenBtn = payrollQueryCard.querySelector('[data-cmn-payroll-query-open]');
+    var payrollQueryPanel = payrollQueryCard.querySelector('[data-cmn-payroll-query-panel]');
+    var payrollQueryForm = payrollQueryCard.querySelector('[data-cmn-payroll-query-form]');
+    if (payrollQueryOpenBtn && payrollQueryPanel && payrollQueryForm) {
+      var payrollQueryCancelBtn = payrollQueryForm.querySelector('[data-cmn-payroll-query-cancel]');
+      var payrollQuerySubmitBtn = payrollQueryForm.querySelector('[data-cmn-payroll-query-submit]');
+      var payrollQueryPeriodSelect = payrollQueryForm.querySelector('[data-cmn-payroll-query-period]');
+      var payrollQueryBookingSelect = payrollQueryForm.querySelector('[data-cmn-payroll-query-bookings]');
+      var payrollQueryBookingEmpty = payrollQueryForm.querySelector('[data-cmn-payroll-query-bookings-empty]');
+      var payrollQueryFeedback = payrollQueryForm.querySelector('[data-cmn-payroll-query-feedback]');
+      var payrollQueryMessageField = payrollQueryForm.querySelector('textarea[name="message"]');
+      var payrollQueryAjaxUrl = (window.cmnPortal && window.cmnPortal.ajaxUrl) ? String(window.cmnPortal.ajaxUrl) : '';
+      var payrollQueryBookingMapRaw = payrollQueryForm.getAttribute('data-cmn-payroll-query-bookings-map') || '{}';
+      var payrollQueryBookingMap = {};
+
+      try {
+        payrollQueryBookingMap = JSON.parse(payrollQueryBookingMapRaw);
+      } catch (error) {
+        payrollQueryBookingMap = {};
+      }
+      if (!payrollQueryBookingMap || typeof payrollQueryBookingMap !== 'object') {
+        payrollQueryBookingMap = {};
+      }
+
+      var setPayrollQueryFeedback = function (message, state) {
+        if (!payrollQueryFeedback) {
+          return;
+        }
+        var text = String(message || '');
+        payrollQueryFeedback.textContent = text;
+        payrollQueryFeedback.hidden = text === '';
+        payrollQueryFeedback.classList.remove('cmn-register-warning', 'cmn-register-success', 'cmn-register-error');
+        if (text === '') {
+          payrollQueryFeedback.classList.add('cmn-register-warning');
+          return;
+        }
+        if (state === 'success') {
+          payrollQueryFeedback.classList.add('cmn-register-success');
+          return;
+        }
+        if (state === 'error') {
+          payrollQueryFeedback.classList.add('cmn-register-error');
+          return;
+        }
+        payrollQueryFeedback.classList.add('cmn-register-warning');
+      };
+
+      var setPayrollQueryPanelOpen = function (isOpen) {
+        payrollQueryPanel.hidden = !isOpen;
+        if (isOpen) {
+          setPayrollQueryFeedback('', '');
+        }
+      };
+
+      var renderPayrollQueryBookingOptions = function () {
+        if (!payrollQueryBookingSelect || !payrollQueryPeriodSelect) {
+          return;
+        }
+        var periodId = String(payrollQueryPeriodSelect.value || '');
+        var optionRows = Array.isArray(payrollQueryBookingMap[periodId]) ? payrollQueryBookingMap[periodId] : [];
+        while (payrollQueryBookingSelect.firstChild) {
+          payrollQueryBookingSelect.removeChild(payrollQueryBookingSelect.firstChild);
+        }
+
+        optionRows.forEach(function (row) {
+          if (!row || typeof row !== 'object') {
+            return;
+          }
+          var value = String(row.value || '');
+          var label = String(row.label || '');
+          if (!value || !label) {
+            return;
+          }
+          var optionEl = document.createElement('option');
+          optionEl.value = value;
+          optionEl.textContent = label;
+          payrollQueryBookingSelect.appendChild(optionEl);
+        });
+
+        var hasOptions = payrollQueryBookingSelect.options.length > 0;
+        payrollQueryBookingSelect.disabled = !hasOptions;
+        if (payrollQueryBookingEmpty) {
+          payrollQueryBookingEmpty.hidden = hasOptions;
+        }
+      };
+
+      payrollQueryOpenBtn.addEventListener('click', function () {
+        setPayrollQueryPanelOpen(true);
+        renderPayrollQueryBookingOptions();
+      });
+
+      if (payrollQueryCancelBtn) {
+        payrollQueryCancelBtn.addEventListener('click', function () {
+          setPayrollQueryPanelOpen(false);
+          setPayrollQueryFeedback('', '');
+        });
+      }
+
+      if (payrollQueryPeriodSelect) {
+        payrollQueryPeriodSelect.addEventListener('change', function () {
+          renderPayrollQueryBookingOptions();
+        });
+      }
+
+      renderPayrollQueryBookingOptions();
+
+      payrollQueryForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!payrollQueryAjaxUrl) {
+          setPayrollQueryFeedback('Unable to submit payroll query right now.', 'error');
+          return;
+        }
+
+        var periodId = payrollQueryPeriodSelect ? String(payrollQueryPeriodSelect.value || '').trim() : '';
+        var message = payrollQueryMessageField ? String(payrollQueryMessageField.value || '').trim() : '';
+        if (!periodId) {
+          setPayrollQueryFeedback('Select a pay period before submitting.', 'error');
+          return;
+        }
+        if (message.length < 10) {
+          setPayrollQueryFeedback('Message must be at least 10 characters.', 'error');
+          return;
+        }
+
+        setPayrollQueryFeedback('Submitting payroll query...', '');
+        if (payrollQuerySubmitBtn) {
+          payrollQuerySubmitBtn.disabled = true;
+        }
+
+        var formData = new FormData(payrollQueryForm);
+        fetch(payrollQueryAjaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: formData
+        }).then(function (response) {
+          return response.json().catch(function () {
+            return {};
+          }).then(function (payload) {
+            if (!response.ok || !payload || !payload.success || !payload.data || payload.data.ok === false) {
+              var errorMessage = (payload && payload.data && payload.data.error && payload.data.error.message)
+                ? String(payload.data.error.message)
+                : ((payload && payload.data && payload.data.message)
+                  ? String(payload.data.message)
+                  : 'Unable to submit payroll query.');
+              throw new Error(errorMessage);
+            }
+            return payload.data || {};
+          });
+        }).then(function (data) {
+          var ticketRef = (data && data.ticket && data.ticket.ref) ? String(data.ticket.ref) : '';
+          var successMessage = ticketRef
+            ? ('Payroll query submitted. Reference: ' + ticketRef)
+            : 'Payroll query submitted.';
+          setPayrollQueryFeedback(successMessage, 'success');
+
+          if (payrollQueryMessageField) {
+            payrollQueryMessageField.value = '';
+          }
+          if (payrollQueryBookingSelect) {
+            Array.prototype.forEach.call(payrollQueryBookingSelect.options, function (optionEl) {
+              optionEl.selected = false;
+            });
+          }
+        }).catch(function (error) {
+          setPayrollQueryFeedback(error && error.message ? error.message : 'Unable to submit payroll query.', 'error');
+        }).finally(function () {
+          if (payrollQuerySubmitBtn) {
+            payrollQuerySubmitBtn.disabled = false;
+          }
+        });
+      });
+    }
   }
 
   var readyResponseRoot = document.querySelector('[data-ready-response-root]');
@@ -678,40 +2645,207 @@ document.addEventListener('DOMContentLoaded', function () {
 
   var bellContainers = document.querySelectorAll('[data-bell]');
   if (bellContainers.length) {
+    var notificationsApiReady = !!(window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.notificationNonce);
+    var bellGetRows = function (bell) {
+      if (!bell) {
+        return [];
+      }
+      return Array.prototype.slice.call(bell.querySelectorAll('[data-notification-item]'));
+    };
+    var bellGetSelectedRows = function (bell) {
+      return bellGetRows(bell).filter(function (row) {
+        var input = row.querySelector('[data-notification-select]');
+        return !!(input && input.checked);
+      });
+    };
+    var bellGetSelectedIds = function (bell) {
+      return bellGetSelectedRows(bell)
+        .map(function (row) {
+          return parseInt(row.getAttribute('data-notification-id') || '0', 10);
+        })
+        .filter(function (id) {
+          return id > 0;
+        });
+    };
+    var bellEnsureEmptyState = function (bell) {
+      if (!bell) {
+        return;
+      }
+      var panel = bell.querySelector('[data-bell-panel]');
+      if (!panel) {
+        return;
+      }
+      var list = bell.querySelector('[data-bell-list]');
+      var hasRows = bellGetRows(bell).length > 0;
+      var empty = panel.querySelector('.cmn-empty');
+      if (!hasRows) {
+        if (list) {
+          list.innerHTML = '';
+        }
+        if (!empty) {
+          empty = document.createElement('div');
+          empty.className = 'cmn-empty';
+          empty.textContent = 'No notifications yet.';
+          panel.appendChild(empty);
+        }
+      } else if (empty) {
+        empty.remove();
+      }
+    };
+    var runBellAction = function (actionName, payload) {
+      if (!notificationsApiReady) {
+        return Promise.reject(new Error('Notifications API unavailable.'));
+      }
+      var formData = new FormData();
+      formData.append('action', actionName);
+      formData.append('nonce', window.cmnPortal.notificationNonce || '');
+      if (payload && typeof payload === 'object') {
+        Object.keys(payload).forEach(function (key) {
+          if (!Object.prototype.hasOwnProperty.call(payload, key)) {
+            return;
+          }
+          var value = payload[key];
+          if (key === 'notification_ids' && Array.isArray(value)) {
+            formData.append('notification_ids', JSON.stringify(value));
+            return;
+          }
+          if (typeof value === 'undefined' || value === null) {
+            return;
+          }
+          formData.append(key, String(value));
+        });
+      }
+      return fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData,
+      }).then(function (response) {
+        return response.json();
+      });
+    };
+    var bellEsc = function (value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    };
+    var renderBellItems = function (bell, payload) {
+      if (!bell || !payload || !Array.isArray(payload.items)) {
+        return;
+      }
+      var panel = bell.querySelector('[data-bell-panel]');
+      if (!panel) {
+        return;
+      }
+      var list = bell.querySelector('[data-bell-list]');
+      if (!list) {
+        list = document.createElement('div');
+        list.className = 'cmn-bell-list';
+        list.setAttribute('data-bell-list', '1');
+        panel.appendChild(list);
+      }
+
+      var selectedMap = {};
+      bellGetSelectedIds(bell).forEach(function (selectedId) {
+        selectedMap[selectedId] = true;
+      });
+
+      list.innerHTML = '';
+      payload.items.forEach(function (item) {
+        var itemId = parseInt(item && item.id ? item.id : '0', 10) || 0;
+        if (itemId < 1) {
+          return;
+        }
+        var isUnread = parseInt(item && item.is_read ? item.is_read : '0', 10) !== 1;
+        var linkUrl = String(item && item.link_url ? item.link_url : '').trim();
+        var article = document.createElement('article');
+        article.className = 'cmn-bell-item' + (isUnread ? ' is-unread' : '');
+        article.setAttribute('data-notification-item', '1');
+        article.setAttribute('data-notification-id', String(itemId));
+
+        var bodyHtml = '';
+        if (linkUrl) {
+          bodyHtml = '<a class="cmn-bell-link" href="' + bellEsc(linkUrl) + '" data-notification-id="' + String(itemId) + '" data-notification-link>' +
+            '<strong>' + bellEsc(item && item.title ? item.title : '') + '</strong>' +
+            (item && item.message ? ('<span>' + bellEsc(item.message) + '</span>') : '') +
+          '</a>';
+        } else {
+          bodyHtml = '<div class="cmn-bell-link cmn-bell-link-static" data-notification-id="' + String(itemId) + '">' +
+            '<strong>' + bellEsc(item && item.title ? item.title : '') + '</strong>' +
+            (item && item.message ? ('<span>' + bellEsc(item.message) + '</span>') : '') +
+          '</div>';
+        }
+
+        article.innerHTML =
+          '<label class="cmn-bell-select" aria-label="Select notification">' +
+            '<input type="checkbox" data-notification-select value="' + String(itemId) + '"' + (selectedMap[itemId] ? ' checked' : '') + '>' +
+            '<span aria-hidden="true"></span>' +
+          '</label>' +
+          '<div class="cmn-bell-item-body">' + bodyHtml + '</div>' +
+          '<div class="cmn-bell-item-actions">' +
+            '<button class="cmn-ghost cmn-btn-mini" type="button" data-notification-mark-read' + (isUnread ? '' : ' disabled') + '>Mark as read</button>' +
+            '<button class="cmn-ghost cmn-btn-mini" type="button" data-notification-delete>Delete</button>' +
+          '</div>';
+        list.appendChild(article);
+      });
+      bellEnsureEmptyState(bell);
+    };
     var refreshBellActionState = function (bell, payload) {
       if (!bell) {
         return;
       }
       var markBtn = bell.querySelector('[data-bell-mark]');
+      var markSelectedBtn = bell.querySelector('[data-bell-mark-selected]');
+      var deleteSelectedBtn = bell.querySelector('[data-bell-delete-selected]');
       var clearBtn = bell.querySelector('[data-bell-clear]');
-      if (!markBtn && !clearBtn) {
+      if (!markBtn && !markSelectedBtn && !deleteSelectedBtn && !clearBtn) {
         return;
       }
       var unread = 0;
-      var itemCount = 0;
+      var itemCountPayload = 0;
       if (payload && typeof payload.unread !== 'undefined') {
         unread = parseInt(payload.unread || 0, 10);
       } else {
         unread = bell.querySelectorAll('.cmn-bell-item.is-unread').length;
       }
       if (payload && Array.isArray(payload.items)) {
-        itemCount = payload.items.length;
-      } else {
-        itemCount = bell.querySelectorAll('.cmn-bell-item').length;
+        itemCountPayload = payload.items.length;
       }
+      var rows = bellGetRows(bell);
+      var itemCount = Math.max(rows.length, itemCountPayload);
+      var selectedRows = bellGetSelectedRows(bell);
+      var selectedUnreadCount = selectedRows.filter(function (row) {
+        return row.classList.contains('is-unread');
+      }).length;
       if (markBtn) {
         markBtn.disabled = unread < 1;
+      }
+      if (markSelectedBtn) {
+        markSelectedBtn.disabled = selectedUnreadCount < 1;
+      }
+      if (deleteSelectedBtn) {
+        deleteSelectedBtn.disabled = selectedRows.length < 1;
       }
       if (clearBtn) {
         clearBtn.disabled = itemCount < 1;
       }
     };
     var refreshBellState = function (bell, payload) {
-      if (!bell || !payload) {
+      if (!bell) {
         return;
       }
+      if (payload && Array.isArray(payload.items)) {
+        renderBellItems(bell, payload);
+      }
       var count = bell.querySelector('.cmn-bell-count');
-      var unread = parseInt(payload.unread || 0, 10);
+      var unread = 0;
+      if (payload && typeof payload.unread !== 'undefined') {
+        unread = parseInt(payload.unread || 0, 10);
+      } else {
+        unread = bell.querySelectorAll('.cmn-bell-item.is-unread').length;
+      }
       if (unread > 0) {
         if (!count) {
           count = document.createElement('span');
@@ -725,11 +2859,40 @@ document.addEventListener('DOMContentLoaded', function () {
       } else if (count) {
         count.remove();
       }
-      var unreadItems = bell.querySelectorAll('.cmn-bell-item.is-unread');
-      unreadItems.forEach(function (item) {
-        item.classList.remove('is-unread');
-      });
       refreshBellActionState(bell, payload);
+    };
+    var markBellRowRead = function (row) {
+      if (!row) {
+        return;
+      }
+      row.classList.remove('is-unread');
+      var markBtn = row.querySelector('[data-notification-mark-read]');
+      if (markBtn) {
+        markBtn.disabled = true;
+      }
+    };
+    var removeBellRowsByIds = function (bell, ids) {
+      if (!bell || !Array.isArray(ids) || !ids.length) {
+        return;
+      }
+      var idMap = {};
+      ids.forEach(function (id) {
+        var normalized = parseInt(id || 0, 10);
+        if (normalized > 0) {
+          idMap[normalized] = true;
+        }
+      });
+      if (!Object.keys(idMap).length) {
+        return;
+      }
+      bellGetRows(bell).forEach(function (row) {
+        var rowId = parseInt(row.getAttribute('data-notification-id') || '0', 10);
+        if (rowId > 0 && idMap[rowId]) {
+          row.remove();
+        }
+      });
+      bellEnsureEmptyState(bell);
+      refreshBellActionState(bell, null);
     };
     var closeBells = function () {
       bellContainers.forEach(function (bell) {
@@ -747,7 +2910,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var toggle = bell.querySelector('[data-bell-toggle]');
       var panel = bell.querySelector('[data-bell-panel]');
       var markBtn = bell.querySelector('[data-bell-mark]');
+      var markSelectedBtn = bell.querySelector('[data-bell-mark-selected]');
+      var deleteSelectedBtn = bell.querySelector('[data-bell-delete-selected]');
       var clearBtn = bell.querySelector('[data-bell-clear]');
+      bellEnsureEmptyState(bell);
       refreshBellActionState(bell, null);
       if (toggle && panel) {
         toggle.addEventListener('click', function (event) {
@@ -763,83 +2929,157 @@ document.addEventListener('DOMContentLoaded', function () {
           event.stopPropagation();
         });
       }
-      if (markBtn && window.cmnPortal && window.cmnPortal.ajaxUrl) {
+      if (panel) {
+        panel.addEventListener('change', function (event) {
+          if (event.target && event.target.matches('[data-notification-select]')) {
+            refreshBellActionState(bell, null);
+          }
+        });
+      }
+      if (markBtn && notificationsApiReady) {
         markBtn.addEventListener('click', function (event) {
           event.preventDefault();
-          var formData = new FormData();
-          formData.append('action', 'cmn_notifications_mark_all_read');
-          formData.append('nonce', window.cmnPortal.notificationNonce || '');
-          fetch(window.cmnPortal.ajaxUrl, {
-            method: 'POST',
-            credentials: 'same-origin',
-            body: formData,
-          })
+          runBellAction('cmn_notifications_mark_all_read')
             .then(function (response) {
-              return response.json();
-            })
-            .then(function (data) {
-              if (data && data.success) {
-                refreshBellState(bell, data.data || {});
+              if (response && response.success) {
+                bellGetRows(bell).forEach(function (row) {
+                  markBellRowRead(row);
+                  var input = row.querySelector('[data-notification-select]');
+                  if (input) {
+                    input.checked = false;
+                  }
+                });
+                refreshBellState(bell, response.data || {});
               }
             });
         });
       }
-      if (clearBtn && window.cmnPortal && window.cmnPortal.ajaxUrl) {
+      if (markSelectedBtn && notificationsApiReady) {
+        markSelectedBtn.addEventListener('click', function (event) {
+          event.preventDefault();
+          var selectedIds = bellGetSelectedIds(bell);
+          if (!selectedIds.length) {
+            refreshBellActionState(bell, null);
+            return;
+          }
+          runBellAction('cmn_notifications_mark_selected_read', {
+            notification_ids: selectedIds,
+          }).then(function (response) {
+            if (!(response && response.success)) {
+              return;
+            }
+            selectedIds.forEach(function (id) {
+              var row = bell.querySelector('[data-notification-item][data-notification-id="' + String(id) + '"]');
+              if (!row) {
+                return;
+              }
+              markBellRowRead(row);
+              var input = row.querySelector('[data-notification-select]');
+              if (input) {
+                input.checked = false;
+              }
+            });
+            refreshBellState(bell, response.data || {});
+          });
+        });
+      }
+      if (deleteSelectedBtn && notificationsApiReady) {
+        deleteSelectedBtn.addEventListener('click', function (event) {
+          event.preventDefault();
+          var selectedIds = bellGetSelectedIds(bell);
+          if (!selectedIds.length) {
+            refreshBellActionState(bell, null);
+            return;
+          }
+          runBellAction('cmn_notifications_delete_selected', {
+            notification_ids: selectedIds,
+          }).then(function (response) {
+            if (!(response && response.success)) {
+              return;
+            }
+            removeBellRowsByIds(bell, selectedIds);
+            refreshBellState(bell, response.data || {});
+          });
+        });
+      }
+      if (clearBtn && notificationsApiReady) {
         clearBtn.addEventListener('click', function (event) {
           event.preventDefault();
-          var formData = new FormData();
-          formData.append('action', 'cmn_notifications_clear_all');
-          formData.append('nonce', window.cmnPortal.notificationNonce || '');
-          fetch(window.cmnPortal.ajaxUrl, {
-            method: 'POST',
-            credentials: 'same-origin',
-            body: formData,
-          })
+          runBellAction('cmn_notifications_clear_all')
             .then(function (response) {
-              return response.json();
-            })
-            .then(function (data) {
-              if (data && data.success) {
-                refreshBellState(bell, data.data || {});
-                var list = bell.querySelector('.cmn-bell-list');
-                if (list) {
-                  list.innerHTML = '';
-                }
-                var empty = bell.querySelector('.cmn-empty');
-                if (!empty && panel) {
-                  empty = document.createElement('div');
-                  empty.className = 'cmn-empty';
-                  empty.textContent = 'No notifications yet.';
-                  panel.appendChild(empty);
-                }
-                refreshBellActionState(bell, data.data || { unread: 0, items: [] });
+              if (response && response.success) {
+                bellGetRows(bell).forEach(function (row) {
+                  row.remove();
+                });
+                bellEnsureEmptyState(bell);
+                refreshBellState(bell, response.data || { unread: 0, items: [] });
               }
             });
         });
       }
-      bell.querySelectorAll('[data-notification-link]').forEach(function (link) {
-        link.addEventListener('click', function (event) {
+      if (panel) {
+        panel.addEventListener('click', function (event) {
+          var markOneBtn = event.target.closest('[data-notification-mark-read]');
+          if (markOneBtn) {
+            event.preventDefault();
+            var markRow = markOneBtn.closest('[data-notification-item]');
+            var markNotificationId = parseInt(markRow ? markRow.getAttribute('data-notification-id') : '0', 10);
+            if (!markNotificationId || !notificationsApiReady) {
+              return;
+            }
+            runBellAction('cmn_notifications_mark_read', {
+              notification_id: markNotificationId,
+            }).then(function (response) {
+              if (!(response && response.success)) {
+                return;
+              }
+              markBellRowRead(markRow);
+              refreshBellState(bell, response.data || {});
+            });
+            return;
+          }
+
+          var deleteOneBtn = event.target.closest('[data-notification-delete]');
+          if (deleteOneBtn) {
+            event.preventDefault();
+            var deleteRow = deleteOneBtn.closest('[data-notification-item]');
+            var deleteNotificationId = parseInt(deleteRow ? deleteRow.getAttribute('data-notification-id') : '0', 10);
+            if (!deleteNotificationId || !notificationsApiReady) {
+              return;
+            }
+            runBellAction('cmn_notifications_delete_selected', {
+              notification_ids: [deleteNotificationId],
+            }).then(function (response) {
+              if (!(response && response.success)) {
+                return;
+              }
+              removeBellRowsByIds(bell, [deleteNotificationId]);
+              refreshBellState(bell, response.data || {});
+            });
+            return;
+          }
+
+          var link = event.target.closest('[data-notification-link]');
+          if (!link) {
+            return;
+          }
           var notificationId = parseInt(link.getAttribute('data-notification-id') || '0', 10);
-          if (!notificationId) {
+          var href = link.getAttribute('href') || '';
+          if (!notificationsApiReady || !notificationId) {
+            if (href) {
+              window.location.href = href;
+            }
             return;
           }
           event.preventDefault();
-          var href = link.getAttribute('href') || '';
-          var formData = new FormData();
-          formData.append('action', 'cmn_notifications_mark_read');
-          formData.append('nonce', window.cmnPortal.notificationNonce || '');
-          formData.append('notification_id', notificationId);
-          fetch(window.cmnPortal.ajaxUrl, {
-            method: 'POST',
-            credentials: 'same-origin',
-            body: formData,
+          runBellAction('cmn_notifications_mark_read', {
+            notification_id: notificationId,
           })
             .then(function (response) {
-              return response.json();
-            })
-            .then(function (data) {
-              if (data && data.success) {
-                refreshBellState(bell, data.data || {});
+              if (response && response.success) {
+                var linkedRow = link.closest('[data-notification-item]');
+                markBellRowRead(linkedRow);
+                refreshBellState(bell, response.data || {});
               }
             })
             .finally(function () {
@@ -848,8 +3088,49 @@ document.addEventListener('DOMContentLoaded', function () {
               }
             });
         });
-      });
+      }
     });
+
+    if (notificationsApiReady) {
+      var pollNotifications = function () {
+        return runBellAction('cmn_notifications_poll')
+          .then(function (data) {
+            if (!(data && data.success)) {
+              return;
+            }
+            bellContainers.forEach(function (bell) {
+              refreshBellState(bell, data.data || {});
+            });
+          })
+          .catch(function () {
+            // Ignore transient polling failures.
+          });
+      };
+      if (cmnPollManager) {
+        cmnPollManager.register({
+          key: 'cmn-notifications-poll',
+          intervalMs: 4000,
+          maxIntervalMs: 20000,
+          callback: pollNotifications,
+          visibleOnly: true,
+          triggerOnFocus: true,
+          triggerOnVisibility: true,
+          backoffOnError: true,
+          immediate: true,
+        });
+      } else {
+        pollNotifications();
+        window.setInterval(pollNotifications, 4000);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) {
+            pollNotifications();
+          }
+        });
+        window.addEventListener('focus', function () {
+          pollNotifications();
+        });
+      }
+    }
   }
 
   var countdown = document.querySelector('.cmn-availability-lock');
@@ -1022,7 +3303,7 @@ document.addEventListener('DOMContentLoaded', function () {
             list.className = 'cmn-email-test-list';
             results.forEach(function (item) {
               var li = document.createElement('li');
-              var statusLabel = item.status === 'sent' ? '✔' : '✖';
+              var statusLabel = item.status === 'sent' ? '\u2714' : '\u2716';
               li.textContent = statusLabel + ' ' + item.type.replace(/_/g, ' ') + ' ' + item.status;
               li.className = item.status === 'sent' ? 'is-sent' : 'is-failed';
               list.appendChild(li);
@@ -1045,6 +3326,27 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+  var staffAddModal = document.querySelector('[data-staff-add-modal]');
+  if (staffAddModal) {
+    var openAddModal = function () {
+      staffAddModal.classList.add('is-open');
+    };
+    var closeAddModal = function () {
+      staffAddModal.classList.remove('is-open');
+    };
+    document.querySelectorAll('[data-staff-add-open]').forEach(function (button) {
+      button.addEventListener('click', openAddModal);
+    });
+    staffAddModal.querySelectorAll('[data-staff-add-close]').forEach(function (button) {
+      button.addEventListener('click', closeAddModal);
+    });
+    staffAddModal.addEventListener('click', function (event) {
+      if (event.target === staffAddModal) {
+        closeAddModal();
+      }
+    });
+  }
+
   var staffForm = document.querySelector('[data-staff-add-form]');
   if (staffForm && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.staffNonce) {
     var staffMsg = staffForm.querySelector('[data-staff-form-msg]');
@@ -1054,8 +3356,15 @@ document.addEventListener('DOMContentLoaded', function () {
       var email = staffForm.querySelector('input[name="cmn_staff_email"]');
       var username = staffForm.querySelector('input[name="cmn_staff_username"]');
       var role = staffForm.querySelector('select[name="cmn_staff_role"]');
+      var submitButton = staffForm.querySelector('button[type="submit"]');
       if (!name || !email || !role) {
         return;
+      }
+      if (submitButton && submitButton.disabled) {
+        return;
+      }
+      if (submitButton) {
+        submitButton.disabled = true;
       }
       if (staffMsg) {
         staffMsg.textContent = 'Adding staff...';
@@ -1076,6 +3385,9 @@ document.addEventListener('DOMContentLoaded', function () {
           return response.json();
         })
         .then(function (data) {
+          if (submitButton) {
+            submitButton.disabled = false;
+          }
           if (!data || !data.success) {
             if (staffMsg) {
               staffMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to add staff.';
@@ -1085,9 +3397,15 @@ document.addEventListener('DOMContentLoaded', function () {
           if (staffMsg) {
             staffMsg.textContent = 'Staff added. Reloading...';
           }
+          if (staffAddModal) {
+            staffAddModal.classList.remove('is-open');
+          }
           window.location.reload();
         })
         .catch(function () {
+          if (submitButton) {
+            submitButton.disabled = false;
+          }
           if (staffMsg) {
             staffMsg.textContent = 'Unable to add staff.';
           }
@@ -1273,7 +3591,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   var supportRoots = document.querySelectorAll('[data-support-root]');
   if (supportRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.supportNonce) {
-    supportRoots.forEach(function (root) {
+    supportRoots.forEach(function (root, supportRootIndex) {
       var mode = root.getAttribute('data-support-mode') || 'user';
       var listEl = root.querySelector('[data-support-list]');
       var threadEl = root.querySelector('[data-support-thread]');
@@ -1287,7 +3605,21 @@ document.addEventListener('DOMContentLoaded', function () {
       var supportRole = root.getAttribute('data-support-role') || 'user';
       var activeTicketId = null;
       var activeTicket = null;
-      var initialSupportFilter = (new URLSearchParams(window.location.search).get('support_filter') || '').toLowerCase();
+      var activeTicketLastMessageId = 0;
+      var supportRealtimeTickInFlight = false;
+      var supportLastListRefreshAt = 0;
+      var supportParams = new URLSearchParams(window.location.search);
+      var initialSupportFilter = (supportParams.get('support_filter') || '').toLowerCase();
+      var supportFeedbackParam = (supportParams.get('support_feedback') || '').toLowerCase();
+      var supportShouldPromptFeedback = ['1', 'true', 'yes', 'on'].indexOf(supportFeedbackParam) !== -1;
+      var supportOpenPrefill = (supportParams.get('support_open') || '').toLowerCase();
+      var supportShouldAutoOpen = supportOpenPrefill === '1' || supportOpenPrefill === 'true' || supportOpenPrefill === 'yes';
+      var supportPrefillCategory = supportParams.get('support_prefill_category') || '';
+      var supportPrefillSubject = supportParams.get('support_prefill_subject') || '';
+      var supportPrefillMessage = supportParams.get('support_prefill_message') || '';
+      if (supportShouldPromptFeedback && !initialSupportFilter) {
+        initialSupportFilter = 'needs_feedback';
+      }
       var filter = initialSupportFilter || (mode === 'admin' ? 'active' : 'all');
       var dashboard = root.querySelector('[data-support-dashboard]');
       var feedbackModal = root.parentElement.querySelector('[data-support-feedback-modal]') || root.querySelector('[data-support-feedback-modal]');
@@ -1326,6 +3658,18 @@ document.addEventListener('DOMContentLoaded', function () {
         window.history.replaceState({}, '', url.toString());
       };
 
+      var clearSupportFeedbackIntentParam = function () {
+        if (!supportShouldPromptFeedback) {
+          return;
+        }
+        supportShouldPromptFeedback = false;
+        var url = new URL(window.location.href);
+        if (url.searchParams.has('support_feedback')) {
+          url.searchParams.delete('support_feedback');
+        }
+        window.history.replaceState({}, '', url.toString());
+      };
+
       var syncSelectedTicketRow = function () {
         if (!listEl) {
           return;
@@ -1348,6 +3692,57 @@ document.addEventListener('DOMContentLoaded', function () {
           credentials: 'same-origin',
           body: formData,
         }).then(function (response) { return response.json(); });
+      };
+
+      var getLatestSupportMessageId = function (messages) {
+        if (!Array.isArray(messages) || !messages.length) {
+          return 0;
+        }
+        var latestId = 0;
+        messages.forEach(function (msg) {
+          var msgId = parseInt(msg && msg.id ? msg.id : '0', 10) || 0;
+          if (msgId > latestId) {
+            latestId = msgId;
+          }
+        });
+        return latestId;
+      };
+
+      var supportEsc = function (value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+
+      var applySupportTicketPrefill = function () {
+        if (!modalForm) {
+          return;
+        }
+        var categoryInput = modalForm.querySelector('select[name="category"]');
+        var subjectInput = modalForm.querySelector('input[name="subject"]');
+        var messageInput = modalForm.querySelector('textarea[name="message"]');
+        if (categoryInput && supportPrefillCategory) {
+          var wanted = String(supportPrefillCategory).toLowerCase();
+          var matched = false;
+          Array.prototype.slice.call(categoryInput.options || []).forEach(function (opt) {
+            if (String(opt.value || '').toLowerCase() === wanted) {
+              categoryInput.value = opt.value;
+              matched = true;
+            }
+          });
+          if (!matched) {
+            categoryInput.value = '';
+          }
+        }
+        if (subjectInput && supportPrefillSubject) {
+          subjectInput.value = supportPrefillSubject;
+        }
+        if (messageInput && supportPrefillMessage) {
+          messageInput.value = supportPrefillMessage;
+        }
       };
 
       var forceCloseFeedbackModals = function () {
@@ -1425,7 +3820,7 @@ document.addEventListener('DOMContentLoaded', function () {
           star.className = 'cmn-star-btn';
           star.setAttribute('data-star-value', String(i));
           star.setAttribute('aria-label', i + ' stars');
-          star.textContent = '★';
+          star.textContent = '\u2605';
           star.addEventListener('mouseenter', function (event) {
             hoverValue = parseInt(event.currentTarget.getAttribute('data-star-value') || '0', 10);
             updateStarPickerVisuals(picker, selectedValue, hoverValue);
@@ -1510,18 +3905,18 @@ document.addEventListener('DOMContentLoaded', function () {
       var getTicketVisualState = function (ticket) {
         var normalized = String(ticket.status || 'open').toLowerCase();
         var state = {
-          icon: '◍',
+          icon: '\u25CB',
           iconClass: 'is-open',
           statusLabel: 'Open',
         };
         if (normalized === 'closed') {
-          state.icon = '✓';
+          state.icon = '\u2713';
           state.iconClass = 'is-closed';
           state.statusLabel = 'Closed';
           return state;
         }
         if (normalized === 'new' || (mode === 'admin' && parseInt(ticket.is_new_for_admin || 0, 10) === 1)) {
-          state.icon = '●';
+          state.icon = '\u25CF';
           state.iconClass = 'is-new';
           state.statusLabel = 'New';
         }
@@ -1614,7 +4009,7 @@ document.addEventListener('DOMContentLoaded', function () {
           var item = document.createElement('button');
           item.type = 'button';
           item.className = 'cmn-support-insight-row';
-          item.innerHTML = '<strong>' + (row.ticket_ref || ('#' + String(row.ticket_id || ''))) + '</strong><span>' + (row.subject || 'Support ticket') + '</span><em>Overall ' + (row.overall_satisfaction || 0) + '/5 · Resolved: ' + (String(row.issue_resolved || '0') === '1' ? 'Yes' : 'No') + ' · ' + (row.created_at || '') + '</em>';
+          item.innerHTML = '<strong>' + (row.ticket_ref || ('#' + String(row.ticket_id || ''))) + '</strong><span>' + (row.subject || 'Support ticket') + '</span><em>Overall ' + (row.overall_satisfaction || 0) + '/5 - Resolved: ' + (String(row.issue_resolved || '0') === '1' ? 'Yes' : 'No') + ' - ' + (row.created_at || '') + '</em>';
           item.addEventListener('click', function () {
             setInsightsModalOpen(false);
             if (row.ticket_id) {
@@ -1637,14 +4032,23 @@ document.addEventListener('DOMContentLoaded', function () {
         item.type = 'button';
         item.className = 'cmn-support-ticket';
         item.setAttribute('data-ticket-id', ticket.id);
-        var feedbackCount = parseInt(ticket.feedback_count || 0, 10);
-        var feedbackBadge = '';
-        if (feedbackCount > 0) {
-          feedbackBadge = '<span class="cmn-support-ticket-badge">Feedback received</span>';
-        } else if (String(ticket.status || '') === 'closed') {
-          feedbackBadge = '<span class="cmn-support-ticket-badge is-warning">Needs feedback</span>';
+        var channelBadge = '';
+        if (mode === 'admin' && String(ticket.channel_key || '') === 'website_live_chat') {
+          channelBadge = '<span class="cmn-support-ticket-badge cmn-support-ticket-badge--channel">' + supportEsc(ticket.channel_label || 'Website Live Chat') + '</span>';
         }
-        item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + ticket.ref + '</strong><span class="cmn-ticket-subject">' + ticket.subject + '</span><em>' + visual.statusLabel + ' · ' + (ticket.updated_at || '') + '</em>' + feedbackBadge;
+        if (mode === 'admin') {
+          var feedbackCount = parseInt(ticket.feedback_count || 0, 10);
+          var needsFeedback = !!parseInt(ticket.requires_feedback || '0', 10);
+          var feedbackBadge = '';
+          if (feedbackCount > 0) {
+            feedbackBadge = '<span class="cmn-support-ticket-badge">Feedback received</span>';
+          } else if (needsFeedback) {
+            feedbackBadge = '<span class="cmn-support-ticket-badge is-warning">Needs feedback</span>';
+          }
+          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || '') + '</span><em>' + supportEsc(visual.statusLabel + ' - ' + (ticket.updated_at || '')) + '</em>' + channelBadge + feedbackBadge;
+        } else {
+          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><em>' + supportEsc(visual.statusLabel) + '</em>';
+        }
         item.addEventListener('click', function () {
           root.querySelectorAll('.cmn-support-ticket').forEach(function (row) { row.classList.remove('is-selected'); });
           item.classList.add('is-selected');
@@ -1681,6 +4085,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         messagesEl.innerHTML = '';
         if (!messages.length) {
+          activeTicketLastMessageId = 0;
           messagesEl.innerHTML = '<div class="cmn-empty">No messages yet.</div>';
           return;
         }
@@ -1689,7 +4094,15 @@ document.addEventListener('DOMContentLoaded', function () {
           bubble.className = 'cmn-support-bubble ' + (msg.sender_type === 'admin' ? 'is-admin' : 'is-user');
           var meta = document.createElement('div');
           meta.className = 'cmn-support-meta';
-          meta.textContent = msg.sender_type === 'admin' ? 'Support' : 'You';
+          if (mode === 'admin') {
+            if (msg.sender_type === 'admin') {
+              meta.textContent = msg.sender_name || 'Support';
+            } else {
+              meta.textContent = msg.sender_name || 'Visitor';
+            }
+          } else {
+            meta.textContent = msg.sender_type === 'admin' ? 'Support' : 'You';
+          }
           var text = document.createElement('div');
           text.className = 'cmn-support-text';
           text.textContent = msg.message;
@@ -1711,6 +4124,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           messagesEl.appendChild(bubble);
         });
+        activeTicketLastMessageId = getLatestSupportMessageId(messages);
         messagesEl.scrollTop = messagesEl.scrollHeight;
       };
 
@@ -1720,17 +4134,43 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         var titleEl = threadEl.querySelector('[data-support-thread-title]');
         var refEl = threadEl.querySelector('[data-support-thread-ref]');
+        var channelEl = threadEl.querySelector('[data-support-thread-channel]');
         if (titleEl) {
           titleEl.textContent = ticket ? ticket.subject : 'Support';
         }
         if (refEl) {
           refEl.textContent = ticket ? (ticket.ticket_ref || ticket.ref || '') : 'Select a ticket to view the conversation.';
         }
+        if (!channelEl && refEl && refEl.parentNode) {
+          channelEl = document.createElement('div');
+          channelEl.className = 'cmn-muted cmn-support-thread-channel';
+          channelEl.setAttribute('data-support-thread-channel', '1');
+          refEl.parentNode.appendChild(channelEl);
+        }
+        if (channelEl) {
+          if (mode === 'admin' && ticket && String(ticket.channel_key || '') === 'website_live_chat') {
+            var guestName = String(ticket.livechat_guest_name || '').trim();
+            var guestEmail = String(ticket.livechat_guest_email || '').trim();
+            var details = supportEsc(ticket.channel_label || 'Website Live Chat');
+            if (guestName) {
+              details += ' · ' + supportEsc(guestName);
+            }
+            if (guestEmail) {
+              details += ' (' + supportEsc(guestEmail) + ')';
+            }
+            channelEl.innerHTML = details;
+            channelEl.hidden = false;
+          } else {
+            channelEl.textContent = '';
+            channelEl.hidden = true;
+          }
+        }
       };
 
-      var toggleAdminButtons = function (ticket) {
+      var toggleAdminButtons = function (ticket, feedback) {
         var closeBtn = root.querySelector('[data-support-close-ticket]');
         var reopenBtn = root.querySelector('[data-support-reopen-ticket]');
+        var requestFeedbackBtn = root.querySelector('[data-support-request-feedback]');
         var saveTranscriptBtn = root.querySelector('[data-support-save-transcript]');
         var emailTranscriptBtn = root.querySelector('[data-support-email-transcript]');
         if (!closeBtn || !reopenBtn) {
@@ -1750,6 +4190,10 @@ document.addEventListener('DOMContentLoaded', function () {
           if (reopenBtn) {
             reopenBtn.disabled = true;
           }
+          if (requestFeedbackBtn) {
+            requestFeedbackBtn.disabled = true;
+            requestFeedbackBtn.textContent = 'Request feedback';
+          }
           return;
         }
         if (closeBtn) {
@@ -1758,11 +4202,28 @@ document.addEventListener('DOMContentLoaded', function () {
         if (reopenBtn) {
           reopenBtn.disabled = ticket.status !== 'closed';
         }
+        if (requestFeedbackBtn) {
+          var feedbackCount = parseInt(ticket.feedback_count || '0', 10);
+          if (isNaN(feedbackCount)) {
+            feedbackCount = 0;
+          }
+          var hasFeedback = !!feedback || feedbackCount > 0;
+          var requestActive = parseInt(ticket.feedback_request_active || '0', 10) === 1;
+          var canSendRequest = parseInt(ticket.feedback_request_can_send || '0', 10) === 1;
+          requestFeedbackBtn.disabled = !canSendRequest || hasFeedback;
+          requestFeedbackBtn.textContent = requestActive ? 'Feedback requested' : 'Request feedback';
+        }
       };
 
       var renderFeedback = function (ticket, feedback) {
         var feedbackRoot = root.querySelector('[data-support-feedback]');
         var feedbackBadge = root.querySelector('[data-support-feedback-badge]');
+        var shouldForcePrompt = !!(
+          supportShouldPromptFeedback &&
+          ticket &&
+          ticket.status === 'closed' &&
+          (supportRole === 'candidate' || supportRole === 'school')
+        );
         if (ticket && feedback && ticket.id) {
           feedbackSubmittedTicketIds[String(ticket.id)] = true;
           feedbackCacheByTicket[String(ticket.id)] = feedback;
@@ -1779,9 +4240,10 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         if (feedback) {
+          clearSupportFeedbackIntentParam();
           var summary = document.createElement('div');
           summary.className = 'cmn-support-feedback-summary';
-          summary.innerHTML = '<strong>Feedback submitted</strong><span>Support: ' + feedback.support_rating + '/5 · Response: ' + feedback.response_time_rating + '/5 · Overall: ' + feedback.overall_satisfaction + '/5</span><span>Resolved: ' + (String(feedback.issue_resolved) === '1' ? 'Yes' : 'No') + '</span>';
+          summary.innerHTML = '<strong>Feedback submitted</strong><span>Support: ' + feedback.support_rating + '/5 - Response: ' + feedback.response_time_rating + '/5 - Overall: ' + feedback.overall_satisfaction + '/5</span><span>Resolved: ' + (String(feedback.issue_resolved) === '1' ? 'Yes' : 'No') + '</span>';
           if (feedback.comments) {
             var comment = document.createElement('p');
             comment.textContent = feedback.comments;
@@ -1792,13 +4254,101 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         if (mode === 'admin') {
+            if (!feedback && ticket && ticket.status === 'closed' && parseInt(ticket.feedback_request_active || '0', 10) === 1) {
+              var waiting = document.createElement('div');
+              waiting.className = 'cmn-muted';
+              waiting.textContent = 'Feedback requested. Waiting for response until ' + (ticket.feedback_request_expires_label || ticket.feedback_request_expires_at || 'the expiry window ends') + '.';
+              feedbackRoot.appendChild(waiting);
+            }
             return;
         }
-        if (supportRole === 'candidate' || supportRole === 'school') {
+        if ((supportRole === 'candidate' || supportRole === 'school') && (parseInt(ticket.requires_feedback || '0', 10) === 1 || shouldForcePrompt)) {
           feedbackRoot.innerHTML = '<div class="cmn-muted">Please submit feedback for this closed ticket.</div>';
           maybeOpenFeedbackModal(ticket, null);
+          clearSupportFeedbackIntentParam();
           return;
         }
+        clearSupportFeedbackIntentParam();
+      };
+
+      var renderPayrollContext = function (ticket, payrollQuery, payrollContext) {
+        var contextRoot = root.querySelector('[data-support-payroll-context]');
+        if (!contextRoot) {
+          return;
+        }
+
+        var hasContextPayload = !!(payrollQuery || payrollContext);
+        var category = String((ticket && ticket.category) ? ticket.category : '').toLowerCase();
+        var queueKey = String((ticket && ticket.queue_key) ? ticket.queue_key : '').toLowerCase();
+        var isPayrollTicket = hasContextPayload || category === 'payroll' || queueKey === 'payroll';
+        if (!ticket || !isPayrollTicket) {
+          contextRoot.hidden = true;
+          contextRoot.innerHTML = '';
+          return;
+        }
+
+        payrollQuery = (payrollQuery && typeof payrollQuery === 'object') ? payrollQuery : {};
+        payrollContext = (payrollContext && typeof payrollContext === 'object') ? payrollContext : {};
+
+        var bankStatus = String(payrollContext.bank_status || '').toLowerCase();
+        var bankStatusLabel = String(payrollContext.bank_status_label || (bankStatus === 'complete' ? 'Complete' : (bankStatus === 'missing' ? 'Missing' : '—')));
+        var bankStatusChip = bankStatus === 'complete' ? 'is-approved' : (bankStatus === 'missing' ? 'is-pending' : 'is-muted');
+
+        var payoutStatus = String(payrollContext.payout_item_status || '').toLowerCase();
+        var payoutStatusLabel = String(payrollContext.payout_item_status_label || (payoutStatus === 'ready' ? 'Ready' : (payoutStatus === 'hold' ? 'Hold' : '—')));
+        var payoutStatusChip = payoutStatus === 'ready' ? 'is-approved' : (payoutStatus === 'hold' ? 'is-declined' : 'is-muted');
+
+        var shiftsCount = parseInt(payrollContext.shifts_count || '0', 10);
+        if (Number.isNaN(shiftsCount) || shiftsCount < 0) {
+          shiftsCount = 0;
+        }
+
+        var grossAmount = Number(payrollContext.gross_amount || 0);
+        var grossLabel = Number.isNaN(grossAmount) ? '—' : ('GBP ' + grossAmount.toFixed(2));
+
+        var adjustmentsTotal = Number(payrollContext.adjustments_total || 0);
+        if (Number.isNaN(adjustmentsTotal)) {
+          adjustmentsTotal = 0;
+        }
+        var adjustmentsCount = parseInt(payrollContext.adjustments_count || '0', 10);
+        if (Number.isNaN(adjustmentsCount) || adjustmentsCount < 0) {
+          adjustmentsCount = 0;
+        }
+        var adjustmentsLabel = 'None';
+        if (adjustmentsCount > 0 || Math.abs(adjustmentsTotal) > 0.0009) {
+          adjustmentsLabel = (adjustmentsTotal >= 0 ? '+' : '-') + 'GBP ' + Math.abs(adjustmentsTotal).toFixed(2);
+          if (adjustmentsCount > 0) {
+            adjustmentsLabel += ' (' + adjustmentsCount + ')';
+          }
+        }
+
+        var periodLabel = String(payrollContext.period_label || '');
+        if (!periodLabel) {
+          var periodStart = String(payrollQuery.period_start || '');
+          var periodEnd = String(payrollQuery.period_end || '');
+          if (periodStart && periodEnd) {
+            periodLabel = periodStart + ' -> ' + periodEnd;
+          } else {
+            periodLabel = String(payrollQuery.period_id || '—');
+          }
+        }
+
+        var issueTypeLabel = String(payrollContext.issue_type_label || payrollQuery.issue_type_label || 'Payroll');
+        contextRoot.innerHTML = '' +
+          '<div class="cmn-support-payroll-context__header">' +
+            '<strong>Payroll context</strong>' +
+            '<span class="cmn-muted">Read-only</span>' +
+          '</div>' +
+          '<div class="cmn-support-payroll-context__grid">' +
+            '<div class="cmn-support-payroll-context__row"><span>Bank status</span><strong><span class="cmn-status-chip ' + supportEsc(bankStatusChip) + '">' + supportEsc(bankStatusLabel) + '</span></strong></div>' +
+            '<div class="cmn-support-payroll-context__row"><span>Shifts count in period</span><strong>' + supportEsc(String(shiftsCount)) + '</strong></div>' +
+            '<div class="cmn-support-payroll-context__row"><span>Gross amount</span><strong>' + supportEsc(grossLabel) + '</strong></div>' +
+            '<div class="cmn-support-payroll-context__row"><span>Payout item status</span><strong><span class="cmn-status-chip ' + supportEsc(payoutStatusChip) + '">' + supportEsc(payoutStatusLabel) + '</span></strong></div>' +
+            '<div class="cmn-support-payroll-context__row"><span>Applied adjustments</span><strong>' + supportEsc(adjustmentsLabel) + '</strong></div>' +
+            '<div class="cmn-support-payroll-context__row"><span>Period</span><strong>' + supportEsc(periodLabel) + '</strong></div>' +
+            '<div class="cmn-support-payroll-context__row"><span>Issue type</span><strong>' + supportEsc(issueTypeLabel) + '</strong></div>' +
+          '</div>';
+        contextRoot.hidden = false;
       };
 
       if (feedbackModalForm && (supportRole === 'candidate' || supportRole === 'school')) {
@@ -1880,7 +4430,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (feedbackTicketId > 0) {
               feedbackSubmittedTicketIds[String(feedbackTicketId)] = true;
               feedbackCacheByTicket[String(feedbackTicketId)] = localFeedback;
-              feedbackSuppressUntilByTicket[String(feedbackTicketId)] = Date.now() + 15000;
+              feedbackSuppressUntilByTicket[String(feedbackTicketId)] = Date.now() + 120000;
             }
             feedbackSubmitInFlight = false;
             if (feedbackSubmitBtn) {
@@ -1931,6 +4481,8 @@ document.addEventListener('DOMContentLoaded', function () {
           if (!data || !data.success) {
             forceCloseFeedbackModals();
             updateThreadHeader(null);
+            renderPayrollContext(null, null, null);
+            activeTicketLastMessageId = 0;
             if (messagesEl) {
               messagesEl.innerHTML = '<div class="cmn-empty">' + ((data && data.data && data.data.message) ? data.data.message : 'Ticket not found.') + '</div>';
             }
@@ -1942,7 +4494,6 @@ document.addEventListener('DOMContentLoaded', function () {
           setDeepTicketParam(activeTicketId);
           syncSelectedTicketRow();
           updateThreadHeader(ticket);
-          toggleAdminButtons(ticket);
           if (replyForm) {
             var ta = replyForm.querySelector('textarea[name="message"]');
             var sendBtn = replyForm.querySelector('button[type="submit"]');
@@ -1960,7 +4511,9 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           renderMessages(ticket, data.data.messages || []);
           var ticketFeedback = data.data.feedback || (ticket && ticket.id ? feedbackCacheByTicket[String(ticket.id)] : null) || null;
+          toggleAdminButtons(ticket, ticketFeedback);
           renderFeedback(ticket, ticketFeedback);
+          renderPayrollContext(ticket, data.data.payroll_query || null, data.data.payroll_context || null);
           if (listEl && activeTicketId) {
             var selectedRow = listEl.querySelector('.cmn-support-ticket[data-ticket-id="' + String(activeTicketId) + '"]');
             if (!selectedRow) {
@@ -2035,7 +4588,9 @@ document.addEventListener('DOMContentLoaded', function () {
             forceCloseFeedbackModals();
             activeTicketId = null;
             activeTicket = null;
+            activeTicketLastMessageId = 0;
             updateThreadHeader(null);
+            renderPayrollContext(null, null, null);
             if (messagesEl) {
               messagesEl.innerHTML = '<div class="cmn-empty">Select a ticket to view messages.</div>';
             }
@@ -2092,6 +4647,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (mode === 'admin') {
         var closeBtn = root.querySelector('[data-support-close-ticket]');
         var reopenBtn = root.querySelector('[data-support-reopen-ticket]');
+        var requestFeedbackBtn = root.querySelector('[data-support-request-feedback]');
         if (closeBtn) {
           closeBtn.addEventListener('click', function () {
             if (!activeTicketId) {
@@ -2099,6 +4655,24 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             supportFetch('cmn_support_close_ticket', { ticket_id: activeTicketId, status: 'closed' }).then(function () {
               loadTickets();
+              loadTicket(activeTicketId);
+            });
+          });
+        }
+        if (requestFeedbackBtn) {
+          requestFeedbackBtn.addEventListener('click', function () {
+            if (!activeTicketId || requestFeedbackBtn.disabled) {
+              return;
+            }
+            requestFeedbackBtn.disabled = true;
+            supportFetch('cmn_support_request_feedback', { ticket_id: activeTicketId }).then(function (data) {
+              if (data && data.success && data.data && data.data.message) {
+                alert(data.data.message);
+              }
+              loadTickets();
+              loadTicket(activeTicketId);
+            }).catch(function () {
+              alert('Unable to send feedback request.');
               loadTicket(activeTicketId);
             });
           });
@@ -2181,6 +4755,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       if (openBtn && modal) {
         openBtn.addEventListener('click', function () {
+          applySupportTicketPrefill();
           modal.classList.add('is-open');
         });
       }
@@ -2231,36 +4806,92 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
-      if (mode !== 'admin' && (supportRole === 'candidate' || supportRole === 'school')) {
-        window.setInterval(function () {
-          if (!activeTicketId || isFeedbackModalOpen || document.hidden) {
+      var refreshActiveTicketRealtime = function () {
+        if (!activeTicketId || document.hidden || supportRealtimeTickInFlight || isInsightsModalOpen) {
+          return Promise.resolve();
+        }
+        if (isFeedbackModalOpen && (supportRole === 'candidate' || supportRole === 'school')) {
+          return Promise.resolve();
+        }
+        supportRealtimeTickInFlight = true;
+        return supportFetch('cmn_support_get_ticket', { ticket_id: activeTicketId }).then(function (data) {
+          if (!data || !data.success || !data.data || !data.data.ticket) {
             return;
           }
-          supportFetch('cmn_support_get_ticket', { ticket_id: activeTicketId }).then(function (data) {
-            if (!data || !data.success || !data.data || !data.data.ticket) {
-              return;
-            }
-            var latestTicket = data.data.ticket;
-            var previousStatus = activeTicket && activeTicket.status ? activeTicket.status : '';
-            activeTicket = latestTicket;
-            if (latestTicket.status !== previousStatus || (latestTicket.status === 'closed' && !(data.data.feedback || null))) {
-              updateThreadHeader(latestTicket);
-              toggleAdminButtons(latestTicket);
-              renderFeedback(latestTicket, data.data.feedback || null);
+
+          var latestTicket = data.data.ticket;
+          var latestMessages = Array.isArray(data.data.messages) ? data.data.messages : [];
+          var latestMessageId = getLatestSupportMessageId(latestMessages);
+          var previousStatus = activeTicket && activeTicket.status ? String(activeTicket.status) : '';
+          var statusChanged = String(latestTicket.status || '') !== previousStatus;
+          var messageChanged = latestMessageId !== activeTicketLastMessageId;
+          var ticketFeedback = data.data.feedback || (latestTicket && latestTicket.id ? feedbackCacheByTicket[String(latestTicket.id)] : null) || null;
+
+          activeTicket = latestTicket;
+          updateThreadHeader(latestTicket);
+          toggleAdminButtons(latestTicket, ticketFeedback);
+
+          if (messageChanged) {
+            renderMessages(latestTicket, latestMessages);
+          }
+
+          if (statusChanged || messageChanged) {
+            renderFeedback(latestTicket, ticketFeedback);
+            renderPayrollContext(latestTicket, data.data.payroll_query || null, data.data.payroll_context || null);
+          }
+
+          if (statusChanged || messageChanged) {
+            var nowTs = Date.now();
+            if ((nowTs - supportLastListRefreshAt) >= 1500) {
+              supportLastListRefreshAt = nowTs;
               loadTickets();
             }
-          });
-        }, 5000);
+          }
+        }).finally(function () {
+          supportRealtimeTickInFlight = false;
+        });
+      };
+      if (cmnPollManager) {
+        cmnPollManager.register({
+          key: 'cmn-support-realtime-' + String(supportRootIndex || 0),
+          intervalMs: 3000,
+          maxIntervalMs: 15000,
+          callback: function () {
+            return refreshActiveTicketRealtime();
+          },
+          visibleOnly: true,
+          triggerOnFocus: true,
+          triggerOnVisibility: true,
+          backoffOnError: true,
+          immediate: true,
+        });
+      } else {
+        window.setInterval(function () {
+          refreshActiveTicketRealtime();
+        }, 3000);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) {
+            refreshActiveTicketRealtime();
+          }
+        });
+        window.addEventListener('focus', function () {
+          refreshActiveTicketRealtime();
+        });
       }
 
       syncFilterUiState();
       loadTickets();
+
+      if (supportShouldAutoOpen && modal) {
+        applySupportTicketPrefill();
+        modal.classList.add('is-open');
+      }
     });
   }
 
   var staffLoungeRoots = document.querySelectorAll('[data-staff-lounge]');
   if (staffLoungeRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.staffLoungeNonce) {
-    staffLoungeRoots.forEach(function (root) {
+    staffLoungeRoots.forEach(function (root, loungeIndex) {
       var threadType = root.getAttribute('data-thread-type') || 'staff_lounge';
       var listEl = root.querySelector('[data-staff-lounge-messages]');
       var formEl = root.querySelector('[data-staff-lounge-form]');
@@ -2296,7 +4927,7 @@ document.addEventListener('DOMContentLoaded', function () {
           bubble.className = 'cmn-support-bubble cmn-staff-lounge-bubble ' + bubbleClass;
           var meta = document.createElement('div');
           meta.className = 'cmn-support-meta';
-          meta.textContent = (row.sender_name || 'Staff') + ' · ' + (row.created_at || '');
+          meta.textContent = (row.sender_name || 'Staff') + ' - ' + (row.created_at || '');
           var text = document.createElement('div');
           text.className = 'cmn-support-text';
           text.textContent = row.message || '';
@@ -2378,8 +5009,24 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
-      fetchRows();
-      window.setInterval(fetchRows, 5000);
+      if (cmnPollManager) {
+        cmnPollManager.register({
+          key: 'cmn-staff-lounge-' + String(threadType) + '-' + String(loungeIndex || 0),
+          intervalMs: 5000,
+          maxIntervalMs: 20000,
+          callback: function () {
+            return fetchRows();
+          },
+          visibleOnly: true,
+          triggerOnFocus: true,
+          triggerOnVisibility: true,
+          backoffOnError: true,
+          immediate: true,
+        });
+      } else {
+        fetchRows();
+        window.setInterval(fetchRows, 5000);
+      }
     });
   }
 
@@ -2390,7 +5037,8 @@ document.addEventListener('DOMContentLoaded', function () {
       selectedIds: {},
       activeCampaignId: 0
     };
-    var activeTab = 'lead_finder';
+    var initialMarketingTab = (new URLSearchParams(window.location.search).get('marketing_tab') || 'lead_finder').toLowerCase();
+    var activeTab = initialMarketingTab;
     var resultBody = marketingRoot.querySelector('[data-marketing-results]');
     var listBody = marketingRoot.querySelector('[data-marketing-lists]');
     var campaignsBody = marketingRoot.querySelector('[data-marketing-campaigns]');
@@ -2404,6 +5052,17 @@ document.addEventListener('DOMContentLoaded', function () {
     var previewSubject = marketingRoot.querySelector('[data-marketing-preview-subject]');
     var previewBody = marketingRoot.querySelector('[data-marketing-preview-body]');
     var previewMissing = marketingRoot.querySelector('[data-marketing-preview-missing]');
+    var templatesBody = marketingRoot.querySelector('[data-marketing-templates]');
+    var templateMsg = marketingRoot.querySelector('[data-marketing-template-message]');
+    var templateValidation = marketingRoot.querySelector('[data-marketing-template-validation]');
+    var sendLogBody = marketingRoot.querySelector('[data-marketing-sendlog]');
+    var sendLogMsg = marketingRoot.querySelector('[data-marketing-sendlog-message]');
+    var unsubBody = marketingRoot.querySelector('[data-marketing-unsubscribes]');
+    var unsubMsg = marketingRoot.querySelector('[data-marketing-unsub-message]');
+    var segmentBody = marketingRoot.querySelector('[data-marketing-segments]');
+    var segmentPreviewBody = marketingRoot.querySelector('[data-marketing-segment-preview]');
+    var segmentMsg = marketingRoot.querySelector('[data-marketing-segment-message]');
+    var quickMsg = marketingRoot.querySelector('[data-marketing-quick-message]');
 
     var mFetch = function (action, payload) {
       var fd = new FormData();
@@ -2430,6 +5089,22 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     };
 
+    var escHtml = function (value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    };
+
+    var knownSmartTags = [
+      'school_name', 'school_location', 'school_town', 'contact_name', 'contact_role',
+      'email', 'portal_link', 'unsubscribe_link', 'email_name', 'first_name', 'last_name',
+      'location', 'postcode', 'distance', 'account_manager_name', 'pipeline_stage',
+      'last_contacted_date', 'company_name'
+    ];
+
     var setTab = function (tab) {
       activeTab = tab;
       marketingRoot.querySelectorAll('[data-marketing-tab]').forEach(function (btn) {
@@ -2445,6 +5120,7 @@ document.addEventListener('DOMContentLoaded', function () {
         setTab(btn.getAttribute('data-marketing-tab') || 'lead_finder');
       });
     });
+    setTab(activeTab);
 
     var readLeadFilters = function () {
       var get = function (key, fallback) {
@@ -2484,10 +5160,10 @@ document.addEventListener('DOMContentLoaded', function () {
           '<td>' + (row.school_email || '') + '</td>' +
           '<td>' + (row.status || '') + '</td>' +
           '<td>' + (row.pipeline_stage || '') + '</td>' +
-          '<td>' + (row.account_manager_name || '—') + '</td>' +
-          '<td>' + (row.last_contacted || '—') + '</td>' +
-          '<td>' + (row.last_replied || '—') + '</td>' +
-          '<td>' + (row.distance_miles || '—') + '</td>';
+          '<td>' + (row.account_manager_name || '-') + '</td>' +
+          '<td>' + (row.last_contacted || '-') + '</td>' +
+          '<td>' + (row.last_replied || '-') + '</td>' +
+          '<td>' + (row.distance_miles || '-') + '</td>';
         resultBody.appendChild(tr);
       });
       resultBody.querySelectorAll('[data-marketing-row-select]').forEach(function (checkbox) {
@@ -2721,7 +5397,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       if (queueSummary) {
-        queueSummary.textContent = 'Queued: ' + String(queue.queued || 0) + ' · Sent: ' + String(queue.sent || 0) + ' · Failed: ' + String(queue.failed || 0);
+        queueSummary.textContent = 'Queued: ' + String(queue.queued || 0) + ' - Sent: ' + String(queue.sent || 0) + ' - Failed: ' + String(queue.failed || 0);
       }
       queueBody.innerHTML = '';
       var rows = queue.rows || [];
@@ -2757,7 +5433,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var rows = payload && payload.rows ? payload.rows : [];
       var counts = payload && payload.counts ? payload.counts : { total: 0, matched: 0, unmatched: 0 };
       if (repliesSummary) {
-        repliesSummary.textContent = 'Replies: ' + String(counts.total || 0) + ' · Matched: ' + String(counts.matched || 0) + ' · Unmatched: ' + String(counts.unmatched || 0);
+        repliesSummary.textContent = 'Replies: ' + String(counts.total || 0) + ' - Matched: ' + String(counts.matched || 0) + ' - Unmatched: ' + String(counts.unmatched || 0);
       }
       repliesBody.innerHTML = '';
       if (!rows.length) {
@@ -2767,12 +5443,12 @@ document.addEventListener('DOMContentLoaded', function () {
       rows.forEach(function (row) {
         var tr = document.createElement('tr');
         tr.innerHTML = '' +
-          '<td>' + (row.received_at_label || row.received_at || '—') + '</td>' +
+          '<td>' + (row.received_at_label || row.received_at || '-') + '</td>' +
           '<td>' + (row.school_name || 'Unmatched') + '</td>' +
-          '<td>' + (row.from_email || '—') + '</td>' +
-          '<td>' + (row.subject || '—') + '</td>' +
-          '<td>' + (row.snippet || '—') + '</td>' +
-          '<td>' + (row.campaign_id ? ('#' + row.campaign_id) : '—') + '</td>';
+          '<td>' + (row.from_email || '-') + '</td>' +
+          '<td>' + (row.subject || '-') + '</td>' +
+          '<td>' + (row.snippet || '-') + '</td>' +
+          '<td>' + (row.campaign_id ? ('#' + row.campaign_id) : '-') + '</td>';
         repliesBody.appendChild(tr);
       });
     };
@@ -2791,6 +5467,266 @@ document.addEventListener('DOMContentLoaded', function () {
         if (repliesSummary) {
           repliesSummary.textContent = 'Unable to load replies.';
         }
+      });
+    };
+
+    var validateTemplateTags = function (subjectValue, bodyValue) {
+      var regex = /{{\s*([a-z0-9_]+)(?:\|[^}]+)?\s*}}/gi;
+      var source = String(subjectValue || '') + '\n' + String(bodyValue || '');
+      var detected = {};
+      var unknown = {};
+      var match = null;
+      while ((match = regex.exec(source)) !== null) {
+        var tag = String(match[1] || '').toLowerCase();
+        if (!tag) {
+          continue;
+        }
+        detected[tag] = 1;
+        if (knownSmartTags.indexOf(tag) === -1) {
+          unknown[tag] = 1;
+        }
+      }
+      return {
+        detected: Object.keys(detected),
+        unknown: Object.keys(unknown)
+      };
+    };
+
+    var renderTemplates = function (templates) {
+      if (!templatesBody) {
+        return;
+      }
+      templatesBody.innerHTML = '';
+      if (!Array.isArray(templates) || !templates.length) {
+        templatesBody.innerHTML = '<tr><td colspan="4">No templates saved yet.</td></tr>';
+        return;
+      }
+      templates.forEach(function (row) {
+        var id = parseInt(row.id || '0', 10) || 0;
+        var tr = document.createElement('tr');
+        tr.innerHTML = '' +
+          '<td>' + escHtml(row.name || '') + '</td>' +
+          '<td>' + escHtml(row.subject_template || '') + '</td>' +
+          '<td>' + escHtml(row.updated_at || '') + '</td>' +
+          '<td><button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-template-delete="' + id + '">Delete</button></td>';
+        templatesBody.appendChild(tr);
+      });
+      templatesBody.querySelectorAll('[data-marketing-template-delete]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var templateId = parseInt(btn.getAttribute('data-marketing-template-delete') || '0', 10);
+          if (!templateId || !window.confirm('Delete this template?')) {
+            return;
+          }
+          mFetch('cmn_marketing_delete_template', { template_id: templateId }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (templateMsg) {
+                templateMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to delete template.';
+              }
+              return;
+            }
+            if (templateMsg) {
+              templateMsg.textContent = data.data.message || 'Template deleted.';
+            }
+            renderTemplates(data.data.templates || []);
+          });
+        });
+      });
+    };
+
+    var refreshTemplates = function () {
+      return mFetch('cmn_marketing_get_templates', {}).then(function (data) {
+        if (data && data.success && data.data) {
+          renderTemplates(data.data.templates || []);
+        }
+      });
+    };
+
+    var readSendLogFilters = function () {
+      var get = function (key, fallback) {
+        var el = marketingRoot.querySelector('[data-marketing-sendlog-filter="' + key + '"]');
+        return el ? el.value : fallback;
+      };
+      return {
+        days: parseInt(get('days', '30'), 10) || 30,
+        status: get('status', ''),
+        campaign_id: parseInt(get('campaign_id', '0'), 10) || 0,
+        template_id: parseInt(get('template_id', '0'), 10) || 0
+      };
+    };
+
+    var renderSendLog = function (rows) {
+      if (!sendLogBody) {
+        return;
+      }
+      sendLogBody.innerHTML = '';
+      if (!Array.isArray(rows) || !rows.length) {
+        sendLogBody.innerHTML = '<tr><td colspan="6">No send log rows.</td></tr>';
+        return;
+      }
+      rows.forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '' +
+          '<td>' + escHtml(row.campaign_name || '') + '</td>' +
+          '<td>' + escHtml(row.template_name || '') + '</td>' +
+          '<td>' + escHtml(row.to_email || '') + '</td>' +
+          '<td>' + escHtml(row.status || '') + '</td>' +
+          '<td>' + escHtml(row.error_message || '') + '</td>' +
+          '<td>' + escHtml(row.sent_at || '') + '</td>';
+        sendLogBody.appendChild(tr);
+      });
+    };
+
+    var refreshSendLog = function () {
+      return mFetch('cmn_marketing_get_send_log', readSendLogFilters()).then(function (data) {
+        if (!data || !data.success || !data.data) {
+          if (sendLogMsg) {
+            sendLogMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to load send log.';
+          }
+          renderSendLog([]);
+          return;
+        }
+        renderSendLog(data.data.rows || []);
+      });
+    };
+
+    var renderUnsubscribes = function (rows) {
+      if (!unsubBody) {
+        return;
+      }
+      unsubBody.innerHTML = '';
+      if (!Array.isArray(rows) || !rows.length) {
+        unsubBody.innerHTML = '<tr><td colspan="5">No unsubscribed emails.</td></tr>';
+        return;
+      }
+      rows.forEach(function (row) {
+        var email = row.email || '';
+        var tr = document.createElement('tr');
+        tr.innerHTML = '' +
+          '<td>' + escHtml(email) + '</td>' +
+          '<td>' + escHtml((row.entity_type || '') + '#' + (row.entity_id || 0)) + '</td>' +
+          '<td>' + escHtml(row.reason || '') + '</td>' +
+          '<td>' + escHtml(row.unsubscribed_at || '') + '</td>' +
+          '<td><button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-unsub-remove="' + escHtml(email) + '">Remove</button></td>';
+        unsubBody.appendChild(tr);
+      });
+      unsubBody.querySelectorAll('[data-marketing-unsub-remove]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var email = btn.getAttribute('data-marketing-unsub-remove') || '';
+          if (!email) {
+            return;
+          }
+          mFetch('cmn_marketing_remove_unsubscribe', { email: email }).then(function (data) {
+            if (unsubMsg) {
+              unsubMsg.textContent = (data && data.data && data.data.message) ? data.data.message : (data && data.success ? 'Removed.' : 'Unable to remove.');
+            }
+            refreshUnsubscribes();
+          });
+        });
+      });
+    };
+
+    var refreshUnsubscribes = function () {
+      return mFetch('cmn_marketing_get_unsubscribes', {}).then(function (data) {
+        if (data && data.success && data.data) {
+          renderUnsubscribes(data.data.rows || []);
+        }
+      });
+    };
+
+    var renderSegments = function (segments) {
+      if (!segmentBody) {
+        return;
+      }
+      segmentBody.innerHTML = '';
+      if (!Array.isArray(segments) || !segments.length) {
+        segmentBody.innerHTML = '<tr><td colspan="3">No segments saved.</td></tr>';
+        return;
+      }
+      segments.forEach(function (row) {
+        var id = parseInt(row.id || '0', 10) || 0;
+        var tr = document.createElement('tr');
+        tr.innerHTML = '' +
+          '<td>' + escHtml(row.name || '') + '</td>' +
+          '<td>' + escHtml(row.updated_at || '') + '</td>' +
+          '<td>' +
+            '<button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-segment-run="' + id + '">Run segment</button> ' +
+            '<button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-segment-to-list="' + id + '">Convert to list</button>' +
+          '</td>';
+        segmentBody.appendChild(tr);
+      });
+      segmentBody.querySelectorAll('[data-marketing-segment-run]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var segmentId = parseInt(btn.getAttribute('data-marketing-segment-run') || '0', 10);
+          mFetch('cmn_marketing_run_segment', { segment_id: segmentId }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (segmentMsg) {
+                segmentMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to run segment.';
+              }
+              return;
+            }
+            if (segmentMsg) {
+              segmentMsg.textContent = 'Matches: ' + String(data.data.count || 0);
+            }
+            if (!segmentPreviewBody) {
+              return;
+            }
+            segmentPreviewBody.innerHTML = '';
+            var rows = data.data.rows || [];
+            if (!rows.length) {
+              segmentPreviewBody.innerHTML = '<tr><td colspan="4">No matching rows.</td></tr>';
+              return;
+            }
+            rows.forEach(function (row) {
+              var tr = document.createElement('tr');
+              tr.innerHTML = '<td>' + escHtml(row.school_name || '') + '</td>' +
+                '<td>' + escHtml(row.school_email || '') + '</td>' +
+                '<td>' + escHtml(row.location || '') + '</td>' +
+                '<td>' + escHtml(row.status || '') + '</td>';
+              segmentPreviewBody.appendChild(tr);
+            });
+          });
+        });
+      });
+      segmentBody.querySelectorAll('[data-marketing-segment-to-list]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var segmentId = parseInt(btn.getAttribute('data-marketing-segment-to-list') || '0', 10);
+          var listName = window.prompt('New list name');
+          if (!listName) {
+            return;
+          }
+          mFetch('cmn_marketing_segment_to_list', { segment_id: segmentId, list_name: listName }).then(function (data) {
+            if (segmentMsg) {
+              segmentMsg.textContent = (data && data.data && data.data.message) ? data.data.message : (data && data.success ? 'Converted.' : 'Unable to convert segment.');
+            }
+            refreshLists();
+          });
+        });
+      });
+    };
+
+    var refreshSegments = function () {
+      return mFetch('cmn_marketing_get_segments', {}).then(function (data) {
+        if (data && data.success && data.data) {
+          renderSegments(data.data.segments || []);
+        }
+      });
+    };
+
+    var refreshOverview = function () {
+      return mFetch('cmn_marketing_get_overview', {}).then(function (data) {
+        if (!data || !data.success || !data.data) {
+          return;
+        }
+        var overview = data.data.overview || {};
+        Object.keys(overview).forEach(function (key) {
+          if (typeof overview[key] === 'object') {
+            return;
+          }
+          var el = marketingRoot.querySelector('[data-marketing-kpi="' + key + '"]');
+          if (el) {
+            el.textContent = String(overview[key]);
+          }
+        });
       });
     };
 
@@ -2958,7 +5894,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (data.data && data.data.queue) {
               renderQueue(data.data.queue);
             }
-            setTab('queue');
+            setTab('send_log');
           });
           return;
         }
@@ -2981,7 +5917,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
               refreshQueue();
             }
-            setTab('queue');
+            setTab('send_log');
           });
           return;
         }
@@ -3012,6 +5948,224 @@ document.addEventListener('DOMContentLoaded', function () {
               repliesSummary.textContent = 'Inbox poll failed.';
             }
           });
+          return;
+        }
+        if (action === 'save-template') {
+          mFetch('cmn_marketing_save_template', {
+            name: (marketingRoot.querySelector('[data-marketing-template="name"]') || {}).value || '',
+            subject_template: (marketingRoot.querySelector('[data-marketing-template="subject_template"]') || {}).value || '',
+            body_template_html: (marketingRoot.querySelector('[data-marketing-template="body_template_html"]') || {}).value || '',
+            body_template_text: (marketingRoot.querySelector('[data-marketing-template="body_template_text"]') || {}).value || ''
+          }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (templateMsg) {
+                templateMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to save template.';
+              }
+              return;
+            }
+            if (templateMsg) {
+              templateMsg.textContent = data.data.message || 'Template saved.';
+            }
+            renderTemplates(data.data.templates || []);
+          });
+          return;
+        }
+        if (action === 'validate-template-tags') {
+          var subjectValue = ((marketingRoot.querySelector('[data-marketing-template="subject_template"]') || {}).value || '');
+          var bodyValue = ((marketingRoot.querySelector('[data-marketing-template="body_template_html"]') || {}).value || '');
+          var report = validateTemplateTags(subjectValue, bodyValue);
+          if (templateValidation) {
+            templateValidation.textContent = 'Tags: ' + (report.detected.length ? report.detected.join(', ') : 'none')
+              + (report.unknown.length ? (' | Unknown: ' + report.unknown.join(', ')) : '');
+          }
+          return;
+        }
+        if (action === 'preview-template') {
+          var previewType = ((marketingRoot.querySelector('[data-marketing-template-preview-type]') || {}).value || 'school');
+          var previewEntityId = parseInt(((marketingRoot.querySelector('[data-marketing-template-preview-id]') || {}).value || '0'), 10) || 0;
+          if (previewType !== 'generic' && previewEntityId < 1) {
+            if (templateMsg) {
+              templateMsg.textContent = 'Provide sample entity ID.';
+            }
+            return;
+          }
+          mFetch('cmn_marketing_preview_campaign', {
+            school_id: previewType === 'school' ? previewEntityId : 0,
+            subject: ((marketingRoot.querySelector('[data-marketing-template="subject_template"]') || {}).value || ''),
+            html_body: ((marketingRoot.querySelector('[data-marketing-template="body_template_html"]') || {}).value || ''),
+            text_body: ((marketingRoot.querySelector('[data-marketing-template="body_template_text"]') || {}).value || '')
+          }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (templateMsg) {
+                templateMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to preview template.';
+              }
+              return;
+            }
+            if (previewSubject) {
+              previewSubject.textContent = data.data.subject || '(No subject)';
+            }
+            if (previewBody) {
+              previewBody.innerHTML = data.data.body_html || '';
+            }
+            if (templateMsg) {
+              templateMsg.textContent = 'Template preview rendered.';
+            }
+          });
+          return;
+        }
+        if (action === 'test-send-template') {
+          mFetch('cmn_marketing_test_send', {
+            to_email: ((marketingRoot.querySelector('[data-marketing-template-test-email]') || {}).value || ''),
+            entity_type: ((marketingRoot.querySelector('[data-marketing-template-preview-type]') || {}).value || 'school') === 'contact' ? 'contact' : 'school',
+            entity_id: parseInt(((marketingRoot.querySelector('[data-marketing-template-preview-id]') || {}).value || '0'), 10) || 0,
+            subject_template: ((marketingRoot.querySelector('[data-marketing-template="subject_template"]') || {}).value || ''),
+            body_template_html: ((marketingRoot.querySelector('[data-marketing-template="body_template_html"]') || {}).value || ''),
+            body_template_text: ((marketingRoot.querySelector('[data-marketing-template="body_template_text"]') || {}).value || '')
+          }).then(function (data) {
+            if (templateMsg) {
+              templateMsg.textContent = (data && data.data && data.data.message) ? data.data.message : (data && data.success ? 'Test sent.' : 'Test send failed.');
+            }
+          });
+          return;
+        }
+        if (action === 'refresh-send-log') {
+          refreshSendLog();
+          return;
+        }
+        if (action === 'export-send-log') {
+          var f = readSendLogFilters();
+          var params = new URLSearchParams();
+          params.set('action', 'cmn_marketing_export_send_log');
+          params.set('nonce', window.cmnPortal.staffNonce || '');
+          params.set('status', f.status || '');
+          if (f.campaign_id > 0) {
+            params.set('campaign_id', String(f.campaign_id));
+          }
+          window.location.href = window.cmnPortal.ajaxUrl + '?' + params.toString();
+          return;
+        }
+        if (action === 'resend-failed') {
+          var resendFilters = readSendLogFilters();
+          if (!resendFilters.campaign_id) {
+            if (sendLogMsg) {
+              sendLogMsg.textContent = 'Campaign ID is required.';
+            }
+            return;
+          }
+          mFetch('cmn_marketing_resend_failed', { campaign_id: resendFilters.campaign_id }).then(function (data) {
+            if (sendLogMsg) {
+              sendLogMsg.textContent = (data && data.data && data.data.message) ? data.data.message : (data && data.success ? 'Failed sends requeued.' : 'Unable to requeue failed sends.');
+            }
+            refreshSendLog();
+          });
+          return;
+        }
+        if (action === 'refresh-unsubscribes') {
+          refreshUnsubscribes();
+          return;
+        }
+        if (action === 'add-unsubscribe') {
+          mFetch('cmn_marketing_add_unsubscribe', {
+            email: ((marketingRoot.querySelector('[data-marketing-unsub-email]') || {}).value || '')
+          }).then(function (data) {
+            if (unsubMsg) {
+              unsubMsg.textContent = (data && data.data && data.data.message) ? data.data.message : (data && data.success ? 'Email unsubscribed.' : 'Unable to unsubscribe email.');
+            }
+            refreshUnsubscribes();
+          });
+          return;
+        }
+        if (action === 'save-segment') {
+          var segmentName = window.prompt('Segment name');
+          if (!segmentName) {
+            return;
+          }
+          mFetch('cmn_marketing_save_segment', {
+            name: segmentName,
+            filter_json: JSON.stringify(readLeadFilters())
+          }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (segmentMsg) {
+                segmentMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to save segment.';
+              }
+              return;
+            }
+            if (segmentMsg) {
+              segmentMsg.textContent = data.data.message || 'Segment saved.';
+            }
+            renderSegments(data.data.segments || []);
+          });
+          return;
+        }
+        if (action === 'save-quick-campaign') {
+          var qGet = function (key) {
+            return marketingRoot.querySelector('[data-marketing-quick="' + key + '"]');
+          };
+          mFetch('cmn_marketing_save_quick_campaign', {
+            name: (qGet('name') ? qGet('name').value : ''),
+            template_id: (qGet('template_id') ? qGet('template_id').value : ''),
+            target_type: (qGet('target_type') ? qGet('target_type').value : 'list'),
+            list_id: (qGet('list_id') ? qGet('list_id').value : ''),
+            segment_id: (qGet('segment_id') ? qGet('segment_id').value : ''),
+            filter_json: JSON.stringify(readLeadFilters()),
+            cooldown_days: (qGet('cooldown_days') ? qGet('cooldown_days').value : '30'),
+            only_new_since_last_run: (qGet('only_new_since_last_run') && qGet('only_new_since_last_run').checked) ? 1 : 0
+          }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              if (quickMsg) {
+                quickMsg.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to save quick campaign.';
+              }
+              return;
+            }
+            if (quickMsg) {
+              quickMsg.textContent = data.data.message || 'Quick campaign saved.';
+            }
+            var pick = marketingRoot.querySelector('[data-marketing-quick-pick]');
+            if (pick) {
+              pick.innerHTML = '<option value="">Select saved quick campaign</option>';
+              (data.data.quick_campaigns || []).forEach(function (row) {
+                var option = document.createElement('option');
+                option.value = String(row.id || 0);
+                option.textContent = row.name || ('Quick #' + String(row.id || 0));
+                pick.appendChild(option);
+              });
+            }
+          });
+          return;
+        }
+        if (action === 'run-quick-campaign') {
+          var quickPick = marketingRoot.querySelector('[data-marketing-quick-pick]');
+          var quickId = parseInt((quickPick ? quickPick.value : '0'), 10) || 0;
+          if (!quickId) {
+            if (quickMsg) {
+              quickMsg.textContent = 'Select a quick campaign.';
+            }
+            return;
+          }
+          mFetch('cmn_marketing_run_quick_campaign', { id: quickId }).then(function (data) {
+            if (quickMsg) {
+              quickMsg.textContent = (data && data.data && data.data.message) ? data.data.message : (data && data.success ? 'Quick campaign completed.' : 'Unable to run quick campaign.');
+            }
+            refreshSendLog();
+            refreshOverview();
+          });
+          return;
+        }
+        if (action === 'save-marketing-settings') {
+          mFetch('cmn_marketing_save_settings', {
+            max_per_hour: ((marketingRoot.querySelector('[data-marketing-setting="max_per_hour"]') || {}).value || 200),
+            sending_paused: (marketingRoot.querySelector('[data-marketing-setting="sending_paused"]') || {}).checked ? 1 : 0
+          }).then(function (data) {
+            if (unsubMsg) {
+              unsubMsg.textContent = (data && data.data && data.data.message) ? data.data.message : (data && data.success ? 'Marketing settings saved.' : 'Unable to save settings.');
+            }
+            refreshOverview();
+          });
+          return;
+        }
+        if (action === 'refresh-overview') {
+          refreshOverview();
+          return;
         }
       });
     });
@@ -3040,11 +6194,39 @@ document.addEventListener('DOMContentLoaded', function () {
     refreshCampaigns();
     refreshQueue();
     refreshReplies();
+    refreshTemplates();
+    refreshSendLog();
+    refreshUnsubscribes();
+    refreshSegments();
+    refreshOverview();
   }
+
+  document.querySelectorAll('.cmn-system-health-tabs').forEach(function (tabWrap) {
+    var tabButtons = Array.prototype.slice.call(tabWrap.querySelectorAll('[data-health-tab]'));
+    if (!tabButtons.length) {
+      return;
+    }
+    var scopeRoot = tabWrap.parentElement || document;
+    var panels = Array.prototype.slice.call(scopeRoot.querySelectorAll('[data-health-panel]'));
+    if (!panels.length) {
+      return;
+    }
+    tabButtons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = btn.getAttribute('data-health-tab');
+        tabButtons.forEach(function (tb) {
+          tb.classList.toggle('is-active', tb === btn);
+        });
+        panels.forEach(function (panel) {
+          panel.classList.toggle('is-active', panel.getAttribute('data-health-panel') === target);
+        });
+      });
+    });
+  });
 
   var bookingChatRoots = document.querySelectorAll('[data-booking-chat]');
   if (bookingChatRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.bookingChatNonce) {
-    bookingChatRoots.forEach(function (chatRoot) {
+    bookingChatRoots.forEach(function (chatRoot, bookingChatIndex) {
       var threadId = parseInt(chatRoot.getAttribute('data-thread-id') || '0', 10);
       if (!threadId) {
         return;
@@ -3070,6 +6252,8 @@ document.addEventListener('DOMContentLoaded', function () {
       var isFeedbackModalOpen = false;
       var feedbackSubmitInFlight = false;
       var currentThreadType = 'booking_details';
+      var defaultStarFields = ['stars_1', 'stars_2', 'stars_3', 'stars_overall'];
+      var activeStarFields = defaultStarFields.slice();
 
       var renderBookingChatMessages = function (messages) {
         if (!Array.isArray(messages)) {
@@ -3093,7 +6277,7 @@ document.addEventListener('DOMContentLoaded', function () {
           var meta = document.createElement('div');
           meta.className = 'cmn-support-meta';
           var label = msg.sender_name || senderRole.replace('_', ' ');
-          meta.textContent = label + ' · ' + (msg.created_at || '');
+          meta.textContent = label + ' - ' + (msg.created_at || '');
           var text = document.createElement('div');
           text.className = 'cmn-support-text';
           text.textContent = msg.message || '';
@@ -3155,7 +6339,7 @@ document.addEventListener('DOMContentLoaded', function () {
             star.className = 'cmn-star-btn';
             star.setAttribute('data-booking-star-value', String(i));
             star.setAttribute('aria-label', i + ' stars');
-            star.textContent = '★';
+            star.textContent = '\u2605';
             picker.appendChild(star);
           }
         }
@@ -3191,7 +6375,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         feedbackForm.reset();
-        ['stars_1', 'stars_2', 'stars_3', 'stars_overall'].forEach(function (fieldName) {
+        activeStarFields.forEach(function (fieldName) {
           var hiddenInput = feedbackForm.querySelector('input[name="' + fieldName + '"]');
           if (hiddenInput) {
             hiddenInput.value = '';
@@ -3249,11 +6433,39 @@ document.addEventListener('DOMContentLoaded', function () {
           var own = payload.viewer_feedback;
           var summary = document.createElement('div');
           summary.className = 'cmn-support-feedback-summary';
-          summary.innerHTML = '<strong>Feedback submitted</strong><span>Overall: ' + (own.stars_overall || 0) + '/5</span><span>Tags: ' + (Array.isArray(own.tags) && own.tags.length ? own.tags.join(', ') : 'None') + '</span>';
+          var ownScoreValue = Number(own.average_rating || own.stars_overall || 0);
+          if (isNaN(ownScoreValue)) {
+            ownScoreValue = 0;
+          }
+          var ownScoreLabel = (typeof own.average_rating !== 'undefined')
+            ? ('Average: ' + ownScoreValue.toFixed(1) + '/5')
+            : ('Overall: ' + Math.round(ownScoreValue) + '/5');
+          summary.innerHTML = '<strong>Feedback submitted</strong><span>' + ownScoreLabel + '</span>';
+          if (Array.isArray(own.module_scores) && own.module_scores.length) {
+            var moduleSummary = own.module_scores.map(function (moduleRow) {
+              var moduleLabel = String((moduleRow && moduleRow.label) || 'Module');
+              var moduleScore = parseInt((moduleRow && moduleRow.score) || '0', 10);
+              if (isNaN(moduleScore)) {
+                moduleScore = 0;
+              }
+              return moduleLabel + ': ' + moduleScore + '/5';
+            }).join(' | ');
+            var moduleLine = document.createElement('span');
+            moduleLine.textContent = moduleSummary;
+            summary.appendChild(moduleLine);
+          } else {
+            var tagsLine = document.createElement('span');
+            tagsLine.textContent = 'Tags: ' + (Array.isArray(own.tags) && own.tags.length ? own.tags.join(', ') : 'None');
+            summary.appendChild(tagsLine);
+          }
           if (own.comment) {
             var ownComment = document.createElement('p');
             ownComment.textContent = own.comment;
             summary.appendChild(ownComment);
+          } else if (own.comments) {
+            var ownComments = document.createElement('p');
+            ownComments.textContent = own.comments;
+            summary.appendChild(ownComments);
           }
           if (feedbackRole === 'school') {
             var cta = document.createElement('a');
@@ -3270,7 +6482,14 @@ document.addEventListener('DOMContentLoaded', function () {
           var other = payload.counterparty_feedback;
           var received = document.createElement('div');
           received.className = 'cmn-support-feedback-summary';
-          received.innerHTML = '<strong>Feedback received</strong><span>Overall: ' + (other.stars_overall || 0) + '/5</span><span>Tags: ' + (Array.isArray(other.tags) && other.tags.length ? other.tags.join(', ') : 'None') + '</span>';
+          var otherScoreValue = Number(other.average_rating || other.stars_overall || 0);
+          if (isNaN(otherScoreValue)) {
+            otherScoreValue = 0;
+          }
+          var otherScoreLabel = (typeof other.average_rating !== 'undefined')
+            ? ('Average: ' + otherScoreValue.toFixed(1) + '/5')
+            : ('Overall: ' + Math.round(otherScoreValue) + '/5');
+          received.innerHTML = '<strong>Feedback received</strong><span>' + otherScoreLabel + '</span><span>Tags: ' + (Array.isArray(other.tags) && other.tags.length ? other.tags.join(', ') : 'None') + '</span>';
           summaryEl.appendChild(received);
           hasSummary = true;
         }
@@ -3297,7 +6516,24 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         var formConfig = payload.form || {};
         var labels = formConfig.star_labels || {};
-        ['stars_1', 'stars_2', 'stars_3', 'stars_overall'].forEach(function (fieldName) {
+        activeStarFields = Array.isArray(formConfig.star_fields) && formConfig.star_fields.length
+          ? formConfig.star_fields.map(function (fieldName) {
+            return String(fieldName || '').trim();
+          }).filter(function (fieldName) {
+            return fieldName !== '';
+          })
+          : defaultStarFields.slice();
+        if (!activeStarFields.length) {
+          activeStarFields = defaultStarFields.slice();
+        }
+        feedbackForm.querySelectorAll('[data-booking-feedback-stars]').forEach(function (pickerEl) {
+          var fieldName = String(pickerEl.getAttribute('data-booking-feedback-stars') || '');
+          var questionRow = pickerEl.closest('.cmn-feedback-question');
+          if (questionRow) {
+            questionRow.hidden = activeStarFields.indexOf(fieldName) === -1;
+          }
+        });
+        activeStarFields.forEach(function (fieldName) {
           var labelEl = feedbackForm.querySelector('[data-booking-feedback-label="' + fieldName + '"]');
           if (labelEl && labels[fieldName]) {
             labelEl.textContent = labels[fieldName];
@@ -3405,13 +6641,13 @@ document.addEventListener('DOMContentLoaded', function () {
           if (!bookingId || feedbackSubmitInFlight) {
             return;
           }
-          var requiredStars = ['stars_1', 'stars_2', 'stars_3', 'stars_overall'];
+          var requiredStars = activeStarFields.slice();
           for (var i = 0; i < requiredStars.length; i += 1) {
             var field = requiredStars[i];
             var value = parseInt((feedbackForm.querySelector('input[name="' + field + '"]') || {}).value || '0', 10);
             if (value < 1) {
               if (feedbackMsg) {
-                feedbackMsg.textContent = 'Please complete all star ratings.';
+                feedbackMsg.textContent = 'Please complete all ratings.';
               }
               return;
             }
@@ -3466,13 +6702,29 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
-      fetchBookingChat();
-      window.setInterval(function () {
-        if (document.hidden) {
-          return;
-        }
+      if (cmnPollManager) {
+        cmnPollManager.register({
+          key: 'cmn-booking-chat-' + String(threadId) + '-' + String(bookingChatIndex || 0),
+          intervalMs: 5000,
+          maxIntervalMs: 20000,
+          callback: function () {
+            return fetchBookingChat();
+          },
+          visibleOnly: true,
+          triggerOnFocus: true,
+          triggerOnVisibility: true,
+          backoffOnError: true,
+          immediate: true,
+        });
+      } else {
         fetchBookingChat();
-      }, 5000);
+        window.setInterval(function () {
+          if (document.hidden) {
+            return;
+          }
+          fetchBookingChat();
+        }, 5000);
+      }
     });
   }
 
@@ -3508,6 +6760,14 @@ document.addEventListener('DOMContentLoaded', function () {
     var limitDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     limitDate.setDate(limitDate.getDate() + 30);
     var limitStr = isoDate(limitDate);
+    var feedbackTimer = null;
+
+    if (feedback && portalOverlayRoot) {
+      feedback.classList.add('cmn-portal-toast');
+      feedback.classList.add('cmn-calendar-feedback-toast');
+      feedback.setAttribute('data-cmn-toast', 'calendar-feedback');
+      portalOverlayRoot.appendChild(feedback);
+    }
 
     var monthToLabel = function (ym) {
       var parts = ym.split('-');
@@ -3541,14 +6801,31 @@ document.addEventListener('DOMContentLoaded', function () {
       return true;
     };
 
-    var setFeedback = function (text, timeout) {
+    var setFeedback = function (text, timeout, tone) {
       if (!feedback) {
         return;
       }
-      feedback.textContent = text || '';
+      if (feedbackTimer) {
+        window.clearTimeout(feedbackTimer);
+        feedbackTimer = null;
+      }
+      var message = String(text || '').trim();
+      feedback.classList.remove('is-success', 'is-warning', 'is-error', 'is-visible');
+      feedback.textContent = message;
+      if (!message) {
+        return;
+      }
+      var normalizedTone = String(tone || '').toLowerCase();
+      if (normalizedTone !== 'error' && normalizedTone !== 'warning') {
+        normalizedTone = 'success';
+      }
+      feedback.classList.add('is-' + normalizedTone);
+      feedback.classList.add('is-visible');
       if (timeout) {
-        window.setTimeout(function () {
+        feedbackTimer = window.setTimeout(function () {
           feedback.textContent = '';
+          feedback.classList.remove('is-success', 'is-warning', 'is-error', 'is-visible');
+          feedbackTimer = null;
         }, timeout);
       }
     };
@@ -3587,7 +6864,7 @@ document.addEventListener('DOMContentLoaded', function () {
         })
         .then(function (res) {
           if (!res || !res.success) {
-            setFeedback(res && res.data && res.data.message ? res.data.message : 'Unable to save.');
+            setFeedback(res && res.data && res.data.message ? res.data.message : 'Unable to save.', 2400, 'error');
             return;
           }
           if (onSuccess) {
@@ -3595,7 +6872,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         })
         .catch(function () {
-          setFeedback('Unable to save.');
+          setFeedback('Unable to save.', 2400, 'error');
         });
     };
 
@@ -3664,10 +6941,10 @@ document.addEventListener('DOMContentLoaded', function () {
       formData.append('nonce', window.cmnPortal.calendarNonce || '');
       formData.append('date', dateStr);
       formData.append('status', status);
-      setFeedback('Saving...');
+      setFeedback('Saving...', 0, 'warning');
       requestCalendar(formData, function (payload) {
         updateSummary(payload.summary);
-        setFeedback('Saved', 1400);
+        setFeedback('Saved', 1400, 'success');
       });
     };
 
@@ -3737,7 +7014,7 @@ document.addEventListener('DOMContentLoaded', function () {
           var range = getRange();
           var status = btn.getAttribute('data-calendar-bulk') || '';
           if (!range) {
-            setFeedback('Select a valid start and end date.');
+            setFeedback('Select a valid start and end date.', 2200, 'warning');
             return;
           }
           var formData = new FormData();
@@ -3746,11 +7023,11 @@ document.addEventListener('DOMContentLoaded', function () {
           formData.append('start_date', range.start);
           formData.append('end_date', range.end);
           formData.append('status', status);
-          setFeedback('Saving...');
+          setFeedback('Saving...', 0, 'warning');
           requestCalendar(formData, function (payload) {
             replaceCalendarData(payload.calendar || {});
             updateSummary(payload.summary);
-            setFeedback(payload.message || 'Saved', 1500);
+            setFeedback(payload.message || 'Saved', 1500, 'success');
           });
         });
       });
@@ -3767,17 +7044,17 @@ document.addEventListener('DOMContentLoaded', function () {
           if (mode === 'range') {
             var range = getRange();
             if (!range) {
-              setFeedback('Select a valid date range to clear.');
+              setFeedback('Select a valid date range to clear.', 2200, 'warning');
               return;
             }
             formData.append('start_date', range.start);
             formData.append('end_date', range.end);
           }
-          setFeedback('Clearing...');
+          setFeedback('Clearing...', 0, 'warning');
           requestCalendar(formData, function (payload) {
             replaceCalendarData(payload.calendar || {});
             updateSummary(payload.summary);
-            setFeedback(payload.message || 'Cleared', 1500);
+            setFeedback(payload.message || 'Cleared', 1500, 'success');
           });
         });
       });
@@ -3790,6 +7067,8 @@ document.addEventListener('DOMContentLoaded', function () {
   if (candidateSettingsRoot && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateSettingsNonce) {
     var themeSelect = candidateSettingsRoot.querySelector('[data-settings-theme]');
     var prefInputs = candidateSettingsRoot.querySelectorAll('[data-settings-pref]');
+    var notifyToggleInputs = candidateSettingsRoot.querySelectorAll('[data-settings-notify]');
+    var notifyTimeInputs = candidateSettingsRoot.querySelectorAll('[data-settings-notify-time]');
     var saveBtn = candidateSettingsRoot.querySelector('[data-settings-save]');
     var msgEl = candidateSettingsRoot.querySelector('[data-settings-message]');
     var deleteEmailInput = candidateSettingsRoot.querySelector('[data-delete-confirm-email]');
@@ -3821,10 +7100,30 @@ document.addEventListener('DOMContentLoaded', function () {
       return prefs;
     };
 
+    var collectNotificationPrefs = function () {
+      var prefs = {};
+      notifyToggleInputs.forEach(function (input) {
+        var key = input.getAttribute('data-settings-notify');
+        if (!key) {
+          return;
+        }
+        prefs[key] = input.checked ? '1' : '0';
+      });
+      notifyTimeInputs.forEach(function (input) {
+        var key = input.getAttribute('data-settings-notify-time');
+        if (!key) {
+          return;
+        }
+        prefs[key] = String(input.value || '').trim();
+      });
+      return prefs;
+    };
+
     var saveSettings = function (silent) {
       var payload = {
         theme: themeSelect ? themeSelect.value : 'default',
         preferences: JSON.stringify(collectPrefs()),
+        notification_preferences: JSON.stringify(collectNotificationPrefs()),
       };
       var fd = new FormData();
       fd.append('action', 'cmn_save_candidate_settings');
@@ -3833,6 +7132,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var prefs = collectPrefs();
       Object.keys(prefs).forEach(function (key) {
         fd.append('preferences[' + key + ']', prefs[key]);
+      });
+      var notificationPrefs = collectNotificationPrefs();
+      Object.keys(notificationPrefs).forEach(function (key) {
+        fd.append('notification_preferences[' + key + ']', notificationPrefs[key]);
       });
       if (msgEl && !silent) {
         msgEl.textContent = 'Saving...';
@@ -3872,12 +7175,27 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       cmnApplyThemeClass(settings.theme || 'default');
       var preferences = settings.preferences || {};
+      var notificationPreferences = settings.notification_preferences || {};
       prefInputs.forEach(function (input) {
         var key = input.getAttribute('data-settings-pref');
         if (!key) {
           return;
         }
         input.checked = String(preferences[key] || 0) === '1';
+      });
+      notifyToggleInputs.forEach(function (input) {
+        var key = input.getAttribute('data-settings-notify');
+        if (!key) {
+          return;
+        }
+        input.checked = String(notificationPreferences[key] || 0) === '1';
+      });
+      notifyTimeInputs.forEach(function (input) {
+        var key = input.getAttribute('data-settings-notify-time');
+        if (!key) {
+          return;
+        }
+        input.value = String(notificationPreferences[key] || input.value || '');
       });
       if (settings.deletion_requested && deleteRequestBtn) {
         deleteRequestBtn.disabled = true;
@@ -3949,6 +7267,115 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       });
     }
+  }
+
+  var notificationPreferenceRoots = document.querySelectorAll('[data-notification-preferences]');
+  if (notificationPreferenceRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.notificationPreferencesNonce) {
+    notificationPreferenceRoots.forEach(function (root) {
+      var saveBtn = root.querySelector('[data-notify-settings-save]');
+      var msgEl = root.querySelector('[data-notify-settings-message]');
+      var toggleInputs = root.querySelectorAll('[data-notify-pref]');
+      var timeInputs = root.querySelectorAll('[data-notify-time]');
+      if (!saveBtn || !toggleInputs.length) {
+        return;
+      }
+
+      var collect = function () {
+        var payload = {};
+        toggleInputs.forEach(function (input) {
+          var key = input.getAttribute('data-notify-pref');
+          if (!key) {
+            return;
+          }
+          payload[key] = input.checked ? '1' : '0';
+        });
+        timeInputs.forEach(function (input) {
+          var key = input.getAttribute('data-notify-time');
+          if (!key) {
+            return;
+          }
+          payload[key] = String(input.value || '').trim();
+        });
+        return payload;
+      };
+
+      var applyPrefs = function (prefs) {
+        var data = prefs || {};
+        toggleInputs.forEach(function (input) {
+          var key = input.getAttribute('data-notify-pref');
+          if (!key) {
+            return;
+          }
+          input.checked = String(data[key] || 0) === '1';
+        });
+        timeInputs.forEach(function (input) {
+          var key = input.getAttribute('data-notify-time');
+          if (!key) {
+            return;
+          }
+          var nextValue = String(data[key] || '').trim();
+          if (nextValue) {
+            input.value = nextValue;
+          }
+        });
+      };
+
+      var fetchPrefs = function () {
+        var fd = new FormData();
+        fd.append('action', 'cmn_get_notification_preferences');
+        fd.append('nonce', window.cmnPortal.notificationPreferencesNonce);
+        return fetch(window.cmnPortal.ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd,
+        }).then(function (response) { return response.json(); });
+      };
+
+      var savePrefs = function () {
+        var payload = collect();
+        var fd = new FormData();
+        fd.append('action', 'cmn_save_notification_preferences');
+        fd.append('nonce', window.cmnPortal.notificationPreferencesNonce);
+        Object.keys(payload).forEach(function (key) {
+          fd.append('notification_preferences[' + key + ']', payload[key]);
+        });
+        if (msgEl) {
+          msgEl.textContent = 'Saving...';
+        }
+        return fetch(window.cmnPortal.ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd,
+        }).then(function (response) { return response.json(); }).then(function (data) {
+          if (!data || !data.success) {
+            if (msgEl) {
+              msgEl.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to save notification preferences.';
+            }
+            return;
+          }
+          applyPrefs((data.data && data.data.preferences) || payload);
+          if (msgEl) {
+            msgEl.textContent = 'Saved.';
+            setTimeout(function () { msgEl.textContent = ''; }, 1800);
+          }
+        }).catch(function () {
+          if (msgEl) {
+            msgEl.textContent = 'Unable to save notification preferences.';
+          }
+        });
+      };
+
+      fetchPrefs().then(function (data) {
+        if (!data || !data.success || !data.data) {
+          return;
+        }
+        applyPrefs(data.data.preferences || {});
+      });
+
+      saveBtn.addEventListener('click', function () {
+        savePrefs();
+      });
+    });
   }
 
   var genericThemeRoots = document.querySelectorAll('[data-theme-settings]');
@@ -4102,7 +7529,7 @@ document.addEventListener('DOMContentLoaded', function () {
             button.disabled = false;
             return;
           }
-          var targetUrl = data.data.portal_url || data.data.converter_url || '';
+          var targetUrl = data.data.converter_url || data.data.portal_url || '';
           if (!targetUrl) {
             setCvRowMessage(candidateId, 'Unable to open converter.', true);
             button.disabled = false;
@@ -4146,8 +7573,70 @@ document.addEventListener('DOMContentLoaded', function () {
   var converterFallback = document.querySelector('[data-cmn-converter-fallback]');
   if (converterFrame && converterFallback) {
     var converterLoaded = false;
-    var showConverterFallback = function () {
-      if (converterLoaded) {
+    var converterResizeTimer = null;
+    var getConverterMinHeight = function () {
+      return window.matchMedia('(max-width: 1100px)').matches ? 560 : 720;
+    };
+    var applyConverterDocumentScroll = function (doc) {
+      if (!doc) {
+        return;
+      }
+      if (doc.documentElement) {
+        doc.documentElement.style.height = 'auto';
+        doc.documentElement.style.overflowY = 'auto';
+      }
+      if (doc.body) {
+        doc.body.style.height = 'auto';
+        doc.body.style.overflowY = 'auto';
+      }
+    };
+    var resizeConverterFrame = function () {
+      var minHeight = getConverterMinHeight();
+      try {
+        var doc = converterFrame.contentDocument || (converterFrame.contentWindow && converterFrame.contentWindow.document);
+        if (!doc) {
+          converterFrame.style.minHeight = minHeight + 'px';
+          return;
+        }
+        applyConverterDocumentScroll(doc);
+        var body = doc.body;
+        var html = doc.documentElement;
+        var measured = Math.max(
+          body ? body.scrollHeight : 0,
+          body ? body.offsetHeight : 0,
+          html ? html.clientHeight : 0,
+          html ? html.scrollHeight : 0,
+          html ? html.offsetHeight : 0
+        );
+        if (measured > 0) {
+          converterFrame.style.height = Math.max(minHeight, measured + 24) + 'px';
+        } else {
+          converterFrame.style.minHeight = minHeight + 'px';
+        }
+      } catch (_error) {
+        converterFrame.style.minHeight = minHeight + 'px';
+      }
+    };
+    var scheduleConverterResize = function () {
+      if (converterResizeTimer) {
+        window.clearTimeout(converterResizeTimer);
+      }
+      converterResizeTimer = window.setTimeout(resizeConverterFrame, 80);
+    };
+    var isConverterErrorDocument = function (doc) {
+      if (!doc || !doc.body) {
+        return false;
+      }
+      var titleText = (doc.title || '').toLowerCase();
+      var bodyText = (doc.body.textContent || '').toLowerCase();
+      return (
+        titleText.indexOf('404') !== -1 ||
+        bodyText.indexOf("doesn't seem to exist") !== -1 ||
+        bodyText.indexOf('link pointing here was faulty') !== -1
+      );
+    };
+    var showConverterFallback = function (force) {
+      if (converterLoaded && !force) {
         return;
       }
       converterFallback.hidden = false;
@@ -4155,74 +7644,180 @@ document.addEventListener('DOMContentLoaded', function () {
     converterFrame.addEventListener('load', function () {
       converterLoaded = true;
       converterFallback.hidden = true;
+      resizeConverterFrame();
+      window.setTimeout(resizeConverterFrame, 200);
+      window.setTimeout(resizeConverterFrame, 900);
+      window.setTimeout(resizeConverterFrame, 1800);
+      try {
+        var loadedDoc = converterFrame.contentDocument || (converterFrame.contentWindow && converterFrame.contentWindow.document);
+        if (isConverterErrorDocument(loadedDoc)) {
+          showConverterFallback(true);
+        }
+      } catch (_error) {}
     });
-    converterFrame.addEventListener('error', showConverterFallback);
-    window.setTimeout(showConverterFallback, 9000);
+    converterFrame.addEventListener('error', function () {
+      showConverterFallback(true);
+    });
+    window.addEventListener('resize', scheduleConverterResize);
+    window.setTimeout(function () {
+      showConverterFallback(false);
+    }, 9000);
   }
 
   var candidateDocsRoot = document.querySelector('[data-candidate-docs]');
   var candidateProfileRoot = document.querySelector('[data-profile-root]');
   if (candidateProfileRoot && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateProfileNonce) {
+    var profileMain = candidateProfileRoot.closest('.cmn-candidate-main');
+    var profileGlobalEditButton = candidateProfileRoot.querySelector('[data-profile-global-edit]');
+    var profileGlobalActions = document.querySelector('[data-profile-global-actions]');
+    var profileGlobalSave = document.querySelector('[data-profile-global-save]');
+    var profileGlobalCancel = document.querySelector('[data-profile-global-cancel]');
+    var profileGlobalMsg = document.querySelector('[data-profile-global-msg]');
+    var profileForms = Array.prototype.slice.call(document.querySelectorAll('[data-profile-form]'));
+    var profileViews = Array.prototype.slice.call(document.querySelectorAll('[data-profile-view]'));
+    var profileReadonlyCards = Array.prototype.slice.call(document.querySelectorAll('[data-profile-readonly-only]'));
+    var profileEditOnlyCards = Array.prototype.slice.call(document.querySelectorAll('[data-profile-edit-only]'));
+    var profileIsEditing = false;
+    var profileSaveInFlight = false;
+    var profileEditSnapshot = '';
+
     var setProfileMessage = function (text) {
       var msg = document.querySelector('[data-doc-message]');
       if (msg) {
         msg.textContent = text || '';
       }
     };
-    var toggleEdit = function (section, editing) {
-      var view = document.querySelector('[data-profile-view="' + section + '"]');
-      var form = document.querySelector('[data-profile-form="' + section + '"]');
-      if (view) {
-        view.hidden = !!editing;
+
+    var serializeProfileForm = function (form) {
+      if (!form) {
+        return '';
       }
-      if (form) {
-        form.hidden = !editing;
+      return Array.prototype.map.call(form.elements || [], function (el) {
+        if (!el || !el.name) {
+          return '';
+        }
+        if (el.type === 'checkbox' || el.type === 'radio') {
+          return el.name + '=' + (el.checked ? '1' : '0') + ':' + (el.value || '');
+        }
+        return el.name + '=' + (el.value || '');
+      }).join('|');
+    };
+
+    var serializeAllProfileForms = function () {
+      return profileForms.map(function (form) {
+        return serializeProfileForm(form);
+      }).join('||');
+    };
+
+    var commitProfileFormDefaults = function (form) {
+      if (!form) {
+        return;
+      }
+      Array.prototype.forEach.call(form.elements || [], function (el) {
+        if (!el || !el.name) {
+          return;
+        }
+        if (el.type === 'checkbox' || el.type === 'radio') {
+          el.defaultChecked = !!el.checked;
+        } else {
+          el.defaultValue = el.value || '';
+        }
+      });
+    };
+
+    var setProfileGlobalMessage = function (text, isError) {
+      if (!profileGlobalMsg) {
+        return;
+      }
+      profileGlobalMsg.textContent = text || '';
+      profileGlobalMsg.classList.toggle('is-error', !!isError);
+    };
+
+    var refreshProfileGlobalActions = function (message, forceError) {
+      var isDirty = profileIsEditing && serializeAllProfileForms() !== profileEditSnapshot;
+      if (profileGlobalSave) {
+        profileGlobalSave.disabled = !profileIsEditing || !isDirty || profileSaveInFlight;
+      }
+      if (profileGlobalCancel) {
+        profileGlobalCancel.disabled = profileSaveInFlight;
+      }
+      if (typeof message === 'string') {
+        setProfileGlobalMessage(message, !!forceError);
+      } else if (!profileIsEditing) {
+        setProfileGlobalMessage('', false);
       }
     };
-    document.querySelectorAll('[data-profile-edit]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        var section = button.getAttribute('data-profile-edit');
-        if (!section) {
-          return;
-        }
-        toggleEdit(section, true);
+
+    var toggleProfileEditMode = function (editing, preserveValues) {
+      profileIsEditing = !!editing;
+      if (!profileIsEditing && !preserveValues) {
+        profileForms.forEach(function (form) {
+          if (form && typeof form.reset === 'function') {
+            form.reset();
+          }
+        });
+      }
+      profileViews.forEach(function (view) {
+        view.hidden = profileIsEditing;
       });
-    });
-    document.querySelectorAll('[data-profile-cancel]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        var section = button.getAttribute('data-profile-cancel');
-        if (!section) {
-          return;
-        }
-        toggleEdit(section, false);
+      profileForms.forEach(function (form) {
+        form.hidden = !profileIsEditing;
       });
-    });
-    var saveProfileSection = function (sectionForm) {
+      profileReadonlyCards.forEach(function (card) {
+        card.hidden = profileIsEditing;
+      });
+      profileEditOnlyCards.forEach(function (card) {
+        card.hidden = !profileIsEditing;
+      });
+      if (profileGlobalEditButton) {
+        profileGlobalEditButton.hidden = profileIsEditing;
+      }
+      if (profileGlobalActions) {
+        profileGlobalActions.hidden = !profileIsEditing;
+      }
+      if (profileMain) {
+        profileMain.classList.toggle('cmn-profile-is-editing', profileIsEditing);
+      }
+      if (profileIsEditing) {
+        profileEditSnapshot = serializeAllProfileForms();
+      } else {
+        profileEditSnapshot = '';
+      }
+      refreshProfileGlobalActions();
+    };
+
+    var saveProfile = function () {
+      if (!profileIsEditing || profileSaveInFlight) {
+        return;
+      }
+      profileSaveInFlight = true;
+      refreshProfileGlobalActions('Saving...', false);
+
       var fd = new FormData();
       fd.append('action', 'cmn_candidate_update_profile');
       fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+
       var getFieldInput = function (field) {
-        var fromPersonal = document.querySelector('[data-profile-form="personal"] [name="' + field + '"]');
-        if (fromPersonal) {
-          return fromPersonal;
-        }
-        return document.querySelector('[data-profile-form="role"] [name="' + field + '"]');
+        return document.querySelector('[data-profile-form] [name="' + field + '"]');
       };
-      ['email', 'first_name', 'last_name', 'phone', 'role_type', 'roles_other', 'travel_radius', 'location', 'driving_licence', 'car_owner', 'no_dbs', 'dbs_update_service', 'house_number', 'address_line1', 'address_line2', 'address_line3', 'town', 'county', 'postcode', 'notes'].forEach(function (field) {
-        var input = sectionForm.querySelector('[name="' + field + '"]') || getFieldInput(field);
+
+      ['email', 'first_name', 'last_name', 'phone', 'nationality', 'role_type', 'roles_other', 'travel_radius', 'location', 'driving_licence', 'car_owner', 'qts_status', 'no_dbs', 'dbs_update_service', 'house_number', 'address_line1', 'address_line2', 'address_line3', 'town', 'county', 'postcode', 'notes'].forEach(function (field) {
+        var input = getFieldInput(field);
         if (input) {
-          fd.append(field, input.value.trim());
+          fd.append(field, String(input.value || '').trim());
         }
       });
+
       var roleInputs = document.querySelectorAll('[data-profile-form="role"] input[name="roles[]"]:checked');
       roleInputs.forEach(function (input) {
         fd.append('roles[]', input.value);
       });
+
       var dayInputs = document.querySelectorAll('[data-profile-form="role"] input[name="availability_days[]"]:checked');
       dayInputs.forEach(function (input) {
         fd.append('availability_days[]', input.value);
       });
-      setProfileMessage('Saving...');
+
       fetch(window.cmnPortal.ajaxUrl, {
         method: 'POST',
         credentials: 'same-origin',
@@ -4231,14 +7826,19 @@ document.addEventListener('DOMContentLoaded', function () {
         return response.json();
       }).then(function (data) {
         if (!data || !data.success) {
-          setProfileMessage(data && data.data && data.data.message ? data.data.message : 'Unable to save profile.');
+          var saveErrorMessage = data && data.data && data.data.message ? data.data.message : 'Unable to save profile.';
+          setProfileMessage(saveErrorMessage);
+          refreshProfileGlobalActions(saveErrorMessage, true);
           return;
         }
+
         var profile = data.data && data.data.profile ? data.data.profile : {};
         var fullName = (profile.full_name || '').trim();
+
         var fullNameEl = document.querySelector('[data-profile-full-name]');
         var emailEl = document.querySelector('[data-profile-email]');
         var phoneEl = document.querySelector('[data-profile-phone]');
+        var nationalityEl = document.querySelector('[data-profile-nationality]');
         var roleEl = document.querySelector('[data-profile-role]');
         var rolesEl = document.querySelector('[data-profile-roles]');
         var rolesOtherEl = document.querySelector('[data-profile-roles-other]');
@@ -4246,10 +7846,20 @@ document.addEventListener('DOMContentLoaded', function () {
         var locationEl = document.querySelector('[data-profile-location]');
         var drivingEl = document.querySelector('[data-profile-driving]');
         var carEl = document.querySelector('[data-profile-car]');
+        var qtsEl = document.querySelector('[data-profile-qts]');
         var hasDbsEl = document.querySelector('[data-profile-has-dbs]');
         var dbsUpdateEl = document.querySelector('[data-profile-dbs-update]');
         var daysEl = document.querySelector('[data-profile-days]');
         var addressEl = document.querySelector('[data-profile-address]');
+        var houseNumberEl = document.querySelector('[data-profile-house-number]');
+        var line1El = document.querySelector('[data-profile-address-line1]');
+        var line2El = document.querySelector('[data-profile-address-line2]');
+        var line3El = document.querySelector('[data-profile-address-line3]');
+        var townEl = document.querySelector('[data-profile-town]');
+        var countyEl = document.querySelector('[data-profile-county]');
+        var postcodeEl = document.querySelector('[data-profile-postcode]');
+        var notesEl = document.querySelector('[data-profile-notes]');
+
         if (fullNameEl) {
           fullNameEl.textContent = fullName || 'Candidate';
         }
@@ -4258,6 +7868,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (phoneEl) {
           phoneEl.textContent = profile.phone || 'Not set';
+        }
+        if (nationalityEl) {
+          nationalityEl.textContent = profile.nationality || 'Not set';
         }
         if (roleEl) {
           roleEl.textContent = profile.role_type || 'Not set';
@@ -4280,6 +7893,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (carEl) {
           carEl.textContent = profile.car_owner_label || 'Not set';
         }
+        if (qtsEl) {
+          qtsEl.textContent = profile.qts_status_label || 'Not set';
+        }
         if (hasDbsEl) {
           hasDbsEl.textContent = profile.no_dbs_label || 'Not set';
         }
@@ -4292,6 +7908,31 @@ document.addEventListener('DOMContentLoaded', function () {
         if (addressEl) {
           addressEl.textContent = profile.address_display || 'Not set';
         }
+        if (houseNumberEl) {
+          houseNumberEl.textContent = profile.house_number || 'Not set';
+        }
+        if (line1El) {
+          line1El.textContent = profile.address_line1 || 'Not set';
+        }
+        if (line2El) {
+          line2El.textContent = profile.address_line2 || 'Not set';
+        }
+        if (line3El) {
+          line3El.textContent = profile.address_line3 || 'Not set';
+        }
+        if (townEl) {
+          townEl.textContent = profile.town || 'Not set';
+        }
+        if (countyEl) {
+          countyEl.textContent = profile.county || 'Not set';
+        }
+        if (postcodeEl) {
+          postcodeEl.textContent = profile.postcode || 'Not set';
+        }
+        if (notesEl) {
+          notesEl.textContent = profile.notes || 'Not set';
+        }
+
         var completionText = document.querySelector('[data-profile-completion-text]');
         var completionBar = document.querySelector('[data-profile-completion-bar]');
         var completionCopy = document.querySelector('[data-profile-completion-copy]');
@@ -4307,19 +7948,51 @@ document.addEventListener('DOMContentLoaded', function () {
             completionCopy.textContent = 'Profile ' + pct + '% complete';
           }
         }
-        toggleEdit('personal', false);
-        toggleEdit('role', false);
+
+        profileForms.forEach(function (form) {
+          commitProfileFormDefaults(form);
+        });
+        toggleProfileEditMode(false, true);
+        refreshProfileGlobalActions('Saved.', false);
         setProfileMessage('Profile updated.');
       }).catch(function () {
         setProfileMessage('Unable to save profile.');
+        refreshProfileGlobalActions('Unable to save profile.', true);
+      }).finally(function () {
+        profileSaveInFlight = false;
+        refreshProfileGlobalActions();
       });
     };
-    document.querySelectorAll('[data-profile-form]').forEach(function (form) {
+
+    if (profileGlobalEditButton) {
+      profileGlobalEditButton.addEventListener('click', function () {
+        toggleProfileEditMode(true);
+      });
+    }
+    if (profileGlobalCancel) {
+      profileGlobalCancel.addEventListener('click', function () {
+        toggleProfileEditMode(false, false);
+      });
+    }
+    if (profileGlobalSave) {
+      profileGlobalSave.addEventListener('click', function () {
+        saveProfile();
+      });
+    }
+
+    profileForms.forEach(function (form) {
       form.addEventListener('submit', function (event) {
         event.preventDefault();
-        saveProfileSection(form);
+        saveProfile();
+      });
+      ['change', 'input'].forEach(function (evtName) {
+        form.addEventListener(evtName, function () {
+          refreshProfileGlobalActions();
+        });
       });
     });
+
+    toggleProfileEditMode(false, true);
   }
 
   if (candidateDocsRoot && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateDocNonce) {
@@ -4862,8 +8535,8 @@ document.addEventListener('DOMContentLoaded', function () {
       var critical = parseInt(run.critical_count || 0, 10);
       var warning = parseInt(run.warning_count || 0, 10);
       var info = parseInt(run.info_count || 0, 10);
-      if (summaryFields.lastRun) summaryFields.lastRun.textContent = run.started_at || '—';
-      if (summaryFields.lastDuration) summaryFields.lastDuration.textContent = run.duration_ms ? (Math.round((run.duration_ms / 1000) * 100) / 100) + 's' : '—';
+      if (summaryFields.lastRun) summaryFields.lastRun.textContent = run.started_at || '-';
+      if (summaryFields.lastDuration) summaryFields.lastDuration.textContent = run.duration_ms ? (Math.round((run.duration_ms / 1000) * 100) / 100) + 's' : '-';
       if (summaryFields.total) summaryFields.total.textContent = formatNumber(total);
       if (summaryFields.critical) summaryFields.critical.textContent = formatNumber(critical);
       if (summaryFields.warning) summaryFields.warning.textContent = formatNumber(warning);
@@ -4887,7 +8560,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       issuesBody.innerHTML = issues.map(function (issue) {
         var sev = String(issue.severity || 'info').toLowerCase();
-        var entityId = issue.entity_id ? String(issue.entity_id) : '—';
+        var entityId = issue.entity_id ? String(issue.entity_id) : '-';
         var entityCell = issue.entity_url ? '<a href="' + issue.entity_url + '" target="_blank" rel="noopener noreferrer">' + entityId + '</a>' : entityId;
         var flagBits = [];
         if (parseInt(issue.reviewed || 0, 10) === 1) {
@@ -4923,7 +8596,7 @@ document.addEventListener('DOMContentLoaded', function () {
           '<tr>',
           '<td>' + (run.run_id || '') + '</td>',
           '<td>' + (run.started_at || '') + '</td>',
-          '<td>' + (run.duration_ms ? (Math.round((run.duration_ms / 1000) * 100) / 100) + 's' : '—') + '</td>',
+          '<td>' + (run.duration_ms ? (Math.round((run.duration_ms / 1000) * 100) / 100) + 's' : '-') + '</td>',
           '<td>' + formatNumber(run.total_issues_found) + '</td>',
           '<td>' + formatNumber(run.critical_count) + '</td>',
           '<td>' + formatNumber(run.warning_count) + '</td>',
@@ -4949,12 +8622,12 @@ document.addEventListener('DOMContentLoaded', function () {
           '<td>' + (row.performed_at || '') + '</td>',
           '<td>' + (row.fix_code || '') + '</td>',
           '<td>' + (row.entity_type || '') + '</td>',
-          '<td>' + (row.entity_id ? String(row.entity_id) : '—') + '</td>',
-          '<td>' + (row.issue_id ? String(row.issue_id) : '—') + '</td>',
-          '<td>' + (row.performed_by ? String(row.performed_by) : '—') + '</td>',
+          '<td>' + (row.entity_id ? String(row.entity_id) : '-') + '</td>',
+          '<td>' + (row.issue_id ? String(row.issue_id) : '-') + '</td>',
+          '<td>' + (row.performed_by ? String(row.performed_by) : '-') + '</td>',
           '<td>' + (parseInt(row.dry_run || 0, 10) === 1 ? 'Yes' : 'No') + '</td>',
           '<td>' + (row.status || '') + '</td>',
-          '<td>' + (row.notes || '—') + '</td>',
+          '<td>' + (row.notes || '-') + '</td>',
           '</tr>'
         ].join('');
       }).join('');
@@ -5099,7 +8772,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         var issue = data.data.issue;
         if (modalTitle) {
-          modalTitle.textContent = (issue.issue_code || 'Issue') + ' · ' + (issue.severity || '').toUpperCase();
+          modalTitle.textContent = (issue.issue_code || 'Issue') + ' - ' + (issue.severity || '').toUpperCase();
         }
         if (modalDescription) {
           modalDescription.textContent = issue.description || '';
