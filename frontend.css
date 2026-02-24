@@ -7501,6 +7501,10 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   vertical-align: top;
 }
 
+.cmn-schools-table {
+  min-width: 980px;
+}
+
 .cmn-pill.cmn-pill--status {
   text-transform: capitalize;
 }
@@ -7522,6 +7526,30 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   background: rgba(208, 142, 42, 0.2);
   color: #f5d2a6;
   border: 1px solid rgba(208, 142, 42, 0.5);
+}
+
+@media (max-width: 900px) {
+  .cmn-school-toolbar .cmn-toolbar-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .cmn-school-toolbar .cmn-toolbar-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .cmn-bulk-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .cmn-bulk-actions select,
+  .cmn-bulk-actions input[type="text"],
+  .cmn-bulk-actions button {
+    width: 100%;
+  }
 }
 
 .cmn-pill.cmn-pill--confirmed {

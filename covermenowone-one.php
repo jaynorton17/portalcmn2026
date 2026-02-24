@@ -8369,7 +8369,7 @@ final class CMN_One_Plugin {
                 'label' => 'System',
                 'icon' => 'system',
                 'items' => array_values(array_filter([
-                    $is_admin ? ['key' => 'system_health', 'label' => 'System Health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url)] : null,
+                    $is_admin ? ['key' => 'system_health', 'label' => 'System Health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url), 'active_when' => ['view' => ['system-health', 'system_health']]] : null,
                     $is_admin ? ['key' => 'system_logs', 'label' => 'Error Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
                     $is_admin ? ['key' => 'audit', 'label' => 'Audit Log', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
                     ['key' => 'tools', 'label' => 'Tools', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url), 'active_keys' => ['data_integrity']],
@@ -8420,8 +8420,16 @@ final class CMN_One_Plugin {
             if (!$active_when) {
                 return false;
             }
-            if (isset($active_when['view']) && sanitize_key((string) $active_when['view']) !== $current_view) {
-                return false;
+            if (isset($active_when['view'])) {
+                $active_view_rule = $active_when['view'];
+                if (is_array($active_view_rule)) {
+                    $allowed_views = array_values(array_filter(array_map('sanitize_key', array_map('strval', $active_view_rule))));
+                    if ($allowed_views && !in_array($current_view, $allowed_views, true)) {
+                        return false;
+                    }
+                } elseif (sanitize_key((string) $active_view_rule) !== $current_view) {
+                    return false;
+                }
             }
             if (isset($active_when['marketing_tab']) && sanitize_key((string) $active_when['marketing_tab']) !== $current_marketing_tab) {
                 return false;
@@ -24312,6 +24320,7 @@ final class CMN_One_Plugin {
         <form method="get" class="cmn-school-toolbar" data-school-toolbar>
             <input type="hidden" name="view" value="<?php echo esc_attr($view_param); ?>">
             <input type="hidden" name="cmn_status" value="<?php echo esc_attr($status); ?>">
+            <input type="hidden" name="cmn_bucket" value="<?php echo esc_attr($bucket); ?>">
             <div class="cmn-toolbar-row">
                 <div class="cmn-toolbar-search">
                     <input type="search" name="q" placeholder="Search schools, contacts, location, email, phone, account manager..." value="<?php echo esc_attr($search); ?>" aria-label="Search schools">
@@ -24415,6 +24424,7 @@ final class CMN_One_Plugin {
                 </label>
                 <button class="cmn-ghost" type="submit">Apply</button>
             </div>
+            <div class="cmn-table-scroll">
             <table class="cmn-approval-table cmn-schools-table">
                 <thead>
                     <tr>
@@ -24447,8 +24457,15 @@ final class CMN_One_Plugin {
                             'view' => 'schools',
                             'school_id' => $school_code ?: null,
                             'pid' => $school_post_id,
+                            'cmn_status' => $status ?: null,
+                            'cmn_stage' => $stage ?: null,
+                            'cmn_manager' => $manager_id ?: null,
+                            'cmn_location' => $location_filter ?: null,
+                            'cmn_lead_group' => $lead_group_filter ?: null,
+                            'cmn_last_activity' => $last_activity_filter ?: null,
+                            'q' => $search ?: null,
                             'cmn_bucket' => $bucket ?: null,
-                        ]), home_url('/portal'));
+                        ]), $portal_url);
                         $resolve_url = add_query_arg([
                             'action' => 'cmn_mark_school_import_resolved',
                             'school_id' => $school_post_id,
@@ -24543,6 +24560,7 @@ final class CMN_One_Plugin {
                 <?php endif; ?>
                 </tbody>
             </table>
+            </div>
         </form>
         <?php
         $inner = ob_get_clean();
