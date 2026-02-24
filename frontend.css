@@ -3863,7 +3863,12 @@ body.cmn-booking-feedback-lock {
   display: none;
 }
 
-.cmn-staff-nav.edit-mode-active .cmn-edit-control {
+.cmn-staff-nav.edit-mode-active .cmn-edit-control,
+.edit-mode-active .cmn-edit-control {
+  display: inline-block;
+}
+
+.cmn-staff-nav.edit-mode-active .cmn-staff-nav-handle.cmn-edit-control {
   display: inline-flex;
 }
 
