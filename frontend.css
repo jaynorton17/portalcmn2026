@@ -4895,7 +4895,7 @@ body.cmn-booking-feedback-lock {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin: 0 0 14px;
+  margin: 0 0 10px;
 }
 
 .cmn-school-profile-tab {
@@ -4920,7 +4920,9 @@ body.cmn-booking-feedback-lock {
 }
 
 .cmn-school-profile-issues-strip {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  gap: 10px;
 }
 
 .cmn-school-profile-issues-strip-head {
@@ -4929,6 +4931,11 @@ body.cmn-booking-feedback-lock {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.cmn-school-profile-issues-strip-head .cmn-btn-mini {
+  margin-left: auto;
+  min-height: 30px;
 }
 
 .cmn-school-profile-issues-strip-list {
@@ -4954,6 +4961,20 @@ body.cmn-booking-feedback-lock {
 
 .cmn-school-tab-panel-hidden {
   display: none !important;
+}
+
+.cmn-school-profile-grid {
+  align-items: start;
+  gap: 12px;
+}
+
+.cmn-school-profile-grid .cmn-panel-card {
+  padding: 16px 18px;
+  gap: 10px;
+}
+
+.cmn-school-profile-grid .cmn-meta-grid {
+  gap: 8px;
 }
 
 .cmn-school-profile-summary-strip {
@@ -7571,21 +7592,21 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 }
 
 .cmn-school-toolbar {
-  margin: 14px 0 16px;
+  margin: 10px 0 12px;
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   background: rgba(14, 19, 27, 0.74);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
 }
 
 .cmn-toolbar-row {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .cmn-toolbar-search {
@@ -7599,7 +7620,7 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 .cmn-toolbar-search input[type="search"] {
   flex: 1;
   min-width: 220px;
-  min-height: 40px;
+  min-height: 36px;
 }
 
 .cmn-toolbar-controls {
@@ -7611,9 +7632,9 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 }
 
 .cmn-toolbar-action {
-  min-height: 38px;
-  padding-left: 12px;
-  padding-right: 12px;
+  min-height: 36px;
+  padding-left: 10px;
+  padding-right: 10px;
   white-space: nowrap;
 }
 
@@ -7757,7 +7778,7 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 
 @media (max-width: 900px) {
   .cmn-school-toolbar {
-    padding: 10px;
+    padding: 9px;
   }
 
   .cmn-school-toolbar .cmn-toolbar-row {

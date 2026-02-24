@@ -722,7 +722,7 @@ document.addEventListener('DOMContentLoaded', function () {
         staffNavEditToggleBtn.setAttribute('data-tooltip', isNavEditing ? 'Hide edit options' : 'Toggle edit options');
       }
       if (staffNavEditPanel) {
-        staffNavEditPanel.hidden = false;
+        staffNavEditPanel.hidden = !isNavEditing;
         staffNavEditPanel.classList.toggle('is-open', isNavEditing);
         staffNavEditPanel.setAttribute('aria-hidden', isNavEditing ? 'false' : 'true');
       }
