@@ -630,6 +630,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_import_schools', [$this, 'handle_import_schools_portal']);
         add_action('admin_post_cmn_school_import_errors_csv', [$this, 'handle_school_import_errors_csv']);
         add_action('admin_post_cmn_bulk_schools', [$this, 'handle_bulk_schools']);
+        add_action('admin_post_cmn_mark_school_import_resolved', [$this, 'handle_mark_school_import_resolved']);
         add_action('admin_post_cmn_add_school', [$this, 'handle_add_school_portal']);
         add_action('admin_post_cmn_add_staff', [$this, 'handle_add_staff_portal']);
         add_action('admin_post_cmn_assign_account_manager', [$this, 'handle_assign_account_manager']);
@@ -24303,28 +24304,58 @@ final class CMN_One_Plugin {
                 <tbody>
                 <?php if ($query->have_posts()) : ?>
                     <?php while ($query->have_posts()) : $query->the_post(); ?>
+                        <?php
+                        $school_post_id = (int) get_the_ID();
+                        $school_code = (string) get_post_meta($school_post_id, 'cmn_school_id', true);
+                        $status_value = sanitize_key((string) get_post_meta($school_post_id, 'cmn_status', true));
+                        $pipeline_value = sanitize_key((string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true));
+                        $status_label = $status_value ? ucfirst($status_value) : '-';
+                        $pipeline_label = $pipeline_value ? ucwords(str_replace('_', ' ', $pipeline_value)) : '-';
+                        $view_url = add_query_arg(array_filter([
+                            'view' => 'schools',
+                            'school_id' => $school_code ?: null,
+                            'pid' => $school_post_id,
+                            'cmn_bucket' => $bucket ?: null,
+                        ]), home_url('/portal'));
+                        $resolve_url = add_query_arg([
+                            'action' => 'cmn_mark_school_import_resolved',
+                            'school_id' => $school_post_id,
+                            'cmn_nonce' => wp_create_nonce('cmn_mark_school_import_resolved_' . $school_post_id),
+                            'cmn_redirect' => $redirect_url,
+                        ], admin_url('admin-post.php'));
+                        $import_issue_preview = '';
+                        $import_issues_raw = get_post_meta($school_post_id, 'cmn_import_issues', true);
+                        if (is_string($import_issues_raw) && trim($import_issues_raw) !== '') {
+                            $decoded_issues = json_decode($import_issues_raw, true);
+                            if (is_array($decoded_issues)) {
+                                $issue_labels = array_values(array_filter(array_map('sanitize_text_field', $decoded_issues)));
+                                if ($issue_labels) {
+                                    $preview_issues = array_slice($issue_labels, 0, 2);
+                                    $import_issue_preview = implode('; ', $preview_issues);
+                                    if (count($issue_labels) > count($preview_issues)) {
+                                        $import_issue_preview .= ' +' . (count($issue_labels) - count($preview_issues)) . ' more';
+                                    }
+                                }
+                            }
+                        }
+                        ?>
                         <tr>
-                            <td><input type="checkbox" class="cmn-school-select" name="cmn_school_ids[]" value="<?php echo esc_attr(get_the_ID()); ?>"></td>
+                            <td><input type="checkbox" class="cmn-school-select" name="cmn_school_ids[]" value="<?php echo esc_attr($school_post_id); ?>"></td>
                             <td>
                                 <?php the_title(); ?>
-                                <?php $school_code = get_post_meta(get_the_ID(), 'cmn_school_id', true); ?>
-                                <?php $view_identifier = $school_code ? (string) $school_code : (string) get_the_ID(); ?>
                                 <?php if ($school_code) : ?>
                                     <div class="cmn-table-meta">ID: <?php echo esc_html($school_code); ?></div>
                                 <?php endif; ?>
+                                <?php if ($status_value === 'needs_attention' && $import_issue_preview !== '') : ?>
+                                    <div class="cmn-table-meta cmn-table-meta--warn">Issues: <?php echo esc_html($import_issue_preview); ?></div>
+                                <?php endif; ?>
                             </td>
-                            <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_location', true)); ?></td>
-                            <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_email', true)); ?></td>
-                            <?php
-                            $status_value = get_post_meta(get_the_ID(), 'cmn_status', true);
-                            $pipeline_value = get_post_meta(get_the_ID(), 'cmn_pipeline_stage', true);
-                            $status_label = $status_value ? ucfirst($status_value) : '-';
-                            $pipeline_label = $pipeline_value ? ucwords(str_replace('_', ' ', $pipeline_value)) : '-';
-                            ?>
+                            <td><?php echo esc_html((string) get_post_meta($school_post_id, 'cmn_location', true)); ?></td>
+                            <td><?php echo esc_html((string) get_post_meta($school_post_id, 'cmn_email', true)); ?></td>
                             <td><span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span></td>
                             <td><span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_label); ?></span></td>
                             <?php
-                            $lead_group_slugs = $this->get_school_lead_groups(get_the_ID());
+                            $lead_group_slugs = $this->get_school_lead_groups($school_post_id);
                             $lead_group_labels = [];
                             foreach ($lead_group_slugs as $group_slug) {
                                 $entry = (array) ($visible_lead_groups[$group_slug] ?? []);
@@ -24341,7 +24372,12 @@ final class CMN_One_Plugin {
                                     <span class="cmn-muted">-</span>
                                 <?php endif; ?>
                             </td>
-                            <td><a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'schools', 'school_id' => $school_code ?: null, 'pid' => get_the_ID(), 'cmn_bucket' => $bucket ?: null]), home_url('/portal'))); ?>">View</a></td>
+                            <td class="cmn-schools-row-actions">
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($view_url); ?>">View</a>
+                                <?php if ($status_value === 'needs_attention') : ?>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($resolve_url); ?>">Mark resolved</a>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php endwhile; wp_reset_postdata(); ?>
                 <?php else : ?>
@@ -88173,6 +88209,51 @@ p{margin:0;line-height:1.5}
         }
 
         wp_redirect(add_query_arg(['view' => 'contacts', 'cmn_contact_msg' => rawurlencode('Invalid import request.')], $referer));
+        exit;
+    }
+
+    public function handle_mark_school_import_resolved() {
+        if (!$this->is_staff_user()) {
+            wp_die('Unauthorized');
+        }
+        $school_id = isset($_REQUEST['school_id']) ? (int) $_REQUEST['school_id'] : 0;
+        $nonce = isset($_REQUEST['cmn_nonce']) ? sanitize_text_field(wp_unslash((string) $_REQUEST['cmn_nonce'])) : '';
+        if ($school_id < 1 || $nonce === '' || !wp_verify_nonce($nonce, 'cmn_mark_school_import_resolved_' . $school_id)) {
+            wp_die('Invalid request');
+        }
+        $redirect = isset($_REQUEST['cmn_redirect']) ? esc_url_raw(wp_unslash((string) $_REQUEST['cmn_redirect'])) : '';
+        if ($redirect === '') {
+            $redirect = wp_get_referer() ?: home_url('/portal');
+        }
+        $post = get_post($school_id);
+        if (!$post || $post->post_type !== 'cmn_school') {
+            wp_safe_redirect(add_query_arg([
+                'view' => 'schools',
+                'cmn_imported' => '1',
+                'cmn_import_msg' => rawurlencode('School not found.'),
+            ], $redirect));
+            exit;
+        }
+
+        delete_post_meta($school_id, 'cmn_import_issues');
+        $status_value = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+        if ($status_value === 'needs_attention') {
+            update_post_meta($school_id, 'cmn_status', 'lead');
+        }
+        $pipeline_value = sanitize_key((string) get_post_meta($school_id, 'cmn_pipeline_stage', true));
+        if ($pipeline_value === '') {
+            update_post_meta($school_id, 'cmn_pipeline_stage', 'new_lead');
+        }
+        $this->upsert_school_index($school_id);
+        $this->insert_audit('school_needs_attention_resolved', 'school', $school_id, [
+            'resolved_by' => (int) get_current_user_id(),
+        ], (int) get_current_user_id());
+
+        wp_safe_redirect(add_query_arg([
+            'view' => 'schools',
+            'cmn_imported' => '1',
+            'cmn_import_msg' => rawurlencode('School marked as resolved.'),
+        ], $redirect));
         exit;
     }
 

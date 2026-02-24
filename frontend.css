@@ -7484,6 +7484,17 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   color: var(--cmn-muted);
 }
 
+.cmn-schools-table .cmn-table-meta--warn {
+  color: #fca5a5;
+}
+
+.cmn-schools-row-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 .cmn-schools-table th,
 .cmn-schools-table td {
   padding: 6px 6px;
