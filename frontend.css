@@ -7712,6 +7712,26 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   min-width: 980px;
 }
 
+.cmn-schools-table .cmn-pill {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  margin-left: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  line-height: 1;
+  min-height: 24px;
+}
+
+.cmn-schools-pill-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .cmn-pill.cmn-pill--status {
   text-transform: capitalize;
 }

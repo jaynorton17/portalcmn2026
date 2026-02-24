@@ -24513,8 +24513,8 @@ final class CMN_One_Plugin {
                                     <div class="cmn-table-meta"><?php echo esc_html((string) $last_activity_summary['detail']); ?></div>
                                 <?php endif; ?>
                             </td>
-                            <td><span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span></td>
-                            <td><span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_label); ?></span></td>
+                            <td class="cmn-schools-pill-cell cmn-schools-pill-cell--status"><span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span></td>
+                            <td class="cmn-schools-pill-cell cmn-schools-pill-cell--pipeline"><span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_label); ?></span></td>
                             <?php
                             $lead_group_slugs = $this->get_school_lead_groups($school_post_id);
                             $lead_group_labels = [];
