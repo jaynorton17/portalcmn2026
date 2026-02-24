@@ -13008,3 +13008,150 @@ body.cmn-portal-page .cmn-livechat-root {
     justify-content: center;
   }
 }
+
+/* Mobile rendering hardening: staff sidebar + key action panels */
+@media (max-width: 900px) {
+  body.cmn-portal-page .cmn-portal-topbar {
+    height: auto;
+    min-height: 56px;
+    padding: 10px 14px;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  body.cmn-portal-page .cmn-topbar-right {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  body.cmn-portal-page .cmn-staff-shell,
+  body.cmn-portal-page .cmn-staff-shell.is-nav-collapsed,
+  body.cmn-portal-page .cmn-staff-shell.is-nav-collapsed.is-nav-peek-open {
+    grid-template-columns: 1fr !important;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav {
+    flex-direction: column !important;
+    align-items: stretch;
+    padding: 14px !important;
+    gap: 10px;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-header {
+    width: 100%;
+    padding: 0;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-header-row {
+    width: 100%;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-edit-panel {
+    width: 100%;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-edit-panel-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-edit-actions,
+  body.cmn-portal-page .cmn-staff-nav-edit-discard-actions {
+    width: 100%;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-links {
+    width: 100%;
+    padding: 0 !important;
+    gap: 8px;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-group {
+    width: 100%;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-toggle,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed .cmn-staff-nav-toggle,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed.is-peek-open .cmn-staff-nav-toggle {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    justify-content: space-between;
+    padding: 8px 12px;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav .cmn-school-nav-link,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed .cmn-school-nav-link,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed.is-peek-open .cmn-school-nav-link {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    justify-content: flex-start;
+    padding: 9px 14px;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav-link--submenu,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed .cmn-staff-nav-link--submenu,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed.is-peek-open .cmn-staff-nav-link--submenu {
+    padding-left: 28px;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed .cmn-staff-nav-group-body {
+    display: grid !important;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed .cmn-school-nav-label,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed .cmn-staff-nav-toggle-label,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed .cmn-staff-nav-caret {
+    display: inline !important;
+  }
+
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed .cmn-school-nav-link::before,
+  body.cmn-portal-page .cmn-staff-nav.is-collapsed [data-tooltip]::after {
+    display: none !important;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero,
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-confirmed,
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-blocked {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero::after {
+    display: none !important;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero-content,
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero-action {
+    text-align: center !important;
+    align-items: center !important;
+    min-height: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--dashboard #cmn-tomorrow-availability-btn {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 56px !important;
+    font-size: 16px !important;
+    margin-bottom: 10px !important;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-bottom-row {
+    position: static !important;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  body.cmn-portal-page .cmn-staff-nav-edit-actions :is(.cmn-btn-mini, .cmn-primary, .cmn-ghost),
+  body.cmn-portal-page .cmn-staff-nav-edit-discard-actions :is(.cmn-btn-mini, .cmn-primary, .cmn-ghost) {
+    width: 100%;
+    justify-content: center;
+  }
+}

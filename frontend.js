@@ -563,6 +563,12 @@ document.addEventListener('DOMContentLoaded', function () {
         // Ignore storage failures.
       }
     };
+    var isStaffNavMobileViewport = function () {
+      if (!window.matchMedia) {
+        return window.innerWidth <= 900;
+      }
+      return window.matchMedia('(max-width: 900px)').matches;
+    };
     var setStaffNavPeekState = function (isPeek) {
       staffNavPeekOpen = !!isPeek;
       staffNav.classList.toggle('is-peek-open', staffNavPeekOpen);
@@ -585,6 +591,14 @@ document.addEventListener('DOMContentLoaded', function () {
         staffNavMinimizeBtn.setAttribute('aria-pressed', isCompact ? 'true' : 'false');
         staffNavMinimizeBtn.setAttribute('data-tooltip', isCompact ? 'Expand sidebar' : 'Minimise sidebar');
       }
+    };
+    var enforceStaffNavMobileState = function () {
+      if (!isStaffNavMobileViewport()) {
+        return;
+      }
+      setStaffNavPeekState(false);
+      setStaffNavCompactState(false);
+      writeStaffNavCompactState(false);
     };
     var persistStaffNavState = function (state) {
       writeStaffNavState(state);
@@ -747,8 +761,18 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     });
     setStaffNavCompactState(readStaffNavCompactState());
+    enforceStaffNavMobileState();
+    window.addEventListener('resize', function () {
+      enforceStaffNavMobileState();
+    });
     if (staffNavMinimizeBtn) {
       staffNavMinimizeBtn.addEventListener('click', function () {
+        if (isStaffNavMobileViewport()) {
+          setStaffNavPeekState(false);
+          setStaffNavCompactState(false);
+          writeStaffNavCompactState(false);
+          return;
+        }
         var willCompact = !staffNav.classList.contains('is-collapsed');
         if (willCompact) {
           setStaffNavPeekState(false);
