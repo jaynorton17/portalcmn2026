@@ -7937,6 +7937,42 @@ final class CMN_One_Plugin {
         return (int) $query->found_posts;
     }
 
+    public function get_automation_console_url($tab = 'rules', $extra_query = []) {
+        $tab = sanitize_key((string) $tab);
+        if ($tab === '') {
+            $tab = 'rules';
+        }
+        $url = add_query_arg([
+            'view' => 'automation',
+            'cmn_automation_tab' => $tab,
+        ], $this->get_portal_base_url());
+        if (!is_array($extra_query) || !$extra_query) {
+            return $url;
+        }
+        $query = [];
+        foreach ($extra_query as $key => $value) {
+            $key = sanitize_key((string) $key);
+            if ($key === '') {
+                continue;
+            }
+            if ($value === null) {
+                $query[$key] = false;
+                continue;
+            }
+            if (is_bool($value)) {
+                $query[$key] = $value ? '1' : '0';
+                continue;
+            }
+            if (is_scalar($value)) {
+                $query[$key] = sanitize_text_field((string) $value);
+            }
+        }
+        if ($query) {
+            $url = add_query_arg($query, $url);
+        }
+        return $url;
+    }
+
     private function get_staff_nav_group_whitelist() {
         return ['schools', 'candidates', 'bookings', 'commercial', 'support', 'intelligence', 'automation', 'system', 'configuration'];
     }
@@ -8099,7 +8135,7 @@ final class CMN_One_Plugin {
                 number_format_i18n(max(0, (int) $this->count_school_status_for_navigation('needs_attention')))
             );
         }
-        $automation_console_url = admin_url('admin.php?page=cmn-automation');
+        $automation_console_url = $this->get_automation_console_url('rules');
 
         $current_view = sanitize_key((string) ($_GET['view'] ?? ''));
         $current_marketing_tab = sanitize_key((string) ($_GET['marketing_tab'] ?? ''));
@@ -8109,8 +8145,8 @@ final class CMN_One_Plugin {
         $current_email_centre_tab = sanitize_key((string) ($_GET['cmn_email_centre_tab'] ?? 'templates'));
 
         $dashboard_url = add_query_arg(['view' => false, 'cmn_tab' => false], $portal_url);
-        $automation_tab_url = static function ($tab) use ($automation_console_url) {
-            return add_query_arg(['cmn_automation_tab' => sanitize_key((string) $tab)], $automation_console_url);
+        $automation_tab_url = function ($tab) {
+            return $this->get_automation_console_url($tab);
         };
 
         $groups = [
@@ -22872,6 +22908,9 @@ final class CMN_One_Plugin {
         if ($view === 'school-requests' || $view === 'school_requests') {
             return $this->render_staff_school_requests_shortcode();
         }
+        if ($view === 'automation') {
+            return $this->render_staff_automation_console_shortcode();
+        }
         if ($view === 'rate-guardrails' || $view === 'rate_guardrails') {
             return $this->render_staff_rate_guardrails_shortcode();
         }
@@ -22964,6 +23003,32 @@ final class CMN_One_Plugin {
         return $this->render_staff_dashboard_shortcode();
     }
 
+    public function render_staff_automation_console_shortcode() {
+        $user_id = (int) get_current_user_id();
+        if (!$this->is_staff_user($user_id) || !$this->can_manage_automation($user_id)) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access denied</h3><p>You do not have permission to access this page.</p></div></section>';
+        }
+
+        $tab = sanitize_key((string) ($_GET['cmn_automation_tab'] ?? 'rules'));
+        $tab_to_active = [
+            'rules' => 'automation_rule_builder',
+            'performance' => 'automation_rule_performance',
+            'trigger_logs' => 'automation_trigger_logs',
+            'failed_actions' => 'automation_failed_actions',
+            'scheduled_actions' => 'automation_scheduled_actions',
+            'broadcast_logic' => 'automation_broadcast_logic',
+        ];
+        if (!isset($tab_to_active[$tab])) {
+            $tab = 'rules';
+        }
+        $_GET['cmn_automation_tab'] = $tab;
+
+        ob_start();
+        $this->render_automation_page();
+        $inner_html = ob_get_clean();
+        return $this->render_staff_shell($tab_to_active[$tab], $inner_html);
+    }
+
     public function render_staff_dashboard_shortcode() {
         global $wpdb;
 
@@ -22989,7 +23054,7 @@ final class CMN_One_Plugin {
         }
         $automation_failures = (int) ($automation_counts['failures_today'] ?? 0);
         $automation_console_url = $can_manage_automation
-            ? admin_url('admin.php?page=cmn-automation')
+            ? $this->get_automation_console_url('rules')
             : add_query_arg(['view' => 'system_health'], $portal_url);
 
         $active_schools_count = $this->count_by_status('cmn_school', 'client');
@@ -71356,6 +71421,7 @@ final class CMN_One_Plugin {
         $filter_entity_type = sanitize_key((string) ($_GET['entity_type'] ?? ''));
         $filter_entity_id = (int) ($_GET['entity_id'] ?? 0);
         $flash_message = sanitize_text_field((string) ($_GET['cmn_automation_msg'] ?? ''));
+        $automation_rules_url = $this->get_automation_console_url('rules');
         $smoke_result = get_transient('cmn_automation_smoke_result_' . get_current_user_id());
         if ($smoke_result) {
             delete_transient('cmn_automation_smoke_result_' . get_current_user_id());
@@ -71486,7 +71552,7 @@ final class CMN_One_Plugin {
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                     <?php wp_nonce_field('cmn_run_automation_smoke_test', 'cmn_run_automation_smoke_test_nonce'); ?>
                     <input type="hidden" name="action" value="cmn_run_automation_smoke_test">
-                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url(admin_url('admin.php?page=cmn-automation')); ?>">
+                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($automation_rules_url); ?>">
                     <p>
                         <label for="cmn-smoke-event"><strong>Event Trigger</strong></label><br>
                         <select id="cmn-smoke-event" name="cmn_smoke_event">
@@ -71640,7 +71706,7 @@ final class CMN_One_Plugin {
                     <p>
                         <button class="button button-primary">Save Rule</button>
                         <?php if ($edit_rule_id > 0) : ?>
-                            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=cmn-automation')); ?>">Cancel Edit</a>
+                            <a class="button" href="<?php echo esc_url($automation_rules_url); ?>">Cancel Edit</a>
                         <?php endif; ?>
                     </p>
                 </form>
@@ -71657,8 +71723,8 @@ final class CMN_One_Plugin {
                         <?php foreach ($rules as $rule_row) : ?>
                             <?php
                             $rule_status = $this->normalize_automation_rule_status($rule_row['status'] ?? 'active');
-                            $rule_edit_url = add_query_arg(['page' => 'cmn-automation', 'edit_rule_id' => (int) $rule_row['id']], admin_url('admin.php'));
-                            $rule_log_url = add_query_arg(['page' => 'cmn-automation', 'rule_id' => (int) $rule_row['id']], admin_url('admin.php'));
+                            $rule_edit_url = $this->get_automation_console_url('rules', ['edit_rule_id' => (int) $rule_row['id']]);
+                            $rule_log_url = $this->get_automation_console_url('trigger_logs', ['rule_id' => (int) $rule_row['id']]);
                             $toggle_to = $rule_status === 'active' ? 'paused' : 'active';
                             ?>
                             <tr>
@@ -71689,12 +71755,13 @@ final class CMN_One_Plugin {
                 <div class="cmn-card" style="padding:16px;">
                     <h2 style="margin-top:0;">Execution History (Rule #<?php echo esc_html((string) $rule_id); ?>)</h2>
                     <form method="get" style="margin-bottom:10px;">
-                        <input type="hidden" name="page" value="cmn-automation">
+                        <input type="hidden" name="view" value="automation">
+                        <input type="hidden" name="cmn_automation_tab" value="trigger_logs">
                         <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) $rule_id); ?>">
                         <label>Entity Type <input type="text" name="entity_type" value="<?php echo esc_attr($filter_entity_type); ?>" placeholder="candidate"></label>
                         <label>Entity ID <input type="number" min="0" name="entity_id" value="<?php echo esc_attr((string) $filter_entity_id); ?>"></label>
                         <button class="button">Filter</button>
-                        <a class="button" href="<?php echo esc_url(add_query_arg(['page' => 'cmn-automation', 'rule_id' => $rule_id], admin_url('admin.php'))); ?>">Reset</a>
+                        <a class="button" href="<?php echo esc_url($this->get_automation_console_url('trigger_logs', ['rule_id' => $rule_id])); ?>">Reset</a>
                     </form>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0 0 10px;">
                         <?php wp_nonce_field('cmn_export_automation_logs_' . $rule_id, 'cmn_export_automation_logs_nonce'); ?>
@@ -71947,10 +72014,9 @@ final class CMN_One_Plugin {
         $trigger_event = sanitize_key((string) ($_POST['trigger_event'] ?? ''));
         $trigger_options = $this->get_automation_trigger_events();
         if ($name === '' || !isset($trigger_options[$trigger_event])) {
-            wp_safe_redirect(add_query_arg([
-                'page' => 'cmn-automation',
-                'cmn_automation_msg' => rawurlencode('Rule name and trigger event are required.'),
-            ], admin_url('admin.php')));
+            wp_safe_redirect($this->get_automation_console_url('rules', [
+                'cmn_automation_msg' => 'Rule name and trigger event are required.',
+            ]));
             exit;
         }
 
@@ -72027,10 +72093,9 @@ final class CMN_One_Plugin {
             $actions[] = $action;
         }
         if (!$actions) {
-            wp_safe_redirect(add_query_arg([
-                'page' => 'cmn-automation',
-                'cmn_automation_msg' => rawurlencode('At least one action is required.'),
-            ], admin_url('admin.php')));
+            wp_safe_redirect($this->get_automation_console_url('rules', [
+                'cmn_automation_msg' => 'At least one action is required.',
+            ]));
             exit;
         }
 
@@ -72067,11 +72132,10 @@ final class CMN_One_Plugin {
             $saved_rule_id = (int) $wpdb->insert_id;
         }
 
-        $redirect = add_query_arg([
-            'page' => 'cmn-automation',
+        $redirect = $this->get_automation_console_url('rules', [
             'edit_rule_id' => $saved_rule_id,
-            'cmn_automation_msg' => rawurlencode($rule_id > 0 ? 'Rule updated.' : 'Rule created.'),
-        ], admin_url('admin.php'));
+            'cmn_automation_msg' => ($rule_id > 0 ? 'Rule updated.' : 'Rule created.'),
+        ]);
         wp_safe_redirect($redirect);
         exit;
     }
@@ -72096,10 +72160,9 @@ final class CMN_One_Plugin {
             ['%s', '%s'],
             ['%d']
         );
-        wp_safe_redirect(add_query_arg([
-            'page' => 'cmn-automation',
-            'cmn_automation_msg' => rawurlencode('Rule status updated.'),
-        ], admin_url('admin.php')));
+        wp_safe_redirect($this->get_automation_console_url('rules', [
+            'cmn_automation_msg' => 'Rule status updated.',
+        ]));
         exit;
     }
 
@@ -72189,7 +72252,7 @@ final class CMN_One_Plugin {
         }
 
         set_transient('cmn_automation_smoke_result_' . get_current_user_id(), $result, 10 * MINUTE_IN_SECONDS);
-        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['page' => 'cmn-automation'], admin_url('admin.php'))));
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? $this->get_automation_console_url('rules')));
         wp_safe_redirect($redirect);
         exit;
     }
@@ -90813,7 +90876,7 @@ class CmnAutomationEngine {
                     'automation_failed',
                     'Automation failure',
                     $details,
-                    admin_url('admin.php?page=cmn-automation&cmn_automation_tab=failed_actions'),
+                    $this->plugin->get_automation_console_url('failed_actions'),
                     ['module' => 'automation', 'urgency' => 'high']
                 );
             }
