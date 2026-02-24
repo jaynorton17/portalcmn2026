@@ -27145,6 +27145,39 @@ final class CMN_One_Plugin {
         }
     }
 
+    private function apply_school_rejected_lifecycle_state($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return [
+                'ok' => false,
+                'reason' => 'invalid_school',
+            ];
+        }
+        $current_status = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+        if ($current_status === 'client') {
+            return [
+                'ok' => true,
+                'skipped_client' => true,
+                'status' => 'client',
+            ];
+        }
+        $target_status = ($current_status === 'archived') ? 'archived' : 'rejected';
+        update_post_meta($school_id, 'cmn_status', $target_status);
+        if ($target_status === 'archived') {
+            update_post_meta($school_id, 'cmn_account_lifecycle', 'archived');
+        } else {
+            $current_lifecycle = sanitize_key((string) get_post_meta($school_id, 'cmn_account_lifecycle', true));
+            if ($current_lifecycle !== 'client' && $current_lifecycle !== 'archived') {
+                update_post_meta($school_id, 'cmn_account_lifecycle', 'rejected');
+            }
+        }
+        return [
+            'ok' => true,
+            'skipped_client' => false,
+            'status' => $target_status,
+        ];
+    }
+
     private function assert_imported_school_not_application_without_submission($school_id, $context = '') {
         $school_id = (int) $school_id;
         if ($school_id < 1 || !$this->is_import_origin_school($school_id)) {
@@ -74131,7 +74164,7 @@ p{margin:0;line-height:1.5}
                 wp_die('Invalid request.');
             }
             $previous_request_status = (string) $this->get_school_access_request_status($school_id);
-            $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'all'], $this->get_portal_base_url())));
+            $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'pending'], $this->get_portal_base_url())));
             $decision = sanitize_key((string) ($_POST['cmn_request_decision'] ?? 'assign_only'));
             if ($decision === '') {
                 $decision = 'assign_only';
@@ -74149,6 +74182,7 @@ p{margin:0;line-height:1.5}
             $new_request_status = '';
             $status_email_result = null;
             $convert_result = null;
+            $request_lifecycle_result = null;
 
             if ($manager_raw !== '__keep__') {
                 if (!$can_update_assignment) {
@@ -74207,7 +74241,11 @@ p{margin:0;line-height:1.5}
                 update_post_meta($school_id, 'cmn_access_request_processed_ref', (string) get_post_meta($school_id, 'cmn_registration_ref', true));
                 update_post_meta($school_id, 'cmn_access_request_reject_reason', $note);
                 delete_post_meta($school_id, 'cmn_access_request_more_info_note');
+                $request_lifecycle_result = $this->apply_school_rejected_lifecycle_state($school_id);
                 $messages[] = 'School request declined.';
+                if (!empty($request_lifecycle_result['skipped_client'])) {
+                    $messages[] = 'Client status preserved.';
+                }
                 $new_request_status = 'rejected';
                 $audit_action = 'school_request_rejected';
             } else {
@@ -74274,6 +74312,7 @@ p{margin:0;line-height:1.5}
                 'previous_status' => $previous_request_status,
                 'new_status' => $new_request_status,
                 'status_email_result' => $status_email_result,
+                'request_lifecycle_result' => $request_lifecycle_result,
             ], $current_user_id);
 
             $message_text = trim(implode(' ', array_filter($messages)));
@@ -74284,7 +74323,7 @@ p{margin:0;line-height:1.5}
             exit;
         } catch (Throwable $e) {
             error_log('[CMN_SCHOOL_REQUEST] handle_process_school_request failed: ' . $e->getMessage());
-            $fallback_redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'all'], $this->get_portal_base_url())));
+            $fallback_redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'pending'], $this->get_portal_base_url())));
             wp_safe_redirect(add_query_arg(['cmn_school_request_msg' => rawurlencode('Application update failed. Please retry.')], $fallback_redirect));
             exit;
         }
@@ -74329,7 +74368,7 @@ p{margin:0;line-height:1.5}
             'previous_status' => $previous_request_status,
             'status_email_result' => $status_email_result,
         ], get_current_user_id());
-        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'all'], $this->get_portal_base_url())));
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'pending'], $this->get_portal_base_url())));
         wp_safe_redirect(add_query_arg(['cmn_school_request_msg' => rawurlencode('School request approved.')], $redirect));
         exit;
     }
@@ -74353,7 +74392,7 @@ p{margin:0;line-height:1.5}
         }
         $reason = sanitize_textarea_field((string) ($_POST['cmn_reject_reason'] ?? ''));
         if ($reason === '') {
-            $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'all'], $this->get_portal_base_url())));
+            $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'pending'], $this->get_portal_base_url())));
             wp_safe_redirect(add_query_arg(['cmn_school_request_msg' => rawurlencode('Reject reason is required.')], $redirect));
             exit;
         }
@@ -74364,6 +74403,7 @@ p{margin:0;line-height:1.5}
         update_post_meta($school_id, 'cmn_access_request_processed_ref', (string) get_post_meta($school_id, 'cmn_registration_ref', true));
         update_post_meta($school_id, 'cmn_access_request_reject_reason', $reason);
         delete_post_meta($school_id, 'cmn_access_request_more_info_note');
+        $request_lifecycle_result = $this->apply_school_rejected_lifecycle_state($school_id);
         $status_email_result = null;
         if ($previous_request_status !== 'rejected') {
             $status_email_result = $this->send_school_request_status_change_emails($school_id, 'rejected', $reason, [
@@ -74379,9 +74419,11 @@ p{margin:0;line-height:1.5}
             'reason' => $reason,
             'previous_status' => $previous_request_status,
             'status_email_result' => $status_email_result,
+            'request_lifecycle_result' => $request_lifecycle_result,
         ], get_current_user_id());
-        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'all'], $this->get_portal_base_url())));
-        wp_safe_redirect(add_query_arg(['cmn_school_request_msg' => rawurlencode('School request rejected.')], $redirect));
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? add_query_arg(['view' => 'school-requests', 'status' => 'pending'], $this->get_portal_base_url())));
+        $reject_message = !empty($request_lifecycle_result['skipped_client']) ? 'School request rejected. Client status preserved.' : 'School request rejected.';
+        wp_safe_redirect(add_query_arg(['cmn_school_request_msg' => rawurlencode($reject_message)], $redirect));
         exit;
     }
 
