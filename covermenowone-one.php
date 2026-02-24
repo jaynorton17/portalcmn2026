@@ -23710,20 +23710,30 @@ final class CMN_One_Plugin {
         }
         if ($search !== '') {
             global $wpdb;
-            $like = '%' . $wpdb->esc_like($search) . '%';
             $status_placeholders = implode(',', array_fill(0, count($school_list_post_statuses), '%s'));
             $meta_keys = [
                 'cmn_school_id',
                 'cmn_location',
+                'cmn_town',
+                'cmn_city',
+                'cmn_county',
+                'cmn_postcode',
                 'cmn_email',
+                'cmn_school_email',
                 'cmn_school_email_domain',
+                'cmn_domain',
                 'cmn_phone',
+                'cmn_primary_contact_name',
+                'cmn_primary_contact_email',
+                'cmn_primary_contact_phone',
                 'cmn_status',
                 'cmn_pipeline_stage',
                 'cmn_account_manager',
                 'cmn_account_manager_name',
+                'cmn_account_manager_username',
                 'cmn_account_manager_email',
                 'cmn_cover_manager',
+                'cmn_cover_manager_name',
                 'cmn_cover_manager_email',
                 'cmn_email_name',
                 'cmn_contact_name',
@@ -23732,18 +23742,36 @@ final class CMN_One_Plugin {
                 'cmn_contact_role',
             ];
             $placeholders = implode(',', array_fill(0, count($meta_keys), '%s'));
-            $sql = "SELECT DISTINCT p.ID
-                FROM {$wpdb->posts} p
-                LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID
-                WHERE p.post_type = 'cmn_school'
-                  AND p.post_status IN ({$status_placeholders})
-                  AND (p.post_title LIKE %s OR (pm.meta_key IN ($placeholders) AND pm.meta_value LIKE %s))";
-            $params = array_merge($school_list_post_statuses, [$like], $meta_keys, [$like]);
-            $matched_ids = $wpdb->get_col($wpdb->prepare($sql, $params));
+            $search_tokens = preg_split('/\s+/', strtolower(trim((string) $search))) ?: [];
+            $search_tokens = array_values(array_unique(array_filter($search_tokens, static function ($token) {
+                return trim((string) $token) !== '';
+            })));
+            if (!$search_tokens) {
+                $search_tokens = [strtolower(trim((string) $search))];
+            }
+            $matched_ids = null;
+            foreach ($search_tokens as $search_token) {
+                $like = '%' . $wpdb->esc_like((string) $search_token) . '%';
+                $sql = "SELECT DISTINCT p.ID
+                    FROM {$wpdb->posts} p
+                    LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID
+                    WHERE p.post_type = 'cmn_school'
+                      AND p.post_status IN ({$status_placeholders})
+                      AND (p.post_title LIKE %s OR (pm.meta_key IN ({$placeholders}) AND pm.meta_value LIKE %s))";
+                $params = array_merge($school_list_post_statuses, [$like], $meta_keys, [$like]);
+                $token_ids = array_map('intval', (array) $wpdb->get_col($wpdb->prepare($sql, $params)));
+                if ($matched_ids === null) {
+                    $matched_ids = $token_ids;
+                } else {
+                    $matched_ids = array_values(array_intersect($matched_ids, $token_ids));
+                }
+                if (!$matched_ids) {
+                    break;
+                }
+            }
             if (!$matched_ids) {
                 $matched_ids = [0];
             }
-            $matched_ids = array_map('intval', $matched_ids);
             if (!empty($args['post__in'])) {
                 $matched_ids = array_values(array_intersect($args['post__in'], $matched_ids));
                 if (!$matched_ids) {
@@ -24101,7 +24129,7 @@ final class CMN_One_Plugin {
             <input type="hidden" name="cmn_status" value="<?php echo esc_attr($status); ?>">
             <div class="cmn-toolbar-row">
                 <div class="cmn-toolbar-search">
-                    <input type="search" name="q" placeholder="Search schools..." value="<?php echo esc_attr($search); ?>" aria-label="Search schools">
+                    <input type="search" name="q" placeholder="Search schools, contacts, location, email, phone, account manager..." value="<?php echo esc_attr($search); ?>" aria-label="Search schools">
                     <button class="cmn-btn-secondary cmn-btn-mini" type="submit">Search</button>
                 </div>
                 <div class="cmn-toolbar-controls">
