@@ -24298,10 +24298,13 @@ final class CMN_One_Plugin {
                         <input type="hidden" name="action" value="cmn_import_schools">
                         <input type="hidden" name="cmn_import_step" value="upload">
                         <label>Spreadsheet File
-                            <input type="file" name="cmn_csv" accept=".csv,.xlsx" required>
+                            <input type="file" name="cmn_csv" accept=".csv,.xlsx">
                         </label>
-                        <p class="cmn-muted">Upload a CSV or .xlsx file. We will ask you to map columns next. Status defaults to lead.</p>
-                        <button class="cmn-ghost" type="submit">Upload File</button>
+                        <label>Or paste CSV rows
+                            <textarea name="cmn_csv_paste" rows="7" placeholder="School Name,Location,Contact Number,School Email,Cover Manager Name,Cover Manager Email,Email Name&#10;Example School,London,02070000000,school@example.com,Alex Smith,alex@example.com,Alex"></textarea>
+                        </label>
+                        <p class="cmn-muted">Upload a CSV/.xlsx file or paste CSV rows. We will ask you to map columns next. Status defaults to lead.</p>
+                        <button class="cmn-ghost" type="submit">Prepare Import</button>
                     </form>
                 <?php endif; ?>
             </div>
@@ -86157,30 +86160,64 @@ p{margin:0;line-height:1.5}
         $step = sanitize_text_field($_POST['cmn_import_step'] ?? '');
 
         if ($step === 'upload') {
-            if (empty($_FILES['cmn_csv']['name'])) {
-                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('No file selected.')], $referer));
+            $pasted_csv = isset($_POST['cmn_csv_paste']) ? trim((string) wp_unslash($_POST['cmn_csv_paste'])) : '';
+            $has_file_upload = !empty($_FILES['cmn_csv']['name']);
+            $upload_file = '';
+            $ext = '';
+            $rows = [];
+
+            if (!$has_file_upload && $pasted_csv === '') {
+                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Upload a file or paste CSV rows to continue.')], $referer));
                 exit;
             }
-            $ext = strtolower(pathinfo($_FILES['cmn_csv']['name'], PATHINFO_EXTENSION));
-            if ($ext === 'xls') {
-                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Please upload an .xlsx or .csv file. Save .xls as .xlsx first.')], $referer));
-                exit;
+
+            if ($has_file_upload) {
+                $ext = strtolower(pathinfo((string) $_FILES['cmn_csv']['name'], PATHINFO_EXTENSION));
+                if ($ext === 'xls') {
+                    wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Please upload an .xlsx or .csv file. Save .xls as .xlsx first.')], $referer));
+                    exit;
+                }
+                if (!in_array($ext, ['csv', 'xlsx'], true)) {
+                    wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Please upload a .csv or .xlsx file.')], $referer));
+                    exit;
+                }
+                if (!function_exists('wp_handle_upload')) {
+                    require_once ABSPATH . 'wp-admin/includes/file.php';
+                }
+                $upload = wp_handle_upload($_FILES['cmn_csv'], ['test_form' => false]);
+                if (isset($upload['error'])) {
+                    wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode($upload['error'])], $referer));
+                    exit;
+                }
+                $upload_file = (string) ($upload['file'] ?? '');
+                $rows = $this->read_spreadsheet_rows($upload_file, $ext);
+            } else {
+                $rows = $this->parse_pasted_csv_rows($pasted_csv);
+                $ext = 'csv';
+                if ($rows) {
+                    $tmp_file = wp_tempnam('cmn-school-import-paste.csv');
+                    if (is_string($tmp_file) && $tmp_file !== '') {
+                        $out = fopen($tmp_file, 'w');
+                        if ($out) {
+                            foreach ($rows as $csv_row) {
+                                fputcsv($out, (array) $csv_row);
+                            }
+                            fclose($out);
+                            $upload_file = $tmp_file;
+                        } else {
+                            wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Unable to process pasted CSV data.')], $referer));
+                            exit;
+                        }
+                    }
+                }
             }
-            if (!in_array($ext, ['csv', 'xlsx'], true)) {
-                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Please upload a .csv or .xlsx file.')], $referer));
-                exit;
-            }
-            if (!function_exists('wp_handle_upload')) {
-                require_once ABSPATH . 'wp-admin/includes/file.php';
-            }
-            $upload = wp_handle_upload($_FILES['cmn_csv'], ['test_form' => false]);
-            if (isset($upload['error'])) {
-                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode($upload['error'])], $referer));
-                exit;
-            }
-            $rows = $this->read_spreadsheet_rows($upload['file'], $ext);
+
             if (!$rows) {
-                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Unable to read spreadsheet rows.')], $referer));
+                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Unable to read spreadsheet rows. Check your CSV/file format.')], $referer));
+                exit;
+            }
+            if ($upload_file === '' || !file_exists($upload_file)) {
+                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Import source could not be prepared. Please retry.')], $referer));
                 exit;
             }
             $header = $rows[0] ?? [];
@@ -86194,7 +86231,7 @@ p{margin:0;line-height:1.5}
             $token = wp_generate_password(12, false, false);
             set_transient('cmn_import_' . $token, [
                 'user_id' => get_current_user_id(),
-                'file' => $upload['file'],
+                'file' => $upload_file,
                 'headers' => $headers,
                 'ext' => $ext,
                 'preview_rows' => $preview_rows,
@@ -89342,6 +89379,40 @@ p{margin:0;line-height:1.5}
         }
         $idx = (int) $index;
         return isset($row[$idx]) ? trim((string) $row[$idx]) : '';
+    }
+
+    private function parse_pasted_csv_rows($raw_text) {
+        $raw_text = (string) $raw_text;
+        if (trim($raw_text) === '') {
+            return [];
+        }
+        $normalized = str_replace(["\r\n", "\r"], "\n", $raw_text);
+        $lines = explode("\n", $normalized);
+        $rows = [];
+        $max_cols = 0;
+        foreach ($lines as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+            $parsed = str_getcsv($line);
+            if (!is_array($parsed)) {
+                continue;
+            }
+            $parsed = array_map(static function ($value) {
+                return trim((string) $value);
+            }, $parsed);
+            $rows[] = $parsed;
+            $max_cols = max($max_cols, count($parsed));
+        }
+        if ($max_cols > 0) {
+            foreach ($rows as &$row) {
+                if (count($row) < $max_cols) {
+                    $row = array_pad($row, $max_cols, '');
+                }
+            }
+            unset($row);
+        }
+        return $rows;
     }
 
     private function import_schools_spreadsheet_mapped($file, $map, $ext) {
