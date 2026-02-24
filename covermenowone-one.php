@@ -7970,159 +7970,134 @@ final class CMN_One_Plugin {
         };
 
         $groups = [
-            'clients' => [
-                'label' => 'Clients',
-                'icon' => 'clients',
+            'schools' => [
+                'label' => 'Schools',
+                'icon' => 'schools',
                 'items' => [
                     [
                         'key' => 'all_schools',
                         'label' => 'All Schools',
                         'icon' => 'schools',
                         'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
-                        'active_keys' => ['all_schools'],
                         'active_when' => ['view' => 'schools', 'query' => ['cmn_status' => 'all']],
                     ],
                     [
+                        'key' => 'schools_leads',
+                        'label' => $pipeline_leads_label,
+                        'icon' => 'leads',
+                        'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                        'active_keys' => ['schools_leads', 'pipeline_leads'],
+                    ],
+                    [
                         'key' => 'school_requests',
-                        'label' => 'School Requests',
+                        'label' => 'Applications',
                         'icon' => 'school_requests',
-                        'url' => add_query_arg(['view' => 'school-requests'], $portal_url),
+                        'url' => add_query_arg(['view' => 'school-requests', 'status' => 'pending'], $portal_url),
+                        'active_when' => ['view' => 'school-requests'],
                     ],
                     [
-                        'key' => 'active_bookings',
-                        'label' => 'Active Bookings',
-                        'icon' => 'active_bookings',
-                        'url' => add_query_arg(['view' => 'bookings'], $portal_url),
-                        'active_keys' => ['bookings', 'requests'],
+                        'key' => 'active_clients',
+                        'label' => 'Active Clients',
+                        'icon' => 'clients',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
+                        'active_when' => ['view' => 'schools', 'query' => ['cmn_status' => 'client']],
                     ],
                     [
-                        'key' => 'rate_guardrails',
-                        'label' => 'Rate Guardrails',
-                        'icon' => 'guardrails',
-                        'url' => add_query_arg(['view' => 'rate-guardrails'], $portal_url),
+                        'key' => 'rejected_archived',
+                        'label' => 'Rejected / Archived',
+                        'icon' => 'failed_actions',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'rejected', 'cmn_bucket' => false], $portal_url),
+                        'active_when' => ['view' => 'schools', 'query' => ['cmn_status' => 'rejected']],
                     ],
                 ],
             ],
-            'pipeline' => [
-                'label' => 'Pipeline',
-                'icon' => 'pipeline',
-                'items' => [
-                    [
-                        'key' => 'pipeline_leads',
-                        'label' => $pipeline_leads_label,
-                        'icon' => 'leads',
-                        'url' => add_query_arg(['view' => 'leads'], $portal_url),
-                        'active_keys' => ['pipeline_leads'],
-                    ],
-                    [
-                        'key' => 'pipeline_contacts',
-                        'label' => 'Contacts (unconverted)',
-                        'icon' => 'contacts',
-                        'url' => add_query_arg(['view' => 'contacts', 'cmn_bucket' => 'sales'], $portal_url),
-                        'active_keys' => ['pipeline_contacts', 'sales_contacts', 'client_contacts'],
-                    ],
-                    [
-                        'key' => 'referral_activity',
-                        'label' => 'Referral activity',
-                        'icon' => 'referrals',
-                        'url' => add_query_arg(['view' => 'schools', 'cmn_bucket' => 'sales', 'cmn_status' => 'lead'], $portal_url),
-                        'active_when' => ['view' => 'schools', 'query' => ['cmn_bucket' => 'sales']],
-                    ],
-                    [
-                        'key' => 'conversion_tracking',
-                        'label' => 'Conversion tracking',
-                        'icon' => 'conversion',
-                        'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'conversion_tracking'], $portal_url),
-                        'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'conversion_tracking']],
-                    ],
-                ],
+            'candidates' => [
+                'label' => 'Candidates',
+                'icon' => 'candidates',
+                'items' => array_values(array_filter([
+                    ['key' => 'candidates', 'label' => 'All Candidates', 'icon' => 'candidates', 'url' => add_query_arg(['view' => 'candidates', 'cmn_status' => false, 'cmn_doc_review' => false], $portal_url), 'active_keys' => ['candidate_management', 'candidates']],
+                    ['key' => 'candidate_onboarding', 'label' => 'Onboarding / Pending', 'icon' => 'compliance', 'url' => add_query_arg(['view' => 'candidates', 'cmn_status' => 'pending'], $portal_url), 'active_when' => ['view' => 'candidates', 'query' => ['cmn_status' => 'pending']]],
+                    ['key' => 'compliance_review', 'label' => 'Compliance Reviews (Manual)', 'icon' => 'compliance', 'url' => add_query_arg(['view' => 'compliance-review'], $portal_url)],
+                    $is_admin ? ['key' => 'cv_converter', 'label' => 'CV Converter', 'icon' => 'cv_converter', 'url' => add_query_arg(['view' => 'cv-converter'], $portal_url)] : null,
+                ])),
+            ],
+            'bookings' => [
+                'label' => 'Bookings',
+                'icon' => 'bookings',
+                'items' => array_values(array_filter([
+                    ['key' => 'requests', 'label' => 'New Booking', 'icon' => 'bookings', 'url' => add_query_arg(['view' => 'requests'], $portal_url), 'active_keys' => ['requests']],
+                    ['key' => 'bookings', 'label' => 'Live / Upcoming', 'icon' => 'active_bookings', 'url' => add_query_arg(['view' => 'bookings', 'cmn_status' => false], $portal_url), 'active_keys' => ['bookings', 'active_bookings']],
+                    ['key' => 'bookings_completed', 'label' => 'Completed', 'icon' => 'completion_rates', 'url' => add_query_arg(['view' => 'bookings', 'cmn_status' => 'completed'], $portal_url), 'active_when' => ['view' => 'bookings', 'query' => ['cmn_status' => 'completed']]],
+                    $is_admin ? ['key' => 'war_room', 'label' => 'Cancellations / Issues', 'icon' => 'escalations', 'url' => add_query_arg(['view' => 'war-room'], $portal_url)] : ['key' => 'feedback_insights', 'label' => 'Cancellations / Issues', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url)],
+                ])),
             ],
             'commercial' => [
                 'label' => 'Commercial',
                 'icon' => 'commercial',
                 'items' => $can_access_finance_nav ? [
-                    [
-                        'key' => 'pricing_logic',
-                        'label' => 'Pricing logic',
-                        'icon' => 'pricing',
-                        'url' => add_query_arg(['view' => 'rate-guardrails'], $portal_url),
-                        'active_keys' => ['rate_guardrails'],
-                    ],
-                    [
-                        'key' => 'margin_overview',
-                        'label' => 'Margin overview',
-                        'icon' => 'margin',
-                        'url' => add_query_arg(['view' => 'finance-overview', 'cmn_finance_focus' => 'margin'], $portal_url),
-                        'active_keys' => ['finance_overview'],
-                    ],
-                    ['key' => 'staff_payroll', 'label' => 'Payroll', 'icon' => 'payroll', 'url' => add_query_arg(['cmn_tab' => 'staff_payroll', 'view' => false], $portal_url)],
-                    ['key' => 'invoicing', 'label' => 'Invoicing', 'icon' => 'invoicing', 'url' => add_query_arg(['view' => 'invoicing'], $portal_url)],
-                    ['key' => 'partner_credit_ledger', 'label' => 'Credit ledger', 'icon' => 'ledger', 'url' => add_query_arg(['view' => 'partner-credit-ledger'], $portal_url)],
-                    ['key' => 'partner_programme', 'label' => 'Partner programme', 'icon' => 'partner_programme', 'url' => add_query_arg(['view' => 'partner-programme'], $portal_url)],
-                    ['key' => 'candidate_rewards', 'label' => 'Candidate rewards logic', 'icon' => 'rewards', 'url' => add_query_arg(['view' => 'candidate-rewards'], $portal_url)],
+                    ['key' => 'rate_guardrails', 'label' => 'Rate Cards / Pricing', 'icon' => 'pricing', 'url' => add_query_arg(['view' => 'rate-guardrails'], $portal_url), 'active_keys' => ['rate_guardrails', 'pricing_logic']],
+                    ['key' => 'finance_overview', 'label' => 'Margin / Calculator', 'icon' => 'margin', 'url' => add_query_arg(['view' => 'finance-overview', 'cmn_finance_focus' => 'margin'], $portal_url), 'active_keys' => ['finance_overview', 'margin_overview']],
+                    ['key' => 'staff_payroll', 'label' => 'Payments / Payroll', 'icon' => 'payroll', 'url' => add_query_arg(['cmn_tab' => 'staff_payroll', 'view' => false], $portal_url)],
+                    ['key' => 'invoicing', 'label' => 'Invoices', 'icon' => 'invoicing', 'url' => add_query_arg(['view' => 'invoicing'], $portal_url)],
+                    ['key' => 'partner_credit_ledger', 'label' => 'Credit Ledger', 'icon' => 'ledger', 'url' => add_query_arg(['view' => 'partner-credit-ledger'], $portal_url)],
+                    ['key' => 'partner_programme', 'label' => 'Partner Programme', 'icon' => 'partner_programme', 'url' => add_query_arg(['view' => 'partner-programme'], $portal_url)],
+                    ['key' => 'candidate_rewards', 'label' => 'Candidate Rewards Logic', 'icon' => 'rewards', 'url' => add_query_arg(['view' => 'candidate-rewards'], $portal_url)],
                 ] : [],
             ],
-            'operations' => [
-                'label' => 'Operations',
-                'icon' => 'operations',
+            'support' => [
+                'label' => 'Support',
+                'icon' => 'support',
                 'items' => array_values(array_filter([
-                    ['key' => 'candidate_management', 'label' => 'Candidate management', 'icon' => 'candidates', 'url' => add_query_arg(['view' => 'candidates'], $portal_url), 'active_keys' => ['candidates']],
-                    ['key' => 'compliance_review', 'label' => 'Compliance Review', 'icon' => 'compliance', 'url' => add_query_arg(['view' => 'compliance-review'], $portal_url)],
-                    $is_admin ? ['key' => 'war_room', 'label' => 'Escalations', 'icon' => 'escalations', 'url' => add_query_arg(['view' => 'war-room'], $portal_url)] : null,
-                    ['key' => 'support', 'label' => 'Support', 'icon' => 'support', 'url' => add_query_arg(['view' => 'support'], $portal_url)],
+                    ['key' => 'support', 'label' => 'Open Tickets', 'icon' => 'support', 'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url), 'active_keys' => ['support'], 'active_when' => ['view' => 'support', 'query' => ['support_filter' => 'open']]],
+                    ['key' => 'support_needs_feedback', 'label' => 'Needs Feedback', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'support', 'support_filter' => 'needs_feedback'], $portal_url), 'active_when' => ['view' => 'support', 'query' => ['support_filter' => 'needs_feedback']]],
+                    ['key' => 'support_closed', 'label' => 'Closed', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'support', 'support_filter' => 'closed'], $portal_url), 'active_when' => ['view' => 'support', 'query' => ['support_filter' => 'closed']]],
+                    $is_admin ? ['key' => 'staff_lounge', 'label' => 'Staff Lounge', 'icon' => 'staff', 'url' => add_query_arg(['view' => 'staff-lounge'], $portal_url)] : null,
                     $is_admin ? ['key' => 'broadcast', 'label' => 'Emergency Broadcast', 'icon' => 'broadcast', 'url' => add_query_arg(['view' => 'broadcast'], $portal_url)] : null,
-                    ['key' => 'feedback_insights', 'label' => 'Feedback Insights', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url)],
+                ])),
+            ],
+            'intelligence' => [
+                'label' => 'Intelligence',
+                'icon' => 'intelligence',
+                'items' => array_values(array_filter([
+                    ['key' => 'analytics', 'label' => 'Analytics Overview', 'icon' => 'analytics', 'url' => add_query_arg(['view' => 'analytics'], $portal_url), 'active_keys' => ['analytics'], 'active_when' => ['view' => 'analytics']],
+                    ['key' => 'feedback_insights', 'label' => 'Performance / SLA', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url), 'active_keys' => ['feedback_insights']],
+                    $is_admin ? ['key' => 'conversion_tracking', 'label' => 'Operational Reports', 'icon' => 'conversion', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'conversion_tracking'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'conversion_tracking']]] : null,
                 ])),
             ],
             'automation' => [
                 'label' => 'Automation',
                 'icon' => 'automation',
                 'items' => $can_manage_automation ? [
-                    ['key' => 'automation_rule_builder', 'label' => 'Rule builder', 'icon' => 'rule_builder', 'url' => $automation_tab_url('rules')],
-                    ['key' => 'automation_rule_performance', 'label' => 'Rule performance', 'icon' => 'rule_performance', 'url' => $automation_tab_url('performance')],
-                    ['key' => 'automation_trigger_logs', 'label' => 'Trigger logs', 'icon' => 'trigger_logs', 'url' => $automation_tab_url('trigger_logs')],
-                    ['key' => 'automation_failed_actions', 'label' => 'Failed actions', 'icon' => 'failed_actions', 'url' => $automation_tab_url('failed_actions')],
-                    ['key' => 'automation_scheduled_actions', 'label' => 'Scheduled actions', 'icon' => 'scheduled_actions', 'url' => $automation_tab_url('scheduled_actions')],
-                    ['key' => 'automation_broadcast_logic', 'label' => 'Broadcast logic', 'icon' => 'broadcast_logic', 'url' => $automation_tab_url('broadcast_logic')],
-                ] : [],
-            ],
-            'intelligence' => [
-                'label' => 'Intelligence',
-                'icon' => 'intelligence',
-                'items' => $is_admin ? [
-                    ['key' => 'intel_revenue_trends', 'label' => 'Revenue trends', 'icon' => 'trend_revenue', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'revenue_trends'], $portal_url), 'active_keys' => ['analytics'], 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'revenue_trends']]],
-                    ['key' => 'intel_margin_trends', 'label' => 'Margin trends', 'icon' => 'trend_margin', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'margin_trends'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'margin_trends']]],
-                    ['key' => 'intel_booking_trends', 'label' => 'Booking trends', 'icon' => 'trend_bookings', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'booking_trends'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'booking_trends']]],
-                    ['key' => 'intel_region_heatmaps', 'label' => 'Region heatmaps', 'icon' => 'heatmap', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'region_heatmaps'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'region_heatmaps']]],
-                    ['key' => 'intel_role_distribution', 'label' => 'Role distribution', 'icon' => 'role_distribution', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'role_distribution'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'role_distribution']]],
-                    ['key' => 'intel_confirmation_times', 'label' => 'Confirmation times', 'icon' => 'confirmation_times', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'confirmation_times'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'confirmation_times']]],
-                    ['key' => 'intel_completion_rates', 'label' => 'Completion rates', 'icon' => 'completion_rates', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'completion_rates'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'completion_rates']]],
-                    ['key' => 'intel_forecast_modelling', 'label' => 'Forecast modelling', 'icon' => 'forecast', 'url' => add_query_arg(['view' => 'analytics', 'cmn_intelligence' => 'forecast_modelling'], $portal_url), 'active_when' => ['view' => 'analytics', 'query' => ['cmn_intelligence' => 'forecast_modelling']]],
+                    ['key' => 'automation_rule_builder', 'label' => 'Workflow Rules', 'icon' => 'rule_builder', 'url' => $automation_tab_url('rules')],
+                    ['key' => 'automation_rule_performance', 'label' => 'Rule Performance', 'icon' => 'rule_performance', 'url' => $automation_tab_url('performance')],
+                    ['key' => 'automation_trigger_logs', 'label' => 'Trigger Logs', 'icon' => 'trigger_logs', 'url' => $automation_tab_url('trigger_logs')],
+                    ['key' => 'automation_failed_actions', 'label' => 'Failed Actions', 'icon' => 'failed_actions', 'url' => $automation_tab_url('failed_actions')],
+                    ['key' => 'automation_scheduled_actions', 'label' => 'Scheduled Jobs / Queues', 'icon' => 'scheduled_actions', 'url' => $automation_tab_url('scheduled_actions')],
+                    ['key' => 'automation_broadcast_logic', 'label' => 'Notification Rules', 'icon' => 'broadcast_logic', 'url' => $automation_tab_url('broadcast_logic')],
                 ] : [],
             ],
             'system' => [
                 'label' => 'System',
                 'icon' => 'system',
                 'items' => array_values(array_filter([
-                    $is_admin ? ['key' => 'audit', 'label' => 'Audit logs', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
-                    ['key' => 'data_integrity', 'label' => 'Data Integrity Auditor', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url)],
-                    $can_access_email_centre ? ['key' => 'email_centre', 'label' => 'Email centre', 'icon' => 'email_centre', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_url), 'active_when' => ['view' => 'email-centre']] : null,
-                    $can_access_email_centre ? ['key' => 'email_centre_templates', 'label' => 'Templates', 'icon' => 'templates', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'templates']] : null,
-                    $can_access_email_centre ? ['key' => 'email_centre_senders', 'label' => 'Senders', 'icon' => 'senders', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'senders'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'senders']] : null,
-                    $can_access_email_centre ? ['key' => 'email_centre_logs', 'label' => 'Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'logs'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'logs']] : null,
-                    $is_admin ? ['key' => 'system_health', 'label' => 'System health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url)] : null,
-                    $is_admin ? ['key' => 'system_logs', 'label' => 'Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
+                    $is_admin ? ['key' => 'system_health', 'label' => 'System Health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url)] : null,
+                    $is_admin ? ['key' => 'system_logs', 'label' => 'Error Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
+                    $is_admin ? ['key' => 'audit', 'label' => 'Audit Log', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
+                    ['key' => 'data_integrity', 'label' => 'Tools', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url)],
                 ])),
             ],
             'configuration' => [
                 'label' => 'Configuration',
                 'icon' => 'configuration',
                 'items' => array_values(array_filter([
+                    $is_admin ? ['key' => 'settings', 'label' => 'General Settings', 'icon' => 'settings', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => false], $portal_url)] : null,
+                    $is_admin ? ['key' => 'permissions', 'label' => 'Roles & Permissions', 'icon' => 'permissions', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => 'permissions'], $portal_url), 'active_when' => ['view' => 'settings', 'query' => ['cmn_settings_tab' => 'permissions']]] : null,
+                    $can_access_email_centre ? ['key' => 'email_centre_templates', 'label' => 'Email Templates', 'icon' => 'templates', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_url), 'active_when' => ['view' => 'email-centre', 'email_tab' => 'templates']] : null,
+                    $can_access_email_centre ? ['key' => 'email_centre_senders', 'label' => 'Senders', 'icon' => 'senders', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'senders'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'senders']] : null,
+                    $can_access_email_centre ? ['key' => 'email_centre_logs', 'label' => 'Email Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'logs'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'logs']] : null,
                     ($is_admin && $can_manage_staff) ? ['key' => 'staff', 'label' => 'Staff', 'icon' => 'staff', 'url' => add_query_arg(['view' => 'staff'], $portal_url)] : null,
-                    $is_admin ? ['key' => 'permissions', 'label' => 'Permissions', 'icon' => 'permissions', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => 'permissions'], $portal_url), 'active_when' => ['view' => 'settings', 'query' => ['cmn_settings_tab' => 'permissions']]] : null,
-                    $is_admin ? ['key' => 'settings', 'label' => 'Settings', 'icon' => 'settings', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => false], $portal_url)] : null,
                     ($is_admin && $show_training_simulator) ? ['key' => 'training_simulator', 'label' => 'Training Simulator', 'icon' => 'training', 'url' => $this->get_training_console_url()] : null,
-                    $is_admin ? ['key' => 'wordpress_dashboard', 'label' => 'WordPress access', 'icon' => 'wordpress', 'url' => $wordpress_dashboard_url] : null,
+                    $is_admin ? ['key' => 'wordpress_dashboard', 'label' => 'WordPress Access', 'icon' => 'wordpress', 'url' => $wordpress_dashboard_url] : null,
                 ])),
             ],
         ];
@@ -23272,7 +23247,7 @@ final class CMN_One_Plugin {
 
                 $bucket_for_profile = $request_bucket;
                 $status_for_profile = isset($_GET['cmn_status']) ? sanitize_key((string) $_GET['cmn_status']) : '';
-                $active_profile_nav = ($bucket_for_profile === 'sales' || $status_for_profile === 'lead') ? 'pipeline_leads' : 'all_schools';
+                $active_profile_nav = ($bucket_for_profile === 'sales' || $status_for_profile === 'lead' || $status_for_profile === 'needs_attention') ? 'schools_leads' : 'all_schools';
 
                 $render_stage = 'render_start';
                 $this->log_school_view_event($req_id, 'render_start', [
@@ -23557,7 +23532,11 @@ final class CMN_One_Plugin {
         $visible_lead_groups = $this->get_visible_lead_groups_for_user((int) $current_user_id);
         $active_nav = 'all_schools';
         if ($status === 'lead' || $status === 'needs_attention' || $bucket === 'sales' || $view === 'leads') {
-            $active_nav = 'pipeline_leads';
+            $active_nav = 'schools_leads';
+        } elseif ($status === 'client' || $bucket === 'clients') {
+            $active_nav = 'active_clients';
+        } elseif (in_array($status, ['rejected', 'archived'], true)) {
+            $active_nav = 'rejected_archived';
         }
         $filter_count = 0;
         if ($stage !== '') {
@@ -27039,9 +27018,9 @@ final class CMN_One_Plugin {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to staff only.</p></div></section>';
         }
         $this->maybe_repair_imported_school_application_states();
-        $status_filter = sanitize_key((string) ($_GET['status'] ?? 'all'));
+        $status_filter = sanitize_key((string) ($_GET['status'] ?? 'pending'));
         if (!in_array($status_filter, ['pending', 'approved', 'more_info_needed', 'rejected', 'all'], true)) {
-            $status_filter = 'all';
+            $status_filter = 'pending';
         }
         $search = sanitize_text_field((string) ($_GET['q'] ?? ''));
         $message = sanitize_text_field((string) wp_unslash($_GET['cmn_school_request_msg'] ?? ''));
@@ -27446,7 +27425,8 @@ final class CMN_One_Plugin {
             </table>
         <?php
         $inner = ob_get_clean();
-        return $this->render_staff_shell('bookings', $inner);
+        $active_bookings_nav = $status === 'completed' ? 'bookings_completed' : 'bookings';
+        return $this->render_staff_shell($active_bookings_nav, $inner);
     }
 
     public function render_staff_analytics_shortcode() {
@@ -35883,7 +35863,14 @@ final class CMN_One_Plugin {
         </div>
         <?php
         $inner = ob_get_clean();
-        return $this->render_staff_shell('support', $inner);
+        $support_filter = sanitize_key((string) ($_GET['support_filter'] ?? ''));
+        $support_nav_active = 'support';
+        if ($support_filter === 'closed') {
+            $support_nav_active = 'support_closed';
+        } elseif ($support_filter === 'needs_feedback') {
+            $support_nav_active = 'support_needs_feedback';
+        }
+        return $this->render_staff_shell($support_nav_active, $inner);
     }
 
     private function get_support_whats_new_option_key() {
