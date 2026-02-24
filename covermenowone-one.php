@@ -8088,10 +8088,15 @@ final class CMN_One_Plugin {
         $can_access_email_centre = $can_access_finance_nav;
         $show_training_simulator = ($is_admin && $this->is_training_simulator_enabled());
         $pipeline_leads_label = 'Leads';
+        $pipeline_needs_attention_label = 'Needs Attention';
         if ($is_admin) {
             $pipeline_leads_label = sprintf(
                 'Leads (%s)',
-                number_format_i18n(max(0, (int) $this->count_school_leads_for_navigation(true)))
+                number_format_i18n(max(0, (int) $this->count_school_leads_for_navigation(false)))
+            );
+            $pipeline_needs_attention_label = sprintf(
+                'Needs Attention (%s)',
+                number_format_i18n(max(0, (int) $this->count_school_status_for_navigation('needs_attention')))
             );
         }
         $automation_console_url = admin_url('admin.php?page=cmn-automation');
@@ -8126,6 +8131,13 @@ final class CMN_One_Plugin {
                         'icon' => 'leads',
                         'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
                         'active_keys' => ['schools_leads', 'pipeline_leads'],
+                    ],
+                    [
+                        'key' => 'schools_needs_attention',
+                        'label' => $pipeline_needs_attention_label,
+                        'icon' => 'compliance',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'needs_attention', 'cmn_bucket' => false], $portal_url),
+                        'active_keys' => ['schools_needs_attention'],
                     ],
                     [
                         'key' => 'school_requests',
@@ -23639,24 +23651,10 @@ final class CMN_One_Plugin {
         }
         $meta_query = [];
         if ($status !== '' && $status !== 'all') {
-            if ($status === 'lead') {
-                $meta_query[] = [
-                    'relation' => 'OR',
-                    [
-                        'key' => 'cmn_status',
-                        'value' => 'lead',
-                    ],
-                    [
-                        'key' => 'cmn_status',
-                        'value' => 'needs_attention',
-                    ],
-                ];
-            } else {
-                $meta_query[] = [
-                    'key' => 'cmn_status',
-                    'value' => $status,
-                ];
-            }
+            $meta_query[] = [
+                'key' => 'cmn_status',
+                'value' => $status,
+            ];
         }
         if ($stage !== '') {
             $meta_query[] = [
@@ -23796,7 +23794,9 @@ final class CMN_One_Plugin {
         $manager_users = $this->get_account_manager_users();
         $visible_lead_groups = $this->get_visible_lead_groups_for_user((int) $current_user_id);
         $active_nav = 'all_schools';
-        if ($status === 'lead' || $status === 'needs_attention' || $bucket === 'sales' || $view === 'leads') {
+        if ($status === 'needs_attention') {
+            $active_nav = 'schools_needs_attention';
+        } elseif ($status === 'lead' || $bucket === 'sales' || $view === 'leads') {
             $active_nav = 'schools_leads';
         } elseif ($status === 'client' || $bucket === 'clients') {
             $active_nav = 'active_clients';
@@ -23845,7 +23845,7 @@ final class CMN_One_Plugin {
         $segment_all_url = add_query_arg(array_merge($segment_base, ['cmn_status' => 'all']), $portal_url);
         $segment_leads_label = sprintf(
             'Leads (%s)',
-            number_format_i18n(max(0, (int) $this->count_school_leads_for_navigation(true)))
+            number_format_i18n(max(0, (int) $this->count_school_leads_for_navigation(false)))
         );
         $segment_needs_attention_label = sprintf(
             'Needs Attention (%s)',
