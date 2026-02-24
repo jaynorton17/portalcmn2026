@@ -36836,9 +36836,9 @@ final class CMN_One_Plugin {
                             $presence = $this->get_staff_presence_snapshot((int) $staff->ID, $presence_now);
                             ?>
                             <tr>
-                                <td class="cmn-staff-name"><?php echo esc_html($staff->display_name); ?></td>
-                                <td class="cmn-staff-username"><?php echo esc_html($staff->user_login); ?></td>
-                                <td class="cmn-staff-email"><?php echo esc_html($staff->user_email); ?></td>
+                                <td class="cmn-staff-name" title="<?php echo esc_attr((string) $staff->display_name); ?>"><?php echo esc_html($staff->display_name); ?></td>
+                                <td class="cmn-staff-username" title="<?php echo esc_attr((string) $staff->user_login); ?>"><?php echo esc_html($staff->user_login); ?></td>
+                                <td class="cmn-staff-email" title="<?php echo esc_attr((string) $staff->user_email); ?>"><?php echo esc_html($staff->user_email); ?></td>
                                 <td class="cmn-staff-role"><?php echo esc_html($role_label); ?></td>
                                 <td class="cmn-staff-status">
                                     <span class="cmn-status-chip <?php echo $is_deactivated ? 'is-declined' : 'is-approved'; ?>">
@@ -36853,26 +36853,33 @@ final class CMN_One_Plugin {
                                     </div>
                                 </td>
                                 <td class="cmn-staff-actions">
-                                    <button class="cmn-ghost cmn-btn-mini" type="button"
-                                            data-staff-edit
-                                            data-staff-id="<?php echo esc_attr($staff->ID); ?>"
-                                            data-staff-name="<?php echo esc_attr($staff->display_name); ?>"
-                                            data-staff-username="<?php echo esc_attr($staff->user_login); ?>"
-                                            data-staff-email="<?php echo esc_attr($staff->user_email); ?>"
-                                            data-staff-role="<?php echo esc_attr($staff->roles ? $staff->roles[0] : 'cmn_staff'); ?>">
-                                        Edit
-                                    </button>
-                                    <button class="cmn-ghost cmn-btn-mini" type="button"
-                                            data-staff-reset
-                                            data-staff-id="<?php echo esc_attr($staff->ID); ?>">
-                                        Reset Password
-                                    </button>
-                                    <button class="cmn-ghost cmn-btn-mini" type="button"
-                                            data-staff-toggle
-                                            data-staff-id="<?php echo esc_attr($staff->ID); ?>"
-                                            data-staff-active="<?php echo $is_deactivated ? '0' : '1'; ?>">
-                                        <?php echo $is_deactivated ? 'Reactivate' : 'Deactivate'; ?>
-                                    </button>
+                                    <div class="cmn-staff-action-menu" data-staff-action-menu>
+                                        <button class="cmn-ghost cmn-btn-mini" type="button" data-staff-action-toggle aria-expanded="false">
+                                            Actions
+                                        </button>
+                                        <div class="cmn-staff-action-dropdown" data-staff-action-dropdown hidden>
+                                            <button class="cmn-staff-action-item" type="button"
+                                                    data-staff-edit
+                                                    data-staff-id="<?php echo esc_attr($staff->ID); ?>"
+                                                    data-staff-name="<?php echo esc_attr($staff->display_name); ?>"
+                                                    data-staff-username="<?php echo esc_attr($staff->user_login); ?>"
+                                                    data-staff-email="<?php echo esc_attr($staff->user_email); ?>"
+                                                    data-staff-role="<?php echo esc_attr($staff->roles ? $staff->roles[0] : 'cmn_staff'); ?>">
+                                                Edit
+                                            </button>
+                                            <button class="cmn-staff-action-item" type="button"
+                                                    data-staff-reset
+                                                    data-staff-id="<?php echo esc_attr($staff->ID); ?>">
+                                                Reset password
+                                            </button>
+                                            <button class="cmn-staff-action-item is-danger" type="button"
+                                                    data-staff-toggle
+                                                    data-staff-id="<?php echo esc_attr($staff->ID); ?>"
+                                                    data-staff-active="<?php echo $is_deactivated ? '0' : '1'; ?>">
+                                                <?php echo $is_deactivated ? 'Activate' : 'Deactivate'; ?>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

@@ -4233,6 +4233,62 @@ document.addEventListener('DOMContentLoaded', function () {
     var editForm = staffModal.querySelector('[data-staff-edit-form]');
     var editMsg = staffModal.querySelector('[data-staff-edit-msg]');
     var currentRow = null;
+    var staffActionMenus = Array.prototype.slice.call(document.querySelectorAll('[data-staff-action-menu]'));
+
+    var closeStaffActionMenus = function () {
+      staffActionMenus.forEach(function (menu) {
+        var toggle = menu.querySelector('[data-staff-action-toggle]');
+        var dropdown = menu.querySelector('[data-staff-action-dropdown]');
+        if (dropdown) {
+          dropdown.hidden = true;
+          dropdown.classList.remove('is-dropup');
+        }
+        if (toggle) {
+          toggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    };
+
+    staffActionMenus.forEach(function (menu) {
+      var toggle = menu.querySelector('[data-staff-action-toggle]');
+      var dropdown = menu.querySelector('[data-staff-action-dropdown]');
+      if (!toggle || !dropdown) {
+        return;
+      }
+      toggle.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var willOpen = dropdown.hidden;
+        closeStaffActionMenus();
+        if (!willOpen) {
+          return;
+        }
+        dropdown.hidden = false;
+        toggle.setAttribute('aria-expanded', 'true');
+        dropdown.classList.remove('is-dropup');
+        var rect = dropdown.getBoundingClientRect();
+        if (rect.bottom > (window.innerHeight - 8)) {
+          dropdown.classList.add('is-dropup');
+        }
+      });
+      menu.querySelectorAll('[data-staff-edit],[data-staff-reset],[data-staff-toggle]').forEach(function (actionButton) {
+        actionButton.addEventListener('click', function (event) {
+          event.stopPropagation();
+          closeStaffActionMenus();
+        });
+      });
+    });
+
+    document.addEventListener('click', function (event) {
+      if (!event.target.closest('[data-staff-action-menu]')) {
+        closeStaffActionMenus();
+      }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeStaffActionMenus();
+      }
+    });
 
     var roleLabel = function (role) {
       if (role === 'cmn_admin') {
@@ -4303,9 +4359,11 @@ document.addEventListener('DOMContentLoaded', function () {
               var roleCell = currentRow.querySelector('.cmn-staff-role');
               if (nameCell) {
                 nameCell.textContent = user.name;
+                nameCell.setAttribute('title', user.name || '');
               }
               if (emailCell) {
                 emailCell.textContent = user.email;
+                emailCell.setAttribute('title', user.email || '');
               }
               if (roleCell) {
                 roleCell.textContent = user.role;
@@ -4391,9 +4449,14 @@ document.addEventListener('DOMContentLoaded', function () {
             var statusCell = row ? row.querySelector('.cmn-staff-status') : null;
             var isDeactivated = data.data && data.data.status === 'deactivated';
             if (statusCell) {
-              statusCell.innerHTML = '<span class="cmn-status-chip ' + (isDeactivated ? 'is-declined' : 'is-approved') + '">' + (isDeactivated ? 'Deactivated' : 'Active') + '</span>';
+              var statusChip = statusCell.querySelector('.cmn-status-chip');
+              if (statusChip) {
+                statusChip.classList.remove('is-declined', 'is-approved');
+                statusChip.classList.add(isDeactivated ? 'is-declined' : 'is-approved');
+                statusChip.textContent = isDeactivated ? 'Deactivated' : 'Active';
+              }
             }
-            button.textContent = isDeactivated ? 'Reactivate' : 'Deactivate';
+            button.textContent = isDeactivated ? 'Activate' : 'Deactivate';
             button.setAttribute('data-staff-active', isDeactivated ? '0' : '1');
           })
           .catch(function () {

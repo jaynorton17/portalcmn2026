@@ -1354,11 +1354,14 @@ body.cmn-portal-page img[src*="fasthosts"] {
 .cmn-staff-table-wrap {
   width: 100%;
   overflow-x: auto;
+  position: relative;
 }
 
 .cmn-staff-table-card .cmn-approval-table {
   margin-bottom: 0;
-  min-width: 760px;
+  width: 100%;
+  min-width: 980px;
+  table-layout: fixed;
 }
 
 .cmn-staff-table-card .cmn-approval-table th,
@@ -1369,6 +1372,82 @@ body.cmn-portal-page img[src*="fasthosts"] {
 
 .cmn-staff-table-card .cmn-staff-actions {
   justify-content: flex-end;
+  width: 130px;
+  min-width: 130px;
+}
+
+.cmn-staff-table-card .cmn-staff-name {
+  width: 18%;
+}
+
+.cmn-staff-table-card .cmn-staff-username,
+.cmn-staff-table-card .cmn-staff-email {
+  width: 18%;
+  max-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmn-staff-table-card .cmn-staff-role {
+  width: 14%;
+}
+
+.cmn-staff-table-card .cmn-staff-status {
+  width: 24%;
+}
+
+.cmn-staff-action-menu {
+  position: relative;
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.cmn-staff-action-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 170px;
+  z-index: 50;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 17, 24, 0.98);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.45);
+}
+
+.cmn-staff-action-dropdown.is-dropup {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.cmn-staff-action-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cmn-text);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.cmn-staff-action-item:hover,
+.cmn-staff-action-item:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  outline: none;
+}
+
+.cmn-staff-action-item.is-danger {
+  color: #fca5a5;
 }
 
 .cmn-staff-presence {
