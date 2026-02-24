@@ -23891,7 +23891,7 @@ final class CMN_One_Plugin {
                 data-nonce="<?php echo esc_attr(wp_create_nonce('cmn_bulk_import_schools_run')); ?>"
                 data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
                 data-limit="10"
-                data-max-retries="1"
+                data-max-retries="3"
                 data-done="<?php echo $job_done ? '1' : '0'; ?>"
             >
                 <h3>Bulk Upload Progress</h3>
@@ -85358,25 +85358,237 @@ p{margin:0;line-height:1.5}
         ];
     }
 
-    private function run_school_import_job_chunk(&$job, $limit = 10) {
+    private function append_school_import_job_row_result(&$job, $row_offset, $result) {
+        $row_offset = max(0, (int) $row_offset);
+        if (!is_array($result)) {
+            return;
+        }
+        if (!isset($job['results']) || !is_array($job['results'])) {
+            $job['results'] = [];
+        }
+        if (!isset($job['counts']) || !is_array($job['counts'])) {
+            $job['counts'] = [];
+        }
+        $job['results'][$row_offset] = $result;
+        $status = sanitize_key((string) ($result['status'] ?? ''));
+        if ($status === 'needs_attention') {
+            $job['counts']['needs_attention'] = (int) ($job['counts']['needs_attention'] ?? 0) + 1;
+        } elseif ($status === 'hard_invalid') {
+            $job['counts']['hard_invalid'] = (int) ($job['counts']['hard_invalid'] ?? 0) + 1;
+        } else {
+            $job['counts']['imported_ok'] = (int) ($job['counts']['imported_ok'] ?? 0) + 1;
+        }
+        $job['counts']['created'] = (int) ($job['counts']['created'] ?? 0) + (int) ($result['created'] ?? 0);
+        $job['counts']['updated'] = (int) ($job['counts']['updated'] ?? 0) + (int) ($result['updated'] ?? 0);
+        $job['counts']['processed'] = (int) ($job['counts']['processed'] ?? 0) + 1;
+        $job['last_processed'] = [
+            'row_index' => (int) ($result['row_index'] ?? ($row_offset + 1)),
+            'school_name' => sanitize_text_field((string) ($result['school_name'] ?? '')),
+            'status' => $status,
+        ];
+    }
+
+    private function build_school_import_row_errors($row_results) {
+        $errors = [];
+        foreach ((array) $row_results as $row_result) {
+            if (!is_array($row_result)) {
+                continue;
+            }
+            $status = sanitize_key((string) ($row_result['status'] ?? ''));
+            if ($status === '' || $status === 'imported_ok') {
+                continue;
+            }
+            $issues = array_values(array_filter(array_map('sanitize_text_field', (array) ($row_result['issues'] ?? []))));
+            if (!$issues) {
+                $fallback_issue = sanitize_text_field((string) ($row_result['message'] ?? 'Import issue'));
+                if ($fallback_issue !== '') {
+                    $issues[] = $fallback_issue;
+                }
+            }
+            if (!$issues) {
+                $issues[] = 'Import issue';
+            }
+            foreach ($issues as $issue) {
+                $errors[] = [
+                    'row_index' => (int) ($row_result['row_index'] ?? 0),
+                    'school_name' => sanitize_text_field((string) ($row_result['school_name'] ?? '')),
+                    'field' => 'row',
+                    'message' => $issue,
+                    'severity' => $status === 'hard_invalid' ? 'hard_invalid' : 'needs_attention',
+                ];
+            }
+        }
+        return $errors;
+    }
+
+    private function mark_school_import_row_skipped(&$job, $offset, $reason = '') {
+        $rows = (array) ($job['rows'] ?? []);
+        $map = (array) ($job['map'] ?? []);
+        $header = (array) ($job['header'] ?? []);
+        $offset = max(0, (int) $offset);
+        $row = (array) ($rows[$offset] ?? []);
+        $row_index = $offset + 1;
+        $reason = sanitize_text_field((string) $reason);
+        if ($reason === '') {
+            $reason = 'Skipped after repeated timeout';
+        }
+
+        $school_name = $this->csv_value($row, $map['cmn_school_name'] ?? '');
+        if ($school_name === '') {
+            return [
+                'row_index' => $row_index,
+                'school_name' => '',
+                'status' => 'hard_invalid',
+                'message' => $reason . ': missing School Name.',
+                'issues' => ['Missing school name'],
+                'school_id' => 0,
+                'created' => 0,
+                'updated' => 0,
+            ];
+        }
+
+        $location = $this->csv_value($row, $map['cmn_location'] ?? '');
+        $phone = $this->csv_value($row, $map['cmn_phone'] ?? '');
+        $school_email = $this->csv_value($row, $map['cmn_email'] ?? '');
+        $cover_manager_name = $this->csv_value($row, $map['cmn_cover_manager'] ?? '');
+        $cover_manager_email = $this->csv_value($row, $map['cmn_cover_manager_email'] ?? '');
+        $email_name = $this->csv_value($row, $map['cmn_email_name'] ?? '');
+        $postcode = $this->csv_value($row, $map['cmn_postcode'] ?? '');
+        $school_code = strtoupper(trim((string) $this->csv_value($row, $map['cmn_school_id'] ?? '')));
+        if (!preg_match('/^CMN\\d+$/i', $school_code)) {
+            $school_code = '';
+        }
+        $school_domain = '';
+        if ($school_email !== '' && is_email($school_email)) {
+            $school_domain = $this->get_email_domain($school_email);
+        }
+        $identity_key = $this->build_school_import_identity_key($school_code, $school_name, $postcode, $school_email, $school_domain);
+        $existing_id = $this->find_existing_school_for_import_row($school_code, $school_domain, $school_name, $postcode, $school_email, $identity_key);
+        $created_new = false;
+        if ($existing_id > 0) {
+            $post_id = $existing_id;
+            wp_update_post([
+                'ID' => $post_id,
+                'post_title' => $school_name,
+            ]);
+        } else {
+            $post_id = wp_insert_post([
+                'post_type' => 'cmn_school',
+                'post_title' => $school_name,
+                'post_status' => 'publish',
+            ]);
+            if (is_wp_error($post_id)) {
+                return [
+                    'row_index' => $row_index,
+                    'school_name' => $school_name,
+                    'status' => 'hard_invalid',
+                    'message' => $reason . ': unable to create school record.',
+                    'issues' => ['Could not create school post'],
+                    'school_id' => 0,
+                    'created' => 0,
+                    'updated' => 0,
+                ];
+            }
+            $created_new = true;
+        }
+
+        if ($school_code === '') {
+            $school_code = (string) get_post_meta($post_id, 'cmn_school_id', true);
+            if ($school_code === '') {
+                $school_code = $this->generate_school_id();
+            }
+        }
+
+        $issues = [];
+        if ($location === '') {
+            $issues[] = 'Missing location';
+        }
+        if ($phone === '') {
+            $issues[] = 'Missing contact number';
+        }
+        if ($school_email === '') {
+            $issues[] = 'Missing school email';
+        } elseif (!is_email($school_email)) {
+            $issues[] = 'Invalid school email';
+        }
+        if ($cover_manager_name === '') {
+            $issues[] = 'Missing cover manager name';
+        }
+        if ($cover_manager_email === '') {
+            $issues[] = 'Missing cover manager email';
+        } elseif (!is_email($cover_manager_email)) {
+            $issues[] = 'Invalid cover manager email';
+        }
+        if ($email_name === '') {
+            $issues[] = 'Missing email name';
+        }
+        $issues[] = $reason;
+        $issues = array_values(array_unique(array_filter(array_map('sanitize_text_field', $issues))));
+
+        update_post_meta($post_id, 'cmn_location', sanitize_text_field($location));
+        update_post_meta($post_id, 'cmn_phone', sanitize_text_field($phone));
+        update_post_meta($post_id, 'cmn_cover_manager', sanitize_text_field($cover_manager_name));
+        update_post_meta($post_id, 'cmn_cover_manager_email', sanitize_email($cover_manager_email));
+        update_post_meta($post_id, 'cmn_email', sanitize_email($school_email));
+        update_post_meta($post_id, 'cmn_email_name', sanitize_text_field($email_name));
+        update_post_meta($post_id, 'cmn_school_id', sanitize_text_field($school_code));
+        update_post_meta($post_id, 'cmn_postcode', sanitize_text_field($postcode));
+        update_post_meta($post_id, 'cmn_status', 'needs_attention');
+        update_post_meta($post_id, 'cmn_pipeline_stage', 'new_lead');
+        update_post_meta($post_id, 'cmn_import_batch_id', sanitize_text_field((string) ($job['batch_id'] ?? '')));
+        update_post_meta($post_id, 'cmn_bulk_import_key', sanitize_text_field((string) ($job['job_id'] ?? '')) . ':' . $row_index);
+        if ($identity_key !== '') {
+            update_post_meta($post_id, 'cmn_import_identity_key', $identity_key);
+        }
+        if ($school_domain !== '') {
+            update_post_meta($post_id, 'cmn_school_email_domain', sanitize_text_field($school_domain));
+        }
+        update_post_meta($post_id, 'cmn_import_issues', wp_json_encode($issues));
+        update_post_meta($post_id, 'cmn_import_source_row', wp_json_encode($this->build_school_import_source_row($header, $row)));
+        $this->store_cover_manager_split($post_id, $cover_manager_name);
+        $this->upsert_school_index($post_id);
+        $this->assert_imported_school_not_application_without_submission((int) $post_id, 'bulk_import_skip');
+
+        return [
+            'row_index' => $row_index,
+            'school_name' => $school_name,
+            'status' => 'needs_attention',
+            'message' => implode('; ', $issues),
+            'issues' => $issues,
+            'school_id' => (int) $post_id,
+            'created' => $created_new ? 1 : 0,
+            'updated' => $created_new ? 0 : 1,
+        ];
+    }
+
+    private function run_school_import_job_chunk(&$job, $limit = 10, $options = []) {
         if (!is_array($job)) {
             return [
                 'processed' => 0,
+                'processed_this_chunk' => 0,
                 'row_results' => [],
                 'next_offset' => 0,
+                'offset_next' => 0,
                 'done' => true,
             ];
         }
+        $options = is_array($options) ? $options : [];
         $rows = (array) ($job['rows'] ?? []);
         $header = (array) ($job['header'] ?? []);
         $map = (array) ($job['map'] ?? []);
         $offset = max(0, (int) ($job['offset'] ?? 0));
         $total_rows = (int) ($job['total_rows'] ?? count($rows));
+        $requested_offset = isset($options['offset']) ? max(0, (int) $options['offset']) : -1;
+        if ($requested_offset > $offset && $requested_offset < $total_rows) {
+            $offset = $requested_offset;
+            $job['offset'] = $offset;
+        }
         $limit = max(1, min(20, (int) $limit));
-        $end = min($offset + $limit, $total_rows);
+        $target_end = min($offset + $limit, $total_rows);
+        $processed_end = $offset;
 
         $row_results = [];
-        for ($i = $offset; $i < $end; $i++) {
+        for ($i = $offset; $i < $target_end; $i++) {
             $row = (array) ($rows[$i] ?? []);
             try {
                 $result = $this->process_school_import_row($row, $map, $header, $job, $i);
@@ -85395,46 +85607,35 @@ p{margin:0;line-height:1.5}
             }
 
             $row_results[] = $result;
-            $job['results'][$i] = $result;
-            $status = sanitize_key((string) ($result['status'] ?? ''));
-            if ($status === 'needs_attention') {
-                $job['counts']['needs_attention'] = (int) ($job['counts']['needs_attention'] ?? 0) + 1;
-            } elseif ($status === 'hard_invalid') {
-                $job['counts']['hard_invalid'] = (int) ($job['counts']['hard_invalid'] ?? 0) + 1;
-            } else {
-                $job['counts']['imported_ok'] = (int) ($job['counts']['imported_ok'] ?? 0) + 1;
-            }
-            $job['counts']['created'] = (int) ($job['counts']['created'] ?? 0) + (int) ($result['created'] ?? 0);
-            $job['counts']['updated'] = (int) ($job['counts']['updated'] ?? 0) + (int) ($result['updated'] ?? 0);
-            $job['counts']['processed'] = (int) ($job['counts']['processed'] ?? 0) + 1;
-            $job['last_processed'] = [
-                'row_index' => (int) ($result['row_index'] ?? ($i + 1)),
-                'school_name' => sanitize_text_field((string) ($result['school_name'] ?? '')),
-                'status' => $status,
-            ];
+            $this->append_school_import_job_row_result($job, $i, $result);
+            $processed_end = $i + 1;
         }
 
-        $job['offset'] = $end;
+        $job['offset'] = $processed_end;
         $job['updated_at'] = time();
-        $done = ($end >= $total_rows);
+        $done = ($processed_end >= $total_rows);
         if ($done) {
             $job['done'] = true;
             $job['completed_at'] = current_time('mysql');
         }
 
         $group_size = max(1, (int) ($job['group_size'] ?? 10));
-        $group_index = $end > 0 ? (int) ceil($end / $group_size) : 1;
+        $group_index = $processed_end > 0 ? (int) ceil($processed_end / $group_size) : 1;
         $groups_total = max(1, (int) ($job['groups_total'] ?? ($total_rows > 0 ? ceil($total_rows / $group_size) : 1)));
         $group_start = (($group_index - 1) * $group_size) + 1;
         $group_end = min($group_start + $group_size - 1, max(1, $total_rows));
-        $processed_in_group = $end > 0 ? (($end - 1) % $group_size) + 1 : 0;
+        $processed_in_group = $processed_end > 0 ? (($processed_end - 1) % $group_size) + 1 : 0;
         $group_progress = (int) round(($processed_in_group / max(1, min($group_size, ($group_end - $group_start + 1)))) * 100);
-        $overall_progress = (int) round(($end / max(1, $total_rows)) * 100);
+        $overall_progress = (int) round(($processed_end / max(1, $total_rows)) * 100);
+        $errors = $this->build_school_import_row_errors($row_results);
+        $processed_this_chunk = count($row_results);
 
         return [
-            'processed' => count($row_results),
+            'processed' => $processed_this_chunk,
+            'processed_this_chunk' => $processed_this_chunk,
             'row_results' => $row_results,
-            'next_offset' => $end,
+            'next_offset' => $processed_end,
+            'offset_next' => $processed_end,
             'done' => $done,
             'group' => [
                 'index' => $group_index,
@@ -85456,6 +85657,14 @@ p{margin:0;line-height:1.5}
             'last_processed' => $job['last_processed'],
             'groups_total' => (int) ($job['groups_total'] ?? 0),
             'group_size' => $group_size,
+            'total_rows' => (int) $total_rows,
+            'valid_count' => (int) ($job['counts']['imported_ok'] ?? 0),
+            'needs_attention_count' => (int) ($job['counts']['needs_attention'] ?? 0),
+            'hard_invalid_count' => (int) ($job['counts']['hard_invalid'] ?? 0),
+            'errors' => $errors,
+            'target_rows_this_chunk' => max(0, $target_end - $offset),
+            'requested_offset' => $requested_offset >= 0 ? $requested_offset : $offset,
+            'applied_offset' => $offset,
         ];
     }
 
@@ -85468,6 +85677,9 @@ p{margin:0;line-height:1.5}
         }
         $job_id = sanitize_key((string) ($_POST['job_id'] ?? ''));
         $limit = max(1, min(20, (int) ($_POST['limit'] ?? 10)));
+        $requested_offset = isset($_POST['offset']) ? max(0, (int) $_POST['offset']) : -1;
+        $skip_current = !empty($_POST['skip_current']) && (string) $_POST['skip_current'] !== '0';
+        $skip_reason = sanitize_text_field((string) ($_POST['skip_reason'] ?? ''));
         $job = $this->get_school_import_job($job_id);
         if (!$job || !is_array($job)) {
             wp_send_json_error(['message' => 'Import job expired. Please restart import.'], 404);
@@ -85482,7 +85694,9 @@ p{margin:0;line-height:1.5}
             wp_send_json_success([
                 'job_id' => $job_id,
                 'processed' => 0,
+                'processed_this_chunk' => 0,
                 'next_offset' => (int) ($job['offset'] ?? 0),
+                'offset_next' => (int) ($job['offset'] ?? 0),
                 'done' => true,
                 'totals' => [
                     'total' => (int) ($job['total_rows'] ?? 0),
@@ -85497,10 +85711,88 @@ p{margin:0;line-height:1.5}
                 'groups_total' => (int) ($job['groups_total'] ?? 0),
                 'group_size' => (int) ($job['group_size'] ?? 10),
                 'overall_progress_pct' => 100,
+                'total_rows' => (int) ($job['total_rows'] ?? 0),
+                'valid_count' => (int) ($totals['imported_ok'] ?? 0),
+                'needs_attention_count' => (int) ($totals['needs_attention'] ?? 0),
+                'hard_invalid_count' => (int) ($totals['hard_invalid'] ?? 0),
+                'errors' => [],
+                'requested_offset' => $requested_offset,
+                'applied_offset' => (int) ($job['offset'] ?? 0),
             ]);
         }
 
-        $chunk = $this->run_school_import_job_chunk($job, $limit);
+        $total_rows = (int) ($job['total_rows'] ?? 0);
+        if ($requested_offset >= 0 && $requested_offset > (int) ($job['offset'] ?? 0) && $requested_offset < $total_rows) {
+            $job['offset'] = $requested_offset;
+        }
+        $offset_before = (int) ($job['offset'] ?? 0);
+
+        if ($skip_current && $offset_before < $total_rows) {
+            if ($skip_reason === '') {
+                $skip_reason = 'Skipped after repeated timeout';
+            }
+            $skipped_result = $this->mark_school_import_row_skipped($job, $offset_before, $skip_reason);
+            $this->append_school_import_job_row_result($job, $offset_before, $skipped_result);
+            $job['offset'] = $offset_before + 1;
+            $job['updated_at'] = time();
+            if ($job['offset'] >= $total_rows) {
+                $job['done'] = true;
+                $job['completed_at'] = current_time('mysql');
+            }
+            $row_results = [$skipped_result];
+            $group_size = max(1, (int) ($job['group_size'] ?? 10));
+            $offset_after_skip = (int) ($job['offset'] ?? 0);
+            $group_index = $offset_after_skip > 0 ? (int) ceil($offset_after_skip / $group_size) : 1;
+            $groups_total = max(1, (int) ($job['groups_total'] ?? ($total_rows > 0 ? ceil($total_rows / $group_size) : 1)));
+            $group_start = (($group_index - 1) * $group_size) + 1;
+            $group_end = min($group_start + $group_size - 1, max(1, $total_rows));
+            $processed_in_group = $offset_after_skip > 0 ? (($offset_after_skip - 1) % $group_size) + 1 : 0;
+            $group_progress = (int) round(($processed_in_group / max(1, min($group_size, ($group_end - $group_start + 1)))) * 100);
+            $overall_progress = (int) round(($offset_after_skip / max(1, $total_rows)) * 100);
+            $chunk = [
+                'processed' => 1,
+                'processed_this_chunk' => 1,
+                'row_results' => $row_results,
+                'next_offset' => $offset_after_skip,
+                'offset_next' => $offset_after_skip,
+                'done' => !empty($job['done']),
+                'group' => [
+                    'index' => $group_index,
+                    'total' => $groups_total,
+                    'start' => $group_start,
+                    'end' => $group_end,
+                    'progress_pct' => $group_progress,
+                ],
+                'overall_progress_pct' => $overall_progress,
+                'totals' => [
+                    'total' => (int) $total_rows,
+                    'imported_ok' => (int) (($job['counts'] ?? [])['imported_ok'] ?? 0),
+                    'needs_attention' => (int) (($job['counts'] ?? [])['needs_attention'] ?? 0),
+                    'hard_invalid' => (int) (($job['counts'] ?? [])['hard_invalid'] ?? 0),
+                    'created' => (int) (($job['counts'] ?? [])['created'] ?? 0),
+                    'updated' => (int) (($job['counts'] ?? [])['updated'] ?? 0),
+                    'processed' => (int) (($job['counts'] ?? [])['processed'] ?? 0),
+                ],
+                'last_processed' => $job['last_processed'] ?? null,
+                'groups_total' => (int) ($job['groups_total'] ?? 0),
+                'group_size' => $group_size,
+                'total_rows' => (int) $total_rows,
+                'valid_count' => (int) (($job['counts'] ?? [])['imported_ok'] ?? 0),
+                'needs_attention_count' => (int) (($job['counts'] ?? [])['needs_attention'] ?? 0),
+                'hard_invalid_count' => (int) (($job['counts'] ?? [])['hard_invalid'] ?? 0),
+                'errors' => $this->build_school_import_row_errors($row_results),
+                'target_rows_this_chunk' => 1,
+                'requested_offset' => $requested_offset >= 0 ? $requested_offset : $offset_before,
+                'applied_offset' => $offset_before,
+            ];
+            error_log('[CMN_IMPORT_JOB] job=' . $job_id . ' skip_current=1 offset=' . $offset_before . ' next_offset=' . $offset_after_skip . ' reason=' . $skip_reason);
+        } else {
+            error_log('[CMN_IMPORT_JOB] job=' . $job_id . ' start_offset=' . $offset_before . ' requested_offset=' . $requested_offset . ' limit=' . $limit . ' skip_current=0');
+            $chunk = $this->run_school_import_job_chunk($job, $limit, [
+                'offset' => $requested_offset,
+            ]);
+        }
+
         $this->save_school_import_job($job_id, $job);
 
         $duration_ms = (int) round((microtime(true) - $t0) * 1000);

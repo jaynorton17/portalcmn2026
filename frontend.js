@@ -1145,11 +1145,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var importJobId = schoolImportRunner.getAttribute('data-job-id') || '';
     var importNonce = schoolImportRunner.getAttribute('data-nonce') || '';
     var importLimit = parseInt(schoolImportRunner.getAttribute('data-limit') || '10', 10);
-    var importMaxRetries = parseInt(schoolImportRunner.getAttribute('data-max-retries') || '1', 10);
+    var importMaxRetries = Math.max(1, parseInt(schoolImportRunner.getAttribute('data-max-retries') || '3', 10) || 3);
     var importDone = schoolImportRunner.getAttribute('data-done') === '1';
     var importInFlight = false;
     var importStopped = false;
     var importRetryCount = 0;
+    var importCurrentOffset = 0;
     var statusEl = schoolImportRunner.querySelector('[data-school-import-status]');
     var summaryEl = schoolImportRunner.querySelector('[data-school-import-summary]');
     var lastEl = schoolImportRunner.querySelector('[data-school-import-last]');
@@ -1169,7 +1170,8 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     var numberOrZero = function (value) {
-      var parsed = parseInt(String(value || '0'), 10);
+      var raw = String(value || '0').replace(/[^0-9-]/g, '');
+      var parsed = parseInt(raw || '0', 10);
       return Number.isFinite(parsed) ? parsed : 0;
     };
 
@@ -1179,6 +1181,8 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       el.textContent = String(numberOrZero(value));
     };
+
+    importCurrentOffset = numberOrZero(processedEl ? processedEl.textContent : 0);
 
     var updateImportUi = function (payload) {
       var totals = payload && payload.totals ? payload.totals : {};
@@ -1248,6 +1252,69 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     };
 
+    var parseImportJsonResponse = function (response) {
+      return response.text().then(function (text) {
+        var payload;
+        try {
+          payload = JSON.parse(text);
+        } catch (_err) {
+          throw new Error('Import endpoint returned invalid JSON.');
+        }
+        if (!payload || !payload.success || !payload.data) {
+          throw new Error((payload && payload.data && payload.data.message) ? payload.data.message : 'Import request failed.');
+        }
+        return payload.data;
+      });
+    };
+
+    var requestImportChunk = function (options) {
+      var opts = options && typeof options === 'object' ? options : {};
+      var body = new FormData();
+      body.append('action', 'cmn_bulk_import_schools_run');
+      body.append('nonce', importNonce);
+      body.append('job_id', importJobId);
+      body.append('limit', String(Math.max(1, Math.min(20, importLimit || 10))));
+      body.append('offset', String(Math.max(0, importCurrentOffset)));
+      if (opts.skipCurrent) {
+        body.append('skip_current', '1');
+        body.append('skip_reason', String(opts.skipReason || 'Skipped after retries'));
+        body.append('limit', '1');
+      }
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      var timeoutId = 0;
+      if (controller) {
+        timeoutId = window.setTimeout(function () {
+          controller.abort();
+        }, 45000);
+      }
+      return fetch(importAjaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: body,
+        signal: controller ? controller.signal : undefined
+      }).then(parseImportJsonResponse).finally(function () {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+      });
+    };
+
+    var forceSkipCurrentRow = function (reasonText) {
+      return requestImportChunk({
+        skipCurrent: true,
+        skipReason: reasonText || ('Skipped row at offset ' + importCurrentOffset + ' after retries')
+      }).then(function (payload) {
+        var nextOffset = numberOrZero(payload.offset_next || payload.next_offset);
+        if (nextOffset > importCurrentOffset) {
+          importCurrentOffset = nextOffset;
+        } else {
+          importCurrentOffset += 1;
+        }
+        updateImportUi(payload);
+        return payload;
+      });
+    };
+
     var runImportChunk = function (delayMs) {
       if (importStopped || importDone || importInFlight || !importAjaxUrl || !importJobId || !importNonce) {
         return;
@@ -1257,40 +1324,55 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         importInFlight = true;
-        var body = new FormData();
-        body.append('action', 'cmn_bulk_import_schools_run');
-        body.append('nonce', importNonce);
-        body.append('job_id', importJobId);
-        body.append('limit', String(Math.max(1, Math.min(20, importLimit || 10))));
-        fetch(importAjaxUrl, {
-          method: 'POST',
-          credentials: 'same-origin',
-          body: body
-        }).then(function (response) {
-          return response.json();
-        }).then(function (payload) {
+        var previousOffset = importCurrentOffset;
+        requestImportChunk().then(function (payload) {
           importInFlight = false;
-          if (!payload || !payload.success || !payload.data) {
-            throw new Error((payload && payload.data && payload.data.message) ? payload.data.message : 'Import request failed.');
+          var nextOffset = numberOrZero(payload.offset_next || payload.next_offset);
+          if (nextOffset > importCurrentOffset) {
+            importCurrentOffset = nextOffset;
           }
           importRetryCount = 0;
-          updateImportUi(payload.data);
-          if (payload.data.done) {
+          updateImportUi(payload);
+          if (payload.done) {
             importDone = true;
+            return;
+          }
+          if (importCurrentOffset <= previousOffset && numberOrZero(payload.processed_this_chunk || payload.processed) <= 0) {
+            setImportStatus('No forward progress at row ' + (previousOffset + 1) + '. Skipping this row and continuing...', true);
+            forceSkipCurrentRow('No forward progress detected at row ' + (previousOffset + 1)).then(function (skipPayload) {
+              if (skipPayload && skipPayload.done) {
+                importDone = true;
+                return;
+              }
+              runImportChunk(140);
+            }).catch(function (skipError) {
+              importStopped = true;
+              setImportStatus('Import stopped: could not skip stuck row ' + (previousOffset + 1) + '. Error: ' + (skipError && skipError.message ? skipError.message : 'Unknown skip failure') + '.', true);
+            });
             return;
           }
           runImportChunk(120);
         }).catch(function (error) {
           importInFlight = false;
           importRetryCount += 1;
-          if (importRetryCount <= Math.max(0, importMaxRetries)) {
+          if (importRetryCount <= importMaxRetries) {
             var waitMs = Math.min(6000, 1200 * Math.pow(2, Math.max(0, importRetryCount - 1)));
-            setImportStatus('Retry ' + importRetryCount + '/' + Math.max(1, importMaxRetries) + ' after error: ' + (error && error.message ? error.message : 'Request failed') + '.', true);
+            setImportStatus('Retry ' + importRetryCount + '/' + importMaxRetries + ' for row ' + (importCurrentOffset + 1) + ' after error: ' + (error && error.message ? error.message : 'Request failed') + '.', true);
             runImportChunk(waitMs);
             return;
           }
-          importStopped = true;
-          setImportStatus('Import paused after retries. Refresh to continue safely. Last error: ' + (error && error.message ? error.message : 'Request failed') + '.', true);
+          importRetryCount = 0;
+          setImportStatus('Retries exhausted at row ' + (importCurrentOffset + 1) + '. Skipping this row and continuing...', true);
+          forceSkipCurrentRow('Skipped after repeated request failure at row ' + (importCurrentOffset + 1)).then(function (skipPayload) {
+            if (skipPayload && skipPayload.done) {
+              importDone = true;
+              return;
+            }
+            runImportChunk(140);
+          }).catch(function (skipError) {
+            importStopped = true;
+            setImportStatus('Import paused after retries. Could not skip row ' + (importCurrentOffset + 1) + '. Last error: ' + (skipError && skipError.message ? skipError.message : (error && error.message ? error.message : 'Request failed')) + '.', true);
+          });
         });
       }, Math.max(0, numberOrZero(delayMs)));
     };
