@@ -23612,8 +23612,9 @@ final class CMN_One_Plugin {
         $import_headers = $import_data['headers'] ?? [];
         $import_preview_rows = (array) ($import_data['preview_rows'] ?? []);
         $import_total_rows = max(0, (int) ($import_data['total_rows'] ?? 0));
-        $bulk_active = ($import_data || $import_job_data) ? ' is-active' : '';
-        $add_active = '';
+        $panel = isset($_GET['cmn_panel']) ? sanitize_key((string) $_GET['cmn_panel']) : '';
+        $bulk_active = ($import_data || $import_job_data || $panel === 'bulk') ? ' is-active' : '';
+        $add_active = $panel === 'add' ? ' is-active' : '';
 
         $school_list_post_statuses = $this->get_school_list_post_statuses();
         /*
@@ -23817,6 +23818,18 @@ final class CMN_One_Plugin {
         }
         $filter_label = $filter_count ? 'Filters (' . $filter_count . ')' : 'Filters';
         $base_url = add_query_arg(array_filter(['view' => $view_param, 'cmn_bucket' => $bucket ?: null]), $portal_url);
+        $panel_base_query = array_filter([
+            'view' => $view_param,
+            'cmn_status' => $status ?: null,
+            'cmn_stage' => $stage ?: null,
+            'cmn_manager' => $manager_id ?: null,
+            'cmn_location' => $location_filter ?: null,
+            'cmn_lead_group' => $lead_group_filter ?: null,
+            'q' => $search ?: null,
+            'cmn_bucket' => $bucket ?: null,
+        ]);
+        $add_panel_url = add_query_arg(array_merge($panel_base_query, ['cmn_panel' => 'add']), $portal_url);
+        $bulk_panel_url = add_query_arg(array_merge($panel_base_query, ['cmn_panel' => 'bulk']), $portal_url);
         $segment_base = array_filter([
             'view' => 'schools',
             'cmn_stage' => $stage ?: null,
@@ -23845,15 +23858,6 @@ final class CMN_One_Plugin {
             <div class="cmn-header-row">
                 <div>
                     <h2>Schools CRM</h2>
-                </div>
-                <div class="cmn-header-actions">
-                    <div class="cmn-action-menu" data-action-menu>
-                        <button class="cmn-btn-secondary cmn-btn-mini" type="button">Add School</button>
-                        <div class="cmn-action-dropdown">
-                            <button class="cmn-btn-ghost" type="button" data-action-target="add">Add New School</button>
-                            <button class="cmn-btn-ghost" type="button" data-action-target="bulk">Bulk Upload</button>
-                        </div>
-                    </div>
                 </div>
             </div>
             <div class="cmn-segmented" role="tablist" aria-label="Schools view">
@@ -24135,6 +24139,8 @@ final class CMN_One_Plugin {
                 <div class="cmn-toolbar-controls">
                     <button class="cmn-btn-secondary cmn-btn-mini" type="button" data-filter-toggle><?php echo esc_html($filter_label); ?></button>
                     <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo esc_url($base_url); ?>">Clear</a>
+                    <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo esc_url($add_panel_url); ?>">Add school</a>
+                    <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($bulk_panel_url); ?>">Bulk add schools</a>
                 </div>
             </div>
             <div class="cmn-filter-panel<?php echo $filter_count ? ' is-open' : ''; ?>" data-filter-panel>

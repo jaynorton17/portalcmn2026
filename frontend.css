@@ -7338,7 +7338,9 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 .cmn-toolbar-controls {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .cmn-filter-panel {
