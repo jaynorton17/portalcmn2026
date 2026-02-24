@@ -4813,6 +4813,136 @@ body.cmn-booking-feedback-lock {
   font-size: 22px;
 }
 
+.cmn-school-profile-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-profile-header-main {
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-school-profile-header-main p {
+  margin: 0;
+}
+
+.cmn-school-profile-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-profile-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+
+.cmn-school-profile-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cmn-muted);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cmn-school-profile-tab.is-active {
+  color: #fff;
+  border-color: rgba(224, 61, 61, 0.58);
+  background: rgba(208, 42, 42, 0.22);
+}
+
+.cmn-school-profile-issues-strip {
+  margin-bottom: 14px;
+}
+
+.cmn-school-profile-issues-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-profile-issues-strip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-school-profile-grid .cmn-school-tab-panel {
+  display: none;
+}
+
+.cmn-school-profile-grid[data-school-active-tab="overview"] .cmn-school-tab-panel--overview,
+.cmn-school-profile-grid[data-school-active-tab="contacts"] .cmn-school-tab-panel--contacts,
+.cmn-school-profile-grid[data-school-active-tab="activity"] .cmn-school-tab-panel--activity,
+.cmn-school-profile-grid[data-school-active-tab="bookings"] .cmn-school-tab-panel--bookings,
+.cmn-school-profile-grid[data-school-active-tab="commercial"] .cmn-school-tab-panel--commercial,
+.cmn-school-profile-grid[data-school-active-tab="marketing"] .cmn-school-tab-panel--marketing,
+.cmn-school-profile-grid[data-school-active-tab="documents"] .cmn-school-tab-panel--documents,
+.cmn-school-profile-grid[data-school-active-tab="settings"] .cmn-school-tab-panel--settings {
+  display: grid;
+}
+
+.cmn-school-tab-panel-hidden {
+  display: none !important;
+}
+
+.cmn-school-profile-summary-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-school-profile-quick-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-school-profile-grid .cmn-school-tab-panel--contacts select {
+  color: #f8fafc !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+@media (max-width: 900px) {
+  .cmn-school-profile-tabs {
+    gap: 6px;
+  }
+
+  .cmn-school-profile-tab {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+
+  .cmn-school-profile-header {
+    align-items: stretch;
+  }
+
+  .cmn-school-profile-status {
+    width: 100%;
+  }
+}
+
 .cmn-cover-filters {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;

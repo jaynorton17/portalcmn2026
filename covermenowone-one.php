@@ -39776,6 +39776,50 @@ final class CMN_One_Plugin {
             $feedback_summary = $this->get_feedback_summary_for_entity('school', (int) $school_id);
             $convert_msg = isset($_GET['cmn_convert_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_convert_msg'])) : '';
             $request_msg = isset($_GET['cmn_school_request_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_request_msg'])) : '';
+            $allowed_profile_tabs = ['overview', 'contacts', 'activity', 'bookings', 'commercial', 'marketing', 'documents', 'settings'];
+            $active_profile_tab = isset($_GET['cmn_school_tab']) ? sanitize_key((string) $_GET['cmn_school_tab']) : 'overview';
+            if (!in_array($active_profile_tab, $allowed_profile_tabs, true)) {
+                $active_profile_tab = 'overview';
+            }
+            $tab_base_query = array_filter([
+                'view' => 'schools',
+                'school_id' => $school_code ?: null,
+                'pid' => $school_id,
+                'cmn_status' => isset($_GET['cmn_status']) ? sanitize_key((string) $_GET['cmn_status']) : '',
+                'cmn_bucket' => isset($_GET['cmn_bucket']) ? sanitize_key((string) $_GET['cmn_bucket']) : '',
+                'cmn_stage' => isset($_GET['cmn_stage']) ? sanitize_key((string) $_GET['cmn_stage']) : '',
+                'cmn_manager' => isset($_GET['cmn_manager']) ? (int) $_GET['cmn_manager'] : 0,
+                'cmn_location' => isset($_GET['cmn_location']) ? sanitize_text_field((string) $_GET['cmn_location']) : '',
+                'cmn_lead_group' => isset($_GET['cmn_lead_group']) ? $this->sanitize_lead_group_slug((string) $_GET['cmn_lead_group']) : '',
+                'cmn_last_activity' => isset($_GET['cmn_last_activity']) ? sanitize_key((string) $_GET['cmn_last_activity']) : '',
+                'q' => isset($_GET['q']) ? sanitize_text_field((string) $_GET['q']) : '',
+            ]);
+            $build_tab_url = function ($tab_key) use ($portal_url, $tab_base_query) {
+                return add_query_arg(array_merge($tab_base_query, ['cmn_school_tab' => $tab_key]), $portal_url);
+            };
+            $profile_issues = [];
+            if ($missing_profile_fields) {
+                $profile_issues[] = 'Missing fields: ' . implode(', ', array_slice(array_values($missing_profile_fields), 0, 3)) . (count($missing_profile_fields) > 3 ? ' +' . (count($missing_profile_fields) - 3) . ' more' : '');
+            }
+            if ($school_postcode === '') {
+                $profile_issues[] = 'Postcode missing';
+            }
+            if (!$school_coords) {
+                $profile_issues[] = 'Location not verified';
+            }
+            if (!$domain_valid) {
+                $profile_issues[] = 'School domain missing';
+            }
+            if ($critical_meta_missing && !$profile_issues) {
+                $profile_issues[] = 'Profile data incomplete';
+            }
+            $booking_counts = $this->get_school_profile_booking_counts($school_id);
+            $recent_bookings = $this->get_school_profile_recent_bookings($school_id, 8);
+            $activity_quick_counts = [
+                'open_tasks' => (int) count($open_tasks),
+                'timeline' => (int) count($activities),
+                'contacts' => (int) count($contacts),
+            ];
 
             error_log('[CMN_SCHOOL_VIEW] ' . wp_json_encode([
                 'stage' => 'panels_start',
@@ -39795,57 +39839,48 @@ final class CMN_One_Plugin {
                 return false;
             };
         ?>
-        <header class="cmn-school-header">
-            <h2><?php echo esc_html($school->post_title); ?></h2>
-            <p>School profile</p>
+        <header class="cmn-school-header cmn-school-profile-header">
+            <div class="cmn-school-profile-header-main">
+                <h2><?php echo esc_html($school->post_title); ?></h2>
+                <p>School profile</p>
+            </div>
+            <div class="cmn-school-profile-status">
+                <span class="cmn-status-chip <?php echo esc_attr($request_status_class); ?>"><?php echo esc_html($request_status_label); ?></span>
+                <span class="cmn-pill cmn-pill--status"><?php echo esc_html(ucfirst($status_display)); ?></span>
+            </div>
         </header>
         <?php if ($watchdog('after_header')) { return ob_get_clean(); } ?>
-        <?php if ($missing_profile_fields) : ?>
-            <?php if ($watchdog('panel_incomplete')) { return ob_get_clean(); } ?>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_start incomplete school_id=' . (int) $school_id); ?>
-            <section class="cmn-panel-card">
-                <h3>School profile incomplete</h3>
-                <p>Profile incomplete: <?php echo esc_html(implode(', ', $missing_profile_fields)); ?>.</p>
-                <a class="cmn-ghost cmn-btn-mini" href="#cmn-school-details">Fix now</a>
+        <nav class="cmn-school-profile-tabs" aria-label="School profile sections">
+            <?php
+            $profile_tabs = [
+                'overview' => 'Overview',
+                'contacts' => 'Contacts',
+                'activity' => 'Activity',
+                'bookings' => 'Bookings',
+                'commercial' => 'Commercial',
+                'marketing' => 'Marketing',
+                'documents' => 'Documents',
+                'settings' => 'Settings',
+            ];
+            foreach ($profile_tabs as $tab_key => $tab_label) :
+                ?>
+                <a class="cmn-school-profile-tab<?php echo $active_profile_tab === $tab_key ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_tab_url($tab_key)); ?>">
+                    <?php echo esc_html($tab_label); ?>
+                </a>
+            <?php endforeach; ?>
+        </nav>
+        <?php if ($profile_issues) : ?>
+            <section class="cmn-panel-card cmn-school-profile-issues-strip">
+                <div class="cmn-school-profile-issues-strip-head">
+                    <strong>Needs attention</strong>
+                    <a class="cmn-ghost cmn-btn-mini" href="#cmn-school-details">Fix profile</a>
+                </div>
+                <div class="cmn-school-profile-issues-strip-list">
+                    <?php foreach ($profile_issues as $issue_text) : ?>
+                        <span class="cmn-pill cmn-pill--pending"><?php echo esc_html($issue_text); ?></span>
+                    <?php endforeach; ?>
+                </div>
             </section>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_end incomplete school_id=' . (int) $school_id); ?>
-        <?php endif; ?>
-        <?php if ($school_postcode === '') : ?>
-            <?php if ($watchdog('panel_missing_postcode')) { return ob_get_clean(); } ?>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_start missing_postcode school_id=' . (int) $school_id); ?>
-            <section class="cmn-panel-card">
-                <h3>Missing postcode</h3>
-                <p>Add a postcode to enable accurate location matching.</p>
-            </section>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_end missing_postcode school_id=' . (int) $school_id); ?>
-        <?php endif; ?>
-        <?php if (!$school_coords) : ?>
-            <?php if ($watchdog('panel_missing_coords')) { return ob_get_clean(); } ?>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_start missing_coords school_id=' . (int) $school_id); ?>
-            <section class="cmn-panel-card">
-                <h3>Location not verified yet</h3>
-                <p>Geo coordinates are missing. Once a postcode is set, we will verify location automatically.</p>
-            </section>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_end missing_coords school_id=' . (int) $school_id); ?>
-        <?php endif; ?>
-        <?php if (!$domain_valid) : ?>
-            <?php if ($watchdog('panel_invalid_domain')) { return ob_get_clean(); } ?>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_start invalid_domain school_id=' . (int) $school_id); ?>
-            <section class="cmn-panel-card">
-                <h3>School domain missing</h3>
-                <p>Add a valid school domain to unlock contacts and activity sections.</p>
-            </section>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_end invalid_domain school_id=' . (int) $school_id); ?>
-        <?php endif; ?>
-        <?php if ($critical_meta_missing) : ?>
-            <?php if ($watchdog('panel_critical_meta')) { return ob_get_clean(); } ?>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_start critical_meta school_id=' . (int) $school_id); ?>
-            <section class="cmn-panel-card">
-                <h3>School profile incomplete</h3>
-                <p>Some sections are hidden until Domain + Postcode are saved.</p>
-                <a class="cmn-ghost cmn-btn-mini" href="#cmn-school-details">Complete profile</a>
-            </section>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_end critical_meta school_id=' . (int) $school_id); ?>
         <?php endif; ?>
         <?php if ($convert_msg) : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($convert_msg); ?></strong></div>
@@ -39853,7 +39888,7 @@ final class CMN_One_Plugin {
         <?php if ($request_msg) : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($request_msg); ?></strong></div>
         <?php endif; ?>
-        <section class="cmn-panel-card cmn-panel-card-wide">
+        <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview<?php echo $active_profile_tab === 'overview' ? '' : ' cmn-school-tab-panel-hidden'; ?>">
             <?php if ($watchdog('panel_timeline')) { return ob_get_clean(); } ?>
             <?php error_log('[CMN_SCHOOL_VIEW] panel_start timeline school_id=' . (int) $school_id); ?>
             <h3>Application Timeline</h3>
@@ -39888,8 +39923,8 @@ final class CMN_One_Plugin {
             <?php error_log('[CMN_SCHOOL_VIEW] panel_end timeline school_id=' . (int) $school_id); ?>
         </section>
         <?php if ($watchdog('before_profile_grid')) { return ob_get_clean(); } ?>
-        <div class="cmn-profile-grid">
-            <div class="cmn-panel-card" id="cmn-school-details">
+        <div class="cmn-profile-grid cmn-school-profile-grid" data-school-active-tab="<?php echo esc_attr($active_profile_tab); ?>">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-details">
                 <?php if ($watchdog('panel_details')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start details school_id=' . (int) $school_id); ?>
                 <h3>Details</h3>
@@ -39921,7 +39956,7 @@ final class CMN_One_Plugin {
                 <?php endif; ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end details school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
                 <?php if ($watchdog('panel_review')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start review school_id=' . (int) $school_id); ?>
                 <h3>Application Review</h3>
@@ -39964,7 +39999,7 @@ final class CMN_One_Plugin {
                 </form>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end review school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
                 <?php if ($watchdog('panel_feedback_summary')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start feedback_summary school_id=' . (int) $school_id); ?>
                 <h3>Feedback Summary</h3>
@@ -39976,7 +40011,7 @@ final class CMN_One_Plugin {
                 </div>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end feedback_summary school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--contacts">
                 <?php if ($watchdog('panel_contacts')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start contacts school_id=' . (int) $school_id); ?>
                 <h3>Contacts</h3>
@@ -39991,7 +40026,7 @@ final class CMN_One_Plugin {
                 </div>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end contacts school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--contacts">
                 <?php if ($watchdog('panel_assigned_contacts')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start assigned_contacts school_id=' . (int) $school_id); ?>
                 <h3>Assigned Contacts</h3>
@@ -40041,7 +40076,7 @@ final class CMN_One_Plugin {
                 <?php endif; ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end assigned_contacts school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card cmn-panel-card-wide">
+            <div class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview">
                 <?php if ($watchdog('panel_address')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start address school_id=' . (int) $school_id); ?>
                 <h3>Address</h3>
@@ -40056,7 +40091,20 @@ final class CMN_One_Plugin {
                 </div>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end address school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
+                <h3>Activity Quick Actions</h3>
+                <div class="cmn-school-profile-summary-strip">
+                    <span class="cmn-pill">Open tasks: <?php echo esc_html((string) $activity_quick_counts['open_tasks']); ?></span>
+                    <span class="cmn-pill">Timeline items: <?php echo esc_html((string) $activity_quick_counts['timeline']); ?></span>
+                    <span class="cmn-pill">Assigned contacts: <?php echo esc_html((string) $activity_quick_counts['contacts']); ?></span>
+                </div>
+                <div class="cmn-school-profile-quick-actions">
+                    <a class="cmn-ghost cmn-btn-mini" href="#cmn-school-add-activity">Add activity</a>
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_tab_url('contacts')); ?>">Open contacts tab</a>
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_tab_url('overview')); ?>">Back to overview</a>
+                </div>
+            </div>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
                 <?php if ($watchdog('panel_open_tasks')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start open_tasks school_id=' . (int) $school_id); ?>
                 <h3>Open Tasks</h3>
@@ -40091,7 +40139,7 @@ final class CMN_One_Plugin {
                 <?php endif; ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end open_tasks school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity" id="cmn-school-add-activity">
                 <?php if ($watchdog('panel_add_activity')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start add_activity school_id=' . (int) $school_id); ?>
                 <h3>Add Activity</h3>
@@ -40125,7 +40173,7 @@ final class CMN_One_Plugin {
                 <p class="cmn-muted">Tip: set Type = Task and add a date to surface it on the main dashboard.</p>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end add_activity school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
                 <?php if ($watchdog('panel_activity_timeline')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start activity_timeline school_id=' . (int) $school_id); ?>
                 <h3>Activity Timeline</h3>
@@ -40163,6 +40211,73 @@ final class CMN_One_Plugin {
                 <?php endif; ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end activity_timeline school_id=' . (int) $school_id); ?>
             </div>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--bookings">
+                <h3>Bookings Summary</h3>
+                <div class="cmn-school-profile-summary-strip">
+                    <span class="cmn-pill">Total: <?php echo esc_html((string) ((int) ($booking_counts['total'] ?? 0))); ?></span>
+                    <span class="cmn-pill">Requested: <?php echo esc_html((string) ((int) ($booking_counts['requested'] ?? 0))); ?></span>
+                    <span class="cmn-pill">Accepted: <?php echo esc_html((string) ((int) ($booking_counts['accepted'] ?? 0))); ?></span>
+                    <span class="cmn-pill">Completed: <?php echo esc_html((string) ((int) ($booking_counts['completed'] ?? 0))); ?></span>
+                </div>
+                <?php if ($recent_bookings) : ?>
+                    <ul class="cmn-activity-list">
+                        <?php foreach ($recent_bookings as $booking_row) : ?>
+                            <li>
+                                <div>
+                                    <strong><?php echo esc_html((string) ($booking_row['title'] ?? 'Booking')); ?></strong>
+                                    <?php if (!empty($booking_row['candidate'])) : ?>
+                                        <div class="cmn-muted"><?php echo esc_html((string) $booking_row['candidate']); ?></div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="cmn-muted">
+                                    <span class="cmn-pill cmn-pill--status"><?php echo esc_html((string) ($booking_row['status_label'] ?? '-')); ?></span>
+                                    <?php if (!empty($booking_row['date_label'])) : ?>
+                                        <span><?php echo esc_html((string) $booking_row['date_label']); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php else : ?>
+                    <p class="cmn-muted">No bookings recorded yet.</p>
+                <?php endif; ?>
+            </div>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--commercial">
+                <h3>Commercial</h3>
+                <div class="cmn-meta-grid">
+                    <div><strong>Pipeline stage:</strong> <?php echo esc_html($display($meta('cmn_pipeline_stage'))); ?></div>
+                    <div><strong>Supply frequency:</strong> <?php echo esc_html($display($meta('cmn_supply_frequency'))); ?></div>
+                    <div><strong>Use agencies:</strong> <?php echo esc_html($display($meta('cmn_use_agencies'))); ?></div>
+                    <div><strong>Agency count:</strong> <?php echo esc_html($display($meta('cmn_agency_count'))); ?></div>
+                </div>
+            </div>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--marketing">
+                <h3>Marketing</h3>
+                <div class="cmn-meta-grid">
+                    <div><strong>Website:</strong> <?php echo esc_html($display($meta('cmn_website'))); ?></div>
+                    <div><strong>Email greeting name:</strong> <?php echo esc_html($display($meta('cmn_email_name'))); ?></div>
+                    <div><strong>Cover manager:</strong> <?php echo esc_html($display($meta('cmn_cover_manager'))); ?></div>
+                    <div><strong>Cover manager email:</strong> <?php echo esc_html($display($meta('cmn_cover_manager_email'))); ?></div>
+                </div>
+            </div>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--documents">
+                <h3>Documents</h3>
+                <div class="cmn-meta-grid">
+                    <div><strong>Registration reference:</strong> <?php echo esc_html($display($meta('cmn_registration_ref'))); ?></div>
+                    <div><strong>Requested at:</strong> <?php echo esc_html($display($meta('cmn_registration_requested_at'))); ?></div>
+                    <div><strong>Latest note:</strong> <?php echo esc_html($display($request_note)); ?></div>
+                    <div><strong>Latest reply:</strong> <?php echo esc_html($display($latest_school_reply)); ?></div>
+                </div>
+            </div>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--settings">
+                <h3>Settings</h3>
+                <div class="cmn-meta-grid">
+                    <div><strong>Account manager:</strong> <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></div>
+                    <div><strong>Request status:</strong> <?php echo esc_html($request_status_label); ?></div>
+                    <div><strong>Email greeting:</strong> <?php echo esc_html($display($meta('cmn_email_name'))); ?></div>
+                    <div><strong>Website:</strong> <?php echo esc_html($display($meta('cmn_website'))); ?></div>
+                </div>
+            </div>
         </div>
         <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'schools'], $portal_url)); ?>">Back to Schools</a>
         <?php
@@ -40191,6 +40306,99 @@ final class CMN_One_Plugin {
             ]));
             return '<div class="cmn-panel-card"><h3>School profile could not be loaded</h3><p>Please check the profile data and try again.</p></div>';
         }
+    }
+
+    private function get_school_profile_recent_bookings($school_id, $limit = 8) {
+        $school_id = (int) $school_id;
+        $limit = max(1, min(20, (int) $limit));
+        if ($school_id < 1) {
+            return [];
+        }
+        $query = new WP_Query([
+            'post_type' => 'cmn_booking',
+            'post_status' => ['publish', 'private', 'pending', 'draft', 'future'],
+            'posts_per_page' => $limit,
+            'orderby' => 'date',
+            'order' => 'DESC',
+            'meta_query' => [
+                [
+                    'key' => 'cmn_school_id',
+                    'value' => (string) $school_id,
+                ],
+            ],
+            'no_found_rows' => true,
+        ]);
+        $rows = [];
+        while ($query->have_posts()) {
+            $query->the_post();
+            $booking_id = (int) get_the_ID();
+            $status_key = sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
+            $status_label = $status_key !== '' ? ucwords(str_replace('_', ' ', $status_key)) : 'Unknown';
+            $candidate_name = '';
+            $candidate_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+            if ($candidate_id > 0) {
+                $candidate_name = get_the_title($candidate_id);
+            }
+            $date_raw = trim((string) get_post_meta($booking_id, 'cmn_date', true));
+            $date_label = $date_raw !== '' && strtotime($date_raw) ? date_i18n('M j, Y', strtotime($date_raw)) : '';
+            $rows[] = [
+                'id' => $booking_id,
+                'title' => get_the_title(),
+                'status_key' => $status_key,
+                'status_label' => $status_label,
+                'candidate' => $candidate_name,
+                'date_label' => $date_label,
+            ];
+        }
+        wp_reset_postdata();
+        return $rows;
+    }
+
+    private function get_school_profile_booking_counts($school_id) {
+        $school_id = (int) $school_id;
+        $counts = [
+            'total' => 0,
+            'requested' => 0,
+            'accepted' => 0,
+            'completed' => 0,
+        ];
+        if ($school_id < 1) {
+            return $counts;
+        }
+        global $wpdb;
+        $posts_table = $wpdb->posts;
+        $meta_table = $wpdb->postmeta;
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT LOWER(TRIM(COALESCE(status_meta.meta_value, ''))) AS booking_status, COUNT(DISTINCT p.ID) AS total
+                 FROM {$posts_table} p
+                 INNER JOIN {$meta_table} school_meta
+                         ON school_meta.post_id = p.ID
+                        AND school_meta.meta_key = 'cmn_school_id'
+                        AND school_meta.meta_value = %s
+                 LEFT JOIN {$meta_table} status_meta
+                        ON status_meta.post_id = p.ID
+                       AND status_meta.meta_key = 'cmn_status'
+                 WHERE p.post_type = 'cmn_booking'
+                   AND p.post_status IN ('publish', 'private', 'pending', 'draft', 'future')
+                 GROUP BY booking_status",
+                (string) $school_id
+            ),
+            ARRAY_A
+        );
+        foreach ((array) $rows as $row) {
+            $status_key = sanitize_key((string) ($row['booking_status'] ?? ''));
+            $total = max(0, (int) ($row['total'] ?? 0));
+            $counts['total'] += $total;
+            if (in_array($status_key, ['requested', 'candidate_invited', 'pending'], true)) {
+                $counts['requested'] += $total;
+            } elseif (in_array($status_key, ['accepted', 'candidate_accepted'], true)) {
+                $counts['accepted'] += $total;
+            } elseif (in_array($status_key, ['completed', 'complete', 'finished'], true)) {
+                $counts['completed'] += $total;
+            }
+        }
+        return $counts;
     }
 
     private function render_frontend_candidate_profile($candidate_id) {
