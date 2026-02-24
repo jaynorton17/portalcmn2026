@@ -628,6 +628,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_nopriv_cmn_register_candidate', [$this, 'handle_register_candidate']);
         add_action('admin_post_cmn_register_candidate', [$this, 'handle_register_candidate']);
         add_action('admin_post_cmn_import_schools', [$this, 'handle_import_schools_portal']);
+        add_action('admin_post_cmn_school_import_errors_csv', [$this, 'handle_school_import_errors_csv']);
         add_action('admin_post_cmn_bulk_schools', [$this, 'handle_bulk_schools']);
         add_action('admin_post_cmn_add_school', [$this, 'handle_add_school_portal']);
         add_action('admin_post_cmn_add_staff', [$this, 'handle_add_staff_portal']);
@@ -671,6 +672,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_mark_unavailable_morning', [$this, 'handle_mark_unavailable_morning']);
         add_action('wp_ajax_cmn_update_calendar_day', [$this, 'handle_update_calendar_day']);
         add_action('wp_ajax_cmn_get_calendar_availability', [$this, 'handle_get_calendar_availability']);
+        add_action('wp_ajax_cmn_bulk_import_schools_run', [$this, 'handle_bulk_import_schools_run']);
         add_action('wp_ajax_cmn_bulk_update_calendar', [$this, 'handle_bulk_update_calendar']);
         add_action('wp_ajax_cmn_clear_calendar', [$this, 'handle_clear_calendar']);
         add_action('wp_ajax_cmn_dismiss_candidate_tour', [$this, 'handle_dismiss_candidate_tour']);
@@ -7909,6 +7911,27 @@ final class CMN_One_Plugin {
             'fields' => 'ids',
             'no_found_rows' => false,
             'meta_query' => [$lead_meta_query],
+        ]);
+        return (int) $query->found_posts;
+    }
+
+    private function count_school_status_for_navigation($status) {
+        $status = sanitize_key((string) $status);
+        if ($status === '') {
+            return 0;
+        }
+        $query = new WP_Query([
+            'post_type' => 'cmn_school',
+            'post_status' => $this->get_school_list_post_statuses(),
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'no_found_rows' => false,
+            'meta_query' => [
+                [
+                    'key' => 'cmn_status',
+                    'value' => $status,
+                ],
+            ],
         ]);
         return (int) $query->found_posts;
     }
@@ -23342,6 +23365,7 @@ final class CMN_One_Plugin {
         $stage = isset($_GET['cmn_stage']) ? sanitize_text_field($_GET['cmn_stage']) : '';
         $manager_id = isset($_GET['cmn_manager']) ? intval($_GET['cmn_manager']) : 0;
         $location_filter = isset($_GET['cmn_location']) ? sanitize_text_field($_GET['cmn_location']) : '';
+        $lead_group_filter = isset($_GET['cmn_lead_group']) ? $this->sanitize_lead_group_slug((string) $_GET['cmn_lead_group']) : '';
         if ($status === '') {
             if ($view === 'clients') {
                 $status = 'client';
@@ -23368,8 +23392,16 @@ final class CMN_One_Plugin {
             $import_data = null;
             $import_token = '';
         }
+        $import_job_id = isset($_GET['cmn_import_job']) ? sanitize_key((string) $_GET['cmn_import_job']) : '';
+        $import_job_data = $import_job_id !== '' ? $this->get_school_import_job($import_job_id) : null;
+        if ($import_job_data && (int) ($import_job_data['user_id'] ?? 0) !== get_current_user_id()) {
+            $import_job_data = null;
+            $import_job_id = '';
+        }
         $import_headers = $import_data['headers'] ?? [];
-        $bulk_active = $import_data ? ' is-active' : '';
+        $import_preview_rows = (array) ($import_data['preview_rows'] ?? []);
+        $import_total_rows = max(0, (int) ($import_data['total_rows'] ?? 0));
+        $bulk_active = ($import_data || $import_job_data) ? ' is-active' : '';
         $add_active = '';
 
         $school_list_post_statuses = $this->get_school_list_post_statuses();
@@ -23455,6 +23487,13 @@ final class CMN_One_Plugin {
             }
             $meta_query[] = $manager_query;
         }
+        if ($lead_group_filter !== '') {
+            $meta_query[] = [
+                'key' => 'cmn_lead_groups_csv',
+                'value' => '|' . $lead_group_filter . '|',
+                'compare' => 'LIKE',
+            ];
+        }
         if ($meta_query) {
             $args['meta_query'] = $meta_query;
         }
@@ -23510,12 +23549,14 @@ final class CMN_One_Plugin {
             'cmn_stage' => $stage ?: null,
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
+            'cmn_lead_group' => $lead_group_filter ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
         ]), $portal_url);
         $manager_users = $this->get_account_manager_users();
+        $visible_lead_groups = $this->get_visible_lead_groups_for_user((int) $current_user_id);
         $active_nav = 'all_schools';
-        if ($status === 'lead' || $bucket === 'sales' || $view === 'leads') {
+        if ($status === 'lead' || $status === 'needs_attention' || $bucket === 'sales' || $view === 'leads') {
             $active_nav = 'pipeline_leads';
         }
         $filter_count = 0;
@@ -23528,6 +23569,9 @@ final class CMN_One_Plugin {
         if ($location_filter !== '') {
             $filter_count++;
         }
+        if ($lead_group_filter !== '') {
+            $filter_count++;
+        }
         $filter_label = $filter_count ? 'Filters (' . $filter_count . ')' : 'Filters';
         $base_url = add_query_arg(array_filter(['view' => $view_param, 'cmn_bucket' => $bucket ?: null]), $portal_url);
         $segment_base = array_filter([
@@ -23535,15 +23579,21 @@ final class CMN_One_Plugin {
             'cmn_stage' => $stage ?: null,
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
+            'cmn_lead_group' => $lead_group_filter ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
         ]);
         $segment_leads_url = add_query_arg(array_merge($segment_base, ['cmn_status' => 'lead']), $portal_url);
+        $segment_needs_attention_url = add_query_arg(array_merge($segment_base, ['cmn_status' => 'needs_attention']), $portal_url);
         $segment_clients_url = add_query_arg(array_merge($segment_base, ['cmn_status' => 'client']), $portal_url);
         $segment_all_url = add_query_arg(array_merge($segment_base, ['cmn_status' => 'all']), $portal_url);
         $segment_leads_label = sprintf(
             'Leads (%s)',
             number_format_i18n(max(0, (int) $this->count_school_leads_for_navigation(true)))
+        );
+        $segment_needs_attention_label = sprintf(
+            'Needs Attention (%s)',
+            number_format_i18n(max(0, (int) $this->count_school_status_for_navigation('needs_attention')))
         );
 
         ob_start();
@@ -23565,13 +23615,64 @@ final class CMN_One_Plugin {
             </div>
             <div class="cmn-segmented" role="tablist" aria-label="Schools view">
                 <a class="cmn-segment<?php echo $status === 'lead' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_leads_url); ?>"><?php echo esc_html($segment_leads_label); ?></a>
+                <a class="cmn-segment<?php echo $status === 'needs_attention' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_needs_attention_url); ?>"><?php echo esc_html($segment_needs_attention_label); ?></a>
                 <a class="cmn-segment<?php echo $status === 'client' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_clients_url); ?>">Clients</a>
-                <a class="cmn-segment<?php echo ($status !== 'lead' && $status !== 'client') ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_all_url); ?>">All</a>
+                <a class="cmn-segment<?php echo ($status !== 'lead' && $status !== 'needs_attention' && $status !== 'client') ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_all_url); ?>">All</a>
             </div>
         </header>
         <?php if ($import_message) : ?>
             <div class="cmn-panel-card">
                 <strong><?php echo esc_html($import_note ?: 'Import complete.'); ?></strong>
+            </div>
+        <?php endif; ?>
+        <?php if ($import_job_data) :
+            $job_counts = (array) ($import_job_data['counts'] ?? []);
+            $job_total_rows = (int) ($import_job_data['total_rows'] ?? 0);
+            $job_processed = (int) ($job_counts['processed'] ?? 0);
+            $job_done = !empty($import_job_data['done']);
+            $job_progress_pct = $job_total_rows > 0 ? (int) round(($job_processed / $job_total_rows) * 100) : 100;
+            $job_errors_url = add_query_arg([
+                'action' => 'cmn_school_import_errors_csv',
+                'job_id' => sanitize_key((string) ($import_job_data['job_id'] ?? '')),
+                'cmn_nonce' => wp_create_nonce('cmn_school_import_errors_csv'),
+            ], admin_url('admin-post.php'));
+            ?>
+            <div
+                class="cmn-panel-card cmn-school-import-job<?php echo $job_done ? ' is-done' : ''; ?>"
+                data-school-import-runner
+                data-job-id="<?php echo esc_attr(sanitize_key((string) ($import_job_data['job_id'] ?? ''))); ?>"
+                data-nonce="<?php echo esc_attr(wp_create_nonce('cmn_bulk_import_schools_run')); ?>"
+                data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                data-limit="10"
+                data-max-retries="1"
+                data-done="<?php echo $job_done ? '1' : '0'; ?>"
+            >
+                <h3>Bulk Upload Progress</h3>
+                <p class="cmn-muted" data-school-import-status>
+                    <?php echo $job_done ? 'Import completed.' : 'Starting import...'; ?>
+                </p>
+                <div class="cmn-school-import-progress-track" aria-hidden="true">
+                    <span data-school-import-progress-fill style="width: <?php echo esc_attr((string) max(0, min(100, $job_progress_pct))); ?>%;"></span>
+                </div>
+                <div class="cmn-school-import-summary" data-school-import-summary>
+                    <span><strong data-school-import-processed><?php echo esc_html(number_format_i18n($job_processed)); ?></strong> / <span data-school-import-total><?php echo esc_html(number_format_i18n($job_total_rows)); ?></span> processed</span>
+                    <span>Imported OK: <strong data-school-import-ok><?php echo esc_html(number_format_i18n((int) ($job_counts['imported_ok'] ?? 0))); ?></strong></span>
+                    <span>Needs attention: <strong data-school-import-needs><?php echo esc_html(number_format_i18n((int) ($job_counts['needs_attention'] ?? 0))); ?></strong></span>
+                    <span>Hard invalid: <strong data-school-import-hard><?php echo esc_html(number_format_i18n((int) ($job_counts['hard_invalid'] ?? 0))); ?></strong></span>
+                </div>
+                <div class="cmn-school-import-last" data-school-import-last>
+                    <?php
+                    $job_last = (array) ($import_job_data['last_processed'] ?? []);
+                    if (!empty($job_last['row_index'])) {
+                        echo 'Last processed row ' . esc_html((string) $job_last['row_index']) . ': ' . esc_html((string) ($job_last['school_name'] ?? ''));
+                    }
+                    ?>
+                </div>
+                <div class="cmn-school-import-actions">
+                    <a class="cmn-ghost" href="<?php echo esc_url($segment_leads_url); ?>">View imported schools</a>
+                    <a class="cmn-ghost" href="<?php echo esc_url($segment_needs_attention_url); ?>">View needs attention schools</a>
+                    <a class="cmn-ghost" href="<?php echo esc_url($job_errors_url); ?>">Download errors.csv</a>
+                </div>
             </div>
         <?php endif; ?>
         <div class="cmn-action-panels">
@@ -23647,19 +23748,22 @@ final class CMN_One_Plugin {
                         <input type="hidden" name="action" value="cmn_import_schools">
                         <input type="hidden" name="cmn_import_step" value="map">
                         <input type="hidden" name="cmn_import_token" value="<?php echo esc_attr($import_token); ?>">
-                        <p class="cmn-muted">Map your CSV columns to each required field. All imports are saved as leads.</p>
+                        <p class="cmn-muted">Map your spreadsheet columns. Only School Name is required; rows with incomplete data are still imported as Needs Attention.</p>
+                        <?php if ($import_total_rows > 0) : ?>
+                            <p class="cmn-muted">Rows detected: <?php echo esc_html(number_format_i18n($import_total_rows)); ?>. Import runs in groups of 10.</p>
+                        <?php endif; ?>
                         <div class="cmn-form-grid">
                             <?php
                             $required_fields = [
                                 'cmn_school_name' => 'School Name *',
-                                'cmn_location' => 'Location *',
-                                'cmn_phone' => 'Contact Number *',
-                                'cmn_email' => 'School Email *',
-                                'cmn_cover_manager' => 'Cover Manager Name *',
-                                'cmn_cover_manager_email' => 'Cover Manager Email *',
-                                'cmn_email_name' => 'Email Name *',
                             ];
                             $optional_fields = [
+                                'cmn_location' => 'Location',
+                                'cmn_phone' => 'Contact Number',
+                                'cmn_email' => 'School Email',
+                                'cmn_cover_manager' => 'Cover Manager Name',
+                                'cmn_cover_manager_email' => 'Cover Manager Email',
+                                'cmn_email_name' => 'Email Name',
                                 'cmn_account_manager' => 'Account Manager',
                                 'cmn_contact_name' => 'Contact Name',
                                 'cmn_contact_email' => 'Contact Email',
@@ -23671,6 +23775,7 @@ final class CMN_One_Plugin {
                                 'cmn_school_id' => 'School ID',
                                 'cmn_status' => 'Status',
                                 'cmn_pipeline_stage' => 'Pipeline Stage',
+                                'cmn_postcode' => 'Postcode',
                             ];
                             $options = [];
                             foreach ($import_headers as $idx => $label) {
@@ -23700,8 +23805,33 @@ final class CMN_One_Plugin {
                             }
                             ?>
                         </div>
+                        <?php if ($import_preview_rows) : ?>
+                            <div class="cmn-import-preview-wrap">
+                                <h4>Preview (first 10 rows)</h4>
+                                <div class="cmn-table-scroll">
+                                    <table class="cmn-approval-table cmn-import-preview-table">
+                                        <thead>
+                                        <tr>
+                                            <?php foreach ($import_headers as $header_label) : ?>
+                                                <th><?php echo esc_html((string) $header_label); ?></th>
+                                            <?php endforeach; ?>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        <?php foreach ($import_preview_rows as $preview_row) : ?>
+                                            <tr>
+                                                <?php foreach ($import_headers as $idx => $_header_label) : ?>
+                                                    <td><?php echo esc_html(isset($preview_row[$idx]) ? trim((string) $preview_row[$idx]) : ''); ?></td>
+                                                <?php endforeach; ?>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                         <div class="cmn-form-actions">
-                            <button class="cmn-ghost" type="submit">Run Import</button>
+                            <button class="cmn-ghost" type="submit">Start Import</button>
                             <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'schools'], $portal_url)); ?>">Cancel</a>
                         </div>
                     </form>
@@ -23755,6 +23885,16 @@ final class CMN_One_Plugin {
                     <label>Location
                         <input type="text" name="cmn_location" value="<?php echo esc_attr($location_filter); ?>" placeholder="e.g. London">
                     </label>
+                    <label>Lead Group
+                        <select name="cmn_lead_group">
+                            <option value="">All Groups</option>
+                            <?php foreach ($visible_lead_groups as $group_slug => $group_entry) : ?>
+                                <option value="<?php echo esc_attr((string) $group_slug); ?>"<?php echo $lead_group_filter === (string) $group_slug ? ' selected' : ''; ?>>
+                                    <?php echo esc_html((string) ($group_entry['name'] ?? $group_slug)); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
                 </div>
                 <div class="cmn-filter-actions">
                     <button class="cmn-ghost" type="submit">Apply Filters</button>
@@ -23769,7 +23909,42 @@ final class CMN_One_Plugin {
                 <select name="cmn_bulk_action">
                     <option value="">Bulk actions</option>
                     <option value="delete">Delete selected</option>
+                    <option value="assign_manager">Assign account manager</option>
+                    <option value="set_status">Set status</option>
+                    <option value="set_pipeline">Set pipeline stage</option>
+                    <option value="assign_groups">Add to groups</option>
+                    <option value="share_groups">Share groups internally</option>
+                    <option value="remove_duplicates">Remove duplicates (selected)</option>
                 </select>
+                <select name="cmn_bulk_manager_id">
+                    <option value="">Manager...</option>
+                    <option value="__clear__">Unassign manager</option>
+                    <?php foreach ($manager_users as $manager) : ?>
+                        <option value="<?php echo esc_attr((string) $manager->ID); ?>"><?php echo esc_html((string) $manager->display_name); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select name="cmn_bulk_status">
+                    <option value="">Status...</option>
+                    <option value="lead">Lead</option>
+                    <option value="needs_attention">Needs attention</option>
+                    <option value="client">Client</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="archived">Archived</option>
+                </select>
+                <select name="cmn_bulk_pipeline">
+                    <option value="">Pipeline...</option>
+                    <option value="new_lead">New Lead</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="demo">Demo</option>
+                    <option value="negotiation">Negotiation</option>
+                    <option value="won">Won</option>
+                    <option value="lost">Lost</option>
+                </select>
+                <input type="text" name="cmn_bulk_groups" value="" placeholder="Groups (comma separated)">
+                <label class="cmn-bulk-shared-toggle">
+                    <input type="checkbox" name="cmn_bulk_groups_shared" value="1">
+                    <span>Shared groups</span>
+                </label>
                 <button class="cmn-ghost" type="submit">Apply</button>
             </div>
             <table class="cmn-approval-table cmn-schools-table">
@@ -23781,6 +23956,7 @@ final class CMN_One_Plugin {
                         <th>Email</th>
                         <th>Status</th>
                         <th>Pipeline</th>
+                        <th>Groups</th>
                         <th>Profile</th>
                     </tr>
                 </thead>
@@ -23807,11 +23983,29 @@ final class CMN_One_Plugin {
                             ?>
                             <td><span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span></td>
                             <td><span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_label); ?></span></td>
+                            <?php
+                            $lead_group_slugs = $this->get_school_lead_groups(get_the_ID());
+                            $lead_group_labels = [];
+                            foreach ($lead_group_slugs as $group_slug) {
+                                $entry = (array) ($visible_lead_groups[$group_slug] ?? []);
+                                $label = sanitize_text_field((string) ($entry['name'] ?? $group_slug));
+                                if ($label !== '') {
+                                    $lead_group_labels[] = $label;
+                                }
+                            }
+                            ?>
+                            <td>
+                                <?php if ($lead_group_labels) : ?>
+                                    <div class="cmn-table-meta"><?php echo esc_html(implode(', ', $lead_group_labels)); ?></div>
+                                <?php else : ?>
+                                    <span class="cmn-muted">-</span>
+                                <?php endif; ?>
+                            </td>
                             <td><a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'schools', 'school_id' => $school_code ?: null, 'pid' => get_the_ID(), 'cmn_bucket' => $bucket ?: null]), home_url('/portal'))); ?>">View</a></td>
                         </tr>
                     <?php endwhile; wp_reset_postdata(); ?>
                 <?php else : ?>
-                    <tr><td colspan="7">No schools found.</td></tr>
+                    <tr><td colspan="8">No schools found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
@@ -84379,6 +84573,697 @@ p{margin:0;line-height:1.5}
         return $message;
     }
 
+    private function get_school_import_job_key($job_id) {
+        $job_id = sanitize_key((string) $job_id);
+        if ($job_id === '') {
+            return '';
+        }
+        return 'cmn_school_import_job_' . $job_id;
+    }
+
+    private function get_school_import_job($job_id) {
+        $key = $this->get_school_import_job_key($job_id);
+        if ($key === '') {
+            return null;
+        }
+        $job = get_transient($key);
+        return is_array($job) ? $job : null;
+    }
+
+    private function save_school_import_job($job_id, $job) {
+        $key = $this->get_school_import_job_key($job_id);
+        if ($key === '' || !is_array($job)) {
+            return false;
+        }
+        return (bool) set_transient($key, $job, 12 * HOUR_IN_SECONDS);
+    }
+
+    private function normalize_school_import_map($map) {
+        $normalized = [];
+        $allowed = [
+            'cmn_school_name',
+            'cmn_location',
+            'cmn_phone',
+            'cmn_email',
+            'cmn_cover_manager',
+            'cmn_cover_manager_email',
+            'cmn_email_name',
+            'cmn_account_manager',
+            'cmn_contact_name',
+            'cmn_contact_email',
+            'cmn_contact_phone',
+            'cmn_contact_role',
+            'cmn_spoke_to_cm',
+            'cmn_switchboard',
+            'cmn_website',
+            'cmn_school_id',
+            'cmn_status',
+            'cmn_pipeline_stage',
+            'cmn_postcode',
+        ];
+        foreach ($allowed as $key) {
+            $value = isset($map[$key]) ? trim((string) $map[$key]) : '';
+            if ($value === '' || !preg_match('/^\d+$/', $value)) {
+                $normalized[$key] = '';
+                continue;
+            }
+            $normalized[$key] = (int) $value;
+        }
+        return $normalized;
+    }
+
+    private function build_school_import_source_row($header, $row) {
+        $source_row = [];
+        foreach ((array) $header as $idx => $col_name) {
+            $normalized_col_name = trim((string) $col_name);
+            if ($normalized_col_name === '') {
+                $normalized_col_name = 'column_' . ((int) $idx + 1);
+            }
+            $source_row[$normalized_col_name] = isset($row[$idx]) ? trim((string) $row[$idx]) : '';
+        }
+        return $source_row;
+    }
+
+    private function normalize_school_import_text($value) {
+        $value = strtolower(trim((string) $value));
+        $value = preg_replace('/\s+/', ' ', $value);
+        return trim((string) $value);
+    }
+
+    private function build_school_import_identity_key($school_code, $school_name, $postcode, $school_email, $school_domain) {
+        $school_code = strtoupper(trim((string) $school_code));
+        if ($school_code !== '') {
+            return 'school_id:' . $school_code;
+        }
+        $name_norm = $this->normalize_school_import_text($school_name);
+        if ($name_norm === '') {
+            return '';
+        }
+        $postcode_norm = strtolower(preg_replace('/\s+/', '', trim((string) $postcode)));
+        if ($postcode_norm !== '') {
+            return 'name_postcode:' . $name_norm . '|' . $postcode_norm;
+        }
+        $email_norm = strtolower(trim((string) $school_email));
+        if ($school_domain !== '') {
+            return 'name_domain:' . $name_norm . '|' . strtolower(trim((string) $school_domain));
+        }
+        if ($email_norm !== '') {
+            return 'name_email:' . $name_norm . '|' . $email_norm;
+        }
+        return 'name_only:' . $name_norm;
+    }
+
+    private function get_school_post_id_by_import_identity($identity_key) {
+        $identity_key = trim((string) $identity_key);
+        if ($identity_key === '') {
+            return 0;
+        }
+        $ids = get_posts([
+            'post_type' => 'cmn_school',
+            'post_status' => $this->get_school_list_post_statuses(),
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'meta_query' => [
+                [
+                    'key' => 'cmn_import_identity_key',
+                    'value' => $identity_key,
+                ],
+            ],
+            'no_found_rows' => true,
+        ]);
+        if (!$ids) {
+            return 0;
+        }
+        return (int) $ids[0];
+    }
+
+    private function get_school_post_id_by_name_and_postcode($school_name, $postcode) {
+        global $wpdb;
+        $school_name_norm = $this->normalize_school_import_text($school_name);
+        $postcode_norm = strtolower(preg_replace('/\s+/', '', trim((string) $postcode)));
+        if ($school_name_norm === '' || $postcode_norm === '') {
+            return 0;
+        }
+        $post_statuses = $this->get_school_list_post_statuses();
+        if (empty($post_statuses)) {
+            return 0;
+        }
+        $status_placeholders = implode(',', array_fill(0, count($post_statuses), '%s'));
+        $sql = "SELECT p.ID
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm_postcode ON pm_postcode.post_id = p.ID AND pm_postcode.meta_key = 'cmn_postcode'
+            WHERE p.post_type = 'cmn_school'
+              AND p.post_status IN ({$status_placeholders})
+              AND LOWER(TRIM(p.post_title)) = %s
+              AND REPLACE(LOWER(TRIM(pm_postcode.meta_value)), ' ', '') = %s
+            LIMIT 1";
+        $params = array_merge($post_statuses, [$school_name_norm, $postcode_norm]);
+        $id = $wpdb->get_var($wpdb->prepare($sql, $params));
+        return $id ? (int) $id : 0;
+    }
+
+    private function get_school_post_id_by_name_and_email($school_name, $school_email) {
+        global $wpdb;
+        $school_name_norm = $this->normalize_school_import_text($school_name);
+        $email_norm = strtolower(trim((string) $school_email));
+        if ($school_name_norm === '' || $email_norm === '') {
+            return 0;
+        }
+        $post_statuses = $this->get_school_list_post_statuses();
+        if (empty($post_statuses)) {
+            return 0;
+        }
+        $status_placeholders = implode(',', array_fill(0, count($post_statuses), '%s'));
+        $sql = "SELECT p.ID
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm_email ON pm_email.post_id = p.ID AND pm_email.meta_key = 'cmn_email'
+            WHERE p.post_type = 'cmn_school'
+              AND p.post_status IN ({$status_placeholders})
+              AND LOWER(TRIM(p.post_title)) = %s
+              AND LOWER(TRIM(pm_email.meta_value)) = %s
+            LIMIT 1";
+        $params = array_merge($post_statuses, [$school_name_norm, $email_norm]);
+        $id = $wpdb->get_var($wpdb->prepare($sql, $params));
+        return $id ? (int) $id : 0;
+    }
+
+    private function find_existing_school_for_import_row($school_code, $school_domain, $school_name, $postcode, $school_email, $identity_key) {
+        $school_code = trim((string) $school_code);
+        $school_domain = trim((string) $school_domain);
+        if ($school_code !== '') {
+            $existing = (int) $this->get_school_post_id_by_school_id($school_code);
+            if ($existing > 0) {
+                return $existing;
+            }
+        }
+        if ($identity_key !== '') {
+            $identity_match = (int) $this->get_school_post_id_by_import_identity($identity_key);
+            if ($identity_match > 0) {
+                return $identity_match;
+            }
+        }
+        if ($school_domain !== '') {
+            $domain_match = (int) $this->get_school_post_id_by_domain($school_domain);
+            if ($domain_match > 0) {
+                return $domain_match;
+            }
+        }
+        $postcode_match = (int) $this->get_school_post_id_by_name_and_postcode($school_name, $postcode);
+        if ($postcode_match > 0) {
+            return $postcode_match;
+        }
+        $email_match = (int) $this->get_school_post_id_by_name_and_email($school_name, $school_email);
+        if ($email_match > 0) {
+            return $email_match;
+        }
+        return 0;
+    }
+
+    private function process_school_import_row($row, $map, $header, $job, $data_row_index) {
+        $row_index = max(1, (int) $data_row_index + 1);
+        $school_name = $this->csv_value($row, $map['cmn_school_name'] ?? '');
+        $location = $this->csv_value($row, $map['cmn_location'] ?? '');
+        $phone = $this->csv_value($row, $map['cmn_phone'] ?? '');
+        $school_email = $this->csv_value($row, $map['cmn_email'] ?? '');
+        $cover_manager_name = $this->csv_value($row, $map['cmn_cover_manager'] ?? '');
+        $cover_manager_email = $this->csv_value($row, $map['cmn_cover_manager_email'] ?? '');
+        $email_name = $this->csv_value($row, $map['cmn_email_name'] ?? '');
+        $postcode = $this->csv_value($row, $map['cmn_postcode'] ?? '');
+        $school_code = strtoupper(trim((string) $this->csv_value($row, $map['cmn_school_id'] ?? '')));
+
+        $row_has_any_data = false;
+        foreach ((array) $row as $cell) {
+            if (trim((string) $cell) !== '') {
+                $row_has_any_data = true;
+                break;
+            }
+        }
+        if (!$row_has_any_data) {
+            return [
+                'row_index' => $row_index,
+                'school_name' => '',
+                'status' => 'hard_invalid',
+                'message' => 'Empty row.',
+                'issues' => ['Empty row'],
+                'school_id' => 0,
+            ];
+        }
+
+        if ($school_name === '') {
+            return [
+                'row_index' => $row_index,
+                'school_name' => '',
+                'status' => 'hard_invalid',
+                'message' => 'Missing School Name.',
+                'issues' => ['Missing school name'],
+                'school_id' => 0,
+            ];
+        }
+
+        if (!preg_match('/^CMN\\d+$/i', $school_code)) {
+            $school_code = '';
+        }
+
+        $import_issues = [];
+        if ($location === '') {
+            $import_issues[] = 'Missing location';
+        }
+        if ($phone === '') {
+            $import_issues[] = 'Missing contact number';
+        } elseif (strlen(preg_replace('/\\D+/', '', $phone)) < 7) {
+            $import_issues[] = 'Invalid contact number';
+        }
+        if ($school_email === '') {
+            $import_issues[] = 'Missing school email';
+        } elseif (!is_email($school_email)) {
+            $import_issues[] = 'Invalid school email';
+        }
+        if ($cover_manager_name === '') {
+            $import_issues[] = 'Missing cover manager name';
+        }
+        if ($cover_manager_email === '') {
+            $import_issues[] = 'Missing cover manager email';
+        } elseif (!is_email($cover_manager_email)) {
+            $import_issues[] = 'Invalid cover manager email';
+        }
+        if ($email_name === '') {
+            $import_issues[] = 'Missing email name';
+        }
+
+        $school_domain = '';
+        if ($school_email !== '' && is_email($school_email)) {
+            $school_domain = $this->get_email_domain($school_email);
+            if ($school_domain === '') {
+                $import_issues[] = 'Invalid school email domain';
+            }
+        }
+
+        $identity_key = $this->build_school_import_identity_key($school_code, $school_name, $postcode, $school_email, $school_domain);
+        $existing_id = $this->find_existing_school_for_import_row($school_code, $school_domain, $school_name, $postcode, $school_email, $identity_key);
+        $created_new = false;
+
+        if ($existing_id > 0) {
+            $post_id = $existing_id;
+            wp_update_post([
+                'ID' => $post_id,
+                'post_title' => $school_name,
+            ]);
+        } else {
+            $post_id = wp_insert_post([
+                'post_type' => 'cmn_school',
+                'post_title' => $school_name,
+                'post_status' => 'publish',
+            ]);
+            if (is_wp_error($post_id)) {
+                return [
+                    'row_index' => $row_index,
+                    'school_name' => $school_name,
+                    'status' => 'hard_invalid',
+                    'message' => 'Could not create school post.',
+                    'issues' => ['Could not create school post'],
+                    'school_id' => 0,
+                ];
+            }
+            $created_new = true;
+        }
+
+        if ($school_code === '') {
+            $school_code = (string) get_post_meta($post_id, 'cmn_school_id', true);
+            if ($school_code === '') {
+                $school_code = $this->generate_school_id();
+            }
+        }
+
+        $mapped_status = sanitize_key((string) $this->csv_value($row, $map['cmn_status'] ?? ''));
+        $status = $mapped_status !== '' ? $mapped_status : 'lead';
+        if (!in_array($status, ['lead', 'client', 'archived', 'rejected', 'needs_attention'], true)) {
+            $status = 'lead';
+        }
+        if (!empty($import_issues)) {
+            $status = 'needs_attention';
+        }
+        $pipeline_stage = sanitize_key((string) $this->csv_value($row, $map['cmn_pipeline_stage'] ?? ''));
+        if ($pipeline_stage === '') {
+            $pipeline_stage = 'new_lead';
+        }
+
+        $meta = [
+            'cmn_location' => $location,
+            'cmn_phone' => $phone,
+            'cmn_cover_manager' => $cover_manager_name,
+            'cmn_cover_manager_email' => $cover_manager_email,
+            'cmn_account_manager' => $this->csv_value($row, $map['cmn_account_manager'] ?? ''),
+            'cmn_email' => $school_email,
+            'cmn_email_name' => $email_name,
+            'cmn_spoke_to_cm' => $this->csv_value($row, $map['cmn_spoke_to_cm'] ?? ''),
+            'cmn_switchboard' => $this->csv_value($row, $map['cmn_switchboard'] ?? ''),
+            'cmn_website' => $this->csv_value($row, $map['cmn_website'] ?? ''),
+            'cmn_school_id' => $school_code,
+            'cmn_status' => $status,
+            'cmn_pipeline_stage' => $pipeline_stage,
+            'cmn_postcode' => $postcode,
+        ];
+        if ($school_domain !== '') {
+            $meta['cmn_school_email_domain'] = $school_domain;
+        }
+        if ($meta['cmn_status'] === 'client' && $meta['cmn_pipeline_stage'] !== 'lost') {
+            $meta['cmn_pipeline_stage'] = $meta['cmn_pipeline_stage'] ?: 'won';
+        }
+        foreach ($meta as $key => $value) {
+            update_post_meta($post_id, $key, sanitize_text_field($value));
+        }
+        $this->store_cover_manager_split($post_id, $cover_manager_name);
+        $this->upsert_school_index($post_id);
+        update_post_meta($post_id, 'cmn_import_batch_id', sanitize_text_field((string) ($job['batch_id'] ?? '')));
+        update_post_meta($post_id, 'cmn_bulk_import_key', sanitize_text_field((string) ($job['job_id'] ?? '')) . ':' . $row_index);
+        if ($identity_key !== '') {
+            update_post_meta($post_id, 'cmn_import_identity_key', $identity_key);
+        }
+        if (!empty($import_issues)) {
+            update_post_meta($post_id, 'cmn_import_issues', wp_json_encode(array_values($import_issues)));
+        } else {
+            delete_post_meta($post_id, 'cmn_import_issues');
+        }
+        $source_row = $this->build_school_import_source_row($header, $row);
+        update_post_meta($post_id, 'cmn_import_source_row', wp_json_encode($source_row));
+
+        $contact_name = $this->csv_value($row, $map['cmn_contact_name'] ?? '');
+        $contact_email = $this->csv_value($row, $map['cmn_contact_email'] ?? '');
+        $contact_phone = $this->csv_value($row, $map['cmn_contact_phone'] ?? '');
+        $contact_role = $this->csv_value($row, $map['cmn_contact_role'] ?? '');
+        $contact_warning = false;
+        if ($contact_name !== '') {
+            $contact_id = $this->create_or_update_contact([
+                'name' => $contact_name,
+                'email' => $contact_email,
+                'phone' => $contact_phone,
+                'role' => $contact_role,
+                'school_id' => $post_id,
+                'school_domain' => $school_domain,
+                'is_primary' => true,
+            ]);
+            if (!$contact_id) {
+                $contact_warning = true;
+            } else {
+                update_post_meta($post_id, 'cmn_contact1', $contact_name);
+                update_post_meta($post_id, 'cmn_contact1_email', $contact_email);
+                update_post_meta($post_id, 'cmn_contact_role', $contact_role);
+                update_post_meta($post_id, 'cmn_primary_contact_name', $contact_name);
+                update_post_meta($post_id, 'cmn_primary_contact_email', $contact_email ?: $school_email);
+                update_post_meta($post_id, 'cmn_primary_contact_phone', $contact_phone ?: $phone);
+                update_post_meta($post_id, 'cmn_primary_contact_role', $contact_role);
+            }
+        }
+        if ($contact_warning) {
+            $import_issues[] = 'Contact could not be linked';
+            update_post_meta($post_id, 'cmn_import_issues', wp_json_encode(array_values(array_unique($import_issues))));
+            update_post_meta($post_id, 'cmn_status', 'needs_attention');
+            $status = 'needs_attention';
+        }
+        $this->assert_imported_school_not_application_without_submission((int) $post_id, 'bulk_import_row');
+
+        if ($status === 'needs_attention') {
+            return [
+                'row_index' => $row_index,
+                'school_name' => $school_name,
+                'status' => 'needs_attention',
+                'message' => implode('; ', array_values(array_unique($import_issues))),
+                'issues' => array_values(array_unique($import_issues)),
+                'school_id' => (int) $post_id,
+                'created' => $created_new ? 1 : 0,
+                'updated' => $created_new ? 0 : 1,
+            ];
+        }
+
+        return [
+            'row_index' => $row_index,
+            'school_name' => $school_name,
+            'status' => 'imported_ok',
+            'message' => $created_new ? 'Created' : 'Updated',
+            'issues' => [],
+            'school_id' => (int) $post_id,
+            'created' => $created_new ? 1 : 0,
+            'updated' => $created_new ? 0 : 1,
+        ];
+    }
+
+    private function create_school_import_job($file, $map, $ext, $user_id) {
+        $rows = $this->read_spreadsheet_rows($file, $ext);
+        if (!$rows) {
+            return new WP_Error('cmn_import_rows_missing', 'No rows found.');
+        }
+        $header = array_shift($rows);
+        if (!$header) {
+            return new WP_Error('cmn_import_header_missing', 'Empty spreadsheet.');
+        }
+        $normalized_map = $this->normalize_school_import_map($map);
+        if (($normalized_map['cmn_school_name'] ?? '') === '') {
+            return new WP_Error('cmn_import_map_missing_school_name', 'Please map School Name before importing.');
+        }
+
+        $job_id = sanitize_key('j' . wp_generate_password(14, false, false));
+        $group_size = 10;
+        $total_rows = count($rows);
+        $job = [
+            'job_id' => $job_id,
+            'user_id' => (int) $user_id,
+            'created_at' => time(),
+            'updated_at' => time(),
+            'started_at' => current_time('mysql'),
+            'ext' => sanitize_key((string) $ext),
+            'header' => array_map(function ($value) {
+                return trim((string) $value);
+            }, (array) $header),
+            'rows' => array_values((array) $rows),
+            'map' => $normalized_map,
+            'offset' => 0,
+            'group_size' => $group_size,
+            'groups_total' => $total_rows > 0 ? (int) ceil($total_rows / $group_size) : 0,
+            'total_rows' => (int) $total_rows,
+            'results' => [],
+            'last_processed' => null,
+            'counts' => [
+                'imported_ok' => 0,
+                'needs_attention' => 0,
+                'hard_invalid' => 0,
+                'created' => 0,
+                'updated' => 0,
+                'processed' => 0,
+            ],
+            'batch_id' => 'IMP-' . gmdate('YmdHis') . '-' . wp_generate_password(6, false, false),
+            'file_checksum' => is_string($file) && file_exists($file) ? md5_file($file) : '',
+            'done' => ($total_rows === 0),
+            'completed_at' => null,
+        ];
+        if ($job['done']) {
+            $job['completed_at'] = current_time('mysql');
+        }
+
+        if (!$this->save_school_import_job($job_id, $job)) {
+            return new WP_Error('cmn_import_job_save_failed', 'Could not create import job.');
+        }
+        return [
+            'job_id' => $job_id,
+            'total_rows' => $job['total_rows'],
+            'groups_total' => $job['groups_total'],
+        ];
+    }
+
+    private function run_school_import_job_chunk(&$job, $limit = 10) {
+        if (!is_array($job)) {
+            return [
+                'processed' => 0,
+                'row_results' => [],
+                'next_offset' => 0,
+                'done' => true,
+            ];
+        }
+        $rows = (array) ($job['rows'] ?? []);
+        $header = (array) ($job['header'] ?? []);
+        $map = (array) ($job['map'] ?? []);
+        $offset = max(0, (int) ($job['offset'] ?? 0));
+        $total_rows = (int) ($job['total_rows'] ?? count($rows));
+        $limit = max(1, min(20, (int) $limit));
+        $end = min($offset + $limit, $total_rows);
+
+        $row_results = [];
+        for ($i = $offset; $i < $end; $i++) {
+            $row = (array) ($rows[$i] ?? []);
+            try {
+                $result = $this->process_school_import_row($row, $map, $header, $job, $i);
+            } catch (Throwable $e) {
+                $school_name = isset($row[(int) ($map['cmn_school_name'] ?? -1)]) ? trim((string) $row[(int) ($map['cmn_school_name'] ?? -1)]) : '';
+                $result = [
+                    'row_index' => $i + 1,
+                    'school_name' => $school_name,
+                    'status' => 'needs_attention',
+                    'message' => 'Row processing error: ' . $e->getMessage(),
+                    'issues' => ['Row processing error'],
+                    'school_id' => 0,
+                    'created' => 0,
+                    'updated' => 0,
+                ];
+            }
+
+            $row_results[] = $result;
+            $job['results'][$i] = $result;
+            $status = sanitize_key((string) ($result['status'] ?? ''));
+            if ($status === 'needs_attention') {
+                $job['counts']['needs_attention'] = (int) ($job['counts']['needs_attention'] ?? 0) + 1;
+            } elseif ($status === 'hard_invalid') {
+                $job['counts']['hard_invalid'] = (int) ($job['counts']['hard_invalid'] ?? 0) + 1;
+            } else {
+                $job['counts']['imported_ok'] = (int) ($job['counts']['imported_ok'] ?? 0) + 1;
+            }
+            $job['counts']['created'] = (int) ($job['counts']['created'] ?? 0) + (int) ($result['created'] ?? 0);
+            $job['counts']['updated'] = (int) ($job['counts']['updated'] ?? 0) + (int) ($result['updated'] ?? 0);
+            $job['counts']['processed'] = (int) ($job['counts']['processed'] ?? 0) + 1;
+            $job['last_processed'] = [
+                'row_index' => (int) ($result['row_index'] ?? ($i + 1)),
+                'school_name' => sanitize_text_field((string) ($result['school_name'] ?? '')),
+                'status' => $status,
+            ];
+        }
+
+        $job['offset'] = $end;
+        $job['updated_at'] = time();
+        $done = ($end >= $total_rows);
+        if ($done) {
+            $job['done'] = true;
+            $job['completed_at'] = current_time('mysql');
+        }
+
+        $group_size = max(1, (int) ($job['group_size'] ?? 10));
+        $group_index = $end > 0 ? (int) ceil($end / $group_size) : 1;
+        $groups_total = max(1, (int) ($job['groups_total'] ?? ($total_rows > 0 ? ceil($total_rows / $group_size) : 1)));
+        $group_start = (($group_index - 1) * $group_size) + 1;
+        $group_end = min($group_start + $group_size - 1, max(1, $total_rows));
+        $processed_in_group = $end > 0 ? (($end - 1) % $group_size) + 1 : 0;
+        $group_progress = (int) round(($processed_in_group / max(1, min($group_size, ($group_end - $group_start + 1)))) * 100);
+        $overall_progress = (int) round(($end / max(1, $total_rows)) * 100);
+
+        return [
+            'processed' => count($row_results),
+            'row_results' => $row_results,
+            'next_offset' => $end,
+            'done' => $done,
+            'group' => [
+                'index' => $group_index,
+                'total' => $groups_total,
+                'start' => $group_start,
+                'end' => $group_end,
+                'progress_pct' => $group_progress,
+            ],
+            'overall_progress_pct' => $overall_progress,
+            'totals' => [
+                'total' => (int) $total_rows,
+                'imported_ok' => (int) ($job['counts']['imported_ok'] ?? 0),
+                'needs_attention' => (int) ($job['counts']['needs_attention'] ?? 0),
+                'hard_invalid' => (int) ($job['counts']['hard_invalid'] ?? 0),
+                'created' => (int) ($job['counts']['created'] ?? 0),
+                'updated' => (int) ($job['counts']['updated'] ?? 0),
+                'processed' => (int) ($job['counts']['processed'] ?? 0),
+            ],
+            'last_processed' => $job['last_processed'],
+            'groups_total' => (int) ($job['groups_total'] ?? 0),
+            'group_size' => $group_size,
+        ];
+    }
+
+    public function handle_bulk_import_schools_run() {
+        if (!$this->is_staff_user()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if (!check_ajax_referer('cmn_bulk_import_schools_run', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        $job_id = sanitize_key((string) ($_POST['job_id'] ?? ''));
+        $limit = max(1, min(20, (int) ($_POST['limit'] ?? 10)));
+        $job = $this->get_school_import_job($job_id);
+        if (!$job || !is_array($job)) {
+            wp_send_json_error(['message' => 'Import job expired. Please restart import.'], 404);
+        }
+        if ((int) ($job['user_id'] ?? 0) !== (int) get_current_user_id()) {
+            wp_send_json_error(['message' => 'This import job belongs to another user.'], 403);
+        }
+
+        $t0 = microtime(true);
+        if (!empty($job['done'])) {
+            $totals = (array) ($job['counts'] ?? []);
+            wp_send_json_success([
+                'job_id' => $job_id,
+                'processed' => 0,
+                'next_offset' => (int) ($job['offset'] ?? 0),
+                'done' => true,
+                'totals' => [
+                    'total' => (int) ($job['total_rows'] ?? 0),
+                    'imported_ok' => (int) ($totals['imported_ok'] ?? 0),
+                    'needs_attention' => (int) ($totals['needs_attention'] ?? 0),
+                    'hard_invalid' => (int) ($totals['hard_invalid'] ?? 0),
+                    'created' => (int) ($totals['created'] ?? 0),
+                    'updated' => (int) ($totals['updated'] ?? 0),
+                    'processed' => (int) ($totals['processed'] ?? 0),
+                ],
+                'last_processed' => $job['last_processed'] ?? null,
+                'groups_total' => (int) ($job['groups_total'] ?? 0),
+                'group_size' => (int) ($job['group_size'] ?? 10),
+                'overall_progress_pct' => 100,
+            ]);
+        }
+
+        $chunk = $this->run_school_import_job_chunk($job, $limit);
+        $this->save_school_import_job($job_id, $job);
+
+        $duration_ms = (int) round((microtime(true) - $t0) * 1000);
+        error_log('[CMN_IMPORT_JOB] job=' . $job_id . ' offset=' . (int) ($chunk['next_offset'] ?? 0) . '/' . (int) ($job['total_rows'] ?? 0) . ' processed=' . (int) ($chunk['processed'] ?? 0) . ' duration_ms=' . $duration_ms . ' done=' . (!empty($chunk['done']) ? '1' : '0'));
+
+        wp_send_json_success(array_merge($chunk, [
+            'job_id' => $job_id,
+            'duration_ms' => $duration_ms,
+        ]));
+    }
+
+    public function handle_school_import_errors_csv() {
+        if (!$this->is_staff_user()) {
+            wp_die('Unauthorized');
+        }
+        $nonce = sanitize_text_field((string) ($_GET['cmn_nonce'] ?? ''));
+        if (!wp_verify_nonce($nonce, 'cmn_school_import_errors_csv')) {
+            wp_die('Invalid request');
+        }
+        $job_id = sanitize_key((string) ($_GET['job_id'] ?? ''));
+        $job = $this->get_school_import_job($job_id);
+        if (!$job || !is_array($job) || (int) ($job['user_id'] ?? 0) !== (int) get_current_user_id()) {
+            wp_die('Import job not found.');
+        }
+
+        $filename = 'cmn-school-import-errors-' . gmdate('Ymd-His') . '.csv';
+        nocache_headers();
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename=' . $filename);
+        $out = fopen('php://output', 'w');
+        if (!$out) {
+            wp_die('Could not open output stream.');
+        }
+        fputcsv($out, ['Row', 'School Name', 'Status', 'Issues', 'Message']);
+        foreach ((array) ($job['results'] ?? []) as $result) {
+            $status = sanitize_key((string) ($result['status'] ?? ''));
+            if (!in_array($status, ['needs_attention', 'hard_invalid'], true)) {
+                continue;
+            }
+            $issues = (array) ($result['issues'] ?? []);
+            fputcsv($out, [
+                (int) ($result['row_index'] ?? 0),
+                sanitize_text_field((string) ($result['school_name'] ?? '')),
+                $status,
+                implode('; ', array_map('sanitize_text_field', $issues)),
+                sanitize_text_field((string) ($result['message'] ?? '')),
+            ]);
+        }
+        fclose($out);
+        exit;
+    }
+
     public function handle_import_schools_portal() {
         if (!$this->is_staff_user()) {
             wp_die('Unauthorized');
@@ -84411,17 +85296,27 @@ p{margin:0;line-height:1.5}
                 wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode($upload['error'])], $referer));
                 exit;
             }
-            $headers = $this->read_spreadsheet_headers($upload['file'], $ext);
+            $rows = $this->read_spreadsheet_rows($upload['file'], $ext);
+            if (!$rows) {
+                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Unable to read spreadsheet rows.')], $referer));
+                exit;
+            }
+            $header = $rows[0] ?? [];
+            $headers = array_map('trim', array_map('strval', (array) $header));
             if (!$headers) {
                 wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Unable to read CSV headers.')], $referer));
                 exit;
             }
+            $preview_rows = array_slice($rows, 1, 10);
+            $total_rows = max(0, count($rows) - 1);
             $token = wp_generate_password(12, false, false);
             set_transient('cmn_import_' . $token, [
                 'user_id' => get_current_user_id(),
                 'file' => $upload['file'],
                 'headers' => $headers,
                 'ext' => $ext,
+                'preview_rows' => $preview_rows,
+                'total_rows' => $total_rows,
             ], HOUR_IN_SECONDS);
             wp_redirect(add_query_arg(['view' => 'schools', 'cmn_import_token' => $token], $referer));
             exit;
@@ -84439,20 +85334,35 @@ p{margin:0;line-height:1.5}
                 wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Invalid mapping data.')], $referer));
                 exit;
             }
-            $required = ['cmn_school_name', 'cmn_location', 'cmn_phone', 'cmn_email', 'cmn_cover_manager', 'cmn_cover_manager_email', 'cmn_email_name'];
+            $required = ['cmn_school_name'];
             foreach ($required as $key) {
                 if (!isset($map[$key]) || $map[$key] === '') {
-                    wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Please map all required fields before importing.')], $referer));
+                    wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Please map School Name before importing.')], $referer));
                     exit;
                 }
             }
             $ext = $data['ext'] ?? 'csv';
-            $message = $this->import_schools_spreadsheet_mapped($data['file'], $map, $ext);
+            $job = $this->create_school_import_job($data['file'], $map, $ext, (int) get_current_user_id());
             delete_transient('cmn_import_' . $token);
             if (is_string($data['file']) && file_exists($data['file'])) {
                 @unlink($data['file']);
             }
-            wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode($message)], $referer));
+            if (is_wp_error($job)) {
+                wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode($job->get_error_message())], $referer));
+                exit;
+            }
+            $job_id = sanitize_key((string) ($job['job_id'] ?? ''));
+            $start_msg = sprintf(
+                'Import job started. %s rows in %s groups (10 rows per group).',
+                number_format_i18n((int) ($job['total_rows'] ?? 0)),
+                number_format_i18n((int) ($job['groups_total'] ?? 0))
+            );
+            wp_redirect(add_query_arg([
+                'view' => 'schools',
+                'cmn_imported' => '1',
+                'cmn_import_msg' => rawurlencode($start_msg),
+                'cmn_import_job' => $job_id,
+            ], $referer));
             exit;
         }
 
@@ -86628,24 +87538,23 @@ p{margin:0;line-height:1.5}
         if (!isset($_POST['cmn_bulk_schools_nonce']) || !wp_verify_nonce($_POST['cmn_bulk_schools_nonce'], 'cmn_bulk_schools')) {
             wp_die('Invalid request');
         }
-        $action = sanitize_text_field($_POST['cmn_bulk_action'] ?? '');
-        $ids = isset($_POST['cmn_school_ids']) && is_array($_POST['cmn_school_ids']) ? array_map('intval', $_POST['cmn_school_ids']) : [];
+        $action = sanitize_key((string) ($_POST['cmn_bulk_action'] ?? ''));
+        $ids = isset($_POST['cmn_school_ids']) && is_array($_POST['cmn_school_ids']) ? array_values(array_unique(array_filter(array_map('intval', $_POST['cmn_school_ids'])))) : [];
         $redirect = esc_url_raw($_POST['cmn_redirect'] ?? '') ?: (wp_get_referer() ?: home_url('/portal'));
 
         if ($action === '' || $action === 'select') {
             wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Select a bulk action first.')], $redirect));
             exit;
         }
-        if (empty($ids)) {
+        $action_requires_selection = !in_array($action, ['share_groups'], true);
+        if ($action_requires_selection && empty($ids)) {
             wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Select at least one school.')], $redirect));
             exit;
         }
+        $message = 'Unknown bulk action.';
         if ($action === 'delete') {
             $deleted = 0;
             foreach ($ids as $id) {
-                if (!$id) {
-                    continue;
-                }
                 $post = get_post($id);
                 if (!$post || $post->post_type !== 'cmn_school') {
                     continue;
@@ -86653,12 +87562,396 @@ p{margin:0;line-height:1.5}
                 wp_delete_post($id, true);
                 $deleted++;
             }
-            wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Deleted ' . $deleted . ' school(s).')], $redirect));
-            exit;
+            $message = 'Deleted ' . $deleted . ' school(s).';
+        } elseif ($action === 'assign_manager') {
+            if (!$this->is_admin_user()) {
+                $message = 'Only admins can bulk-assign account managers.';
+            } else {
+                $manager_raw = sanitize_text_field((string) ($_POST['cmn_bulk_manager_id'] ?? ''));
+                if ($manager_raw === '') {
+                    $message = 'Select an account manager first.';
+                } else {
+                    $manager_id = ($manager_raw === '__clear__') ? 0 : (int) $manager_raw;
+                    $updated = 0;
+                    $failed = 0;
+                    foreach ($ids as $id) {
+                        $post = get_post($id);
+                        if (!$post || $post->post_type !== 'cmn_school') {
+                            continue;
+                        }
+                        $result = $this->assign_account_manager_to_school($id, $manager_id, 'bulk', (int) get_current_user_id());
+                        if (!empty($result['ok'])) {
+                            $updated++;
+                        } else {
+                            $failed++;
+                        }
+                    }
+                    $message = 'Updated account manager on ' . $updated . ' school(s).';
+                    if ($failed > 0) {
+                        $message .= ' Failed: ' . $failed . '.';
+                    }
+                }
+            }
+        } elseif ($action === 'set_status') {
+            $status = sanitize_key((string) ($_POST['cmn_bulk_status'] ?? ''));
+            $allowed_statuses = ['lead', 'needs_attention', 'client', 'rejected', 'archived'];
+            if (!in_array($status, $allowed_statuses, true)) {
+                $message = 'Select a valid status first.';
+            } else {
+                $updated = 0;
+                foreach ($ids as $id) {
+                    $post = get_post($id);
+                    if (!$post || $post->post_type !== 'cmn_school') {
+                        continue;
+                    }
+                    update_post_meta($id, 'cmn_status', $status);
+                    $pipeline_stage = sanitize_key((string) get_post_meta($id, 'cmn_pipeline_stage', true));
+                    if ($status === 'client' && $pipeline_stage === '') {
+                        update_post_meta($id, 'cmn_pipeline_stage', 'won');
+                    } elseif (($status === 'lead' || $status === 'needs_attention') && $pipeline_stage === '') {
+                        update_post_meta($id, 'cmn_pipeline_stage', 'new_lead');
+                    }
+                    $this->assert_imported_school_not_application_without_submission($id, 'bulk_set_status');
+                    $updated++;
+                }
+                $message = 'Updated status for ' . $updated . ' school(s).';
+            }
+        } elseif ($action === 'set_pipeline') {
+            $pipeline = sanitize_key((string) ($_POST['cmn_bulk_pipeline'] ?? ''));
+            $allowed_pipeline = ['new_lead', 'contacted', 'demo', 'negotiation', 'won', 'lost'];
+            if (!in_array($pipeline, $allowed_pipeline, true)) {
+                $message = 'Select a valid pipeline stage first.';
+            } else {
+                $updated = 0;
+                foreach ($ids as $id) {
+                    $post = get_post($id);
+                    if (!$post || $post->post_type !== 'cmn_school') {
+                        continue;
+                    }
+                    update_post_meta($id, 'cmn_pipeline_stage', $pipeline);
+                    $updated++;
+                }
+                $message = 'Updated pipeline stage for ' . $updated . ' school(s).';
+            }
+        } elseif ($action === 'assign_groups') {
+            $labels = $this->parse_lead_group_labels((string) ($_POST['cmn_bulk_groups'] ?? ''));
+            if (!$labels) {
+                $message = 'Enter at least one group name.';
+            } else {
+                $actor_user_id = (int) get_current_user_id();
+                $shared = !empty($_POST['cmn_bulk_groups_shared']);
+                $group_slugs = $this->ensure_lead_groups($labels, $actor_user_id, $shared);
+                if (!$group_slugs) {
+                    $message = 'Unable to create/resolve lead groups.';
+                } else {
+                    $updated = 0;
+                    foreach ($ids as $id) {
+                        $post = get_post($id);
+                        if (!$post || $post->post_type !== 'cmn_school') {
+                            continue;
+                        }
+                        $existing = $this->get_school_lead_groups($id);
+                        $merged = array_values(array_unique(array_merge($existing, $group_slugs)));
+                        $this->set_school_lead_groups($id, $merged);
+                        $updated++;
+                    }
+                    $message = 'Assigned group(s) to ' . $updated . ' school(s).';
+                }
+            }
+        } elseif ($action === 'share_groups') {
+            $labels = $this->parse_lead_group_labels((string) ($_POST['cmn_bulk_groups'] ?? ''));
+            if (!$labels) {
+                $message = 'Enter at least one group name to share.';
+            } else {
+                $shared_count = $this->mark_lead_groups_shared($labels, (int) get_current_user_id());
+                $message = 'Shared ' . $shared_count . ' group(s) internally.';
+            }
+        } elseif ($action === 'remove_duplicates') {
+            $result = $this->remove_duplicate_schools_in_selection($ids);
+            $message = 'Removed ' . (int) ($result['removed'] ?? 0) . ' duplicate school(s), kept ' . (int) ($result['kept'] ?? 0) . '.';
+            if (!empty($result['unkeyed'])) {
+                $message .= ' Unkeyed rows skipped: ' . (int) $result['unkeyed'] . '.';
+            }
         }
 
-        wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode('Unknown bulk action.')], $redirect));
+        wp_redirect(add_query_arg(['view' => 'schools', 'cmn_imported' => '1', 'cmn_import_msg' => rawurlencode($message)], $redirect));
         exit;
+    }
+
+    private function get_school_bulk_dedupe_key($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return '';
+        }
+        $school_code = strtoupper(trim((string) get_post_meta($school_id, 'cmn_school_id', true)));
+        if ($school_code !== '') {
+            return 'code:' . $school_code;
+        }
+        $domain = strtolower(trim((string) get_post_meta($school_id, 'cmn_school_email_domain', true)));
+        if ($domain === '') {
+            $email = strtolower(trim((string) get_post_meta($school_id, 'cmn_email', true)));
+            if ($email !== '' && strpos($email, '@') !== false) {
+                $parts = explode('@', $email);
+                $domain = strtolower(trim((string) end($parts)));
+            }
+        }
+        if ($domain !== '') {
+            return 'domain:' . $domain;
+        }
+        $title = strtolower(trim((string) get_the_title($school_id)));
+        $postcode = strtolower(trim((string) get_post_meta($school_id, 'cmn_postcode', true)));
+        if ($title !== '' && $postcode !== '') {
+            return 'name_postcode:' . $title . '|' . $postcode;
+        }
+        return '';
+    }
+
+    private function remove_duplicate_schools_in_selection($school_ids) {
+        $result = [
+            'removed' => 0,
+            'kept' => 0,
+            'unkeyed' => 0,
+        ];
+        $seen = [];
+        foreach ((array) $school_ids as $school_id_raw) {
+            $school_id = (int) $school_id_raw;
+            if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+                continue;
+            }
+            $dedupe_key = $this->get_school_bulk_dedupe_key($school_id);
+            if ($dedupe_key === '') {
+                $result['unkeyed']++;
+                continue;
+            }
+            if (!isset($seen[$dedupe_key])) {
+                $seen[$dedupe_key] = $school_id;
+                $result['kept']++;
+                continue;
+            }
+            wp_delete_post($school_id, true);
+            $result['removed']++;
+        }
+        return $result;
+    }
+
+    private function sanitize_lead_group_slug($value) {
+        $slug = sanitize_title((string) $value);
+        if ($slug === '') {
+            return '';
+        }
+        return substr($slug, 0, 64);
+    }
+
+    private function parse_lead_group_labels($raw_labels) {
+        $raw = is_array($raw_labels) ? implode(',', array_map('strval', $raw_labels)) : (string) $raw_labels;
+        $parts = preg_split('/[\r\n,]+/', $raw) ?: [];
+        $labels = [];
+        foreach ($parts as $part) {
+            $label = sanitize_text_field(trim((string) $part));
+            if ($label === '') {
+                continue;
+            }
+            $labels[] = $label;
+        }
+        return array_values(array_unique($labels));
+    }
+
+    private function get_lead_group_registry() {
+        $raw = get_option('cmn_lead_group_registry', []);
+        if (!is_array($raw)) {
+            return [];
+        }
+        $registry = [];
+        foreach ($raw as $slug => $entry) {
+            $normalized_slug = $this->sanitize_lead_group_slug((string) $slug);
+            if ($normalized_slug === '' || !is_array($entry)) {
+                continue;
+            }
+            $name = sanitize_text_field((string) ($entry['name'] ?? $normalized_slug));
+            if ($name === '') {
+                $name = $normalized_slug;
+            }
+            $registry[$normalized_slug] = [
+                'name' => $name,
+                'owner_user_id' => (int) ($entry['owner_user_id'] ?? 0),
+                'shared' => !empty($entry['shared']) ? 1 : 0,
+                'created_at' => sanitize_text_field((string) ($entry['created_at'] ?? '')),
+                'updated_at' => sanitize_text_field((string) ($entry['updated_at'] ?? '')),
+            ];
+        }
+        return $registry;
+    }
+
+    private function save_lead_group_registry($registry) {
+        if (!is_array($registry)) {
+            $registry = [];
+        }
+        update_option('cmn_lead_group_registry', $registry, false);
+    }
+
+    private function get_visible_lead_groups_for_user($user_id = 0) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            $user_id = (int) get_current_user_id();
+        }
+        $registry = $this->get_lead_group_registry();
+        if (!$registry) {
+            return [];
+        }
+        $is_admin = $this->is_admin_user($user_id);
+        $visible = [];
+        foreach ($registry as $slug => $entry) {
+            $owner_user_id = (int) ($entry['owner_user_id'] ?? 0);
+            $is_shared = !empty($entry['shared']);
+            if ($is_admin || $is_shared || ($owner_user_id > 0 && $owner_user_id === $user_id)) {
+                $visible[$slug] = $entry;
+            }
+        }
+        uasort($visible, static function ($a, $b) {
+            $a_name = strtolower((string) ($a['name'] ?? ''));
+            $b_name = strtolower((string) ($b['name'] ?? ''));
+            return strcmp($a_name, $b_name);
+        });
+        return $visible;
+    }
+
+    private function ensure_lead_groups($labels, $owner_user_id, $shared = false) {
+        $owner_user_id = (int) $owner_user_id;
+        $shared = (bool) $shared;
+        $label_list = $this->parse_lead_group_labels($labels);
+        if (!$label_list) {
+            return [];
+        }
+        $registry = $this->get_lead_group_registry();
+        $changed = false;
+        $now = current_time('mysql');
+        $slugs = [];
+        foreach ($label_list as $label) {
+            $slug = $this->sanitize_lead_group_slug($label);
+            if ($slug === '') {
+                continue;
+            }
+            $slugs[] = $slug;
+            if (!isset($registry[$slug])) {
+                $registry[$slug] = [
+                    'name' => $label,
+                    'owner_user_id' => $owner_user_id,
+                    'shared' => $shared ? 1 : 0,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+                $changed = true;
+                continue;
+            }
+            $current = (array) $registry[$slug];
+            $updated = false;
+            if ((string) ($current['name'] ?? '') === '') {
+                $current['name'] = $label;
+                $updated = true;
+            }
+            if ((int) ($current['owner_user_id'] ?? 0) < 1 && $owner_user_id > 0) {
+                $current['owner_user_id'] = $owner_user_id;
+                $updated = true;
+            }
+            if ($shared && empty($current['shared'])) {
+                $current['shared'] = 1;
+                $updated = true;
+            }
+            if ($updated) {
+                $current['updated_at'] = $now;
+                $registry[$slug] = $current;
+                $changed = true;
+            }
+        }
+        if ($changed) {
+            $this->save_lead_group_registry($registry);
+        }
+        return array_values(array_unique(array_filter(array_map([$this, 'sanitize_lead_group_slug'], $slugs))));
+    }
+
+    private function mark_lead_groups_shared($labels, $actor_user_id = 0) {
+        $actor_user_id = (int) $actor_user_id;
+        if ($actor_user_id < 1) {
+            $actor_user_id = (int) get_current_user_id();
+        }
+        $is_admin = $this->is_admin_user($actor_user_id);
+        $label_list = $this->parse_lead_group_labels($labels);
+        if (!$label_list) {
+            return 0;
+        }
+        $registry = $this->get_lead_group_registry();
+        $changed = 0;
+        $now = current_time('mysql');
+        foreach ($label_list as $label) {
+            $slug = $this->sanitize_lead_group_slug($label);
+            if ($slug === '' || !isset($registry[$slug]) || !is_array($registry[$slug])) {
+                continue;
+            }
+            $entry = (array) $registry[$slug];
+            $owner_user_id = (int) ($entry['owner_user_id'] ?? 0);
+            if (!$is_admin && $owner_user_id > 0 && $owner_user_id !== $actor_user_id) {
+                continue;
+            }
+            if (empty($entry['shared'])) {
+                $entry['shared'] = 1;
+                $entry['updated_at'] = $now;
+                $registry[$slug] = $entry;
+                $changed++;
+            }
+        }
+        if ($changed > 0) {
+            $this->save_lead_group_registry($registry);
+        }
+        return (int) $changed;
+    }
+
+    private function get_school_lead_groups($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return [];
+        }
+        $raw = get_post_meta($school_id, 'cmn_lead_groups', true);
+        $groups = [];
+        if (is_array($raw)) {
+            $groups = $raw;
+        } elseif (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $groups = $decoded;
+            } else {
+                $groups = preg_split('/[\r\n,]+/', $raw) ?: [];
+            }
+        }
+        $slugs = [];
+        foreach ($groups as $value) {
+            $slug = $this->sanitize_lead_group_slug((string) $value);
+            if ($slug !== '') {
+                $slugs[] = $slug;
+            }
+        }
+        return array_values(array_unique($slugs));
+    }
+
+    private function set_school_lead_groups($school_id, $group_slugs) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return;
+        }
+        $slugs = [];
+        foreach ((array) $group_slugs as $slug_raw) {
+            $slug = $this->sanitize_lead_group_slug((string) $slug_raw);
+            if ($slug !== '') {
+                $slugs[] = $slug;
+            }
+        }
+        $slugs = array_values(array_unique($slugs));
+        if (!$slugs) {
+            delete_post_meta($school_id, 'cmn_lead_groups');
+            delete_post_meta($school_id, 'cmn_lead_groups_csv');
+            return;
+        }
+        update_post_meta($school_id, 'cmn_lead_groups', $slugs);
+        update_post_meta($school_id, 'cmn_lead_groups_csv', '|' . implode('|', $slugs) . '|');
     }
 
     public function handle_assign_contact_to_school() {

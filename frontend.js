@@ -681,23 +681,214 @@ document.addEventListener('DOMContentLoaded', function () {
   if (bulkForm) {
     bulkForm.addEventListener('submit', function (event) {
       var actionSelect = bulkForm.querySelector('select[name="cmn_bulk_action"]');
+      var managerSelect = bulkForm.querySelector('select[name="cmn_bulk_manager_id"]');
+      var statusSelect = bulkForm.querySelector('select[name="cmn_bulk_status"]');
+      var pipelineSelect = bulkForm.querySelector('select[name="cmn_bulk_pipeline"]');
+      var groupsInput = bulkForm.querySelector('input[name="cmn_bulk_groups"]');
+      var selectedRows = bulkForm.querySelectorAll('.cmn-school-select:checked');
       if (!actionSelect || !actionSelect.value) {
         event.preventDefault();
         alert('Select a bulk action first.');
         return;
       }
+      if (actionSelect.value !== 'share_groups' && !selectedRows.length) {
+        event.preventDefault();
+        alert('Select at least one school first.');
+        return;
+      }
+      if (actionSelect.value === 'assign_manager' && (!managerSelect || !managerSelect.value)) {
+        event.preventDefault();
+        alert('Select an account manager first.');
+        return;
+      }
+      if (actionSelect.value === 'set_status' && (!statusSelect || !statusSelect.value)) {
+        event.preventDefault();
+        alert('Select a status first.');
+        return;
+      }
+      if (actionSelect.value === 'set_pipeline' && (!pipelineSelect || !pipelineSelect.value)) {
+        event.preventDefault();
+        alert('Select a pipeline stage first.');
+        return;
+      }
+      if ((actionSelect.value === 'assign_groups' || actionSelect.value === 'share_groups') && (!groupsInput || !groupsInput.value.trim())) {
+        event.preventDefault();
+        alert('Enter at least one group name.');
+        return;
+      }
       if (actionSelect.value === 'delete') {
-        var selected = bulkForm.querySelectorAll('.cmn-school-select:checked');
-        if (!selected.length) {
-          event.preventDefault();
-          alert('Select at least one school to delete.');
-          return;
-        }
         if (!window.confirm('Delete selected schools? This cannot be undone.')) {
+          event.preventDefault();
+        }
+        return;
+      }
+      if (actionSelect.value === 'remove_duplicates') {
+        if (!window.confirm('Remove duplicate schools in the selected set? Duplicates are detected by School ID/domain and cannot be undone.')) {
           event.preventDefault();
         }
       }
     });
+  }
+
+  var schoolImportRunner = document.querySelector('[data-school-import-runner]');
+  if (schoolImportRunner) {
+    var importAjaxUrl = schoolImportRunner.getAttribute('data-ajax-url') || (window.cmnPortal && window.cmnPortal.ajaxUrl) || '';
+    var importJobId = schoolImportRunner.getAttribute('data-job-id') || '';
+    var importNonce = schoolImportRunner.getAttribute('data-nonce') || '';
+    var importLimit = parseInt(schoolImportRunner.getAttribute('data-limit') || '10', 10);
+    var importMaxRetries = parseInt(schoolImportRunner.getAttribute('data-max-retries') || '1', 10);
+    var importDone = schoolImportRunner.getAttribute('data-done') === '1';
+    var importInFlight = false;
+    var importStopped = false;
+    var importRetryCount = 0;
+    var statusEl = schoolImportRunner.querySelector('[data-school-import-status]');
+    var summaryEl = schoolImportRunner.querySelector('[data-school-import-summary]');
+    var lastEl = schoolImportRunner.querySelector('[data-school-import-last]');
+    var progressFillEl = schoolImportRunner.querySelector('[data-school-import-progress-fill]');
+    var processedEl = schoolImportRunner.querySelector('[data-school-import-processed]');
+    var totalEl = schoolImportRunner.querySelector('[data-school-import-total]');
+    var okEl = schoolImportRunner.querySelector('[data-school-import-ok]');
+    var needsEl = schoolImportRunner.querySelector('[data-school-import-needs]');
+    var hardEl = schoolImportRunner.querySelector('[data-school-import-hard]');
+
+    var setImportStatus = function (message, isError) {
+      if (!statusEl) {
+        return;
+      }
+      statusEl.textContent = message || '';
+      statusEl.classList.toggle('is-error', !!isError);
+    };
+
+    var numberOrZero = function (value) {
+      var parsed = parseInt(String(value || '0'), 10);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    var setImportMetric = function (el, value) {
+      if (!el) {
+        return;
+      }
+      el.textContent = String(numberOrZero(value));
+    };
+
+    var updateImportUi = function (payload) {
+      var totals = payload && payload.totals ? payload.totals : {};
+      var group = payload && payload.group ? payload.group : {};
+      var processed = numberOrZero(totals.processed);
+      var total = numberOrZero(totals.total);
+      var importOk = numberOrZero(totals.imported_ok);
+      var needsAttention = numberOrZero(totals.needs_attention);
+      var hardInvalid = numberOrZero(totals.hard_invalid);
+      var overallPct = numberOrZero(payload.overall_progress_pct);
+      var groupIndex = numberOrZero(group.index);
+      var groupTotal = numberOrZero(group.total);
+      var groupStart = numberOrZero(group.start);
+      var groupEnd = numberOrZero(group.end);
+      var groupPct = numberOrZero(group.progress_pct);
+      var lastProcessed = payload && payload.last_processed ? payload.last_processed : null;
+      var lastRow = lastProcessed ? numberOrZero(lastProcessed.row_index) : 0;
+      var lastName = lastProcessed && lastProcessed.school_name ? String(lastProcessed.school_name) : '';
+
+      if (processedEl) {
+        processedEl.textContent = String(processed);
+      }
+      if (totalEl) {
+        totalEl.textContent = String(total);
+      }
+      setImportMetric(okEl, importOk);
+      setImportMetric(needsEl, needsAttention);
+      setImportMetric(hardEl, hardInvalid);
+      if (progressFillEl) {
+        progressFillEl.style.width = String(Math.max(0, Math.min(100, overallPct))) + '%';
+      }
+      if (lastEl) {
+        if (lastRow > 0) {
+          lastEl.textContent = 'Last processed row ' + lastRow + (lastName ? ': ' + lastName : '');
+        } else {
+          lastEl.textContent = '';
+        }
+      }
+
+      if (!payload.done) {
+        var schoolLabel = lastName || 'working...';
+        setImportStatus(
+          'Importing school ' + Math.max(0, Math.min(total, lastRow)) + ' of ' + total +
+          ': ' + schoolLabel +
+          ' | Group ' + Math.max(1, groupIndex) + ' of ' + Math.max(1, groupTotal) +
+          ' (rows ' + Math.max(1, groupStart) + '-' + Math.max(1, groupEnd) + ')' +
+          ' | Group ' + groupPct + '%' +
+          ' | Overall ' + overallPct + '%' +
+          ' | Imported: ' + importOk +
+          ' | Needs attention: ' + needsAttention +
+          ' | Hard invalid: ' + hardInvalid +
+          ' | Working...',
+          false
+        );
+      } else {
+        schoolImportRunner.classList.add('is-done');
+        if (summaryEl) {
+          summaryEl.classList.add('is-done');
+        }
+        setImportStatus(
+          'Import complete. Processed ' + processed + ' of ' + total +
+          ' | Imported: ' + importOk +
+          ' | Needs attention: ' + needsAttention +
+          ' | Hard invalid: ' + hardInvalid + '.',
+          false
+        );
+      }
+    };
+
+    var runImportChunk = function (delayMs) {
+      if (importStopped || importDone || importInFlight || !importAjaxUrl || !importJobId || !importNonce) {
+        return;
+      }
+      window.setTimeout(function () {
+        if (importStopped || importDone || importInFlight) {
+          return;
+        }
+        importInFlight = true;
+        var body = new FormData();
+        body.append('action', 'cmn_bulk_import_schools_run');
+        body.append('nonce', importNonce);
+        body.append('job_id', importJobId);
+        body.append('limit', String(Math.max(1, Math.min(20, importLimit || 10))));
+        fetch(importAjaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: body
+        }).then(function (response) {
+          return response.json();
+        }).then(function (payload) {
+          importInFlight = false;
+          if (!payload || !payload.success || !payload.data) {
+            throw new Error((payload && payload.data && payload.data.message) ? payload.data.message : 'Import request failed.');
+          }
+          importRetryCount = 0;
+          updateImportUi(payload.data);
+          if (payload.data.done) {
+            importDone = true;
+            return;
+          }
+          runImportChunk(120);
+        }).catch(function (error) {
+          importInFlight = false;
+          importRetryCount += 1;
+          if (importRetryCount <= Math.max(0, importMaxRetries)) {
+            var waitMs = Math.min(6000, 1200 * Math.pow(2, Math.max(0, importRetryCount - 1)));
+            setImportStatus('Retry ' + importRetryCount + '/' + Math.max(1, importMaxRetries) + ' after error: ' + (error && error.message ? error.message : 'Request failed') + '.', true);
+            runImportChunk(waitMs);
+            return;
+          }
+          importStopped = true;
+          setImportStatus('Import paused after retries. Refresh to continue safely. Last error: ' + (error && error.message ? error.message : 'Request failed') + '.', true);
+        });
+      }, Math.max(0, numberOrZero(delayMs)));
+    };
+
+    if (!importDone) {
+      runImportChunk(80);
+    }
   }
 
   var confirmForms = document.querySelectorAll('form[data-confirm]');
