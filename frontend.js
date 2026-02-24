@@ -354,10 +354,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
   var staffNav = document.querySelector('[data-staff-nav]');
   if (staffNav) {
+    var staffViewKey = 'dashboard';
+    try {
+      var staffViewParams = new URLSearchParams(window.location.search || '');
+      staffViewKey = String(staffViewParams.get('view') || 'dashboard').trim() || 'dashboard';
+    } catch (e) {
+      staffViewKey = 'dashboard';
+    }
     var staffNavUserId = staffNav.getAttribute('data-user-id') || '0';
     var staffNavStorageKey = 'cmn_staff_nav_state_v2_' + staffNavUserId;
     var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
-    var staffNavEditModeKey = 'cmn_sidebar_edit_mode';
+    var staffNavEditModeLegacyKey = 'cmn_sidebar_edit_mode';
+    var staffNavEditModeKey = 'cmn_sidebar_edit_mode_' + staffViewKey;
     var staffShell = staffNav.closest('.cmn-staff-shell');
     var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
     var staffNavEditToggleBtn = staffNav.querySelector('[data-staff-nav-edit-toggle]');
@@ -565,15 +573,37 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     };
     var readStaffNavEditModeState = function () {
+      var fallback = { open: false, dirty: false };
       try {
-        return window.localStorage.getItem(staffNavEditModeKey) === '1';
+        var raw = window.localStorage.getItem(staffNavEditModeKey) || '';
+        if (raw === '') {
+          raw = window.localStorage.getItem(staffNavEditModeLegacyKey) || '';
+        }
+        if (raw === '') {
+          return fallback;
+        }
+        if (raw === '1') {
+          return { open: true, dirty: false };
+        }
+        if (raw === '0') {
+          return fallback;
+        }
+        var parsed = JSON.parse(raw);
+        return {
+          open: !!(parsed && Number(parsed.open || 0) === 1),
+          dirty: !!(parsed && Number(parsed.dirty || 0) === 1)
+        };
       } catch (e) {
-        return false;
+        return fallback;
       }
     };
-    var writeStaffNavEditModeState = function (isEditing) {
+    var writeStaffNavEditModeState = function (isOpen, isDirty) {
       try {
-        window.localStorage.setItem(staffNavEditModeKey, isEditing ? '1' : '0');
+        window.localStorage.setItem(staffNavEditModeKey, JSON.stringify({
+          open: isOpen ? 1 : 0,
+          dirty: isDirty ? 1 : 0
+        }));
+        window.localStorage.removeItem(staffNavEditModeLegacyKey);
       } catch (e) {
         // Ignore storage failures.
       }
@@ -681,6 +711,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       staffNavEditDiscardPanel.hidden = !visible;
     };
+    var persistCurrentNavEditModeState = function () {
+      writeStaffNavEditModeState(!!isNavEditing, !!navOrderDirty);
+    };
     var refreshNavEditControls = function () {
       staffNav.classList.toggle('is-nav-editing', isNavEditing);
       staffNav.classList.toggle('edit-mode-active', isNavEditing);
@@ -689,7 +722,9 @@ document.addEventListener('DOMContentLoaded', function () {
         staffNavEditToggleBtn.setAttribute('data-tooltip', isNavEditing ? 'Hide edit options' : 'Toggle edit options');
       }
       if (staffNavEditPanel) {
-        staffNavEditPanel.hidden = !isNavEditing;
+        staffNavEditPanel.hidden = false;
+        staffNavEditPanel.classList.toggle('is-open', isNavEditing);
+        staffNavEditPanel.setAttribute('aria-hidden', isNavEditing ? 'false' : 'true');
       }
       if (staffNavEditCancelBtn) {
         staffNavEditCancelBtn.disabled = navOrderSaveInFlight;
@@ -700,6 +735,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (staffNavEditSaveBtn) {
         staffNavEditSaveBtn.disabled = navOrderSaveInFlight || !navOrderDirty;
       }
+      persistCurrentNavEditModeState();
     };
     var syncNavDirtyState = function () {
       var currentOrder = normalizeNavOrder(collectNavOrderFromDom(), navOrderDefault);
@@ -719,7 +755,6 @@ document.addEventListener('DOMContentLoaded', function () {
       setNavDiscardPromptVisible(false);
       setNavDragEnabled(false);
       refreshNavEditControls();
-      writeStaffNavEditModeState(false);
     };
     var enterNavEditMode = function () {
       isNavEditing = true;
@@ -729,7 +764,17 @@ document.addEventListener('DOMContentLoaded', function () {
       setNavDiscardPromptVisible(false);
       setNavDragEnabled(true);
       refreshNavEditControls();
-      writeStaffNavEditModeState(true);
+    };
+    var requestNavEditModeClose = function () {
+      if (!isNavEditing || navOrderSaveInFlight) {
+        return;
+      }
+      if (!navOrderDirty) {
+        exitNavEditMode(false);
+        return;
+      }
+      setNavDiscardPromptVisible(true);
+      persistCurrentNavEditModeState();
     };
 
     var navState = readStaffNavState();
@@ -815,19 +860,12 @@ document.addEventListener('DOMContentLoaded', function () {
           enterNavEditMode();
           return;
         }
-        exitNavEditMode(false);
+        requestNavEditModeClose();
       });
     }
     if (staffNavEditCancelBtn) {
       staffNavEditCancelBtn.addEventListener('click', function () {
-        if (!isNavEditing || navOrderSaveInFlight) {
-          return;
-        }
-        if (!navOrderDirty) {
-          exitNavEditMode(false);
-          return;
-        }
-        setNavDiscardPromptVisible(true);
+        requestNavEditModeClose();
       });
     }
     if (staffNavEditResetBtn) {
@@ -881,6 +919,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         setNavDiscardPromptVisible(false);
+        persistCurrentNavEditModeState();
       });
     }
 
@@ -961,8 +1000,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     setNavDragEnabled(false);
     refreshNavEditControls();
-    if (readStaffNavEditModeState()) {
+    var storedEditModeState = readStaffNavEditModeState();
+    if (storedEditModeState.open && storedEditModeState.dirty) {
       enterNavEditMode();
+    } else {
+      writeStaffNavEditModeState(false, false);
     }
     document.addEventListener('click', function (event) {
       if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
@@ -975,6 +1017,15 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     document.addEventListener('keydown', function (event) {
       if ((event.key || '') !== 'Escape') {
+        return;
+      }
+      if (isNavEditing && !navOrderSaveInFlight) {
+        if (staffNavEditDiscardPanel && !staffNavEditDiscardPanel.hidden) {
+          setNavDiscardPromptVisible(false);
+          persistCurrentNavEditModeState();
+        } else {
+          requestNavEditModeClose();
+        }
         return;
       }
       if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {

@@ -8248,20 +8248,6 @@ final class CMN_One_Plugin {
                         'active_when' => ['view' => 'schools', 'query' => ['cmn_status' => 'all']],
                     ],
                     [
-                        'key' => 'schools_add',
-                        'label' => 'Add School',
-                        'icon' => 'edit',
-                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_panel' => 'add', 'cmn_bucket' => false], $portal_url),
-                        'active_when' => ['view' => 'schools', 'query' => ['cmn_panel' => 'add']],
-                    ],
-                    [
-                        'key' => 'schools_bulk_add',
-                        'label' => 'Bulk Add Schools',
-                        'icon' => 'edit',
-                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_panel' => 'bulk', 'cmn_bucket' => false], $portal_url),
-                        'active_when' => ['view' => 'schools', 'query' => ['cmn_panel' => 'bulk']],
-                    ],
-                    [
                         'key' => 'schools_leads',
                         'label' => $pipeline_leads_label,
                         'icon' => 'leads',
@@ -24324,13 +24310,13 @@ final class CMN_One_Plugin {
             <div class="cmn-toolbar-row">
                 <div class="cmn-toolbar-search">
                     <input type="search" name="q" placeholder="Search schools, contacts, location, email, phone, account manager..." value="<?php echo esc_attr($search); ?>" aria-label="Search schools">
-                    <button class="cmn-btn-secondary cmn-btn-mini" type="submit">Search</button>
+                    <button class="cmn-btn-secondary cmn-btn-mini cmn-toolbar-action cmn-toolbar-action--search" type="submit">Search</button>
                 </div>
                 <div class="cmn-toolbar-controls">
-                    <button class="cmn-btn-secondary cmn-btn-mini" type="button" data-filter-toggle><?php echo esc_html($filter_label); ?></button>
-                    <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo esc_url($base_url); ?>">Clear</a>
-                    <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo esc_url($add_panel_url); ?>">Add school</a>
-                    <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($bulk_panel_url); ?>">Bulk add schools</a>
+                    <button class="cmn-btn-secondary cmn-btn-mini cmn-toolbar-action cmn-toolbar-action--filters" type="button" data-filter-toggle><?php echo esc_html($filter_label); ?></button>
+                    <a class="cmn-btn-ghost cmn-btn-mini cmn-toolbar-action cmn-toolbar-action--clear" href="<?php echo esc_url($base_url); ?>">Clear</a>
+                    <a class="cmn-btn-secondary cmn-btn-mini cmn-toolbar-action cmn-toolbar-action--add" href="<?php echo esc_url($add_panel_url); ?>">Add school</a>
+                    <a class="cmn-primary cmn-btn-mini cmn-toolbar-action cmn-toolbar-action--bulk" href="<?php echo esc_url($bulk_panel_url); ?>">Bulk add schools</a>
                 </div>
             </div>
             <div class="cmn-filter-panel<?php echo $filter_count ? ' is-open' : ''; ?>" data-filter-panel>

@@ -3863,6 +3863,23 @@ body.cmn-booking-feedback-lock {
   display: none;
 }
 
+.cmn-staff-nav .cmn-staff-nav-edit-panel.cmn-edit-control {
+  display: grid;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  margin-top: 0;
+  padding: 0 8px;
+  border-color: transparent;
+  transition:
+    max-height 0.18s ease,
+    opacity 0.16s ease,
+    margin-top 0.18s ease,
+    border-color 0.18s ease,
+    padding 0.18s ease;
+}
+
 .cmn-staff-nav.edit-mode-active .cmn-edit-control,
 .edit-mode-active .cmn-edit-control {
   display: inline-block;
@@ -3874,6 +3891,18 @@ body.cmn-booking-feedback-lock {
 
 .cmn-staff-nav.edit-mode-active .cmn-staff-nav-edit-panel.cmn-edit-control {
   display: grid;
+  max-height: 260px;
+  opacity: 1;
+  pointer-events: auto;
+  margin-top: 2px;
+  padding: 8px;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.cmn-staff-nav-edit-panel.is-open {
+  max-height: 260px;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .cmn-staff-nav-edit-panel {
@@ -7545,14 +7574,18 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   margin: 14px 0 16px;
   display: grid;
   gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(14, 19, 27, 0.74);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
 }
 
 .cmn-toolbar-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
 .cmn-toolbar-search {
@@ -7566,14 +7599,34 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 .cmn-toolbar-search input[type="search"] {
   flex: 1;
   min-width: 220px;
+  min-height: 40px;
 }
 
 .cmn-toolbar-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, auto);
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  flex-wrap: wrap;
+}
+
+.cmn-toolbar-action {
+  min-height: 38px;
+  padding-left: 12px;
+  padding-right: 12px;
+  white-space: nowrap;
+}
+
+.cmn-toolbar-action--bulk {
+  min-width: 146px;
+}
+
+.cmn-toolbar-action--search {
+  min-width: 94px;
+}
+
+.cmn-filter-panel {
+  margin-top: 2px;
 }
 
 .cmn-filter-panel {
@@ -7683,14 +7736,29 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 }
 
 @media (max-width: 900px) {
+  .cmn-school-toolbar {
+    padding: 10px;
+  }
+
+  .cmn-school-toolbar .cmn-toolbar-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
   .cmn-school-toolbar .cmn-toolbar-search {
     min-width: 0;
     width: 100%;
   }
 
   .cmn-school-toolbar .cmn-toolbar-controls {
+    grid-template-columns: 1fr 1fr;
     width: 100%;
-    justify-content: flex-start;
+    justify-content: stretch;
+  }
+
+  .cmn-school-toolbar .cmn-toolbar-action {
+    width: 100%;
+    justify-content: center;
   }
 
   .cmn-bulk-actions {
@@ -7703,6 +7771,12 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   .cmn-bulk-actions input[type="text"],
   .cmn-bulk-actions button {
     width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .cmn-school-toolbar .cmn-toolbar-controls {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -13303,4 +13377,78 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
   body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
     grid-template-columns: 1fr;
   }
+}
+
+/* Candidate parity reinforcement: tables, pills, forms, danger button */
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light :is(.cmn-dashboard-grid, .cmn-dashboard-row, .cmn-profile-grid, .cmn-rewards-grid) {
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-nav {
+  background: #0a0e13 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-nav-link {
+  border-radius: 10px;
+  margin: 0 10px;
+  border-left-width: 2px;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  input,
+  select,
+  textarea
+) {
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #e9eef7 !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(input, select, textarea):focus {
+  outline: none;
+  border-color: rgba(208, 42, 42, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(208, 42, 42, 0.18) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-pill,
+  .cmn-status-chip,
+  .cmn-badge
+) {
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-booking-table,
+  .cmn-table,
+  .cmn-approval-table
+) th,
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-booking-table,
+  .cmn-table,
+  .cmn-approval-table
+) td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main .cmn-danger {
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(208, 42, 42, 0.55);
+  background: rgba(208, 42, 42, 0.14);
+  color: #ffb3b3;
+  font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main .cmn-danger:hover,
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main .cmn-danger:focus-visible {
+  background: rgba(208, 42, 42, 0.22);
+  border-color: rgba(208, 42, 42, 0.75);
 }
