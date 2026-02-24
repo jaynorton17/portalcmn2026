@@ -7938,6 +7938,91 @@ final class CMN_One_Plugin {
         return (int) $query->found_posts;
     }
 
+    private function get_school_primary_contact_summary($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [
+                'name' => '',
+                'phone' => '',
+                'email' => '',
+            ];
+        }
+        $name = trim((string) get_post_meta($school_id, 'cmn_primary_contact_name', true));
+        if ($name === '') {
+            $name = trim((string) get_post_meta($school_id, 'cmn_contact_name', true));
+        }
+        $phone = trim((string) get_post_meta($school_id, 'cmn_primary_contact_phone', true));
+        if ($phone === '') {
+            $phone = trim((string) get_post_meta($school_id, 'cmn_contact_phone', true));
+        }
+        $email = sanitize_email((string) get_post_meta($school_id, 'cmn_primary_contact_email', true));
+        if ($email === '') {
+            $email = sanitize_email((string) get_post_meta($school_id, 'cmn_contact_email', true));
+        }
+        return [
+            'name' => $name,
+            'phone' => $phone,
+            'email' => $email,
+        ];
+    }
+
+    private function get_school_account_manager_summary($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [
+                'name' => '',
+                'email' => '',
+            ];
+        }
+        $manager_user_id = (int) get_post_meta($school_id, 'cmn_account_manager_user', true);
+        if ($manager_user_id < 1) {
+            $manager_user_id = (int) get_post_meta($school_id, 'cmn_account_manager_user_id', true);
+        }
+        if ($manager_user_id > 0) {
+            $manager_user = get_user_by('id', $manager_user_id);
+            if ($manager_user) {
+                return [
+                    'name' => trim((string) $manager_user->display_name),
+                    'email' => sanitize_email((string) $manager_user->user_email),
+                ];
+            }
+        }
+        $name = trim((string) get_post_meta($school_id, 'cmn_account_manager', true));
+        if ($name === '') {
+            $name = trim((string) get_post_meta($school_id, 'cmn_account_manager_name', true));
+        }
+        $email = sanitize_email((string) get_post_meta($school_id, 'cmn_account_manager_email', true));
+        return [
+            'name' => $name,
+            'email' => $email,
+        ];
+    }
+
+    private function get_school_last_activity_summary($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [
+                'label' => '-',
+                'detail' => '',
+            ];
+        }
+        $modified = trim((string) get_post_field('post_modified', $school_id));
+        if ($modified === '' || $modified === '0000-00-00 00:00:00') {
+            $modified = trim((string) get_post_field('post_date', $school_id));
+        }
+        $activity_ts = $modified !== '' ? strtotime($modified) : 0;
+        if ($activity_ts < 1) {
+            return [
+                'label' => '-',
+                'detail' => '',
+            ];
+        }
+        return [
+            'label' => human_time_diff($activity_ts, current_time('timestamp')) . ' ago',
+            'detail' => date_i18n('M j, Y g:ia', $activity_ts),
+        ];
+    }
+
     public function get_automation_console_url($tab = 'rules', $extra_query = []) {
         $tab = sanitize_key((string) $tab);
         if ($tab === '') {
@@ -8161,6 +8246,20 @@ final class CMN_One_Plugin {
                         'icon' => 'schools',
                         'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
                         'active_when' => ['view' => 'schools', 'query' => ['cmn_status' => 'all']],
+                    ],
+                    [
+                        'key' => 'schools_add',
+                        'label' => 'Add School',
+                        'icon' => 'edit',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_panel' => 'add', 'cmn_bucket' => false], $portal_url),
+                        'active_when' => ['view' => 'schools', 'query' => ['cmn_panel' => 'add']],
+                    ],
+                    [
+                        'key' => 'schools_bulk_add',
+                        'label' => 'Bulk Add Schools',
+                        'icon' => 'edit',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_panel' => 'bulk', 'cmn_bucket' => false], $portal_url),
+                        'active_when' => ['view' => 'schools', 'query' => ['cmn_panel' => 'bulk']],
                     ],
                     [
                         'key' => 'schools_leads',
@@ -23649,6 +23748,10 @@ final class CMN_One_Plugin {
         $manager_id = isset($_GET['cmn_manager']) ? intval($_GET['cmn_manager']) : 0;
         $location_filter = isset($_GET['cmn_location']) ? sanitize_text_field($_GET['cmn_location']) : '';
         $lead_group_filter = isset($_GET['cmn_lead_group']) ? $this->sanitize_lead_group_slug((string) $_GET['cmn_lead_group']) : '';
+        $last_activity_filter = isset($_GET['cmn_last_activity']) ? sanitize_key((string) $_GET['cmn_last_activity']) : '';
+        if (!in_array($last_activity_filter, ['', 'inactive_30'], true)) {
+            $last_activity_filter = '';
+        }
         if ($status === '') {
             if ($view === 'clients') {
                 $status = 'client';
@@ -23767,6 +23870,15 @@ final class CMN_One_Plugin {
         if ($meta_query) {
             $args['meta_query'] = $meta_query;
         }
+        if ($last_activity_filter === 'inactive_30') {
+            $args['date_query'] = [
+                [
+                    'column' => 'post_modified',
+                    'before' => wp_date('Y-m-d H:i:s', current_time('timestamp') - (30 * DAY_IN_SECONDS)),
+                    'inclusive' => true,
+                ],
+            ];
+        }
         if ($search !== '') {
             global $wpdb;
             $status_placeholders = implode(',', array_fill(0, count($school_list_post_statuses), '%s'));
@@ -23848,6 +23960,7 @@ final class CMN_One_Plugin {
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
+            'cmn_last_activity' => $last_activity_filter ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
         ]), $portal_url);
@@ -23876,6 +23989,9 @@ final class CMN_One_Plugin {
         if ($lead_group_filter !== '') {
             $filter_count++;
         }
+        if ($last_activity_filter !== '') {
+            $filter_count++;
+        }
         $filter_label = $filter_count ? 'Filters (' . $filter_count . ')' : 'Filters';
         $base_url = add_query_arg(array_filter(['view' => $view_param, 'cmn_bucket' => $bucket ?: null]), $portal_url);
         $panel_base_query = array_filter([
@@ -23885,6 +24001,7 @@ final class CMN_One_Plugin {
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
+            'cmn_last_activity' => $last_activity_filter ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
         ]);
@@ -23896,6 +24013,7 @@ final class CMN_One_Plugin {
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
+            'cmn_last_activity' => $last_activity_filter ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
         ]);
@@ -24236,6 +24354,12 @@ final class CMN_One_Plugin {
                             <?php endforeach; ?>
                         </select>
                     </label>
+                    <label>Last Activity
+                        <select name="cmn_last_activity">
+                            <option value="">Any activity</option>
+                            <option value="inactive_30"<?php echo $last_activity_filter === 'inactive_30' ? ' selected' : ''; ?>>Inactive &gt; 30 days</option>
+                        </select>
+                    </label>
                 </div>
                 <div class="cmn-filter-actions">
                     <button class="cmn-ghost" type="submit">Apply Filters</button>
@@ -24294,7 +24418,9 @@ final class CMN_One_Plugin {
                         <th><input type="checkbox" id="cmn-select-all-schools" aria-label="Select all schools"></th>
                         <th>School</th>
                         <th>Location</th>
-                        <th>Email</th>
+                        <th>Contact</th>
+                        <th>Account Manager</th>
+                        <th>Last Activity</th>
                         <th>Status</th>
                         <th>Pipeline</th>
                         <th>Groups</th>
@@ -24311,6 +24437,9 @@ final class CMN_One_Plugin {
                         $pipeline_value = sanitize_key((string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true));
                         $status_label = $status_value ? ucfirst($status_value) : '-';
                         $pipeline_label = $pipeline_value ? ucwords(str_replace('_', ' ', $pipeline_value)) : '-';
+                        $contact_summary = $this->get_school_primary_contact_summary($school_post_id);
+                        $manager_summary = $this->get_school_account_manager_summary($school_post_id);
+                        $last_activity_summary = $this->get_school_last_activity_summary($school_post_id);
                         $view_url = add_query_arg(array_filter([
                             'view' => 'schools',
                             'school_id' => $school_code ?: null,
@@ -24351,7 +24480,33 @@ final class CMN_One_Plugin {
                                 <?php endif; ?>
                             </td>
                             <td><?php echo esc_html((string) get_post_meta($school_post_id, 'cmn_location', true)); ?></td>
-                            <td><?php echo esc_html((string) get_post_meta($school_post_id, 'cmn_email', true)); ?></td>
+                            <td>
+                                <strong><?php echo esc_html($contact_summary['name'] !== '' ? $contact_summary['name'] : 'Not set'); ?></strong>
+                                <?php if ($contact_summary['phone'] !== '' || $contact_summary['email'] !== '') : ?>
+                                    <div class="cmn-table-meta">
+                                        <?php echo esc_html($contact_summary['phone'] !== '' ? $contact_summary['phone'] : '-'); ?>
+                                        <?php if ($contact_summary['email'] !== '') : ?>
+                                            · <?php echo esc_html($contact_summary['email']); ?>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($manager_summary['name'] !== '') : ?>
+                                    <strong><?php echo esc_html($manager_summary['name']); ?></strong>
+                                <?php else : ?>
+                                    <span class="cmn-muted">Unassigned</span>
+                                <?php endif; ?>
+                                <?php if ($manager_summary['email'] !== '') : ?>
+                                    <div class="cmn-table-meta"><?php echo esc_html($manager_summary['email']); ?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <strong><?php echo esc_html((string) ($last_activity_summary['label'] ?? '-')); ?></strong>
+                                <?php if (!empty($last_activity_summary['detail'])) : ?>
+                                    <div class="cmn-table-meta"><?php echo esc_html((string) $last_activity_summary['detail']); ?></div>
+                                <?php endif; ?>
+                            </td>
                             <td><span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span></td>
                             <td><span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_label); ?></span></td>
                             <?php
@@ -24381,7 +24536,7 @@ final class CMN_One_Plugin {
                         </tr>
                     <?php endwhile; wp_reset_postdata(); ?>
                 <?php else : ?>
-                    <tr><td colspan="8">No schools found.</td></tr>
+                    <tr><td colspan="10">No schools found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
