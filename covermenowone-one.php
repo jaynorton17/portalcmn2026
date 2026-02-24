@@ -7974,7 +7974,7 @@ final class CMN_One_Plugin {
     }
 
     private function get_staff_nav_group_whitelist() {
-        return ['schools', 'candidates', 'bookings', 'commercial', 'support', 'intelligence', 'automation', 'system', 'configuration'];
+        return ['schools', 'candidates', 'bookings', 'commercial', 'support', 'intelligence', 'automation', 'system'];
     }
 
     private function build_staff_nav_order_from_groups($groups) {
@@ -8254,14 +8254,16 @@ final class CMN_One_Plugin {
             'automation' => [
                 'label' => 'Automation',
                 'icon' => 'automation',
-                'items' => $can_manage_automation ? [
-                    ['key' => 'automation_rule_builder', 'label' => 'Workflow Rules', 'icon' => 'rule_builder', 'url' => $automation_tab_url('rules')],
-                    ['key' => 'automation_rule_performance', 'label' => 'Rule Performance', 'icon' => 'rule_performance', 'url' => $automation_tab_url('performance')],
-                    ['key' => 'automation_trigger_logs', 'label' => 'Trigger Logs', 'icon' => 'trigger_logs', 'url' => $automation_tab_url('trigger_logs')],
-                    ['key' => 'automation_failed_actions', 'label' => 'Failed Actions', 'icon' => 'failed_actions', 'url' => $automation_tab_url('failed_actions')],
-                    ['key' => 'automation_scheduled_actions', 'label' => 'Scheduled Jobs / Queues', 'icon' => 'scheduled_actions', 'url' => $automation_tab_url('scheduled_actions')],
-                    ['key' => 'automation_broadcast_logic', 'label' => 'Notification Rules', 'icon' => 'broadcast_logic', 'url' => $automation_tab_url('broadcast_logic')],
-                ] : [],
+                'items' => array_values(array_filter([
+                    $can_manage_automation ? ['key' => 'automation_rule_builder', 'label' => 'Workflow Rules', 'icon' => 'rule_builder', 'url' => $automation_tab_url('rules')] : null,
+                    $can_manage_automation ? ['key' => 'automation_trigger_logs', 'label' => 'Trigger Logs', 'icon' => 'trigger_logs', 'url' => $automation_tab_url('trigger_logs')] : null,
+                    $can_manage_automation ? ['key' => 'automation_failed_actions', 'label' => 'Failed Actions', 'icon' => 'failed_actions', 'url' => $automation_tab_url('failed_actions')] : null,
+                    $can_manage_automation ? ['key' => 'automation_scheduled_actions', 'label' => 'Scheduled Jobs / Queues', 'icon' => 'scheduled_actions', 'url' => $automation_tab_url('scheduled_actions')] : null,
+                    $can_manage_automation ? ['key' => 'automation_broadcast_logic', 'label' => 'Notification Rules', 'icon' => 'broadcast_logic', 'url' => $automation_tab_url('broadcast_logic')] : null,
+                    $can_access_email_centre ? ['key' => 'automation_templates', 'label' => 'Templates', 'icon' => 'templates', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_url), 'active_when' => ['view' => 'email-centre', 'email_tab' => 'templates']] : null,
+                    $can_access_email_centre ? ['key' => 'email_centre_senders', 'label' => 'Email Senders', 'icon' => 'senders', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'senders'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'senders']] : null,
+                    $can_access_email_centre ? ['key' => 'email_centre_logs', 'label' => 'Email Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'logs'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'logs']] : null,
+                ])),
             ],
             'system' => [
                 'label' => 'System',
@@ -8270,21 +8272,13 @@ final class CMN_One_Plugin {
                     $is_admin ? ['key' => 'system_health', 'label' => 'System Health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url)] : null,
                     $is_admin ? ['key' => 'system_logs', 'label' => 'Error Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
                     $is_admin ? ['key' => 'audit', 'label' => 'Audit Log', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
-                    ['key' => 'data_integrity', 'label' => 'Tools', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url)],
-                ])),
-            ],
-            'configuration' => [
-                'label' => 'Configuration',
-                'icon' => 'configuration',
-                'items' => array_values(array_filter([
+                    ['key' => 'tools', 'label' => 'Tools', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url), 'active_keys' => ['data_integrity']],
+                    ['key' => 'data_integrity', 'label' => 'Data Integrity', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url)],
                     $is_admin ? ['key' => 'settings', 'label' => 'General Settings', 'icon' => 'settings', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => false], $portal_url)] : null,
+                    $is_admin ? ['key' => 'feature_flags', 'label' => 'Feature Flags', 'icon' => 'settings', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => 'feature_flags'], $portal_url), 'active_when' => ['view' => 'settings', 'query' => ['cmn_settings_tab' => 'feature_flags']]] : null,
                     $is_admin ? ['key' => 'permissions', 'label' => 'Roles & Permissions', 'icon' => 'permissions', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => 'permissions'], $portal_url), 'active_when' => ['view' => 'settings', 'query' => ['cmn_settings_tab' => 'permissions']]] : null,
-                    $can_access_email_centre ? ['key' => 'email_centre_templates', 'label' => 'Email Templates', 'icon' => 'templates', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_url), 'active_when' => ['view' => 'email-centre', 'email_tab' => 'templates']] : null,
-                    $can_access_email_centre ? ['key' => 'email_centre_senders', 'label' => 'Senders', 'icon' => 'senders', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'senders'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'senders']] : null,
-                    $can_access_email_centre ? ['key' => 'email_centre_logs', 'label' => 'Email Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'logs'], $portal_url), 'submenu' => 1, 'active_when' => ['view' => 'email-centre', 'email_tab' => 'logs']] : null,
                     ($is_admin && $can_manage_staff) ? ['key' => 'staff', 'label' => 'Staff', 'icon' => 'staff', 'url' => add_query_arg(['view' => 'staff'], $portal_url)] : null,
                     ($is_admin && $show_training_simulator) ? ['key' => 'training_simulator', 'label' => 'Training Simulator', 'icon' => 'training', 'url' => $this->get_training_console_url()] : null,
-                    $is_admin ? ['key' => 'wordpress_dashboard', 'label' => 'WordPress Access', 'icon' => 'wordpress', 'url' => $wordpress_dashboard_url] : null,
                 ])),
             ],
         ];
@@ -36970,7 +36964,7 @@ final class CMN_One_Plugin {
         }
 
         $tab_map = [
-            'templates' => 'email_centre_templates',
+            'templates' => 'automation_templates',
             'senders' => 'email_centre_senders',
             'logs' => 'email_centre_logs',
         ];
