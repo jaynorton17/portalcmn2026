@@ -359,7 +359,44 @@ document.addEventListener('DOMContentLoaded', function () {
     var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
     var staffShell = staffNav.closest('.cmn-staff-shell');
     var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
+    var staffNavEditToggleBtn = staffNav.querySelector('[data-staff-nav-edit-toggle]');
+    var staffNavEditPanel = staffNav.querySelector('[data-staff-nav-edit-panel]');
+    var staffNavEditCancelBtn = staffNav.querySelector('[data-staff-nav-edit-cancel]');
+    var staffNavEditResetBtn = staffNav.querySelector('[data-staff-nav-edit-reset]');
+    var staffNavEditSaveBtn = staffNav.querySelector('[data-staff-nav-edit-save]');
+    var staffNavEditDiscardPanel = staffNav.querySelector('[data-staff-nav-edit-discard]');
+    var staffNavEditDiscardConfirmBtn = staffNav.querySelector('[data-staff-nav-edit-discard-confirm]');
+    var staffNavEditDiscardKeepBtn = staffNav.querySelector('[data-staff-nav-edit-discard-keep]');
     var staffNavPeekOpen = false;
+    var isNavEditing = false;
+    var navOrderDirty = false;
+    var navOrderSaveInFlight = false;
+    var dragType = '';
+    var dragNode = null;
+    var dragGroupKey = '';
+
+    var cloneJson = function (value, fallback) {
+      try {
+        return JSON.parse(JSON.stringify(value));
+      } catch (e) {
+        return fallback;
+      }
+    };
+    var readNavOrderAttr = function (attrName) {
+      var raw = staffNav.getAttribute(attrName) || '';
+      if (!raw) {
+        return { groups: [], items: {} };
+      }
+      try {
+        var parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') {
+          return { groups: [], items: {} };
+        }
+        return parsed;
+      } catch (e) {
+        return { groups: [], items: {} };
+      }
+    };
     var readServerStaffNavState = function () {
       var raw = staffNav.getAttribute('data-nav-state') || '';
       if (!raw) {
@@ -372,6 +409,127 @@ document.addEventListener('DOMContentLoaded', function () {
         return {};
       }
     };
+    var collectNavOrderFromDom = function () {
+      var order = { groups: [], items: {} };
+      staffNav.querySelectorAll('[data-staff-nav-group]').forEach(function (groupEl) {
+        var groupKey = String(groupEl.getAttribute('data-staff-nav-group') || '').trim();
+        if (!groupKey) {
+          return;
+        }
+        order.groups.push(groupKey);
+        order.items[groupKey] = [];
+        groupEl.querySelectorAll('[data-staff-nav-item]').forEach(function (itemEl) {
+          var itemKey = String(itemEl.getAttribute('data-staff-nav-item-key') || '').trim();
+          if (!itemKey) {
+            return;
+          }
+          order.items[groupKey].push(itemKey);
+        });
+      });
+      return order;
+    };
+    var normalizeNavOrder = function (order, defaults) {
+      var normalized = { groups: [], items: {} };
+      var base = defaults && typeof defaults === 'object' ? defaults : { groups: [], items: {} };
+      var baseGroups = Array.isArray(base.groups) ? base.groups.map(function (groupKey) {
+        return String(groupKey || '').trim();
+      }).filter(Boolean) : [];
+      var requestedGroups = order && Array.isArray(order.groups) ? order.groups : [];
+      var seenGroups = {};
+
+      requestedGroups.forEach(function (groupKey) {
+        groupKey = String(groupKey || '').trim();
+        if (!groupKey || seenGroups[groupKey] || baseGroups.indexOf(groupKey) === -1) {
+          return;
+        }
+        normalized.groups.push(groupKey);
+        seenGroups[groupKey] = true;
+      });
+      baseGroups.forEach(function (groupKey) {
+        if (!seenGroups[groupKey]) {
+          normalized.groups.push(groupKey);
+          seenGroups[groupKey] = true;
+        }
+      });
+
+      normalized.groups.forEach(function (groupKey) {
+        var baseItems = Array.isArray(base.items && base.items[groupKey]) ? base.items[groupKey].map(function (itemKey) {
+          return String(itemKey || '').trim();
+        }).filter(Boolean) : [];
+        var requestedItems = Array.isArray(order && order.items && order.items[groupKey]) ? order.items[groupKey] : [];
+        var seenItems = {};
+        normalized.items[groupKey] = [];
+        requestedItems.forEach(function (itemKey) {
+          itemKey = String(itemKey || '').trim();
+          if (!itemKey || seenItems[itemKey] || baseItems.indexOf(itemKey) === -1) {
+            return;
+          }
+          normalized.items[groupKey].push(itemKey);
+          seenItems[itemKey] = true;
+        });
+        baseItems.forEach(function (itemKey) {
+          if (!seenItems[itemKey]) {
+            normalized.items[groupKey].push(itemKey);
+            seenItems[itemKey] = true;
+          }
+        });
+      });
+
+      return normalized;
+    };
+    var orderFingerprint = function (order) {
+      return JSON.stringify(order || { groups: [], items: {} });
+    };
+    var applyNavOrderToDom = function (order) {
+      var navLinks = staffNav.querySelector('.cmn-staff-nav-links');
+      if (!navLinks) {
+        return;
+      }
+      var currentOrder = collectNavOrderFromDom();
+      var normalized = normalizeNavOrder(order, currentOrder);
+      var groupLookup = {};
+      navLinks.querySelectorAll('[data-staff-nav-group]').forEach(function (groupEl) {
+        var key = String(groupEl.getAttribute('data-staff-nav-group') || '').trim();
+        if (key) {
+          groupLookup[key] = groupEl;
+        }
+      });
+
+      normalized.groups.forEach(function (groupKey) {
+        var groupEl = groupLookup[groupKey];
+        if (!groupEl) {
+          return;
+        }
+        navLinks.appendChild(groupEl);
+        var bodyEl = groupEl.querySelector('[data-staff-nav-body="' + groupKey + '"]');
+        if (!bodyEl) {
+          return;
+        }
+        var itemLookup = {};
+        bodyEl.querySelectorAll('[data-staff-nav-item]').forEach(function (itemEl) {
+          var itemKey = String(itemEl.getAttribute('data-staff-nav-item-key') || '').trim();
+          if (itemKey) {
+            itemLookup[itemKey] = itemEl;
+          }
+        });
+        var orderedItems = normalized.items[groupKey] || [];
+        orderedItems.forEach(function (itemKey) {
+          if (itemLookup[itemKey]) {
+            bodyEl.appendChild(itemLookup[itemKey]);
+            delete itemLookup[itemKey];
+          }
+        });
+        Object.keys(itemLookup).forEach(function (itemKey) {
+          bodyEl.appendChild(itemLookup[itemKey]);
+        });
+      });
+    };
+
+    var navOrderDefault = normalizeNavOrder(readNavOrderAttr('data-nav-order-default'), collectNavOrderFromDom());
+    var navOrderSaved = normalizeNavOrder(readNavOrderAttr('data-nav-order'), navOrderDefault);
+    applyNavOrderToDom(navOrderSaved);
+    var navOrderBaseline = cloneJson(navOrderSaved, navOrderDefault);
+
     var readStaffNavState = function () {
       try {
         var raw = window.sessionStorage.getItem(staffNavStorageKey);
@@ -445,6 +603,31 @@ document.addEventListener('DOMContentLoaded', function () {
         // Keep local state even if server sync fails.
       });
     };
+    var persistStaffNavOrder = function (order) {
+      if (!(window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.staffNavNonce)) {
+        return Promise.resolve(false);
+      }
+      var fd = new FormData();
+      fd.append('action', 'cmn_save_staff_nav_order');
+      fd.append('nonce', window.cmnPortal.staffNavNonce);
+      fd.append('order', JSON.stringify(order || { groups: [], items: {} }));
+      return fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      }).then(function (response) {
+        if (!response || !response.ok) {
+          return false;
+        }
+        return response.json().then(function (json) {
+          return !!(json && json.success);
+        }).catch(function () {
+          return false;
+        });
+      }).catch(function () {
+        return false;
+      });
+    };
     var setStaffGroupState = function (groupEl, isOpen) {
       if (!groupEl) {
         return;
@@ -455,6 +638,68 @@ document.addEventListener('DOMContentLoaded', function () {
         toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       }
     };
+    var setNavDragEnabled = function (enabled) {
+      staffNav.querySelectorAll('[data-staff-nav-group]').forEach(function (groupEl) {
+        groupEl.setAttribute('draggable', enabled ? 'true' : 'false');
+      });
+      staffNav.querySelectorAll('[data-staff-nav-item]').forEach(function (itemEl) {
+        itemEl.setAttribute('draggable', enabled ? 'true' : 'false');
+      });
+    };
+    var setNavDiscardPromptVisible = function (visible) {
+      if (!staffNavEditDiscardPanel) {
+        return;
+      }
+      staffNavEditDiscardPanel.hidden = !visible;
+    };
+    var refreshNavEditControls = function () {
+      staffNav.classList.toggle('is-nav-editing', isNavEditing);
+      if (staffNavEditToggleBtn) {
+        staffNavEditToggleBtn.setAttribute('aria-pressed', isNavEditing ? 'true' : 'false');
+        staffNavEditToggleBtn.setAttribute('data-tooltip', isNavEditing ? 'Close edit mode' : 'Edit menu');
+      }
+      if (staffNavEditPanel) {
+        staffNavEditPanel.hidden = !isNavEditing;
+      }
+      if (staffNavEditCancelBtn) {
+        staffNavEditCancelBtn.disabled = navOrderSaveInFlight;
+      }
+      if (staffNavEditResetBtn) {
+        staffNavEditResetBtn.disabled = navOrderSaveInFlight;
+      }
+      if (staffNavEditSaveBtn) {
+        staffNavEditSaveBtn.disabled = navOrderSaveInFlight || !navOrderDirty;
+      }
+    };
+    var syncNavDirtyState = function () {
+      var currentOrder = normalizeNavOrder(collectNavOrderFromDom(), navOrderDefault);
+      navOrderDirty = orderFingerprint(currentOrder) !== orderFingerprint(navOrderBaseline);
+      if (!navOrderDirty) {
+        setNavDiscardPromptVisible(false);
+      }
+      refreshNavEditControls();
+    };
+    var exitNavEditMode = function (revertOrder) {
+      if (revertOrder) {
+        applyNavOrderToDom(navOrderBaseline);
+      }
+      isNavEditing = false;
+      navOrderDirty = false;
+      navOrderSaveInFlight = false;
+      setNavDiscardPromptVisible(false);
+      setNavDragEnabled(false);
+      refreshNavEditControls();
+    };
+    var enterNavEditMode = function () {
+      isNavEditing = true;
+      navOrderSaveInFlight = false;
+      navOrderBaseline = normalizeNavOrder(collectNavOrderFromDom(), navOrderDefault);
+      navOrderDirty = false;
+      setNavDiscardPromptVisible(false);
+      setNavDragEnabled(true);
+      refreshNavEditControls();
+    };
+
     var navState = readStaffNavState();
     var serverNavState = readServerStaffNavState();
     Object.keys(serverNavState).forEach(function (key) {
@@ -479,7 +724,11 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     persistStaffNavState(navState);
     staffNav.querySelectorAll('[data-staff-nav-toggle]').forEach(function (toggleBtn) {
-      toggleBtn.addEventListener('click', function () {
+      toggleBtn.addEventListener('click', function (event) {
+        if (isNavEditing) {
+          event.preventDefault();
+          return;
+        }
         var key = toggleBtn.getAttribute('data-staff-nav-toggle') || '';
         var groupEl = staffNav.querySelector('[data-staff-nav-group="' + key + '"]');
         if (!groupEl) {
@@ -508,12 +757,172 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     }
     staffNav.querySelectorAll('.cmn-school-nav-link').forEach(function (linkEl) {
-      linkEl.addEventListener('click', function () {
+      linkEl.addEventListener('click', function (event) {
+        if (isNavEditing) {
+          event.preventDefault();
+          return;
+        }
         if (staffNav.classList.contains('is-collapsed')) {
           setStaffNavPeekState(false);
         }
       });
     });
+    if (staffNavEditToggleBtn) {
+      staffNavEditToggleBtn.addEventListener('click', function () {
+        if (!isNavEditing) {
+          enterNavEditMode();
+          return;
+        }
+        if (!navOrderDirty) {
+          exitNavEditMode(false);
+          return;
+        }
+        setNavDiscardPromptVisible(true);
+      });
+    }
+    if (staffNavEditCancelBtn) {
+      staffNavEditCancelBtn.addEventListener('click', function () {
+        if (!isNavEditing || navOrderSaveInFlight) {
+          return;
+        }
+        if (!navOrderDirty) {
+          exitNavEditMode(false);
+          return;
+        }
+        setNavDiscardPromptVisible(true);
+      });
+    }
+    if (staffNavEditResetBtn) {
+      staffNavEditResetBtn.addEventListener('click', function () {
+        if (!isNavEditing || navOrderSaveInFlight) {
+          return;
+        }
+        applyNavOrderToDom(navOrderDefault);
+        syncNavDirtyState();
+      });
+    }
+    if (staffNavEditSaveBtn) {
+      staffNavEditSaveBtn.addEventListener('click', function () {
+        if (!isNavEditing || navOrderSaveInFlight || !navOrderDirty) {
+          return;
+        }
+        navOrderSaveInFlight = true;
+        refreshNavEditControls();
+        var nextOrder = normalizeNavOrder(collectNavOrderFromDom(), navOrderDefault);
+        persistStaffNavOrder(nextOrder).then(function (saved) {
+          if (!saved) {
+            navOrderSaveInFlight = false;
+            refreshNavEditControls();
+            return;
+          }
+          navOrderBaseline = cloneJson(nextOrder, navOrderDefault);
+          navOrderSaved = cloneJson(nextOrder, navOrderDefault);
+          try {
+            staffNav.setAttribute('data-nav-order', JSON.stringify(navOrderSaved));
+          } catch (e) {
+            // Ignore.
+          }
+          exitNavEditMode(false);
+        }).catch(function () {
+          navOrderSaveInFlight = false;
+          refreshNavEditControls();
+        });
+      });
+    }
+    if (staffNavEditDiscardConfirmBtn) {
+      staffNavEditDiscardConfirmBtn.addEventListener('click', function () {
+        if (!isNavEditing || navOrderSaveInFlight) {
+          return;
+        }
+        exitNavEditMode(true);
+      });
+    }
+    if (staffNavEditDiscardKeepBtn) {
+      staffNavEditDiscardKeepBtn.addEventListener('click', function () {
+        if (!isNavEditing || navOrderSaveInFlight) {
+          return;
+        }
+        setNavDiscardPromptVisible(false);
+      });
+    }
+
+    staffNav.addEventListener('dragstart', function (event) {
+      if (!isNavEditing) {
+        return;
+      }
+      var itemEl = event.target.closest('[data-staff-nav-item]');
+      if (itemEl) {
+        dragType = 'item';
+        dragNode = itemEl;
+        dragGroupKey = String(itemEl.getAttribute('data-staff-nav-item-group') || '').trim();
+      } else {
+        var groupEl = event.target.closest('[data-staff-nav-group]');
+        if (!groupEl) {
+          return;
+        }
+        dragType = 'group';
+        dragNode = groupEl;
+        dragGroupKey = '';
+      }
+      if (!dragNode) {
+        return;
+      }
+      dragNode.classList.add('is-dragging');
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', 'cmn-nav-reorder');
+      }
+    });
+    staffNav.addEventListener('dragover', function (event) {
+      if (!isNavEditing || !dragNode) {
+        return;
+      }
+      if (dragType === 'group') {
+        var targetGroup = event.target.closest('[data-staff-nav-group]');
+        if (!targetGroup || targetGroup === dragNode) {
+          return;
+        }
+        event.preventDefault();
+        var targetRect = targetGroup.getBoundingClientRect();
+        var placeAfter = event.clientY > (targetRect.top + (targetRect.height / 2));
+        targetGroup.parentNode.insertBefore(dragNode, placeAfter ? targetGroup.nextSibling : targetGroup);
+        return;
+      }
+      if (dragType === 'item') {
+        var targetItem = event.target.closest('[data-staff-nav-item]');
+        if (!targetItem || targetItem === dragNode) {
+          return;
+        }
+        var targetGroupKey = String(targetItem.getAttribute('data-staff-nav-item-group') || '').trim();
+        if (!targetGroupKey || targetGroupKey !== dragGroupKey) {
+          return;
+        }
+        event.preventDefault();
+        var targetItemRect = targetItem.getBoundingClientRect();
+        var placeAfterItem = event.clientY > (targetItemRect.top + (targetItemRect.height / 2));
+        targetItem.parentNode.insertBefore(dragNode, placeAfterItem ? targetItem.nextSibling : targetItem);
+      }
+    });
+    staffNav.addEventListener('drop', function (event) {
+      if (!isNavEditing || !dragNode) {
+        return;
+      }
+      event.preventDefault();
+    });
+    staffNav.addEventListener('dragend', function () {
+      if (dragNode) {
+        dragNode.classList.remove('is-dragging');
+      }
+      dragType = '';
+      dragNode = null;
+      dragGroupKey = '';
+      if (isNavEditing) {
+        syncNavDirtyState();
+      }
+    });
+
+    setNavDragEnabled(false);
+    refreshNavEditControls();
     document.addEventListener('click', function (event) {
       if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
         return;

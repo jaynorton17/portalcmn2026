@@ -715,6 +715,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_system_health_export_csv', [$this, 'handle_system_health_export_csv']);
         add_action('wp_ajax_cmn_get_system_health_fixes', [$this, 'handle_get_system_health_fixes']);
         add_action('wp_ajax_cmn_save_staff_nav_state', [$this, 'handle_save_staff_nav_state']);
+        add_action('wp_ajax_cmn_save_staff_nav_order', [$this, 'handle_save_staff_nav_order']);
         add_action('wp_ajax_cmn_touch_staff_presence', [$this, 'handle_touch_staff_presence']);
         add_action('wp_ajax_cmn_send_test_emails', [$this, 'handle_send_test_emails']);
         add_action('admin_post_cmn_update_candidate_request', [$this, 'handle_update_candidate_request']);
@@ -7936,6 +7937,144 @@ final class CMN_One_Plugin {
         return (int) $query->found_posts;
     }
 
+    private function get_staff_nav_group_whitelist() {
+        return ['schools', 'candidates', 'bookings', 'commercial', 'support', 'intelligence', 'automation', 'system', 'configuration'];
+    }
+
+    private function build_staff_nav_order_from_groups($groups) {
+        $groups = is_array($groups) ? $groups : [];
+        $order = [
+            'groups' => [],
+            'items' => [],
+        ];
+        foreach ($groups as $group_key => $group_config) {
+            $group_key = sanitize_key((string) $group_key);
+            if ($group_key === '') {
+                continue;
+            }
+            $items = isset($group_config['items']) && is_array($group_config['items']) ? $group_config['items'] : [];
+            if (!$items) {
+                continue;
+            }
+            $order['groups'][] = $group_key;
+            $order['items'][$group_key] = [];
+            foreach ($items as $item_config) {
+                $item_key = sanitize_key((string) ($item_config['key'] ?? ''));
+                if ($item_key === '') {
+                    continue;
+                }
+                $order['items'][$group_key][] = $item_key;
+            }
+        }
+        return $order;
+    }
+
+    private function normalize_staff_nav_order_payload($raw_order, $groups) {
+        $defaults = $this->build_staff_nav_order_from_groups($groups);
+        if (!is_array($raw_order)) {
+            return $defaults;
+        }
+
+        $normalized_groups = [];
+        $seen_groups = [];
+        $requested_groups = isset($raw_order['groups']) && is_array($raw_order['groups']) ? $raw_order['groups'] : [];
+        foreach ($requested_groups as $group_key) {
+            $group_key = sanitize_key((string) $group_key);
+            if ($group_key === '' || !in_array($group_key, $defaults['groups'], true) || isset($seen_groups[$group_key])) {
+                continue;
+            }
+            $normalized_groups[] = $group_key;
+            $seen_groups[$group_key] = true;
+        }
+        foreach ($defaults['groups'] as $group_key) {
+            if (!isset($seen_groups[$group_key])) {
+                $normalized_groups[] = $group_key;
+                $seen_groups[$group_key] = true;
+            }
+        }
+
+        $normalized_items = [];
+        $raw_items = isset($raw_order['items']) && is_array($raw_order['items']) ? $raw_order['items'] : [];
+        foreach ($normalized_groups as $group_key) {
+            $allowed_items = isset($defaults['items'][$group_key]) && is_array($defaults['items'][$group_key]) ? $defaults['items'][$group_key] : [];
+            $requested_items = isset($raw_items[$group_key]) && is_array($raw_items[$group_key]) ? $raw_items[$group_key] : [];
+            $seen_items = [];
+            $normalized_items[$group_key] = [];
+            foreach ($requested_items as $item_key) {
+                $item_key = sanitize_key((string) $item_key);
+                if ($item_key === '' || !in_array($item_key, $allowed_items, true) || isset($seen_items[$item_key])) {
+                    continue;
+                }
+                $normalized_items[$group_key][] = $item_key;
+                $seen_items[$item_key] = true;
+            }
+            foreach ($allowed_items as $item_key) {
+                if (!isset($seen_items[$item_key])) {
+                    $normalized_items[$group_key][] = $item_key;
+                }
+            }
+        }
+
+        return [
+            'groups' => $normalized_groups,
+            'items' => $normalized_items,
+        ];
+    }
+
+    private function apply_staff_nav_order_to_groups($groups, $raw_order) {
+        $groups = is_array($groups) ? $groups : [];
+        if (!$groups) {
+            return [];
+        }
+        $order = $this->normalize_staff_nav_order_payload($raw_order, $groups);
+        $group_lookup = $groups;
+        $ordered_groups = [];
+
+        foreach ((array) $order['groups'] as $group_key) {
+            if (!isset($group_lookup[$group_key])) {
+                continue;
+            }
+            $group_config = $group_lookup[$group_key];
+            $item_order = isset($order['items'][$group_key]) && is_array($order['items'][$group_key]) ? $order['items'][$group_key] : [];
+            $items = isset($group_config['items']) && is_array($group_config['items']) ? $group_config['items'] : [];
+            if ($items) {
+                $item_lookup = [];
+                $item_without_key = [];
+                foreach ($items as $item_config) {
+                    $item_key = sanitize_key((string) ($item_config['key'] ?? ''));
+                    if ($item_key === '') {
+                        $item_without_key[] = $item_config;
+                        continue;
+                    }
+                    $item_lookup[$item_key] = $item_config;
+                }
+                $ordered_items = [];
+                foreach ($item_order as $item_key) {
+                    if (isset($item_lookup[$item_key])) {
+                        $ordered_items[] = $item_lookup[$item_key];
+                        unset($item_lookup[$item_key]);
+                    }
+                }
+                foreach ($item_lookup as $item_config) {
+                    $ordered_items[] = $item_config;
+                }
+                foreach ($item_without_key as $item_config) {
+                    $ordered_items[] = $item_config;
+                }
+                $group_config['items'] = $ordered_items;
+            }
+            $ordered_groups[$group_key] = $group_config;
+        }
+
+        foreach ($group_lookup as $group_key => $group_config) {
+            if (!isset($ordered_groups[$group_key])) {
+                $ordered_groups[$group_key] = $group_config;
+            }
+        }
+
+        return $ordered_groups;
+    }
+
     private function render_staff_shell($active, $inner_html) {
         $portal_page = get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
@@ -8108,6 +8247,19 @@ final class CMN_One_Plugin {
             }
         }
 
+        $default_nav_order = $this->build_staff_nav_order_from_groups($groups);
+        $stored_nav_order_raw = get_user_meta($user_id, 'cmn_staff_nav_order', true);
+        $groups = $this->apply_staff_nav_order_to_groups($groups, $stored_nav_order_raw);
+        $stored_nav_order = $this->normalize_staff_nav_order_payload($stored_nav_order_raw, $groups);
+        $default_nav_order_json = wp_json_encode($default_nav_order);
+        if (!is_string($default_nav_order_json) || $default_nav_order_json === '') {
+            $default_nav_order_json = '{"groups":[],"items":{}}';
+        }
+        $stored_nav_order_json = wp_json_encode($stored_nav_order);
+        if (!is_string($stored_nav_order_json) || $stored_nav_order_json === '') {
+            $stored_nav_order_json = $default_nav_order_json;
+        }
+
         $active = $active === 'compliance-review' ? 'compliance_review' : $active;
         $is_dashboard_active = ($active === 'dashboard' || $current_view === '' || $current_view === 'dashboard');
         $is_staff_nav_item_active = function ($item) use ($active, $current_view, $current_marketing_tab, $current_email_centre_tab) {
@@ -8167,6 +8319,7 @@ final class CMN_One_Plugin {
             $icon_key = sanitize_key((string) $icon_key);
             $icons = [
                 'panel' => '<rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path>',
+                'edit' => '<path d="M12 20h9"></path><path d="m16.5 3.5 4 4L8 20l-5 1 1-5z"></path>',
                 'dashboard' => '<rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect>',
                 'clients' => '<rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 5v14"></path><path d="M12 9h5"></path><path d="M12 13h5"></path>',
                 'schools' => '<path d="M3 21h18"></path><path d="M6 21V9l6-4 6 4v12"></path><path d="M10 14h4"></path>',
@@ -8255,12 +8408,34 @@ final class CMN_One_Plugin {
                 </div>
             </div>
             <div class="cmn-school-shell cmn-staff-shell">
-                <aside class="cmn-school-nav cmn-staff-nav" data-staff-nav data-user-id="<?php echo esc_attr((string) $user_id); ?>" data-nav-state="<?php echo esc_attr($stored_nav_state_json); ?>">
+                <aside class="cmn-school-nav cmn-staff-nav" data-staff-nav data-user-id="<?php echo esc_attr((string) $user_id); ?>" data-nav-state="<?php echo esc_attr($stored_nav_state_json); ?>" data-nav-order="<?php echo esc_attr($stored_nav_order_json); ?>" data-nav-order-default="<?php echo esc_attr($default_nav_order_json); ?>">
                     <div class="cmn-staff-nav-header">
-                        <button type="button" class="cmn-staff-nav-minimize" data-staff-nav-minimize aria-pressed="false" data-tooltip="Minimise sidebar">
-                            <?php echo $render_staff_nav_icon('panel'); ?>
-                            <span class="cmn-school-nav-label">Minimise</span>
-                        </button>
+                        <div class="cmn-staff-nav-header-row">
+                            <button type="button" class="cmn-staff-nav-minimize" data-staff-nav-minimize aria-pressed="false" data-tooltip="Minimise sidebar">
+                                <?php echo $render_staff_nav_icon('panel'); ?>
+                                <span class="cmn-school-nav-label">Minimise</span>
+                            </button>
+                            <button type="button" class="cmn-staff-nav-edit-toggle" data-staff-nav-edit-toggle aria-pressed="false" aria-label="Edit menu order" data-tooltip="Edit menu">
+                                <?php echo $render_staff_nav_icon('edit'); ?>
+                            </button>
+                        </div>
+                        <div class="cmn-staff-nav-edit-panel" data-staff-nav-edit-panel hidden>
+                            <div class="cmn-staff-nav-edit-panel-row">
+                                <span class="cmn-staff-nav-edit-badge">Editing menu</span>
+                                <div class="cmn-staff-nav-edit-actions">
+                                    <button type="button" class="cmn-ghost cmn-btn-mini" data-staff-nav-edit-cancel>Cancel</button>
+                                    <button type="button" class="cmn-ghost cmn-btn-mini" data-staff-nav-edit-reset>Reset</button>
+                                    <button type="button" class="cmn-primary cmn-btn-mini" data-staff-nav-edit-save disabled>Save</button>
+                                </div>
+                            </div>
+                            <div class="cmn-staff-nav-edit-discard" data-staff-nav-edit-discard hidden>
+                                <span class="cmn-staff-nav-edit-discard-label">Discard changes?</span>
+                                <div class="cmn-staff-nav-edit-discard-actions">
+                                    <button type="button" class="cmn-ghost cmn-btn-mini" data-staff-nav-edit-discard-confirm>Discard</button>
+                                    <button type="button" class="cmn-primary cmn-btn-mini" data-staff-nav-edit-discard-keep>Keep editing</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <nav class="cmn-school-nav-links cmn-staff-nav-links">
                         <a class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--dashboard-root<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="Dashboard">
@@ -8283,14 +8458,17 @@ final class CMN_One_Plugin {
                             $group_label = (string) ($group['label'] ?? ucfirst($group_key));
                             $group_icon = (string) ($group['icon'] ?? 'system');
                             ?>
-                            <section class="cmn-staff-nav-group<?php echo $is_group_active ? ' is-open is-active-group' : ''; ?>" data-staff-nav-group="<?php echo esc_attr($group_key); ?>">
-                                <button type="button" class="cmn-staff-nav-toggle" data-staff-nav-toggle="<?php echo esc_attr($group_key); ?>" aria-expanded="<?php echo $is_group_active ? 'true' : 'false'; ?>" data-tooltip="<?php echo esc_attr($group_label); ?>">
-                                    <span class="cmn-staff-nav-toggle-main">
-                                        <?php echo $render_staff_nav_icon($group_icon); ?>
-                                        <span class="cmn-staff-nav-toggle-label"><?php echo esc_html($group_label); ?></span>
-                                    </span>
-                                    <span class="cmn-staff-nav-caret" aria-hidden="true"></span>
-                                </button>
+                            <section class="cmn-staff-nav-group<?php echo $is_group_active ? ' is-open is-active-group' : ''; ?>" data-staff-nav-group="<?php echo esc_attr($group_key); ?>" draggable="false">
+                                <div class="cmn-staff-nav-group-head">
+                                    <button type="button" class="cmn-staff-nav-toggle" data-staff-nav-toggle="<?php echo esc_attr($group_key); ?>" aria-expanded="<?php echo $is_group_active ? 'true' : 'false'; ?>" data-tooltip="<?php echo esc_attr($group_label); ?>">
+                                        <span class="cmn-staff-nav-toggle-main">
+                                            <?php echo $render_staff_nav_icon($group_icon); ?>
+                                            <span class="cmn-staff-nav-toggle-label"><?php echo esc_html($group_label); ?></span>
+                                        </span>
+                                        <span class="cmn-staff-nav-caret" aria-hidden="true"></span>
+                                    </button>
+                                    <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-group-handle" data-staff-nav-group-handle aria-label="<?php echo esc_attr('Reorder ' . $group_label); ?>" tabindex="-1">⋮⋮</button>
+                                </div>
                                 <div class="cmn-staff-nav-group-body" data-staff-nav-body="<?php echo esc_attr($group_key); ?>">
                                     <?php foreach ($items as $group_item) : ?>
                                         <?php
@@ -8300,10 +8478,13 @@ final class CMN_One_Plugin {
                                         $group_item_is_submenu = !empty($group_item['submenu']);
                                         $group_item_is_active = $is_staff_nav_item_active($group_item);
                                         ?>
-                                        <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $group_item_is_active ? ' is-active' : ''; ?><?php echo $group_item_is_submenu ? ' cmn-staff-nav-link--submenu' : ''; ?>" href="<?php echo esc_url((string) ($group_item['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr($group_item_label); ?>">
-                                            <?php echo $render_staff_nav_icon($group_item_icon); ?>
-                                            <span class="cmn-school-nav-label"><?php echo esc_html($group_item_label); ?></span>
-                                        </a>
+                                        <div class="cmn-staff-nav-item" data-staff-nav-item data-staff-nav-item-group="<?php echo esc_attr($group_key); ?>" data-staff-nav-item-key="<?php echo esc_attr($group_item_key); ?>" draggable="false">
+                                            <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $group_item_is_active ? ' is-active' : ''; ?><?php echo $group_item_is_submenu ? ' cmn-staff-nav-link--submenu' : ''; ?>" href="<?php echo esc_url((string) ($group_item['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr($group_item_label); ?>">
+                                                <?php echo $render_staff_nav_icon($group_item_icon); ?>
+                                                <span class="cmn-school-nav-label"><?php echo esc_html($group_item_label); ?></span>
+                                            </a>
+                                            <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-item-handle" data-staff-nav-item-handle aria-label="<?php echo esc_attr('Reorder ' . $group_item_label); ?>" tabindex="-1">⋮⋮</button>
+                                        </div>
                                     <?php endforeach; ?>
                                 </div>
                             </section>
@@ -20955,7 +21136,7 @@ final class CMN_One_Plugin {
         if (!is_array($decoded_state)) {
             $decoded_state = [];
         }
-        $allowed_groups = ['talent', 'sales', 'clients', 'growth', 'operations', 'admin'];
+        $allowed_groups = $this->get_staff_nav_group_whitelist();
         $state = [];
         foreach ($allowed_groups as $group_key) {
             if (array_key_exists($group_key, $decoded_state)) {
@@ -20964,6 +21145,61 @@ final class CMN_One_Plugin {
         }
         update_user_meta(get_current_user_id(), 'cmn_staff_nav_state', $state);
         wp_send_json_success(['state' => $state]);
+    }
+
+    public function handle_save_staff_nav_order() {
+        if (!check_ajax_referer('cmn_staff_nav', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in() || !$this->is_staff_user()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $raw_order = $_POST['order'] ?? '';
+        if (is_string($raw_order)) {
+            $decoded_order = json_decode(wp_unslash($raw_order), true);
+        } else {
+            $decoded_order = $raw_order;
+        }
+        if (!is_array($decoded_order)) {
+            $decoded_order = [];
+        }
+
+        $sanitized_order = [
+            'groups' => [],
+            'items' => [],
+        ];
+
+        $requested_groups = isset($decoded_order['groups']) && is_array($decoded_order['groups']) ? $decoded_order['groups'] : [];
+        $seen_groups = [];
+        foreach ($requested_groups as $group_key) {
+            $group_key = sanitize_key((string) $group_key);
+            if ($group_key === '' || isset($seen_groups[$group_key])) {
+                continue;
+            }
+            $sanitized_order['groups'][] = $group_key;
+            $seen_groups[$group_key] = true;
+        }
+
+        $requested_items = isset($decoded_order['items']) && is_array($decoded_order['items']) ? $decoded_order['items'] : [];
+        foreach ($requested_items as $group_key => $item_keys) {
+            $group_key = sanitize_key((string) $group_key);
+            if ($group_key === '' || !is_array($item_keys)) {
+                continue;
+            }
+            $sanitized_order['items'][$group_key] = [];
+            $seen_items = [];
+            foreach ($item_keys as $item_key) {
+                $item_key = sanitize_key((string) $item_key);
+                if ($item_key === '' || isset($seen_items[$item_key])) {
+                    continue;
+                }
+                $sanitized_order['items'][$group_key][] = $item_key;
+                $seen_items[$item_key] = true;
+            }
+        }
+
+        update_user_meta(get_current_user_id(), 'cmn_staff_nav_order', $sanitized_order);
+        wp_send_json_success(['order' => $sanitized_order]);
     }
 
     private function get_latest_system_health_run() {
