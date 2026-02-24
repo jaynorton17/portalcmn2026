@@ -8569,7 +8569,7 @@ final class CMN_One_Plugin {
                                 <?php echo $render_staff_nav_icon('edit'); ?>
                             </button>
                         </div>
-                        <div class="cmn-staff-nav-edit-panel" data-staff-nav-edit-panel hidden>
+                        <div class="cmn-staff-nav-edit-panel cmn-edit-control" data-staff-nav-edit-panel hidden>
                             <div class="cmn-staff-nav-edit-panel-row">
                                 <span class="cmn-staff-nav-edit-badge">Editing menu</span>
                                 <div class="cmn-staff-nav-edit-actions">
@@ -8617,7 +8617,7 @@ final class CMN_One_Plugin {
                                         </span>
                                         <span class="cmn-staff-nav-caret" aria-hidden="true"></span>
                                     </button>
-                                    <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-group-handle" data-staff-nav-group-handle aria-label="<?php echo esc_attr('Reorder ' . $group_label); ?>" tabindex="-1">⋮⋮</button>
+                                    <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-group-handle cmn-edit-control" data-staff-nav-group-handle aria-label="<?php echo esc_attr('Reorder ' . $group_label); ?>" tabindex="-1">⋮⋮</button>
                                 </div>
                                 <div class="cmn-staff-nav-group-body" data-staff-nav-body="<?php echo esc_attr($group_key); ?>">
                                     <?php foreach ($items as $group_item) : ?>
@@ -8633,7 +8633,7 @@ final class CMN_One_Plugin {
                                                 <?php echo $render_staff_nav_icon($group_item_icon); ?>
                                                 <span class="cmn-school-nav-label"><?php echo esc_html($group_item_label); ?></span>
                                             </a>
-                                            <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-item-handle" data-staff-nav-item-handle aria-label="<?php echo esc_attr('Reorder ' . $group_item_label); ?>" tabindex="-1">⋮⋮</button>
+                                            <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-item-handle cmn-edit-control" data-staff-nav-item-handle aria-label="<?php echo esc_attr('Reorder ' . $group_item_label); ?>" tabindex="-1">⋮⋮</button>
                                         </div>
                                     <?php endforeach; ?>
                                 </div>

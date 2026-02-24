@@ -654,6 +654,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     var refreshNavEditControls = function () {
       staffNav.classList.toggle('is-nav-editing', isNavEditing);
+      staffNav.classList.toggle('edit-mode-active', isNavEditing);
       if (staffNavEditToggleBtn) {
         staffNavEditToggleBtn.setAttribute('aria-pressed', isNavEditing ? 'true' : 'false');
         staffNavEditToggleBtn.setAttribute('data-tooltip', isNavEditing ? 'Close edit mode' : 'Edit menu');
@@ -773,11 +774,7 @@ document.addEventListener('DOMContentLoaded', function () {
           enterNavEditMode();
           return;
         }
-        if (!navOrderDirty) {
-          exitNavEditMode(false);
-          return;
-        }
-        setNavDiscardPromptVisible(true);
+        exitNavEditMode(false);
       });
     }
     if (staffNavEditCancelBtn) {
