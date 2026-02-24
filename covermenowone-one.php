@@ -8565,7 +8565,7 @@ final class CMN_One_Plugin {
                                 <?php echo $render_staff_nav_icon('panel'); ?>
                                 <span class="cmn-school-nav-label">Minimise</span>
                             </button>
-                            <button type="button" class="cmn-staff-nav-edit-toggle" data-staff-nav-edit-toggle aria-pressed="false" aria-label="Edit menu order" data-tooltip="Edit menu">
+                            <button type="button" class="cmn-staff-nav-edit-toggle" data-staff-nav-edit-toggle aria-pressed="false" aria-label="Toggle edit options" data-tooltip="Toggle edit options">
                                 <?php echo $render_staff_nav_icon('edit'); ?>
                             </button>
                         </div>

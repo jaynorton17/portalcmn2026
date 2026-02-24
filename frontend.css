@@ -13155,3 +13155,152 @@ body.cmn-portal-page .cmn-livechat-root {
     justify-content: center;
   }
 }
+
+/* Final candidate parity pass: align candidate dashboard/profile with admin surfaces + CTA hierarchy */
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main {
+  background-color: #0b0f14 !important;
+  background-image: radial-gradient(circle at top right, rgba(208, 42, 42, 0.04), transparent 42%) !important;
+  color: #e9eef7 !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-cover-card,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-support-sidebar,
+  .cmn-support-thread
+) {
+  background: rgba(16, 21, 28, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(.cmn-card-header h3, .cmn-candidate-header h2, .cmn-profile-progress strong) {
+  color: #e9eef7 !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(p, li, label, .cmn-muted, .cmn-profile-meta-label) {
+  color: rgba(233, 238, 247, 0.74) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-primary,
+  .cmn-btn-primary,
+  button.cmn-primary,
+  a.cmn-primary,
+  .cmn-availability-btn.btn-confirm,
+  #cmn-tomorrow-availability-btn
+) {
+  min-height: 44px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(160, 25, 25, 0.78) !important;
+  background: #d02a2a !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 8px 18px rgba(208, 42, 42, 0.35) !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-primary,
+  .cmn-btn-primary,
+  button.cmn-primary,
+  a.cmn-primary,
+  .cmn-availability-btn.btn-confirm,
+  #cmn-tomorrow-availability-btn
+):hover,
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-primary,
+  .cmn-btn-primary,
+  button.cmn-primary,
+  a.cmn-primary,
+  .cmn-availability-btn.btn-confirm,
+  #cmn-tomorrow-availability-btn
+):focus-visible {
+  background: #e13a3a !important;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(208, 42, 42, 0.42) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-primary[disabled],
+  .cmn-btn-primary[disabled],
+  button.cmn-primary[disabled],
+  .cmn-availability-btn.btn-confirm[disabled],
+  #cmn-tomorrow-availability-btn[disabled]
+) {
+  background: #6a2525 !important;
+  border-color: #6a2525 !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
+  .cmn-ghost,
+  .cmn-btn-secondary,
+  .cmn-availability-btn-secondary
+) {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #e9eef7 !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-confirmed,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-blocked {
+  display: block !important;
+  background: rgba(16, 21, 28, 0.94) !important;
+  background-image: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  min-height: 0 !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero::after {
+  display: none !important;
+  content: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section {
+  text-align: center !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 12px !important;
+  text-align: center !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard #cmn-tomorrow-availability-btn {
+  width: min(760px, 100%) !important;
+  max-width: 760px !important;
+  min-height: 58px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  margin: 0 auto !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-progress,
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-global-editbar {
+  background: rgba(16, 21, 28, 0.92) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+@media (max-width: 980px) {
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
+    grid-template-columns: 1fr;
+  }
+}

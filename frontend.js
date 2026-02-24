@@ -357,6 +357,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var staffNavUserId = staffNav.getAttribute('data-user-id') || '0';
     var staffNavStorageKey = 'cmn_staff_nav_state_v2_' + staffNavUserId;
     var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
+    var staffNavEditModeKey = 'cmn_sidebar_edit_mode';
     var staffShell = staffNav.closest('.cmn-staff-shell');
     var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
     var staffNavEditToggleBtn = staffNav.querySelector('[data-staff-nav-edit-toggle]');
@@ -563,6 +564,20 @@ document.addEventListener('DOMContentLoaded', function () {
         // Ignore storage failures.
       }
     };
+    var readStaffNavEditModeState = function () {
+      try {
+        return window.localStorage.getItem(staffNavEditModeKey) === '1';
+      } catch (e) {
+        return false;
+      }
+    };
+    var writeStaffNavEditModeState = function (isEditing) {
+      try {
+        window.localStorage.setItem(staffNavEditModeKey, isEditing ? '1' : '0');
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    };
     var isStaffNavMobileViewport = function () {
       if (!window.matchMedia) {
         return window.innerWidth <= 900;
@@ -671,7 +686,7 @@ document.addEventListener('DOMContentLoaded', function () {
       staffNav.classList.toggle('edit-mode-active', isNavEditing);
       if (staffNavEditToggleBtn) {
         staffNavEditToggleBtn.setAttribute('aria-pressed', isNavEditing ? 'true' : 'false');
-        staffNavEditToggleBtn.setAttribute('data-tooltip', isNavEditing ? 'Close edit mode' : 'Edit menu');
+        staffNavEditToggleBtn.setAttribute('data-tooltip', isNavEditing ? 'Hide edit options' : 'Toggle edit options');
       }
       if (staffNavEditPanel) {
         staffNavEditPanel.hidden = !isNavEditing;
@@ -704,6 +719,7 @@ document.addEventListener('DOMContentLoaded', function () {
       setNavDiscardPromptVisible(false);
       setNavDragEnabled(false);
       refreshNavEditControls();
+      writeStaffNavEditModeState(false);
     };
     var enterNavEditMode = function () {
       isNavEditing = true;
@@ -713,6 +729,7 @@ document.addEventListener('DOMContentLoaded', function () {
       setNavDiscardPromptVisible(false);
       setNavDragEnabled(true);
       refreshNavEditControls();
+      writeStaffNavEditModeState(true);
     };
 
     var navState = readStaffNavState();
@@ -944,6 +961,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     setNavDragEnabled(false);
     refreshNavEditControls();
+    if (readStaffNavEditModeState()) {
+      enterNavEditMode();
+    }
     document.addEventListener('click', function (event) {
       if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
         return;
