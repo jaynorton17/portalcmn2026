@@ -22415,7 +22415,7 @@ final class CMN_One_Plugin {
                     <?php if (isset($_GET['cmn_error'])) : ?>
                         <div class="cmn-register-error"><?php echo esc_html(sanitize_text_field($_GET['cmn_error'])); ?></div>
                     <?php endif; ?>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form" data-school-import-map-form>
                         <?php wp_nonce_field('cmn_portal_reset_password', 'cmn_portal_reset_password_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_portal_reset_password">
                         <input type="hidden" name="login" value="<?php echo esc_attr($login); ?>">
@@ -23805,7 +23805,39 @@ final class CMN_One_Plugin {
                             }
                             ?>
                         </div>
-                        <?php if ($import_preview_rows) : ?>
+                        <?php if ($import_preview_rows) :
+                            $preview_payload_rows = [];
+                            foreach ((array) $import_preview_rows as $preview_row) {
+                                $preview_payload_rows[] = array_map(function ($value) {
+                                    return (string) $value;
+                                }, array_values((array) $preview_row));
+                            }
+                            $preview_payload = [
+                                'headers' => array_values(array_map(function ($value) {
+                                    return (string) $value;
+                                }, (array) $import_headers)),
+                                'rows' => $preview_payload_rows,
+                            ];
+                            ?>
+                            <div class="cmn-import-preview-wrap" data-school-import-map-preview data-preview="<?php echo esc_attr(wp_json_encode($preview_payload)); ?>">
+                                <h4>Mapped preview (first 10 rows)</h4>
+                                <div class="cmn-table-scroll">
+                                    <table class="cmn-approval-table cmn-import-preview-table cmn-import-preview-table--mapped">
+                                        <thead>
+                                        <tr>
+                                            <th>School Name</th>
+                                            <th>Location</th>
+                                            <th>Contact Number</th>
+                                            <th>School Email</th>
+                                            <th>Cover Manager Name</th>
+                                            <th>Cover Manager Email</th>
+                                            <th>Email Name</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody data-school-import-mapped-preview-body></tbody>
+                                    </table>
+                                </div>
+                            </div>
                             <div class="cmn-import-preview-wrap">
                                 <h4>Preview (first 10 rows)</h4>
                                 <div class="cmn-table-scroll">

@@ -891,6 +891,138 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+  var schoolImportMapForm = document.querySelector('[data-school-import-map-form]');
+  var schoolImportMapPreviewRoot = document.querySelector('[data-school-import-map-preview]');
+  if (schoolImportMapForm && schoolImportMapPreviewRoot) {
+    var mapPreviewRaw = schoolImportMapPreviewRoot.getAttribute('data-preview') || '';
+    var mapPreviewBody = schoolImportMapPreviewRoot.querySelector('[data-school-import-mapped-preview-body]');
+    var mapSelects = Array.prototype.slice.call(schoolImportMapForm.querySelectorAll('select[name^="cmn_map["]'));
+    var mapPreviewData = { headers: [], rows: [] };
+    try {
+      var parsedPreview = JSON.parse(mapPreviewRaw || '{}');
+      if (parsedPreview && Array.isArray(parsedPreview.headers) && Array.isArray(parsedPreview.rows)) {
+        mapPreviewData = parsedPreview;
+      }
+    } catch (_err) {
+      mapPreviewData = { headers: [], rows: [] };
+    }
+
+    var mapFieldOrder = [
+      'cmn_school_name',
+      'cmn_location',
+      'cmn_phone',
+      'cmn_email',
+      'cmn_cover_manager',
+      'cmn_cover_manager_email',
+      'cmn_email_name'
+    ];
+
+    var headerAliases = {
+      cmn_school_name: ['school name', 'school', 'establishment name'],
+      cmn_location: ['location', 'town', 'city', 'area'],
+      cmn_phone: ['phone', 'contact number', 'telephone', 'tel'],
+      cmn_email: ['email', 'school email'],
+      cmn_cover_manager: ['cover manager', 'manager name'],
+      cmn_cover_manager_email: ['cover manager email', 'manager email'],
+      cmn_email_name: ['email name', 'contact name', 'sender name']
+    };
+
+    var normalizeMapText = function (value) {
+      return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    };
+
+    var escapeMapHtml = function (value) {
+      return String(value || '').replace(/[&<>\"']/g, function (char) {
+        if (char === '&') {
+          return '&amp;';
+        }
+        if (char === '<') {
+          return '&lt;';
+        }
+        if (char === '>') {
+          return '&gt;';
+        }
+        if (char === '"') {
+          return '&quot;';
+        }
+        return '&#39;';
+      });
+    };
+
+    var findSelectForField = function (fieldKey) {
+      return schoolImportMapForm.querySelector('select[name="cmn_map[' + fieldKey + ']"]');
+    };
+
+    var autoMapField = function (fieldKey) {
+      var select = findSelectForField(fieldKey);
+      if (!select || select.value) {
+        return;
+      }
+      var aliases = headerAliases[fieldKey] || [];
+      var bestIndex = '';
+      var bestScore = 0;
+      mapPreviewData.headers.forEach(function (header, idx) {
+        var headerNorm = normalizeMapText(header);
+        var score = 0;
+        aliases.forEach(function (alias) {
+          var aliasNorm = normalizeMapText(alias);
+          if (!aliasNorm) {
+            return;
+          }
+          if (headerNorm === aliasNorm) {
+            score = Math.max(score, 100);
+          } else if (headerNorm.indexOf(aliasNorm) !== -1 || aliasNorm.indexOf(headerNorm) !== -1) {
+            score = Math.max(score, 50);
+          }
+        });
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = String(idx);
+        }
+      });
+      if (bestIndex !== '') {
+        select.value = bestIndex;
+      }
+    };
+
+    var mappedCellValue = function (row, fieldKey) {
+      var select = findSelectForField(fieldKey);
+      if (!select || select.value === '') {
+        return '—';
+      }
+      var idx = parseInt(select.value, 10);
+      if (!Number.isFinite(idx) || idx < 0) {
+        return '—';
+      }
+      return (row && row[idx] !== undefined && row[idx] !== null && String(row[idx]).trim() !== '') ? String(row[idx]) : '—';
+    };
+
+    var renderMappedPreview = function () {
+      if (!mapPreviewBody) {
+        return;
+      }
+      var rows = Array.isArray(mapPreviewData.rows) ? mapPreviewData.rows.slice(0, 10) : [];
+      if (!rows.length) {
+        mapPreviewBody.innerHTML = '<tr><td colspan="7">No preview rows available.</td></tr>';
+        return;
+      }
+      var html = rows.map(function (row) {
+        return '<tr>' + mapFieldOrder.map(function (fieldKey) {
+          return '<td>' + escapeMapHtml(mappedCellValue(row, fieldKey)) + '</td>';
+        }).join('') + '</tr>';
+      }).join('');
+      mapPreviewBody.innerHTML = html;
+    };
+
+    mapFieldOrder.forEach(function (fieldKey) {
+      autoMapField(fieldKey);
+    });
+    renderMappedPreview();
+    mapSelects.forEach(function (select) {
+      select.addEventListener('change', renderMappedPreview);
+    });
+  }
+
   var confirmForms = document.querySelectorAll('form[data-confirm]');
   if (confirmForms.length) {
     confirmForms.forEach(function (form) {
