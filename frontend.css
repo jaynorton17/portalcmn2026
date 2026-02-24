@@ -4973,8 +4973,57 @@ body.cmn-booking-feedback-lock {
   gap: 10px;
 }
 
+.cmn-school-profile-grid .cmn-school-tab-panel {
+  padding: 14px 16px;
+  gap: 8px;
+}
+
+.cmn-school-profile-grid .cmn-school-tab-panel h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.cmn-school-profile-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-inline-edit-link {
+  min-width: 34px;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .cmn-school-profile-grid .cmn-meta-grid {
   gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.cmn-school-profile-grid .cmn-meta-grid--school-details {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.cmn-school-profile-grid .cmn-meta-grid--school-app-compact {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.cmn-school-profile-grid .cmn-activity-list,
+.cmn-school-profile-grid .cmn-task-list {
+  gap: 8px;
+}
+
+.cmn-school-profile-grid .cmn-activity-list li,
+.cmn-school-profile-grid .cmn-task-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .cmn-school-profile-summary-strip {

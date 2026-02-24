@@ -39711,6 +39711,16 @@ final class CMN_One_Plugin {
             }
             $latest_school_reply = (string) get_post_meta($school_id, 'cmn_access_request_latest_school_reply', true);
             $latest_school_reply_at = (string) get_post_meta($school_id, 'cmn_access_request_latest_school_reply_at', true);
+            $application_ref = (string) get_post_meta($school_id, 'cmn_registration_ref', true);
+            $application_requested_at = (string) get_post_meta($school_id, 'cmn_registration_requested_at', true);
+            $has_application_request = ($request_status !== '');
+            $has_application_context = (
+                $has_application_request
+                || $application_ref !== ''
+                || $application_requested_at !== ''
+                || $request_note !== ''
+                || $latest_school_reply !== ''
+            );
             $assigned_manager_id = (int) $meta('cmn_account_manager_user');
             if ($assigned_manager_id < 1) {
                 $assigned_manager_id = (int) $meta('cmn_account_manager_user_id');
@@ -39778,6 +39788,9 @@ final class CMN_One_Plugin {
             $build_tab_url = function ($tab_key) use ($portal_url, $tab_base_query) {
                 return add_query_arg(array_merge($tab_base_query, ['cmn_school_tab' => $tab_key]), $portal_url);
             };
+            $quick_edit_url = $this->can_preview_dashboards()
+                ? add_query_arg(['as' => 'school', 'school' => 'profile', 'school_id' => $school_id], $portal_url)
+                : $build_tab_url('settings');
             $profile_issues = [];
             if ($missing_profile_fields) {
                 $profile_issues[] = 'Missing fields: ' . implode(', ', array_slice(array_values($missing_profile_fields), 0, 3)) . (count($missing_profile_fields) > 3 ? ' +' . (count($missing_profile_fields) - 3) . ' more' : '');
@@ -39794,6 +39807,7 @@ final class CMN_One_Plugin {
             if ($critical_meta_missing && !$profile_issues) {
                 $profile_issues[] = 'Profile data incomplete';
             }
+            $show_profile_issues = !empty($profile_issues);
             $booking_counts = $this->get_school_profile_booking_counts($school_id);
             $recent_bookings = $this->get_school_profile_recent_bookings($school_id, 8);
             $activity_quick_counts = [
@@ -39850,7 +39864,7 @@ final class CMN_One_Plugin {
                 </a>
             <?php endforeach; ?>
         </nav>
-        <?php if ($profile_issues) : ?>
+        <?php if ($show_profile_issues) : ?>
             <section class="cmn-panel-card cmn-school-profile-issues-strip">
                 <div class="cmn-school-profile-issues-strip-head">
                     <strong>Needs attention</strong>
@@ -39869,65 +39883,79 @@ final class CMN_One_Plugin {
         <?php if ($request_msg) : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($request_msg); ?></strong></div>
         <?php endif; ?>
-        <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview<?php echo $active_profile_tab === 'overview' ? '' : ' cmn-school-tab-panel-hidden'; ?>">
-            <?php if ($watchdog('panel_timeline')) { return ob_get_clean(); } ?>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_start timeline school_id=' . (int) $school_id); ?>
-            <h3>Application Timeline</h3>
-            <?php if ($critical_meta_missing) : ?>
-                <p class="cmn-muted">Timeline hidden until domain + postcode are saved.</p>
-            <?php elseif ($request_timeline) : ?>
-                <ul class="cmn-activity-list">
-                    <?php foreach ($request_timeline as $timeline_item) : ?>
-                        <?php
-                        $timeline_time = (string) ($timeline_item['created_at'] ?? '');
-                        $timeline_actor = (string) ($timeline_item['actor_name'] ?? 'System');
-                        ?>
-                        <li>
-                            <div>
-                                <strong><?php echo esc_html((string) ($timeline_item['title'] ?? 'Application updated')); ?></strong>
-                                <?php if (!empty($timeline_item['note'])) : ?>
-                                    <div class="cmn-muted"><?php echo esc_html((string) $timeline_item['note']); ?></div>
-                                <?php endif; ?>
-                            </div>
-                            <div class="cmn-muted">
-                                <span class="cmn-status-chip <?php echo esc_attr((string) ($timeline_item['status_class'] ?? 'is-muted')); ?>"><?php echo esc_html($timeline_actor); ?></span>
-                                <?php if ($timeline_time !== '') : ?>
-                                    <span><?php echo esc_html(date_i18n('M j, Y g:ia', strtotime($timeline_time))); ?></span>
-                                <?php endif; ?>
-                            </div>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-            <?php else : ?>
-                <p class="cmn-muted">No application timeline entries yet.</p>
-            <?php endif; ?>
-            <?php error_log('[CMN_SCHOOL_VIEW] panel_end timeline school_id=' . (int) $school_id); ?>
-        </section>
+        <?php if ($has_application_context) : ?>
+            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview<?php echo $active_profile_tab === 'overview' ? '' : ' cmn-school-tab-panel-hidden'; ?>">
+                <?php if ($watchdog('panel_timeline')) { return ob_get_clean(); } ?>
+                <?php error_log('[CMN_SCHOOL_VIEW] panel_start timeline school_id=' . (int) $school_id); ?>
+                <h3>Application Timeline</h3>
+                <?php if ($critical_meta_missing) : ?>
+                    <p class="cmn-muted">Timeline hidden until domain + postcode are saved.</p>
+                <?php elseif ($request_timeline) : ?>
+                    <ul class="cmn-activity-list">
+                        <?php foreach ($request_timeline as $timeline_item) : ?>
+                            <?php
+                            $timeline_time = (string) ($timeline_item['created_at'] ?? '');
+                            $timeline_actor = (string) ($timeline_item['actor_name'] ?? 'System');
+                            ?>
+                            <li>
+                                <div>
+                                    <strong><?php echo esc_html((string) ($timeline_item['title'] ?? 'Application updated')); ?></strong>
+                                    <?php if (!empty($timeline_item['note'])) : ?>
+                                        <div class="cmn-muted"><?php echo esc_html((string) $timeline_item['note']); ?></div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="cmn-muted">
+                                    <span class="cmn-status-chip <?php echo esc_attr((string) ($timeline_item['status_class'] ?? 'is-muted')); ?>"><?php echo esc_html($timeline_actor); ?></span>
+                                    <?php if ($timeline_time !== '') : ?>
+                                        <span><?php echo esc_html(date_i18n('M j, Y g:ia', strtotime($timeline_time))); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php else : ?>
+                    <div class="cmn-meta-grid cmn-meta-grid--school-app-compact">
+                        <div><strong>Request status:</strong> <?php echo esc_html($request_status_label); ?></div>
+                        <?php if ($application_ref !== '') : ?>
+                            <div><strong>Reference:</strong> <?php echo esc_html($application_ref); ?></div>
+                        <?php endif; ?>
+                        <?php if ($application_requested_at !== '') : ?>
+                            <div><strong>Requested at:</strong> <?php echo esc_html(date_i18n('M j, Y g:ia', strtotime($application_requested_at))); ?></div>
+                        <?php endif; ?>
+                        <?php if ($request_note !== '') : ?>
+                            <div><strong>Latest note:</strong> <?php echo esc_html($request_note); ?></div>
+                        <?php endif; ?>
+                        <?php if ($latest_school_reply !== '') : ?>
+                            <div><strong>Latest school reply:</strong> <?php echo esc_html($latest_school_reply); ?></div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+                <?php error_log('[CMN_SCHOOL_VIEW] panel_end timeline school_id=' . (int) $school_id); ?>
+            </section>
+        <?php endif; ?>
         <?php if ($watchdog('before_profile_grid')) { return ob_get_clean(); } ?>
         <div class="cmn-profile-grid cmn-school-profile-grid" data-school-active-tab="<?php echo esc_attr($active_profile_tab); ?>">
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-details">
                 <?php if ($watchdog('panel_details')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start details school_id=' . (int) $school_id); ?>
-                <h3>Details</h3>
-                <div class="cmn-meta-grid">
+                <div class="cmn-school-profile-panel-head">
+                    <h3>Details</h3>
+                    <a class="cmn-ghost cmn-btn-mini cmn-school-inline-edit-link" href="<?php echo esc_url($quick_edit_url); ?>" aria-label="Quick edit school details" title="Quick edit school details">✎</a>
+                </div>
+                <div class="cmn-meta-grid cmn-meta-grid--school-details">
                     <div><strong>Status:</strong> <?php echo esc_html(ucfirst($status_display)); ?><?php echo $status_raw === '' ? ' (assumed)' : ''; ?></div>
                     <div><strong>Request Status:</strong> <span class="cmn-status-chip <?php echo esc_attr($request_status_class); ?>"><?php echo esc_html($request_status_label); ?></span></div>
                     <div><strong>School ID:</strong> <?php echo esc_html($display($meta('cmn_school_id'))); ?></div>
                     <div><strong>Location:</strong> <?php echo esc_html($display($meta('cmn_location'))); ?></div>
                     <div><strong>Phone:</strong> <?php echo esc_html($display($meta('cmn_phone'))); ?></div>
-                    <div><strong>Switchboard:</strong> <?php echo esc_html($display($meta('cmn_switchboard'))); ?></div>
                     <div><strong>Email:</strong> <?php echo esc_html($display($meta('cmn_email'))); ?></div>
-                    <div><strong>Email Greeting Name:</strong> <?php echo esc_html($display($meta('cmn_email_name'))); ?></div>
                     <div><strong>Website:</strong> <?php echo esc_html($display($meta('cmn_website'))); ?></div>
-                    <div><strong>Account Manager:</strong> <?php echo esc_html($display($meta('cmn_account_manager'))); ?></div>
+                    <div><strong>Account Manager:</strong> <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : $display($meta('cmn_account_manager'))); ?></div>
                     <div><strong>Cover Manager:</strong> <?php echo esc_html($display($meta('cmn_cover_manager'))); ?></div>
                     <div><strong>Cover Manager Email:</strong> <?php echo esc_html($display($meta('cmn_cover_manager_email'))); ?></div>
-                    <div><strong>Spoke to CM:</strong> <?php echo esc_html($display($meta('cmn_spoke_to_cm'))); ?></div>
                     <div><strong>School Type:</strong> <?php echo esc_html($display($meta('cmn_school_type'))); ?></div>
                     <div><strong>Pupil Count:</strong> <?php echo esc_html($display($meta('cmn_pupil_count'))); ?></div>
-                    <div><strong>Supply Frequency:</strong> <?php echo esc_html($display($meta('cmn_supply_frequency'))); ?></div>
-                    <div><strong>Use Agencies:</strong> <?php echo esc_html($display($meta('cmn_use_agencies'))); ?></div>
-                    <div><strong>Agency Count:</strong> <?php echo esc_html($display($meta('cmn_agency_count'))); ?></div>
+                    <div><strong>Switchboard:</strong> <?php echo esc_html($display($meta('cmn_switchboard'))); ?></div>
                 </div>
                 <?php if ($request_note !== '') : ?>
                     <p class="cmn-muted">Latest note: <?php echo esc_html($request_note); ?></p>
@@ -39937,49 +39965,51 @@ final class CMN_One_Plugin {
                 <?php endif; ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end details school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
-                <?php if ($watchdog('panel_review')) { return ob_get_clean(); } ?>
-                <?php error_log('[CMN_SCHOOL_VIEW] panel_start review school_id=' . (int) $school_id); ?>
-                <h3>Application Review</h3>
-                <p class="cmn-muted">Current account manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></p>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-status-form cmn-school-request-form" data-school-request-form="1" data-school-name="<?php echo esc_attr((string) $school->post_title); ?>">
-                    <?php wp_nonce_field('cmn_process_school_request_' . $school_id, 'cmn_process_school_request_nonce'); ?>
-                    <input type="hidden" name="action" value="cmn_process_school_request">
-                    <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_id); ?>">
-                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
-                    <input type="hidden" name="cmn_convert_to_client" value="0" class="cmn-convert-client-flag">
-                    <label>Decision
-                        <select name="cmn_request_decision" data-school-request-decision>
-                            <option value="assign_only" selected>Assign only (no decision yet)</option>
-                            <option value="approved">Approve</option>
-                            <option value="more_info_needed">More info needed</option>
-                            <option value="rejected">Decline</option>
-                        </select>
-                    </label>
-                    <?php if ($can_update_assignment) : ?>
-                                    <label>Assign account manager
-                                        <select name="cmn_account_manager_user">
-                                            <option value="__keep__" selected>Keep current</option>
-                                            <option value="0">Unassigned</option>
-                                            <?php foreach ($account_managers as $manager) : ?>
-                                                <option value="<?php echo esc_attr((string) $manager->ID); ?>">
-                                                    <?php echo esc_html($manager->display_name . ' (' . $manager->user_email . ')'); ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </label>
-                                    <?php else : ?>
-                                        <input type="hidden" name="cmn_account_manager_user" value="__keep__">
-                                        <p class="cmn-muted">Assigned account manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></p>
-                                        <p class="cmn-muted">Only admin can change assignment.</p>
-                                    <?php endif; ?>
-                    <label class="cmn-school-request-note" data-school-request-note hidden>Note
-                        <textarea name="cmn_request_note" rows="3" data-school-request-note-input placeholder="Add decline reason or information needed"></textarea>
-                    </label>
-                    <button class="cmn-ghost" type="submit">Save application review</button>
-                </form>
-                <?php error_log('[CMN_SCHOOL_VIEW] panel_end review school_id=' . (int) $school_id); ?>
-            </div>
+            <?php if ($has_application_request) : ?>
+                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
+                    <?php if ($watchdog('panel_review')) { return ob_get_clean(); } ?>
+                    <?php error_log('[CMN_SCHOOL_VIEW] panel_start review school_id=' . (int) $school_id); ?>
+                    <h3>Application Review</h3>
+                    <p class="cmn-muted">Current account manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></p>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-status-form cmn-school-request-form cmn-school-request-form--compact" data-school-request-form="1" data-school-name="<?php echo esc_attr((string) $school->post_title); ?>">
+                        <?php wp_nonce_field('cmn_process_school_request_' . $school_id, 'cmn_process_school_request_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_process_school_request">
+                        <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_id); ?>">
+                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
+                        <input type="hidden" name="cmn_convert_to_client" value="0" class="cmn-convert-client-flag">
+                        <label>Decision
+                            <select name="cmn_request_decision" data-school-request-decision>
+                                <option value="assign_only" selected>Assign only (no decision yet)</option>
+                                <option value="approved">Approve</option>
+                                <option value="more_info_needed">More info needed</option>
+                                <option value="rejected">Decline</option>
+                            </select>
+                        </label>
+                        <?php if ($can_update_assignment) : ?>
+                                        <label>Assign account manager
+                                            <select name="cmn_account_manager_user">
+                                                <option value="__keep__" selected>Keep current</option>
+                                                <option value="0">Unassigned</option>
+                                                <?php foreach ($account_managers as $manager) : ?>
+                                                    <option value="<?php echo esc_attr((string) $manager->ID); ?>">
+                                                        <?php echo esc_html($manager->display_name . ' (' . $manager->user_email . ')'); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </label>
+                                        <?php else : ?>
+                                            <input type="hidden" name="cmn_account_manager_user" value="__keep__">
+                                            <p class="cmn-muted">Assigned account manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></p>
+                                            <p class="cmn-muted">Only admin can change assignment.</p>
+                                        <?php endif; ?>
+                        <label class="cmn-school-request-note" data-school-request-note hidden>Note
+                            <textarea name="cmn_request_note" rows="3" data-school-request-note-input placeholder="Add decline reason or information needed"></textarea>
+                        </label>
+                        <button class="cmn-primary cmn-btn-mini" type="submit">Save application review</button>
+                    </form>
+                    <?php error_log('[CMN_SCHOOL_VIEW] panel_end review school_id=' . (int) $school_id); ?>
+                </div>
+            <?php endif; ?>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
                 <?php if ($watchdog('panel_feedback_summary')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start feedback_summary school_id=' . (int) $school_id); ?>
