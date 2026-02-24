@@ -9946,7 +9946,7 @@ document.addEventListener('DOMContentLoaded', function () {
       { key: 'certificates', title: 'Certificates', text: 'Your completed certificates are managed here.' },
       { key: 'bookings', nav: true, title: 'Bookings Tab', text: 'Open Bookings for current and previous placements.' },
       { key: 'calendar', nav: true, title: 'Calendar Tab', text: 'Calendar explains day-by-day availability controls.' },
-      { key: 'support', nav: true, title: 'Support Hub', text: 'Open a ticket whenever you need help.' },
+      { key: 'support', nav: true, title: 'Support', text: 'Open a ticket whenever you need help.' },
       { key: 'logout-nav', title: 'Finish', text: 'You are ready to go. Logout is always available here.' }
     ];
 

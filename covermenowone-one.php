@@ -36090,7 +36090,7 @@ final class CMN_One_Plugin {
             <div class="cmn-support-thread" data-support-thread>
                 <div class="cmn-support-thread-header">
                     <div>
-                        <strong data-support-thread-title>Support Hub</strong>
+                        <strong data-support-thread-title>Support</strong>
                         <div class="cmn-muted" data-support-thread-ref>Select a ticket to view the conversation.</div>
                         <div class="cmn-status-chip is-pending" data-support-feedback-badge hidden>Feedback received</div>
                     </div>
