@@ -7753,6 +7753,18 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   vertical-align: middle;
 }
 
+.cmn-schools-pill-cell--combined {
+  min-width: 0;
+}
+
+.cmn-schools-pill-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
 .cmn-pill.cmn-pill--status {
   text-transform: capitalize;
 }
@@ -7800,6 +7812,10 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   .cmn-school-toolbar .cmn-toolbar-action {
     width: 100%;
     justify-content: center;
+  }
+
+  .cmn-school-request-form.cmn-school-request-form--compact {
+    grid-template-columns: 1fr;
   }
 
   .cmn-bulk-actions {
@@ -7907,6 +7923,78 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   justify-self: start;
 }
 
+.cmn-school-request-review-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-school-request-review-card {
+  padding: 14px 16px;
+  gap: 10px;
+}
+
+.cmn-school-request-review-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-request-review-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.cmn-school-request-review-meta div {
+  display: grid;
+  gap: 2px;
+}
+
+.cmn-school-request-review-meta strong {
+  color: var(--cmn-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.cmn-school-request-review-note {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cmn-school-request-review-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-request-form.cmn-school-request-form--compact {
+  margin-top: 4px;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
+.cmn-school-request-form.cmn-school-request-form--compact .cmn-school-request-note,
+.cmn-school-request-form.cmn-school-request-form--compact .cmn-school-request-convert {
+  grid-column: 1 / -1;
+}
+
+.cmn-school-request-form.cmn-school-request-form--compact button[type='submit'] {
+  justify-self: end;
+}
+
+.cmn-school-request-assignment-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .cmn-school-request-detail-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(340px, 0.9fr);
@@ -8009,6 +8097,14 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 }
 
 @media (max-width: 1120px) {
+  .cmn-school-request-review-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-school-request-form.cmn-school-request-form--compact {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
   .cmn-school-request-detail-layout {
     grid-template-columns: minmax(0, 1fr);
   }

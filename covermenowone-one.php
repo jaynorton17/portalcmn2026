@@ -24420,8 +24420,7 @@ final class CMN_One_Plugin {
                         <th>Contact</th>
                         <th>Account Manager</th>
                         <th>Last Activity</th>
-                        <th>Status</th>
-                        <th>Pipeline</th>
+                        <th>Status / Pipeline</th>
                         <th>Groups</th>
                         <th>Profile</th>
                     </tr>
@@ -24513,8 +24512,12 @@ final class CMN_One_Plugin {
                                     <div class="cmn-table-meta"><?php echo esc_html((string) $last_activity_summary['detail']); ?></div>
                                 <?php endif; ?>
                             </td>
-                            <td class="cmn-schools-pill-cell cmn-schools-pill-cell--status"><span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span></td>
-                            <td class="cmn-schools-pill-cell cmn-schools-pill-cell--pipeline"><span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_label); ?></span></td>
+                            <td class="cmn-schools-pill-cell cmn-schools-pill-cell--combined">
+                                <div class="cmn-schools-pill-row">
+                                    <span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span>
+                                    <span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_label); ?></span>
+                                </div>
+                            </td>
                             <?php
                             $lead_group_slugs = $this->get_school_lead_groups($school_post_id);
                             $lead_group_labels = [];
@@ -24542,7 +24545,7 @@ final class CMN_One_Plugin {
                         </tr>
                     <?php endwhile; wp_reset_postdata(); ?>
                 <?php else : ?>
-                    <tr><td colspan="10">No schools found.</td></tr>
+                    <tr><td colspan="9">No schools found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
@@ -27656,122 +27659,114 @@ final class CMN_One_Plugin {
             <button class="cmn-ghost" type="submit">Filter</button>
             <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'school-requests'], $portal_url)); ?>">Clear</a>
         </form>
-        <table class="cmn-approval-table cmn-request-table">
-            <thead>
-                <tr>
-                    <th>Ref</th>
-                    <th>School Name</th>
-                    <th>Email</th>
-                    <th>Domain</th>
-                    <th>Location</th>
-                    <th>Requested at</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if ($rows) : ?>
-                    <?php foreach ($rows as $row) : ?>
-                        <?php
-                        $status = (string) ($row['status'] ?? 'pending');
-                        if ($status === 'approved') {
-                            $status_class = 'is-verified';
-                            $status_label = 'Approved';
-                        } elseif ($status === 'rejected') {
-                            $status_class = 'is-declined';
-                            $status_label = 'Declined';
-                        } elseif ($status === 'more_info_needed') {
-                            $status_class = 'is-warning';
-                            $status_label = 'More Info Needed';
-                        } else {
-                            $status_class = 'is-pending';
-                            $status_label = 'Pending';
+        <?php if ($rows) : ?>
+            <div class="cmn-school-request-review-grid">
+                <?php foreach ($rows as $row) : ?>
+                    <?php
+                    $status = (string) ($row['status'] ?? 'pending');
+                    if ($status === 'approved') {
+                        $status_class = 'is-verified';
+                        $status_label = 'Approved';
+                    } elseif ($status === 'rejected') {
+                        $status_class = 'is-declined';
+                        $status_label = 'Declined';
+                    } elseif ($status === 'more_info_needed') {
+                        $status_class = 'is-warning';
+                        $status_label = 'More Info Needed';
+                    } else {
+                        $status_class = 'is-pending';
+                        $status_label = 'Pending';
+                    }
+                    $school_id = (int) ($row['school_id'] ?? 0);
+                    $ref_value = (string) ($row['ref'] ?? '');
+                    $assigned_manager_id = (int) get_post_meta($school_id, 'cmn_account_manager_user', true);
+                    if ($assigned_manager_id < 1) {
+                        $assigned_manager_id = (int) get_post_meta($school_id, 'cmn_account_manager_user_id', true);
+                    }
+                    $assigned_manager_name = '';
+                    if ($assigned_manager_id > 0) {
+                        $assigned_manager_user = get_user_by('id', $assigned_manager_id);
+                        if ($assigned_manager_user && !empty($assigned_manager_user->display_name)) {
+                            $assigned_manager_name = (string) $assigned_manager_user->display_name;
                         }
-                        $school_id = (int) ($row['school_id'] ?? 0);
-                        $ref_value = (string) ($row['ref'] ?? '');
-                        $assigned_manager_id = (int) get_post_meta($school_id, 'cmn_account_manager_user', true);
-                        if ($assigned_manager_id < 1) {
-                            $assigned_manager_id = (int) get_post_meta($school_id, 'cmn_account_manager_user_id', true);
-                        }
-                        $assigned_manager_name = '';
-                        if ($assigned_manager_id > 0) {
-                            $assigned_manager_user = get_user_by('id', $assigned_manager_id);
-                            if ($assigned_manager_user && !empty($assigned_manager_user->display_name)) {
-                                $assigned_manager_name = (string) $assigned_manager_user->display_name;
-                            }
-                        }
-                        ?>
-                        <tr>
-                            <td><?php echo esc_html($ref_value !== '' ? $ref_value : '-'); ?></td>
-                            <td><?php echo esc_html((string) ($row['name'] ?? 'School')); ?></td>
-                            <td><?php echo esc_html((string) ($row['email'] ?? '')); ?></td>
-                            <td><?php echo esc_html((string) ($row['domain'] ?? '')); ?></td>
-                            <td><?php echo esc_html((string) ($row['location'] ?? '')); ?></td>
-                            <td><?php echo esc_html(!empty($row['requested_at']) ? date_i18n('M j, Y g:ia', strtotime((string) $row['requested_at'])) : '-'); ?></td>
-                            <td>
-                                <span class="cmn-status-chip <?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span>
-                                <?php if ($status === 'rejected' && !empty($row['reject_reason'])) : ?>
-                                    <div class="cmn-table-meta"><?php echo esc_html((string) $row['reject_reason']); ?></div>
-                                <?php endif; ?>
-                                <?php if ($status === 'more_info_needed' && !empty($row['more_info_note'])) : ?>
-                                    <div class="cmn-table-meta"><?php echo esc_html((string) $row['more_info_note']); ?></div>
-                                <?php endif; ?>
-                                <?php if ($status === 'more_info_needed' && !empty($row['latest_school_reply'])) : ?>
-                                    <div class="cmn-table-meta"><strong>School reply:</strong> <?php echo esc_html((string) $row['latest_school_reply']); ?></div>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <a class="cmn-primary cmn-btn-mini cmn-button-link" href="<?php echo esc_url(add_query_arg(['view' => 'school-requests', 'request_id' => $school_id], $portal_url)); ?>">Open Application</a>
-                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'schools', 'school_id' => $school_id], $portal_url)); ?>">View</a>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-request-panel cmn-school-request-form" data-school-request-form="1" data-school-name="<?php echo esc_attr((string) ($row['name'] ?? 'School')); ?>">
-                                    <?php wp_nonce_field('cmn_process_school_request_' . $school_id, 'cmn_process_school_request_nonce'); ?>
-                                    <input type="hidden" name="action" value="cmn_process_school_request">
-                                    <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_id); ?>">
-                                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr($current_url); ?>">
-                                    <input type="hidden" name="cmn_convert_to_client" value="0" class="cmn-convert-client-flag">
-                                    <label class="cmn-school-request-convert" data-school-request-convert hidden>
-                                        <input type="checkbox" data-school-request-convert-input checked>
-                                        <span class="cmn-school-request-convert-title">Convert approved school to Client</span>
-                                        <small>Creates school login and sends set-password email immediately.</small>
-                                    </label>
-                                    <label>Decision
-                                        <select name="cmn_request_decision" data-school-request-decision>
-                                            <option value="assign_only" selected>Assign only (no decision yet)</option>
-                                            <option value="approved">Approve</option>
-                                            <option value="more_info_needed">More info needed</option>
-                                            <option value="rejected">Decline</option>
-                                        </select>
-                                    </label>
-                                    <?php if ($can_update_assignment) : ?>
-                                    <label>Assign account manager
-                                        <select name="cmn_account_manager_user">
-                                            <option value="__keep__" selected>Keep current</option>
-                                            <option value="0">Unassigned</option>
-                                            <?php foreach ($account_managers as $manager) : ?>
-                                                <option value="<?php echo esc_attr((string) $manager->ID); ?>">
-                                                    <?php echo esc_html($manager->display_name . ' (' . $manager->user_email . ')'); ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </label>
-                                    <?php else : ?>
-                                        <input type="hidden" name="cmn_account_manager_user" value="__keep__">
-                                        <p class="cmn-muted">Assigned account manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></p>
-                                        <p class="cmn-muted">Only admin can change assignment.</p>
-                                    <?php endif; ?>
-                                    <label class="cmn-school-request-note" data-school-request-note hidden>Note
-                                        <textarea name="cmn_request_note" rows="2" data-school-request-note-input placeholder="Add details for the school"></textarea>
-                                    </label>
-                                    <button class="cmn-ghost cmn-btn-mini" type="submit">Save</button>
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php else : ?>
-                    <tr><td colspan="8">No school requests found for this filter.</td></tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
+                    }
+                    ?>
+                    <article class="cmn-dashboard-card cmn-school-request-review-card">
+                        <header class="cmn-school-request-review-card-head">
+                            <div>
+                                <strong><?php echo esc_html((string) ($row['name'] ?? 'School')); ?></strong>
+                                <div class="cmn-table-meta">Ref: <?php echo esc_html($ref_value !== '' ? $ref_value : '-'); ?></div>
+                            </div>
+                            <span class="cmn-status-chip <?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span>
+                        </header>
+                        <div class="cmn-school-request-review-meta">
+                            <div><span class="cmn-muted">Email</span><strong><?php echo esc_html((string) ($row['email'] ?? '-')); ?></strong></div>
+                            <div><span class="cmn-muted">Domain</span><strong><?php echo esc_html((string) ($row['domain'] ?? '-')); ?></strong></div>
+                            <div><span class="cmn-muted">Location</span><strong><?php echo esc_html((string) ($row['location'] ?? '-')); ?></strong></div>
+                            <div><span class="cmn-muted">Requested</span><strong><?php echo esc_html(!empty($row['requested_at']) ? date_i18n('M j, Y g:ia', strtotime((string) $row['requested_at'])) : '-'); ?></strong></div>
+                        </div>
+                        <?php if ($status === 'rejected' && !empty($row['reject_reason'])) : ?>
+                            <div class="cmn-table-meta cmn-school-request-review-note"><?php echo esc_html((string) $row['reject_reason']); ?></div>
+                        <?php endif; ?>
+                        <?php if ($status === 'more_info_needed' && !empty($row['more_info_note'])) : ?>
+                            <div class="cmn-table-meta cmn-school-request-review-note"><?php echo esc_html((string) $row['more_info_note']); ?></div>
+                        <?php endif; ?>
+                        <?php if ($status === 'more_info_needed' && !empty($row['latest_school_reply'])) : ?>
+                            <div class="cmn-table-meta cmn-school-request-review-note"><strong>School reply:</strong> <?php echo esc_html((string) $row['latest_school_reply']); ?></div>
+                        <?php endif; ?>
+                        <div class="cmn-school-request-review-links">
+                            <a class="cmn-primary cmn-btn-mini cmn-button-link" href="<?php echo esc_url(add_query_arg(['view' => 'school-requests', 'request_id' => $school_id], $portal_url)); ?>">Open Application</a>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'schools', 'school_id' => $school_id], $portal_url)); ?>">View</a>
+                        </div>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-request-panel cmn-school-request-form cmn-school-request-form--compact" data-school-request-form="1" data-school-name="<?php echo esc_attr((string) ($row['name'] ?? 'School')); ?>">
+                            <?php wp_nonce_field('cmn_process_school_request_' . $school_id, 'cmn_process_school_request_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_process_school_request">
+                            <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_id); ?>">
+                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr($current_url); ?>">
+                            <input type="hidden" name="cmn_convert_to_client" value="0" class="cmn-convert-client-flag">
+                            <label class="cmn-school-request-convert" data-school-request-convert hidden>
+                                <input type="checkbox" data-school-request-convert-input checked>
+                                <span class="cmn-school-request-convert-title">Convert approved school to Client</span>
+                                <small>Creates school login and sends set-password email immediately.</small>
+                            </label>
+                            <label>Decision
+                                <select name="cmn_request_decision" data-school-request-decision>
+                                    <option value="assign_only" selected>Assign only (no decision yet)</option>
+                                    <option value="approved">Approve</option>
+                                    <option value="more_info_needed">More info needed</option>
+                                    <option value="rejected">Decline</option>
+                                </select>
+                            </label>
+                            <?php if ($can_update_assignment) : ?>
+                            <label>Assign account manager
+                                <select name="cmn_account_manager_user">
+                                    <option value="__keep__" selected>Keep current</option>
+                                    <option value="0">Unassigned</option>
+                                    <?php foreach ($account_managers as $manager) : ?>
+                                        <option value="<?php echo esc_attr((string) $manager->ID); ?>">
+                                            <?php echo esc_html($manager->display_name . ' (' . $manager->user_email . ')'); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <?php else : ?>
+                                <input type="hidden" name="cmn_account_manager_user" value="__keep__">
+                                <div class="cmn-school-request-assignment-meta">
+                                    <span class="cmn-muted">Assigned account manager:</span>
+                                    <strong><?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></strong>
+                                </div>
+                            <?php endif; ?>
+                            <label class="cmn-school-request-note" data-school-request-note hidden>Note
+                                <textarea name="cmn_request_note" rows="2" data-school-request-note-input placeholder="Add details for the school"></textarea>
+                            </label>
+                            <button class="cmn-primary cmn-btn-mini" type="submit">Save update</button>
+                        </form>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+        <?php else : ?>
+            <div class="cmn-panel-card"><span class="cmn-muted">No school requests found for this filter.</span></div>
+        <?php endif; ?>
         <?php
         $inner = ob_get_clean();
         return $this->render_staff_shell('school_requests', $inner);
