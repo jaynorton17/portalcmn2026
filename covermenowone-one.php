@@ -85419,11 +85419,6 @@ p{margin:0;line-height:1.5}
         } elseif (strlen(preg_replace('/\\D+/', '', $phone)) < 7) {
             $import_issues[] = 'Invalid contact number';
         }
-        if ($school_email === '') {
-            $import_issues[] = 'Missing school email';
-        } elseif (!is_email($school_email)) {
-            $import_issues[] = 'Invalid school email';
-        }
         if ($cover_manager_name === '') {
             $import_issues[] = 'Missing cover manager name';
         }
@@ -85431,6 +85426,15 @@ p{margin:0;line-height:1.5}
             $import_issues[] = 'Missing cover manager email';
         } elseif (!is_email($cover_manager_email)) {
             $import_issues[] = 'Invalid cover manager email';
+        }
+        // Rule: school email follows cover manager email when available.
+        if ($cover_manager_email !== '' && is_email($cover_manager_email)) {
+            $school_email = $cover_manager_email;
+        }
+        if ($school_email === '') {
+            $import_issues[] = 'Missing school email';
+        } elseif (!is_email($school_email)) {
+            $import_issues[] = 'Invalid school email';
         }
         if ($email_name === '') {
             $import_issues[] = 'Missing email name';
@@ -85480,8 +85484,8 @@ p{margin:0;line-height:1.5}
             }
         }
 
-        $mapped_status = sanitize_key((string) $this->csv_value($row, $map['cmn_status'] ?? ''));
-        $status = $mapped_status !== '' ? $mapped_status : 'lead';
+        $existing_status = sanitize_key((string) get_post_meta($post_id, 'cmn_status', true));
+        $status = $created_new ? 'lead' : ($existing_status !== '' ? $existing_status : 'lead');
         if (!in_array($status, ['lead', 'client', 'archived', 'rejected', 'needs_attention'], true)) {
             $status = 'lead';
         }
@@ -86258,21 +86262,22 @@ p{margin:0;line-height:1.5}
         $school_name = sanitize_text_field($_POST['cmn_school_name'] ?? '');
         $location = sanitize_text_field($_POST['cmn_location'] ?? '');
         $phone = sanitize_text_field($_POST['cmn_phone'] ?? '');
-        $email = sanitize_email($_POST['cmn_email'] ?? '');
+        $school_email_input = sanitize_email($_POST['cmn_email'] ?? '');
         $cover_manager_name = sanitize_text_field($_POST['cmn_cover_manager'] ?? '');
         $cover_manager_email = sanitize_email($_POST['cmn_cover_manager_email'] ?? '');
+        $email = $cover_manager_email !== '' ? $cover_manager_email : $school_email_input;
         $email_name = sanitize_text_field($_POST['cmn_email_name'] ?? '');
-        if ($school_name === '' || $location === '' || $phone === '' || $email === '') {
-            $this->redirect_with_message('Missing required fields. Please add School Name, Location, Contact Number, and School Email.');
-        }
-        if ($email && !is_email($email)) {
-            $this->redirect_with_message('Please enter a valid School Email.');
+        if ($school_name === '' || $location === '' || $phone === '') {
+            $this->redirect_with_message('Missing required fields. Please add School Name, Location, and Contact Number.');
         }
         if ($cover_manager_name === '' || $cover_manager_email === '' || $email_name === '') {
             $this->redirect_with_message('Cover Manager Name, Cover Manager Email, and Email Name are required.');
         }
-        if ($cover_manager_email && !is_email($cover_manager_email)) {
+        if ($cover_manager_email === '' || !is_email($cover_manager_email)) {
             $this->redirect_with_message('Please enter a valid Cover Manager Email.');
+        }
+        if ($email === '' || !is_email($email)) {
+            $this->redirect_with_message('Please enter a valid School Email.');
         }
         if (strlen(preg_replace('/\\D+/', '', $phone)) < 7) {
             $this->redirect_with_message('Please enter a valid Contact Number.');
@@ -86314,7 +86319,9 @@ p{margin:0;line-height:1.5}
             if (!get_post_meta($post_id, 'cmn_school_id', true)) {
                 update_post_meta($post_id, 'cmn_school_id', $this->generate_school_id());
             }
-            update_post_meta($post_id, 'cmn_status', 'lead');
+            $existing_status = sanitize_key((string) get_post_meta($post_id, 'cmn_status', true));
+            $status_to_apply = ($existing_id && $existing_status === 'client') ? 'client' : 'lead';
+            update_post_meta($post_id, 'cmn_status', $status_to_apply);
             update_post_meta($post_id, 'cmn_pipeline_stage', 'new_lead');
             $school_domain = $this->get_email_domain($email);
             if ($school_domain) {
@@ -89391,11 +89398,6 @@ p{margin:0;line-height:1.5}
             } elseif (strlen(preg_replace('/\\D+/', '', $phone)) < 7) {
                 $import_issues[] = 'Invalid contact number';
             }
-            if ($school_email === '') {
-                $import_issues[] = 'Missing school email';
-            } elseif (!is_email($school_email)) {
-                $import_issues[] = 'Invalid school email';
-            }
             if ($cover_manager_name === '') {
                 $import_issues[] = 'Missing cover manager name';
             }
@@ -89403,6 +89405,15 @@ p{margin:0;line-height:1.5}
                 $import_issues[] = 'Missing cover manager email';
             } elseif (!is_email($cover_manager_email)) {
                 $import_issues[] = 'Invalid cover manager email';
+            }
+            // Rule: school email follows cover manager email when available.
+            if ($cover_manager_email !== '' && is_email($cover_manager_email)) {
+                $school_email = $cover_manager_email;
+            }
+            if ($school_email === '') {
+                $import_issues[] = 'Missing school email';
+            } elseif (!is_email($school_email)) {
+                $import_issues[] = 'Invalid school email';
             }
             if ($email_name === '') {
                 $import_issues[] = 'Missing email name';
@@ -89460,8 +89471,8 @@ p{margin:0;line-height:1.5}
                     $school_code = $this->generate_school_id();
                 }
             }
-            $mapped_status = sanitize_key((string) $this->csv_value($row, $map['cmn_status'] ?? ''));
-            $status = $mapped_status !== '' ? $mapped_status : 'lead';
+            $existing_status = sanitize_key((string) get_post_meta($post_id, 'cmn_status', true));
+            $status = $existing_id ? ($existing_status !== '' ? $existing_status : 'lead') : 'lead';
             if (!in_array($status, ['lead', 'client', 'archived', 'rejected', 'needs_attention'], true)) {
                 $status = 'lead';
             }
