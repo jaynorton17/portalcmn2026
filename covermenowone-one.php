@@ -76213,7 +76213,36 @@ final class CMN_One_Plugin {
         $operators = ['equals', 'not_equals', 'contains', 'not_contains', 'greater_than', 'less_than', 'days_since', 'days_since_last_activity', 'is_empty', 'is_not_empty'];
         $action_types = ['send_email', 'create_task', 'add_notification', 'update_status', 'assign_account_manager'];
 
-        $log_rows = [];
+        $tab = sanitize_key((string) ($_GET['cmn_automation_tab'] ?? 'rules'));
+        $tab_labels = [
+            'rules' => 'Workflow Rules',
+            'trigger_logs' => 'Trigger Logs',
+            'failed_actions' => 'Failed Actions',
+            'scheduled_actions' => 'Scheduled Jobs & Queues',
+            'broadcast_logic' => 'Notification Rules',
+            'performance' => 'Automation Performance',
+        ];
+        if (!isset($tab_labels[$tab])) {
+            $tab = 'rules';
+        }
+        $tab_descriptions = [
+            'rules' => 'Create and maintain trigger-based operational workflows.',
+            'trigger_logs' => 'Search and review automation execution history.',
+            'failed_actions' => 'Investigate failed jobs and route remediation quickly.',
+            'scheduled_actions' => 'Monitor recurring jobs and schedule-driven automations.',
+            'broadcast_logic' => 'Define notification logic and broadcast automation behavior.',
+            'performance' => 'Automation throughput and reliability over time.',
+        ];
+        $tab_urls = [
+            'rules' => $this->get_automation_console_url('rules'),
+            'trigger_logs' => $this->get_automation_console_url('trigger_logs'),
+            'failed_actions' => $this->get_automation_console_url('failed_actions'),
+            'scheduled_actions' => $this->get_automation_console_url('scheduled_actions'),
+            'broadcast_logic' => $this->get_automation_console_url('broadcast_logic'),
+            'performance' => $this->get_automation_console_url('performance'),
+        ];
+
+        $rule_history_rows = [];
         if ($rule_id > 0) {
             $where = ["rule_id = %d"];
             $params = [$rule_id];
@@ -76226,7 +76255,78 @@ final class CMN_One_Plugin {
                 $params[] = $filter_entity_id;
             }
             $sql = "SELECT * FROM {$logs_table} WHERE " . implode(' AND ', $where) . " ORDER BY executed_at DESC LIMIT 300";
-            $log_rows = (array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+            $rule_history_rows = (array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        }
+
+        $log_rule_filter = max(0, (int) ($_GET['cmn_log_rule_id'] ?? $rule_id));
+        $log_result_filter = sanitize_key((string) ($_GET['cmn_log_result'] ?? ''));
+        if (!in_array($log_result_filter, ['', 'success', 'failed', 'skipped'], true)) {
+            $log_result_filter = '';
+        }
+        if ($tab === 'failed_actions' && $log_result_filter === '') {
+            $log_result_filter = 'failed';
+        }
+        $log_date_from = sanitize_text_field((string) ($_GET['cmn_log_from'] ?? ''));
+        $log_date_to = sanitize_text_field((string) ($_GET['cmn_log_to'] ?? ''));
+        if ($log_date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $log_date_from)) {
+            $log_date_from = '';
+        }
+        if ($log_date_to !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $log_date_to)) {
+            $log_date_to = '';
+        }
+
+        $log_rows = [];
+        if (in_array($tab, ['trigger_logs', 'failed_actions'], true)) {
+            $log_where = ['1=1'];
+            $log_params = [];
+            if ($log_rule_filter > 0) {
+                $log_where[] = 'rule_id = %d';
+                $log_params[] = $log_rule_filter;
+            }
+            if ($filter_entity_type !== '') {
+                $log_where[] = 'entity_type = %s';
+                $log_params[] = $filter_entity_type;
+            }
+            if ($filter_entity_id > 0) {
+                $log_where[] = 'entity_id = %d';
+                $log_params[] = $filter_entity_id;
+            }
+            if ($log_result_filter !== '') {
+                $log_where[] = 'result = %s';
+                $log_params[] = $log_result_filter;
+            }
+            if ($log_date_from !== '') {
+                $log_where[] = 'DATE(executed_at) >= %s';
+                $log_params[] = $log_date_from;
+            }
+            if ($log_date_to !== '') {
+                $log_where[] = 'DATE(executed_at) <= %s';
+                $log_params[] = $log_date_to;
+            }
+            $log_sql = "SELECT * FROM {$logs_table} WHERE " . implode(' AND ', $log_where) . ' ORDER BY executed_at DESC LIMIT 500';
+            if ($log_params) {
+                $log_rows = (array) $wpdb->get_results($wpdb->prepare($log_sql, $log_params), ARRAY_A);
+            } else {
+                $log_rows = (array) $wpdb->get_results($log_sql, ARRAY_A);
+            }
+        }
+
+        $scheduled_rules = [];
+        $notification_rules = [];
+        foreach ($rules as $rule_row) {
+            $trigger_type = sanitize_key((string) ($rule_row['trigger_type'] ?? 'event'));
+            if ($trigger_type === 'scheduled') {
+                $scheduled_rules[] = $rule_row;
+            }
+            $actions_json = json_decode((string) ($rule_row['actions_json'] ?? ''), true);
+            $actions_list = (array) ($actions_json['actions'] ?? []);
+            foreach ($actions_list as $action_row) {
+                $action_type = sanitize_key((string) ($action_row['type'] ?? ''));
+                if (in_array($action_type, ['send_email', 'add_notification'], true)) {
+                    $notification_rules[] = $rule_row;
+                    break;
+                }
+            }
         }
 
         $editing_name = isset($edit_rule['name']) ? (string) $edit_rule['name'] : '';
@@ -76242,263 +76342,453 @@ final class CMN_One_Plugin {
             $editing_entity_type = 'candidate';
         }
         ?>
-        <div class="wrap">
-            <h1>Automation</h1>
+        <div class="cmn-automation-console">
+            <header class="cmn-school-header cmn-automation-header">
+                <div>
+                    <h2><?php echo esc_html((string) ($tab_labels[$tab] ?? 'Automation')); ?></h2>
+                    <p><?php echo esc_html((string) ($tab_descriptions[$tab] ?? 'Automation command centre.')); ?></p>
+                </div>
+            </header>
             <?php if ($flash_message !== '') : ?>
-                <div class="notice notice-success is-dismissible"><p><?php echo esc_html($flash_message); ?></p></div>
+                <p class="cmn-register-success cmn-automation-flash"><?php echo esc_html($flash_message); ?></p>
             <?php endif; ?>
 
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0 20px;">
-                <div class="cmn-card"><strong>Active Rules</strong><div><?php echo esc_html((string) $active_count); ?></div></div>
-                <div class="cmn-card"><strong>Paused Rules</strong><div><?php echo esc_html((string) $paused_count); ?></div></div>
-                <div class="cmn-card"><strong>Last 24h Executions</strong><div><?php echo esc_html((string) $executions_24h); ?></div></div>
-                <div class="cmn-card"><strong>Failed Actions</strong><div><?php echo esc_html((string) $failed_24h); ?></div></div>
-                <div class="cmn-card"><strong>Most Triggered Rule</strong><div><?php echo esc_html($top_rule_name !== '' ? $top_rule_name : '-'); ?></div></div>
+            <div class="cmn-automation-kpis">
+                <div class="cmn-dashboard-card cmn-automation-kpi"><span>Active Rules</span><strong><?php echo esc_html((string) $active_count); ?></strong></div>
+                <div class="cmn-dashboard-card cmn-automation-kpi"><span>Paused Rules</span><strong><?php echo esc_html((string) $paused_count); ?></strong></div>
+                <div class="cmn-dashboard-card cmn-automation-kpi"><span>Last 24h Executions</span><strong><?php echo esc_html((string) $executions_24h); ?></strong></div>
+                <div class="cmn-dashboard-card cmn-automation-kpi"><span>Failed Actions</span><strong><?php echo esc_html((string) $failed_24h); ?></strong></div>
+                <div class="cmn-dashboard-card cmn-automation-kpi"><span>Most Triggered Rule</span><strong><?php echo esc_html($top_rule_name !== '' ? $top_rule_name : '-'); ?></strong></div>
             </div>
 
-            <div class="cmn-card" style="padding:16px;margin-bottom:16px;">
-                <h2 style="margin-top:0;">Smoke Test Automations</h2>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                    <?php wp_nonce_field('cmn_run_automation_smoke_test', 'cmn_run_automation_smoke_test_nonce'); ?>
-                    <input type="hidden" name="action" value="cmn_run_automation_smoke_test">
-                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($automation_rules_url); ?>">
-                    <p>
-                        <label for="cmn-smoke-event"><strong>Event Trigger</strong></label><br>
-                        <select id="cmn-smoke-event" name="cmn_smoke_event">
-                            <?php foreach ($smoke_events as $event_key => $event_label) : ?>
-                                <option value="<?php echo esc_attr($event_key); ?>"><?php echo esc_html($event_label); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </p>
-                    <p>
-                        <label for="cmn-smoke-entity"><strong>Entity ID</strong></label><br>
-                        <select id="cmn-smoke-entity" name="cmn_smoke_entity">
-                            <?php foreach ($smoke_entities as $event_key => $rows) : ?>
-                                <?php foreach ((array) $rows as $row) : ?>
-                                    <?php $value = sanitize_key((string) ($row['entity_type'] ?? '')) . ':' . (int) ($row['entity_id'] ?? 0); ?>
-                                    <option data-event="<?php echo esc_attr($event_key); ?>" value="<?php echo esc_attr($value); ?>"><?php echo esc_html((string) ($row['label'] ?? $value)); ?></option>
-                                <?php endforeach; ?>
-                            <?php endforeach; ?>
-                        </select>
-                    </p>
-                    <p><label><input type="checkbox" name="cmn_smoke_send_real_emails" value="1"> Send real emails</label> <span class="description">(default OFF, dry-run email logs only)</span></p>
-                    <p><button type="submit" class="button button-primary">Run Smoke Test</button></p>
-                </form>
-
-                <?php if (is_array($smoke_result)) : ?>
-                    <h3 style="margin-top:14px;">Last Smoke Test Result</h3>
-                    <p><strong>Matched:</strong> <?php echo esc_html((string) count((array) ($smoke_result['rules_matched'] ?? []))); ?> | <strong>Skipped:</strong> <?php echo esc_html((string) count((array) ($smoke_result['rules_skipped'] ?? []))); ?> | <strong>Actions:</strong> <?php echo esc_html((string) count((array) ($smoke_result['actions_executed'] ?? []))); ?></p>
-                    <pre style="white-space:pre-wrap;max-height:320px;overflow:auto;"><?php echo esc_html(wp_json_encode($smoke_result, JSON_PRETTY_PRINT)); ?></pre>
-                <?php endif; ?>
+            <div class="cmn-profile-tabs cmn-automation-tabs">
+                <?php foreach ($tab_labels as $tab_key => $tab_label) : ?>
+                    <a class="cmn-school-profile-tab<?php echo $tab === $tab_key ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($tab_urls[$tab_key] ?? $automation_rules_url)); ?>"><?php echo esc_html($tab_label); ?></a>
+                <?php endforeach; ?>
             </div>
 
-            <div class="cmn-card" style="padding:16px;margin-bottom:16px;">
-                <h2 style="margin-top:0;"><?php echo $edit_rule_id > 0 ? 'Edit Rule' : 'Create Rule'; ?></h2>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cmn-automation-rule-form">
-                    <?php wp_nonce_field('cmn_save_automation_rule', 'cmn_save_automation_rule_nonce'); ?>
-                    <input type="hidden" name="action" value="cmn_save_automation_rule">
-                    <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) $edit_rule_id); ?>">
-                    <table class="form-table" role="presentation">
-                        <tr>
-                            <th scope="row"><label for="cmn-rule-name">Rule Name</label></th>
-                            <td><input id="cmn-rule-name" type="text" class="regular-text" name="name" required value="<?php echo esc_attr($editing_name); ?>"></td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><label for="cmn-rule-description">Description</label></th>
-                            <td><textarea id="cmn-rule-description" name="description" rows="2" class="large-text"><?php echo esc_textarea($editing_desc); ?></textarea></td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><label for="cmn-trigger-event">Trigger Event</label></th>
-                            <td>
-                                <select id="cmn-trigger-event" name="trigger_event">
-                                    <?php foreach ($trigger_options as $event_key => $event_label) : ?>
-                                        <option value="<?php echo esc_attr($event_key); ?>"<?php selected($editing_event, $event_key); ?>><?php echo esc_html($event_label); ?></option>
+            <?php if ($tab === 'rules') : ?>
+                <section class="cmn-dashboard-card cmn-automation-card">
+                    <h3>Smoke Test Automations</h3>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
+                        <?php wp_nonce_field('cmn_run_automation_smoke_test', 'cmn_run_automation_smoke_test_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_run_automation_smoke_test">
+                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($automation_rules_url); ?>">
+                        <div class="cmn-form-grid">
+                            <label for="cmn-smoke-event">Event Trigger
+                                <select id="cmn-smoke-event" name="cmn_smoke_event">
+                                    <?php foreach ($smoke_events as $event_key => $event_label) : ?>
+                                        <option value="<?php echo esc_attr($event_key); ?>"><?php echo esc_html($event_label); ?></option>
                                     <?php endforeach; ?>
                                 </select>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><label for="cmn-entity-type">Entity Type</label></th>
-                            <td>
-                                <select id="cmn-entity-type" name="conditions_entity_type">
-                                    <?php foreach (array_keys($condition_field_map) as $entity_opt) : ?>
-                                        <option value="<?php echo esc_attr($entity_opt); ?>"<?php selected($editing_entity_type, $entity_opt); ?>><?php echo esc_html(ucfirst(str_replace('_', ' ', $entity_opt))); ?></option>
+                            </label>
+                            <label for="cmn-smoke-entity">Entity
+                                <select id="cmn-smoke-entity" name="cmn_smoke_entity">
+                                    <?php foreach ($smoke_entities as $event_key => $rows) : ?>
+                                        <?php foreach ((array) $rows as $row) : ?>
+                                            <?php $value = sanitize_key((string) ($row['entity_type'] ?? '')) . ':' . (int) ($row['entity_id'] ?? 0); ?>
+                                            <option data-event="<?php echo esc_attr($event_key); ?>" value="<?php echo esc_attr($value); ?>"><?php echo esc_html((string) ($row['label'] ?? $value)); ?></option>
+                                        <?php endforeach; ?>
                                     <?php endforeach; ?>
                                 </select>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><label for="cmn-cooldown-hours">Cooldown Hours</label></th>
-                            <td><input id="cmn-cooldown-hours" type="number" min="0" step="1" name="cooldown_hours" value="<?php echo esc_attr((string) $editing_cooldown); ?>"></td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><label for="cmn-rule-status">Status</label></th>
-                            <td>
-                                <select id="cmn-rule-status" name="status">
-                                    <option value="active"<?php selected($editing_status, 'active'); ?>>Active</option>
-                                    <option value="paused"<?php selected($editing_status, 'paused'); ?>>Paused</option>
-                                </select>
-                            </td>
-                        </tr>
-                    </table>
+                            </label>
+                        </div>
+                        <div class="cmn-form-actions">
+                            <label class="cmn-inline-check"><input type="checkbox" name="cmn_smoke_send_real_emails" value="1"> Send real emails</label>
+                            <button type="submit" class="cmn-primary">Run Smoke Test</button>
+                        </div>
+                    </form>
 
-                    <h3>Conditions</h3>
-                    <table class="widefat striped" id="cmn-conditions-table">
-                        <thead><tr><th>Field</th><th>Operator</th><th>Value</th><th></th></tr></thead>
-                        <tbody>
-                        <?php foreach ((array) $conditions['rules'] as $idx => $condition) : ?>
-                            <?php
-                            $row_field = sanitize_key((string) ($condition['field'] ?? ''));
-                            $row_operator = sanitize_key((string) ($condition['operator'] ?? 'equals'));
-                            if (!in_array($row_operator, $operators, true)) {
-                                $row_operator = 'equals';
-                            }
-                            $row_value = (string) ($condition['value'] ?? '');
-                            ?>
-                            <tr class="cmn-condition-row">
-                                <td><select name="conditions[<?php echo esc_attr((string) $idx); ?>][field]" class="cmn-condition-field" data-selected="<?php echo esc_attr($row_field); ?>"></select></td>
-                                <td>
-                                    <select name="conditions[<?php echo esc_attr((string) $idx); ?>][operator]">
-                                        <?php foreach ($operators as $operator) : ?>
-                                            <option value="<?php echo esc_attr($operator); ?>"<?php selected($row_operator, $operator); ?>><?php echo esc_html($operator); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
-                                <td><input type="text" name="conditions[<?php echo esc_attr((string) $idx); ?>][value]" value="<?php echo esc_attr($row_value); ?>"></td>
-                                <td><button type="button" class="button-link-delete cmn-remove-condition">Remove</button></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <p><button type="button" class="button" id="cmn-add-condition">Add Condition</button></p>
-
-                    <h3>Actions</h3>
-                    <table class="widefat striped" id="cmn-actions-table">
-                        <thead><tr><th>Action</th><th>Template/Subject</th><th>Message/Notes</th><th>Target/Assignee</th><th>Value</th><th>Due Date</th><th></th></tr></thead>
-                        <tbody>
-                        <?php foreach ((array) $actions['actions'] as $idx => $action_row) : ?>
-                            <?php
-                            $row_type = sanitize_key((string) ($action_row['type'] ?? 'send_email'));
-                            if (!in_array($row_type, $action_types, true)) {
-                                $row_type = 'send_email';
-                            }
-                            $row_template = (string) ($action_row['template'] ?? ($action_row['subject'] ?? ''));
-                            $row_message = (string) ($action_row['message'] ?? ($action_row['notes'] ?? ''));
-                            $row_target = (string) ($action_row['target'] ?? ($action_row['assigned_to'] ?? ($action_row['recipient'] ?? '')));
-                            $row_value = (string) ($action_row['value'] ?? ($action_row['status'] ?? ($action_row['manager_user_id'] ?? '')));
-                            $row_due_date = (string) ($action_row['due_date'] ?? '');
-                            ?>
-                            <tr class="cmn-action-row">
-                                <td>
-                                    <select name="actions[<?php echo esc_attr((string) $idx); ?>][type]">
-                                        <?php foreach ($action_types as $action_type) : ?>
-                                            <option value="<?php echo esc_attr($action_type); ?>"<?php selected($row_type, $action_type); ?>><?php echo esc_html($action_type); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
-                                <td><input type="text" name="actions[<?php echo esc_attr((string) $idx); ?>][template]" value="<?php echo esc_attr($row_template); ?>"></td>
-                                <td><input type="text" name="actions[<?php echo esc_attr((string) $idx); ?>][message]" value="<?php echo esc_attr($row_message); ?>"></td>
-                                <td><input type="text" name="actions[<?php echo esc_attr((string) $idx); ?>][target]" value="<?php echo esc_attr($row_target); ?>" placeholder="candidate|school|account_manager|user_id"></td>
-                                <td><input type="text" name="actions[<?php echo esc_attr((string) $idx); ?>][value]" value="<?php echo esc_attr($row_value); ?>" placeholder="status or user ID"></td>
-                                <td><input type="date" name="actions[<?php echo esc_attr((string) $idx); ?>][due_date]" value="<?php echo esc_attr($row_due_date); ?>"></td>
-                                <td><button type="button" class="button-link-delete cmn-remove-action">Remove</button></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <p><button type="button" class="button" id="cmn-add-action">Add Action</button></p>
-
-                    <div class="notice notice-info" id="cmn-rule-preview" style="padding:10px 12px;margin:10px 0;">
-                        <p><strong>Preview:</strong> <span id="cmn-rule-preview-text"></span></p>
-                    </div>
-
-                    <p>
-                        <button class="button button-primary">Save Rule</button>
-                        <?php if ($edit_rule_id > 0) : ?>
-                            <a class="button" href="<?php echo esc_url($automation_rules_url); ?>">Cancel Edit</a>
-                        <?php endif; ?>
-                    </p>
-                </form>
-            </div>
-
-            <div class="cmn-card" style="padding:16px;margin-bottom:16px;">
-                <h2 style="margin-top:0;">Rules</h2>
-                <table class="widefat striped">
-                    <thead><tr><th>Name</th><th>Trigger</th><th>Status</th><th>Cooldown</th><th>Last Run</th><th>Created By</th><th>Actions</th></tr></thead>
-                    <tbody>
-                    <?php if (!$rules) : ?>
-                        <tr><td colspan="7">No automation rules yet.</td></tr>
-                    <?php else : ?>
-                        <?php foreach ($rules as $rule_row) : ?>
-                            <?php
-                            $rule_status = $this->normalize_automation_rule_status($rule_row['status'] ?? 'active');
-                            $rule_edit_url = $this->get_automation_console_url('rules', ['edit_rule_id' => (int) $rule_row['id']]);
-                            $rule_log_url = $this->get_automation_console_url('trigger_logs', ['rule_id' => (int) $rule_row['id']]);
-                            $toggle_to = $rule_status === 'active' ? 'paused' : 'active';
-                            ?>
-                            <tr>
-                                <td><a href="<?php echo esc_url($rule_log_url); ?>"><?php echo esc_html((string) ($rule_row['name'] ?? 'Rule')); ?></a></td>
-                                <td><?php echo esc_html((string) ($rule_row['trigger_event'] ?? '')); ?></td>
-                                <td><?php echo esc_html($rule_status); ?></td>
-                                <td><?php echo esc_html((string) ((int) ($rule_row['cooldown_hours'] ?? self::AUTOMATION_DEFAULT_COOLDOWN_HOURS))); ?>h</td>
-                                <td><?php echo esc_html((string) ($rule_row['last_run_at'] ?: '-')); ?></td>
-                                <td><?php echo esc_html((string) ($rule_row['created_by_name'] ?: 'System')); ?></td>
-                                <td>
-                                    <a class="button button-small" href="<?php echo esc_url($rule_edit_url); ?>">Edit</a>
-                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block;">
-                                        <?php wp_nonce_field('cmn_toggle_automation_rule_' . (int) $rule_row['id'], 'cmn_toggle_automation_rule_nonce'); ?>
-                                        <input type="hidden" name="action" value="cmn_toggle_automation_rule">
-                                        <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) ((int) $rule_row['id'])); ?>">
-                                        <input type="hidden" name="status" value="<?php echo esc_attr($toggle_to); ?>">
-                                        <button class="button button-small"><?php echo esc_html($toggle_to === 'active' ? 'Activate' : 'Pause'); ?></button>
-                                    </form>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
+                    <?php if (is_array($smoke_result)) : ?>
+                        <div class="cmn-automation-smoke-result">
+                            <p><strong>Matched:</strong> <?php echo esc_html((string) count((array) ($smoke_result['rules_matched'] ?? []))); ?> | <strong>Skipped:</strong> <?php echo esc_html((string) count((array) ($smoke_result['rules_skipped'] ?? []))); ?> | <strong>Actions:</strong> <?php echo esc_html((string) count((array) ($smoke_result['actions_executed'] ?? []))); ?></p>
+                            <pre><?php echo esc_html(wp_json_encode($smoke_result, JSON_PRETTY_PRINT)); ?></pre>
+                        </div>
                     <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                </section>
 
-            <?php if ($rule_id > 0) : ?>
-                <div class="cmn-card" style="padding:16px;">
-                    <h2 style="margin-top:0;">Execution History (Rule #<?php echo esc_html((string) $rule_id); ?>)</h2>
-                    <form method="get" style="margin-bottom:10px;">
-                        <input type="hidden" name="view" value="automation">
-                        <input type="hidden" name="cmn_automation_tab" value="trigger_logs">
-                        <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) $rule_id); ?>">
-                        <label>Entity Type <input type="text" name="entity_type" value="<?php echo esc_attr($filter_entity_type); ?>" placeholder="candidate"></label>
-                        <label>Entity ID <input type="number" min="0" name="entity_id" value="<?php echo esc_attr((string) $filter_entity_id); ?>"></label>
-                        <button class="button">Filter</button>
-                        <a class="button" href="<?php echo esc_url($this->get_automation_console_url('trigger_logs', ['rule_id' => $rule_id])); ?>">Reset</a>
-                    </form>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0 0 10px;">
-                        <?php wp_nonce_field('cmn_export_automation_logs_' . $rule_id, 'cmn_export_automation_logs_nonce'); ?>
-                        <input type="hidden" name="action" value="cmn_export_automation_logs">
-                        <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) $rule_id); ?>">
-                        <input type="hidden" name="entity_type" value="<?php echo esc_attr($filter_entity_type); ?>">
-                        <input type="hidden" name="entity_id" value="<?php echo esc_attr((string) $filter_entity_id); ?>">
-                        <button class="button">Export CSV</button>
-                    </form>
-                    <table class="widefat striped">
-                        <thead><tr><th>When</th><th>Entity</th><th>Result</th><th>Message</th><th>Payload</th></tr></thead>
-                        <tbody>
-                        <?php if (!$log_rows) : ?>
-                            <tr><td colspan="5">No execution logs found for this filter.</td></tr>
-                        <?php else : ?>
-                            <?php foreach ($log_rows as $log) : ?>
+                <section class="cmn-dashboard-card cmn-automation-card">
+                    <h3><?php echo $edit_rule_id > 0 ? 'Edit Rule' : 'Create Rule'; ?></h3>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cmn-automation-rule-form" class="cmn-form">
+                        <?php wp_nonce_field('cmn_save_automation_rule', 'cmn_save_automation_rule_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_save_automation_rule">
+                        <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) $edit_rule_id); ?>">
+                        <table class="cmn-approval-table cmn-automation-editor">
+                            <tbody>
                                 <tr>
-                                    <td><?php echo esc_html((string) ($log['executed_at'] ?? '')); ?></td>
-                                    <td><?php echo esc_html((string) (($log['entity_type'] ?? '') . '#' . ((int) ($log['entity_id'] ?? 0)))); ?></td>
-                                    <td><?php echo esc_html((string) ($log['result'] ?? '')); ?></td>
-                                    <td><?php echo esc_html((string) ($log['message'] ?? '')); ?></td>
-                                    <td><code><?php echo esc_html(wp_trim_words((string) ($log['payload_json'] ?? ''), 18, '...')); ?></code></td>
+                                    <th><label for="cmn-rule-name">Rule Name</label></th>
+                                    <td><input id="cmn-rule-name" type="text" name="name" required value="<?php echo esc_attr($editing_name); ?>"></td>
+                                </tr>
+                                <tr>
+                                    <th><label for="cmn-rule-description">Description</label></th>
+                                    <td><textarea id="cmn-rule-description" name="description" rows="2"><?php echo esc_textarea($editing_desc); ?></textarea></td>
+                                </tr>
+                                <tr>
+                                    <th><label for="cmn-trigger-event">Trigger Event</label></th>
+                                    <td>
+                                        <select id="cmn-trigger-event" name="trigger_event">
+                                            <?php foreach ($trigger_options as $event_key => $event_label) : ?>
+                                                <option value="<?php echo esc_attr($event_key); ?>"<?php selected($editing_event, $event_key); ?>><?php echo esc_html($event_label); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th><label for="cmn-entity-type">Entity Type</label></th>
+                                    <td>
+                                        <select id="cmn-entity-type" name="conditions_entity_type">
+                                            <?php foreach (array_keys($condition_field_map) as $entity_opt) : ?>
+                                                <option value="<?php echo esc_attr($entity_opt); ?>"<?php selected($editing_entity_type, $entity_opt); ?>><?php echo esc_html(ucfirst(str_replace('_', ' ', $entity_opt))); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th><label for="cmn-cooldown-hours">Cooldown Hours</label></th>
+                                    <td><input id="cmn-cooldown-hours" type="number" min="0" step="1" name="cooldown_hours" value="<?php echo esc_attr((string) $editing_cooldown); ?>"></td>
+                                </tr>
+                                <tr>
+                                    <th><label for="cmn-rule-status">Status</label></th>
+                                    <td>
+                                        <select id="cmn-rule-status" name="status">
+                                            <option value="active"<?php selected($editing_status, 'active'); ?>>Active</option>
+                                            <option value="paused"<?php selected($editing_status, 'paused'); ?>>Paused</option>
+                                        </select>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h4>Conditions</h4>
+                        <table class="cmn-approval-table" id="cmn-conditions-table">
+                            <thead><tr><th>Field</th><th>Operator</th><th>Value</th><th></th></tr></thead>
+                            <tbody>
+                            <?php foreach ((array) $conditions['rules'] as $idx => $condition) : ?>
+                                <?php
+                                $row_field = sanitize_key((string) ($condition['field'] ?? ''));
+                                $row_operator = sanitize_key((string) ($condition['operator'] ?? 'equals'));
+                                if (!in_array($row_operator, $operators, true)) {
+                                    $row_operator = 'equals';
+                                }
+                                $row_value = (string) ($condition['value'] ?? '');
+                                ?>
+                                <tr class="cmn-condition-row">
+                                    <td><select name="conditions[<?php echo esc_attr((string) $idx); ?>][field]" class="cmn-condition-field" data-selected="<?php echo esc_attr($row_field); ?>"></select></td>
+                                    <td>
+                                        <select name="conditions[<?php echo esc_attr((string) $idx); ?>][operator]">
+                                            <?php foreach ($operators as $operator) : ?>
+                                                <option value="<?php echo esc_attr($operator); ?>"<?php selected($row_operator, $operator); ?>><?php echo esc_html($operator); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                    <td><input type="text" name="conditions[<?php echo esc_attr((string) $idx); ?>][value]" value="<?php echo esc_attr($row_value); ?>"></td>
+                                    <td><button type="button" class="cmn-ghost cmn-btn-mini cmn-remove-condition">Remove</button></td>
                                 </tr>
                             <?php endforeach; ?>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+                            </tbody>
+                        </table>
+                        <p><button type="button" class="cmn-ghost cmn-btn-mini" id="cmn-add-condition">Add Condition</button></p>
+
+                        <h4>Actions</h4>
+                        <table class="cmn-approval-table" id="cmn-actions-table">
+                            <thead><tr><th>Action</th><th>Template/Subject</th><th>Message/Notes</th><th>Target/Assignee</th><th>Value</th><th>Due Date</th><th></th></tr></thead>
+                            <tbody>
+                            <?php foreach ((array) $actions['actions'] as $idx => $action_row) : ?>
+                                <?php
+                                $row_type = sanitize_key((string) ($action_row['type'] ?? 'send_email'));
+                                if (!in_array($row_type, $action_types, true)) {
+                                    $row_type = 'send_email';
+                                }
+                                $row_template = (string) ($action_row['template'] ?? ($action_row['subject'] ?? ''));
+                                $row_message = (string) ($action_row['message'] ?? ($action_row['notes'] ?? ''));
+                                $row_target = (string) ($action_row['target'] ?? ($action_row['assigned_to'] ?? ($action_row['recipient'] ?? '')));
+                                $row_value = (string) ($action_row['value'] ?? ($action_row['status'] ?? ($action_row['manager_user_id'] ?? '')));
+                                $row_due_date = (string) ($action_row['due_date'] ?? '');
+                                ?>
+                                <tr class="cmn-action-row">
+                                    <td>
+                                        <select name="actions[<?php echo esc_attr((string) $idx); ?>][type]">
+                                            <?php foreach ($action_types as $action_type) : ?>
+                                                <option value="<?php echo esc_attr($action_type); ?>"<?php selected($row_type, $action_type); ?>><?php echo esc_html($action_type); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                    <td><input type="text" name="actions[<?php echo esc_attr((string) $idx); ?>][template]" value="<?php echo esc_attr($row_template); ?>"></td>
+                                    <td><input type="text" name="actions[<?php echo esc_attr((string) $idx); ?>][message]" value="<?php echo esc_attr($row_message); ?>"></td>
+                                    <td><input type="text" name="actions[<?php echo esc_attr((string) $idx); ?>][target]" value="<?php echo esc_attr($row_target); ?>" placeholder="candidate|school|account_manager|user_id"></td>
+                                    <td><input type="text" name="actions[<?php echo esc_attr((string) $idx); ?>][value]" value="<?php echo esc_attr($row_value); ?>" placeholder="status or user ID"></td>
+                                    <td><input type="date" name="actions[<?php echo esc_attr((string) $idx); ?>][due_date]" value="<?php echo esc_attr($row_due_date); ?>"></td>
+                                    <td><button type="button" class="cmn-ghost cmn-btn-mini cmn-remove-action">Remove</button></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <p><button type="button" class="cmn-ghost cmn-btn-mini" id="cmn-add-action">Add Action</button></p>
+
+                        <div class="cmn-empty" id="cmn-rule-preview">
+                            <strong>Preview:</strong> <span id="cmn-rule-preview-text"></span>
+                        </div>
+
+                        <div class="cmn-form-actions">
+                            <button class="cmn-primary">Save Rule</button>
+                            <?php if ($edit_rule_id > 0) : ?>
+                                <a class="cmn-ghost" href="<?php echo esc_url($automation_rules_url); ?>">Cancel Edit</a>
+                            <?php endif; ?>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="cmn-dashboard-card cmn-automation-card">
+                    <div class="cmn-panel-header">
+                        <h3>Workflow Rules</h3>
+                    </div>
+                    <div class="cmn-table-scroll">
+                        <table class="cmn-approval-table">
+                            <thead><tr><th>Rule Name</th><th>Trigger</th><th>Status</th><th>Cooldown</th><th>Last Run</th><th>Created By</th><th>Actions</th></tr></thead>
+                            <tbody>
+                            <?php if (!$rules) : ?>
+                                <tr><td colspan="7">No automation rules yet.</td></tr>
+                            <?php else : ?>
+                                <?php foreach ($rules as $rule_row) : ?>
+                                    <?php
+                                    $rule_status = $this->normalize_automation_rule_status($rule_row['status'] ?? 'active');
+                                    $rule_edit_url = $this->get_automation_console_url('rules', ['edit_rule_id' => (int) $rule_row['id']]);
+                                    $rule_log_url = $this->get_automation_console_url('trigger_logs', ['cmn_log_rule_id' => (int) $rule_row['id']]);
+                                    $toggle_to = $rule_status === 'active' ? 'paused' : 'active';
+                                    ?>
+                                    <tr>
+                                        <td><a href="<?php echo esc_url($rule_log_url); ?>"><?php echo esc_html((string) ($rule_row['name'] ?? 'Rule')); ?></a></td>
+                                        <td><?php echo esc_html((string) ($rule_row['trigger_event'] ?? '')); ?></td>
+                                        <td><?php echo esc_html($rule_status); ?></td>
+                                        <td><?php echo esc_html((string) ((int) ($rule_row['cooldown_hours'] ?? self::AUTOMATION_DEFAULT_COOLDOWN_HOURS))); ?>h</td>
+                                        <td><?php echo esc_html((string) ($rule_row['last_run_at'] ?: '-')); ?></td>
+                                        <td><?php echo esc_html((string) ($rule_row['created_by_name'] ?: 'System')); ?></td>
+                                        <td class="cmn-actions">
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($rule_edit_url); ?>">Edit</a>
+                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                                <?php wp_nonce_field('cmn_toggle_automation_rule_' . (int) $rule_row['id'], 'cmn_toggle_automation_rule_nonce'); ?>
+                                                <input type="hidden" name="action" value="cmn_toggle_automation_rule">
+                                                <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) ((int) $rule_row['id'])); ?>">
+                                                <input type="hidden" name="status" value="<?php echo esc_attr($toggle_to); ?>">
+                                                <button class="cmn-ghost cmn-btn-mini"><?php echo esc_html($toggle_to === 'active' ? 'Activate' : 'Pause'); ?></button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <?php if ($rule_id > 0) : ?>
+                    <section class="cmn-dashboard-card cmn-automation-card">
+                        <h3>Execution History (Rule #<?php echo esc_html((string) $rule_id); ?>)</h3>
+                        <div class="cmn-table-scroll">
+                            <table class="cmn-approval-table">
+                                <thead><tr><th>When</th><th>Entity</th><th>Result</th><th>Message</th><th>Payload</th></tr></thead>
+                                <tbody>
+                                <?php if (!$rule_history_rows) : ?>
+                                    <tr><td colspan="5">No execution logs found for this rule.</td></tr>
+                                <?php else : ?>
+                                    <?php foreach ($rule_history_rows as $log) : ?>
+                                        <tr>
+                                            <td><?php echo esc_html((string) ($log['executed_at'] ?? '')); ?></td>
+                                            <td><?php echo esc_html((string) (($log['entity_type'] ?? '') . '#' . ((int) ($log['entity_id'] ?? 0)))); ?></td>
+                                            <td><?php echo esc_html((string) ($log['result'] ?? '')); ?></td>
+                                            <td><?php echo esc_html((string) ($log['message'] ?? '')); ?></td>
+                                            <td><code><?php echo esc_html(wp_trim_words((string) ($log['payload_json'] ?? ''), 18, '...')); ?></code></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                <?php endif; ?>
+            <?php elseif ($tab === 'trigger_logs' || $tab === 'failed_actions') : ?>
+                <section class="cmn-dashboard-card cmn-automation-card">
+                    <div class="cmn-panel-header">
+                        <h3><?php echo esc_html($tab === 'failed_actions' ? 'Failed Actions Queue' : 'Trigger Logs'); ?></h3>
+                    </div>
+                    <form method="get" class="cmn-form cmn-automation-log-filters">
+                        <input type="hidden" name="view" value="automation">
+                        <input type="hidden" name="cmn_automation_tab" value="<?php echo esc_attr($tab); ?>">
+                        <div class="cmn-form-grid">
+                            <label>Rule
+                                <select name="cmn_log_rule_id">
+                                    <option value="0">All rules</option>
+                                    <?php foreach ($rules as $rule_row) : ?>
+                                        <?php $this_rule_id = (int) ($rule_row['id'] ?? 0); ?>
+                                        <option value="<?php echo esc_attr((string) $this_rule_id); ?>"<?php selected($log_rule_filter, $this_rule_id); ?>><?php echo esc_html((string) ($rule_row['name'] ?? ('Rule #' . $this_rule_id))); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <label>Entity Type
+                                <input type="text" name="entity_type" value="<?php echo esc_attr($filter_entity_type); ?>" placeholder="candidate">
+                            </label>
+                            <label>Entity ID
+                                <input type="number" min="0" name="entity_id" value="<?php echo esc_attr((string) $filter_entity_id); ?>">
+                            </label>
+                            <label>Result
+                                <select name="cmn_log_result">
+                                    <option value="">All results</option>
+                                    <option value="success"<?php selected($log_result_filter, 'success'); ?>>Success</option>
+                                    <option value="failed"<?php selected($log_result_filter, 'failed'); ?>>Failed</option>
+                                    <option value="skipped"<?php selected($log_result_filter, 'skipped'); ?>>Skipped</option>
+                                </select>
+                            </label>
+                            <label>From
+                                <input type="date" name="cmn_log_from" value="<?php echo esc_attr($log_date_from); ?>">
+                            </label>
+                            <label>To
+                                <input type="date" name="cmn_log_to" value="<?php echo esc_attr($log_date_to); ?>">
+                            </label>
+                        </div>
+                        <div class="cmn-form-actions">
+                            <button class="cmn-primary" type="submit">Apply Filters</button>
+                            <a class="cmn-ghost" href="<?php echo esc_url((string) $tab_urls[$tab]); ?>">Clear</a>
+                        </div>
+                    </form>
+                    <?php if ($log_rule_filter > 0) : ?>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form-actions">
+                            <?php wp_nonce_field('cmn_export_automation_logs_' . $log_rule_filter, 'cmn_export_automation_logs_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_export_automation_logs">
+                            <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) $log_rule_filter); ?>">
+                            <input type="hidden" name="entity_type" value="<?php echo esc_attr($filter_entity_type); ?>">
+                            <input type="hidden" name="entity_id" value="<?php echo esc_attr((string) $filter_entity_id); ?>">
+                            <button class="cmn-ghost" type="submit">Export CSV</button>
+                        </form>
+                    <?php endif; ?>
+                    <div class="cmn-table-scroll">
+                        <table class="cmn-approval-table">
+                            <thead><tr><th>Timestamp</th><th>Rule</th><th>Entity</th><th>Status</th><th>Details</th><th>Actions</th></tr></thead>
+                            <tbody>
+                            <?php if (!$log_rows) : ?>
+                                <tr><td colspan="6">No log entries match the selected filters.</td></tr>
+                            <?php else : ?>
+                                <?php foreach ($log_rows as $log) : ?>
+                                    <?php
+                                    $row_rule_id = (int) ($log['rule_id'] ?? 0);
+                                    $rule_name_for_row = 'Rule #' . $row_rule_id;
+                                    foreach ($rules as $rule_row) {
+                                        if ((int) ($rule_row['id'] ?? 0) === $row_rule_id) {
+                                            $rule_name_for_row = (string) ($rule_row['name'] ?? $rule_name_for_row);
+                                            break;
+                                        }
+                                    }
+                                    ?>
+                                    <tr>
+                                        <td><?php echo esc_html((string) ($log['executed_at'] ?? '')); ?></td>
+                                        <td><?php echo esc_html($rule_name_for_row); ?></td>
+                                        <td><?php echo esc_html((string) (($log['entity_type'] ?? '') . '#' . ((int) ($log['entity_id'] ?? 0)))); ?></td>
+                                        <td><?php echo esc_html(ucfirst((string) ($log['result'] ?? ''))); ?></td>
+                                        <td><?php echo esc_html((string) ($log['message'] ?? '')); ?></td>
+                                        <td><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($this->get_automation_console_url('rules', ['edit_rule_id' => $row_rule_id])); ?>">View Rule</a></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            <?php elseif ($tab === 'scheduled_actions') : ?>
+                <section class="cmn-dashboard-card cmn-automation-card">
+                    <h3>Scheduled Jobs & Queues</h3>
+                    <div class="cmn-table-scroll">
+                        <table class="cmn-approval-table">
+                            <thead><tr><th>Job Name</th><th>Schedule Event</th><th>Cooldown</th><th>Status</th><th>Last Run</th><th>Actions</th></tr></thead>
+                            <tbody>
+                            <?php if (!$scheduled_rules) : ?>
+                                <tr><td colspan="6">No scheduled jobs configured.</td></tr>
+                            <?php else : ?>
+                                <?php foreach ($scheduled_rules as $rule_row) : ?>
+                                    <?php
+                                    $rule_id_row = (int) ($rule_row['id'] ?? 0);
+                                    $rule_status = $this->normalize_automation_rule_status($rule_row['status'] ?? 'active');
+                                    $toggle_to = $rule_status === 'active' ? 'paused' : 'active';
+                                    ?>
+                                    <tr>
+                                        <td><?php echo esc_html((string) ($rule_row['name'] ?? ('Rule #' . $rule_id_row))); ?></td>
+                                        <td><?php echo esc_html((string) ($rule_row['trigger_event'] ?? '')); ?></td>
+                                        <td><?php echo esc_html((string) ((int) ($rule_row['cooldown_hours'] ?? self::AUTOMATION_DEFAULT_COOLDOWN_HOURS))); ?>h</td>
+                                        <td><?php echo esc_html($rule_status); ?></td>
+                                        <td><?php echo esc_html((string) ($rule_row['last_run_at'] ?: '-')); ?></td>
+                                        <td class="cmn-actions">
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($this->get_automation_console_url('rules', ['edit_rule_id' => $rule_id_row])); ?>">Edit</a>
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($this->get_automation_console_url('trigger_logs', ['cmn_log_rule_id' => $rule_id_row])); ?>">Logs</a>
+                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                                <?php wp_nonce_field('cmn_toggle_automation_rule_' . $rule_id_row, 'cmn_toggle_automation_rule_nonce'); ?>
+                                                <input type="hidden" name="action" value="cmn_toggle_automation_rule">
+                                                <input type="hidden" name="rule_id" value="<?php echo esc_attr((string) $rule_id_row); ?>">
+                                                <input type="hidden" name="status" value="<?php echo esc_attr($toggle_to); ?>">
+                                                <button class="cmn-ghost cmn-btn-mini"><?php echo esc_html($toggle_to === 'active' ? 'Activate' : 'Pause'); ?></button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            <?php elseif ($tab === 'broadcast_logic') : ?>
+                <section class="cmn-dashboard-card cmn-automation-card">
+                    <h3>Notification Rules</h3>
+                    <div class="cmn-table-scroll">
+                        <table class="cmn-approval-table">
+                            <thead><tr><th>Rule Name</th><th>Event</th><th>Channel</th><th>Recipients</th><th>Status</th><th>Actions</th></tr></thead>
+                            <tbody>
+                            <?php if (!$notification_rules) : ?>
+                                <tr><td colspan="6">No notification-oriented automation rules found.</td></tr>
+                            <?php else : ?>
+                                <?php foreach ($notification_rules as $rule_row) : ?>
+                                    <?php
+                                    $rule_id_row = (int) ($rule_row['id'] ?? 0);
+                                    $rule_status = $this->normalize_automation_rule_status($rule_row['status'] ?? 'active');
+                                    $actions_payload = json_decode((string) ($rule_row['actions_json'] ?? ''), true);
+                                    $actions_list = (array) ($actions_payload['actions'] ?? []);
+                                    $channels = [];
+                                    $recipients = [];
+                                    foreach ($actions_list as $action_row) {
+                                        $action_type = sanitize_key((string) ($action_row['type'] ?? ''));
+                                        if ($action_type === 'send_email') {
+                                            $channels[] = 'Email';
+                                        } elseif ($action_type === 'add_notification') {
+                                            $channels[] = 'Portal';
+                                        }
+                                        $target_raw = sanitize_text_field((string) ($action_row['target'] ?? ($action_row['recipient'] ?? '')));
+                                        if ($target_raw !== '') {
+                                            $recipients[] = $target_raw;
+                                        }
+                                    }
+                                    $channels = array_values(array_unique($channels));
+                                    $recipients = array_values(array_unique($recipients));
+                                    ?>
+                                    <tr>
+                                        <td><?php echo esc_html((string) ($rule_row['name'] ?? ('Rule #' . $rule_id_row))); ?></td>
+                                        <td><?php echo esc_html((string) ($rule_row['trigger_event'] ?? '')); ?></td>
+                                        <td><?php echo esc_html($channels ? implode(', ', $channels) : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($recipients ? implode(', ', $recipients) : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($rule_status); ?></td>
+                                        <td><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($this->get_automation_console_url('rules', ['edit_rule_id' => $rule_id_row])); ?>">Edit Rule</a></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            <?php else : ?>
+                <section class="cmn-dashboard-card cmn-automation-card">
+                    <h3>Automation Performance</h3>
+                    <p class="cmn-muted">Execution overview for the last 24 hours.</p>
+                    <div class="cmn-automation-kpis">
+                        <div class="cmn-dashboard-card cmn-automation-kpi"><span>Executions</span><strong><?php echo esc_html((string) $executions_24h); ?></strong></div>
+                        <div class="cmn-dashboard-card cmn-automation-kpi"><span>Failures</span><strong><?php echo esc_html((string) $failed_24h); ?></strong></div>
+                        <div class="cmn-dashboard-card cmn-automation-kpi"><span>Success Rate</span><strong><?php echo esc_html($executions_24h > 0 ? number_format(max(0, (($executions_24h - $failed_24h) / $executions_24h) * 100), 1) : '0'); ?>%</strong></div>
+                    </div>
+                </section>
             <?php endif; ?>
         </div>
         <script>

@@ -8683,6 +8683,96 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   color: rgba(196, 207, 224, 0.82);
 }
 
+.cmn-automation-console {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-automation-header {
+  margin-bottom: 0;
+}
+
+.cmn-automation-flash {
+  margin: 0;
+}
+
+.cmn-automation-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cmn-automation-kpi {
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-automation-kpi > span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(186, 198, 216, 0.78);
+}
+
+.cmn-automation-kpi > strong {
+  font-size: 24px;
+  line-height: 1;
+  color: #f3f7ff;
+}
+
+.cmn-automation-tabs {
+  background: rgba(8, 14, 25, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  padding: 7px;
+  gap: 7px;
+}
+
+.cmn-automation-card {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-automation-card h3,
+.cmn-automation-card h4 {
+  margin: 0;
+}
+
+.cmn-automation-log-filters {
+  margin-bottom: 0;
+}
+
+.cmn-automation-editor th {
+  width: 180px;
+  white-space: nowrap;
+}
+
+.cmn-automation-editor th,
+.cmn-automation-editor td {
+  padding: 9px 10px;
+}
+
+.cmn-automation-card .cmn-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cmn-automation-card .cmn-actions form {
+  margin: 0;
+}
+
+.cmn-automation-smoke-result pre {
+  margin: 8px 0 0;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(9, 14, 25, 0.62);
+  max-height: 320px;
+  overflow: auto;
+}
+
 @media (max-width: 1200px) {
   .cmn-candidate-rewards-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8714,6 +8804,10 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   }
 
   .cmn-analytics-admin-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cmn-automation-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -8771,11 +8865,25 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
     grid-template-columns: 52px minmax(0, 1fr) 34px;
     gap: 8px;
   }
+
+  .cmn-automation-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 560px) {
   .cmn-analytics-admin-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .cmn-automation-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-automation-editor th,
+  .cmn-automation-editor td {
+    display: block;
+    width: 100%;
   }
 }
 
