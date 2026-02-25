@@ -28555,6 +28555,7 @@ final class CMN_One_Plugin {
         $risk_only = isset($_GET['cmn_risk_only']) ? (int) $_GET['cmn_risk_only'] : 1;
         $message = isset($_GET['cmn_request_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_request_msg'])) : '';
         $rows = $this->get_rate_guardrail_rows($risk_only === 1, 250);
+        $at_risk_total = $this->count_bookings_at_risk_low_margin();
         $portal_url = $this->get_portal_base_url();
         $current_url = add_query_arg([
             'view' => 'rate-guardrails',
@@ -28563,111 +28564,122 @@ final class CMN_One_Plugin {
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Rate Guardrails</h2>
-            <p>Monitor booking margin risk and process finance overrides.</p>
-        </header>
         <?php if ($message !== '') : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($message); ?></strong></div>
         <?php endif; ?>
-        <form method="get" class="cmn-filters">
-            <input type="hidden" name="view" value="rate-guardrails">
-            <select name="cmn_risk_only">
-                <option value="1"<?php echo $risk_only === 1 ? ' selected' : ''; ?>>At-risk and non-compliant bookings</option>
-                <option value="0"<?php echo $risk_only === 0 ? ' selected' : ''; ?>>All cached booking margins</option>
-            </select>
-            <button class="cmn-ghost" type="submit">Filter</button>
-            <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Go to Requests</a>
-        </form>
-        <table class="cmn-approval-table cmn-request-table">
-            <thead>
-                <tr>
-                    <th>Booking</th>
-                    <th>School</th>
-                    <th>Candidate</th>
-                    <th>Rule</th>
-                    <th>School (GBP )</th>
-                    <th>Pay (GBP )</th>
-                    <th>Margin</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php if ($rows) : ?>
-                <?php foreach ($rows as $row) : ?>
-                    <?php
-                    $booking_id = (int) ($row['booking_id'] ?? 0);
-                    $school_id = $booking_id ? (int) get_post_meta($booking_id, 'cmn_school_id', true) : 0;
-                    $candidate_id = $booking_id ? (int) get_post_meta($booking_id, 'cmn_candidate_id', true) : 0;
-                    $school_name = $school_id ? get_the_title($school_id) : 'School';
-                    $candidate_name = $candidate_id ? get_the_title($candidate_id) : 'Candidate';
-                    $guardrail_status = strtoupper((string) ($row['guardrail_status'] ?? 'OK'));
-                    $status_key = sanitize_key((string) ($row['status'] ?? 'compliant'));
-                    $status_class = $guardrail_status === 'NEGATIVE' ? 'negative' : ($guardrail_status === 'LOW' || $status_key !== 'compliant' ? 'low' : 'ok');
-                    $status_label = $status_key === 'compliant' ? 'COMPLIANT' : 'AT_RISK';
-                    if ($guardrail_status === 'NEGATIVE') {
-                        $status_label = 'NEGATIVE';
-                    } elseif ($guardrail_status === 'LOW') {
-                        $status_label = 'LOW';
-                    }
-                    $exception_label = '';
-                    if (!empty($row['exception_decision'])) {
-                        $exception_label = strtoupper((string) $row['exception_decision']) . ' - ' . (string) ($row['exception_reason'] ?? '');
-                    }
-                    ?>
-                    <tr>
-                        <td>
-                            #<?php echo esc_html((string) $booking_id); ?>
-                            <?php if ($booking_id > 0) : ?>
-                                <br><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => 'booking_details'], $portal_url) . '#cmn-request-chat'); ?>">Open chat</a>
-                            <?php endif; ?>
-                        </td>
-                        <td><?php echo esc_html((string) $school_name); ?></td>
-                        <td><?php echo esc_html((string) $candidate_name); ?></td>
-                        <td><?php echo esc_html((string) ($row['role_key'] ?? 'default') . ' / ' . (string) ($row['region_key'] ?? 'default')); ?></td>
-                        <td><?php echo esc_html(number_format((float) ($row['school_charge_rate'] ?? 0), 2)); ?></td>
-                        <td><?php echo esc_html(number_format((float) ($row['candidate_pay_rate'] ?? 0), 2)); ?></td>
-                        <td>
-                            GBP <?php echo esc_html(number_format((float) ($row['margin_amount'] ?? 0), 2)); ?> (<?php echo esc_html(number_format((float) ($row['margin_percent'] ?? 0), 2)); ?>%)
-                            <?php if (!empty($row['override_margin_amount'])) : ?>
-                                <br><span class="cmn-table-meta">Override margin: GBP <?php echo esc_html(number_format((float) ($row['override_margin_amount'] ?? 0), 2)); ?></span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <span class="cmn-pill cmn-pill--<?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span>
-                            <?php if ($exception_label !== '') : ?>
-                                <br><span class="cmn-table-meta"><?php echo esc_html($exception_label); ?></span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-request-panel" style="margin:0;">
-                                <?php wp_nonce_field('cmn_margin_override_' . $booking_id, 'cmn_margin_override_nonce'); ?>
-                                <input type="hidden" name="action" value="cmn_margin_override_action">
-                                <input type="hidden" name="cmn_booking_id" value="<?php echo esc_attr((string) $booking_id); ?>">
-                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr($current_url); ?>">
-                                <label style="display:block;margin-bottom:6px;">
-                                    <span class="cmn-muted">New margin (GBP)</span>
-                                    <input type="number" step="0.01" name="cmn_override_new_margin" value="<?php echo esc_attr(number_format((float) ($row['margin_amount'] ?? 0), 2, '.', '')); ?>">
-                                </label>
-                                <label style="display:block;margin-bottom:6px;">
-                                    <span class="cmn-muted">Reason</span>
-                                    <textarea name="cmn_override_reason" rows="2" placeholder="Required for approve/reject"></textarea>
-                                </label>
-                                <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                                    <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="view">View</button>
-                                    <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="approve">Approve override</button>
-                                    <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="reject">Reject override</button>
-                                </div>
-                            </form>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php else : ?>
-                <tr><td colspan="9">No bookings found for this filter.</td></tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
+        <section class="cmn-dashboard-card cmn-rate-cards-card">
+            <header class="cmn-rate-cards-header">
+                <div>
+                    <h2>Rate Cards</h2>
+                    <p class="cmn-muted">Margin risk controls and override actions for booking pricing.</p>
+                </div>
+                <form method="get" class="cmn-rate-cards-controls">
+                    <input type="hidden" name="view" value="rate-guardrails">
+                    <input type="hidden" name="cmn_risk_only" value="0">
+                    <label class="cmn-rate-cards-toggle">
+                        <input type="checkbox" name="cmn_risk_only" value="1"<?php checked($risk_only === 1); ?>>
+                        <span>Bookings at risk only</span>
+                    </label>
+                    <button class="cmn-primary cmn-btn-mini" type="submit">Apply</button>
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Go to Requests</a>
+                </form>
+            </header>
+            <div class="cmn-rate-cards-summary">
+                <span class="cmn-pill cmn-pill--status">At risk: <?php echo esc_html(number_format_i18n((int) $at_risk_total)); ?></span>
+                <span class="cmn-muted"><?php echo esc_html($risk_only === 1 ? 'Showing at-risk and non-compliant bookings only.' : 'Showing all cached booking margins.'); ?></span>
+            </div>
+            <div class="cmn-rate-cards-table-wrap">
+                <table class="cmn-approval-table cmn-request-table cmn-rate-cards-table">
+                    <thead>
+                        <tr>
+                            <th>Booking</th>
+                            <th>School</th>
+                            <th>Candidate</th>
+                            <th>Rule</th>
+                            <th>School (GBP )</th>
+                            <th>Pay (GBP )</th>
+                            <th>Margin</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if ($rows) : ?>
+                        <?php foreach ($rows as $row) : ?>
+                            <?php
+                            $booking_id = (int) ($row['booking_id'] ?? 0);
+                            $school_id = $booking_id ? (int) get_post_meta($booking_id, 'cmn_school_id', true) : 0;
+                            $candidate_id = $booking_id ? (int) get_post_meta($booking_id, 'cmn_candidate_id', true) : 0;
+                            $school_name = $school_id ? get_the_title($school_id) : 'School';
+                            $candidate_name = $candidate_id ? get_the_title($candidate_id) : 'Candidate';
+                            $guardrail_status = strtoupper((string) ($row['guardrail_status'] ?? 'OK'));
+                            $status_key = sanitize_key((string) ($row['status'] ?? 'compliant'));
+                            $status_class = $guardrail_status === 'NEGATIVE' ? 'negative' : ($guardrail_status === 'LOW' || $status_key !== 'compliant' ? 'low' : 'ok');
+                            $status_label = $status_key === 'compliant' ? 'COMPLIANT' : 'AT_RISK';
+                            if ($guardrail_status === 'NEGATIVE') {
+                                $status_label = 'NEGATIVE';
+                            } elseif ($guardrail_status === 'LOW') {
+                                $status_label = 'LOW';
+                            }
+                            $exception_label = '';
+                            if (!empty($row['exception_decision'])) {
+                                $exception_label = strtoupper((string) $row['exception_decision']) . ' - ' . (string) ($row['exception_reason'] ?? '');
+                            }
+                            ?>
+                            <tr>
+                                <td>
+                                    #<?php echo esc_html((string) $booking_id); ?>
+                                    <?php if ($booking_id > 0) : ?>
+                                        <br><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => 'booking_details'], $portal_url) . '#cmn-request-chat'); ?>">Open chat</a>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo esc_html((string) $school_name); ?></td>
+                                <td><?php echo esc_html((string) $candidate_name); ?></td>
+                                <td><?php echo esc_html((string) ($row['role_key'] ?? 'default') . ' / ' . (string) ($row['region_key'] ?? 'default')); ?></td>
+                                <td><?php echo esc_html(number_format((float) ($row['school_charge_rate'] ?? 0), 2)); ?></td>
+                                <td><?php echo esc_html(number_format((float) ($row['candidate_pay_rate'] ?? 0), 2)); ?></td>
+                                <td>
+                                    GBP <?php echo esc_html(number_format((float) ($row['margin_amount'] ?? 0), 2)); ?> (<?php echo esc_html(number_format((float) ($row['margin_percent'] ?? 0), 2)); ?>%)
+                                    <?php if (!empty($row['override_margin_amount'])) : ?>
+                                        <br><span class="cmn-table-meta">Override margin: GBP <?php echo esc_html(number_format((float) ($row['override_margin_amount'] ?? 0), 2)); ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <span class="cmn-pill cmn-pill--<?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span>
+                                    <?php if ($exception_label !== '') : ?>
+                                        <br><span class="cmn-table-meta"><?php echo esc_html($exception_label); ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-rate-cards-action-form">
+                                        <?php wp_nonce_field('cmn_margin_override_' . $booking_id, 'cmn_margin_override_nonce'); ?>
+                                        <input type="hidden" name="action" value="cmn_margin_override_action">
+                                        <input type="hidden" name="cmn_booking_id" value="<?php echo esc_attr((string) $booking_id); ?>">
+                                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr($current_url); ?>">
+                                        <label class="cmn-rate-cards-action-field">
+                                            <span class="cmn-muted">New margin (GBP)</span>
+                                            <input type="number" step="0.01" name="cmn_override_new_margin" value="<?php echo esc_attr(number_format((float) ($row['margin_amount'] ?? 0), 2, '.', '')); ?>">
+                                        </label>
+                                        <label class="cmn-rate-cards-action-field">
+                                            <span class="cmn-muted">Reason</span>
+                                            <textarea name="cmn_override_reason" rows="2" placeholder="Required for approve/reject"></textarea>
+                                        </label>
+                                        <div class="cmn-rate-cards-action-buttons">
+                                            <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="view">View</button>
+                                            <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="approve">Approve override</button>
+                                            <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="reject">Reject override</button>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php else : ?>
+                        <tr><td colspan="9">No bookings found for this filter.</td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
         <?php
         $inner = ob_get_clean();
         return $this->render_staff_shell('rate_guardrails', $inner);
@@ -29821,6 +29833,26 @@ final class CMN_One_Plugin {
             'action' => 'cmn_export_partner_programme_summary_csv',
             'cmn_nonce' => wp_create_nonce('cmn_export_partner_programme_summary_csv'),
         ], admin_url('admin-post.php'));
+        $focus_raw = sanitize_key((string) wp_unslash($_GET['cmn_finance_focus'] ?? 'monthly'));
+        if ($focus_raw === 'margin') {
+            $focus_raw = 'monthly';
+        }
+        $finance_focus = in_array($focus_raw, ['monthly', 'academic'], true) ? $focus_raw : 'monthly';
+        $build_focus_url = function ($focus) use ($portal_url, $month_filter, $paid_filter, $date_from, $date_to) {
+            $args = [
+                'view' => 'finance-overview',
+                'cmn_finance_focus' => $focus,
+                'cmn_finance_month' => $month_filter,
+                'cmn_finance_paid' => $paid_filter,
+            ];
+            if ($date_from !== '') {
+                $args['cmn_finance_from'] = $date_from;
+            }
+            if ($date_to !== '') {
+                $args['cmn_finance_to'] = $date_to;
+            }
+            return add_query_arg($args, $portal_url);
+        };
 
         ob_start();
         ?>
@@ -29847,8 +29879,19 @@ final class CMN_One_Plugin {
             </header>
 
             <div class="cmn-dashboard-card cmn-finance-filters-card">
+                <div class="cmn-finance-filters-head">
+                    <div class="cmn-finance-filters-head-copy">
+                        <h3>Commercial Metrics</h3>
+                        <p>Monthly and academic year performance snapshots.</p>
+                    </div>
+                    <div class="cmn-finance-export-actions">
+                        <a class="cmn-ghost cmn-finance-export-btn" href="<?php echo esc_url($invoice_export_url); ?>">Export Invoices CSV</a>
+                        <a class="cmn-ghost cmn-finance-export-btn" href="<?php echo esc_url($partner_export_url); ?>">Export Partner Programme CSV</a>
+                    </div>
+                </div>
                 <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-finance-filter-form">
                     <input type="hidden" name="view" value="finance-overview">
+                    <input type="hidden" name="cmn_finance_focus" value="<?php echo esc_attr($finance_focus); ?>">
                     <div class="cmn-finance-filter-row">
                         <div class="cmn-finance-filter-zone is-left">
                             <label class="cmn-finance-filter-control">
@@ -29880,127 +29923,125 @@ final class CMN_One_Plugin {
                         </div>
                         <div class="cmn-finance-filter-zone is-right">
                             <button class="cmn-primary" type="submit">Apply</button>
-                            <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'finance-overview'], $portal_url)); ?>">Clear</a>
+                            <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'finance-overview', 'cmn_finance_focus' => $finance_focus], $portal_url)); ?>">Clear</a>
                         </div>
                     </div>
                 </form>
-                <div class="cmn-finance-export-actions">
-                    <a class="cmn-ghost cmn-finance-export-btn" href="<?php echo esc_url($invoice_export_url); ?>">Export Invoices CSV</a>
-                    <a class="cmn-ghost cmn-finance-export-btn" href="<?php echo esc_url($partner_export_url); ?>">Export Partner Programme CSV</a>
+                <div class="cmn-finance-filter-footer">
+                    <nav class="cmn-finance-metrics-tabs" role="tablist" aria-label="Performance focus tabs">
+                        <a class="cmn-finance-metrics-tab<?php echo $finance_focus === 'monthly' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_focus_url('monthly')); ?>" role="tab" aria-selected="<?php echo $finance_focus === 'monthly' ? 'true' : 'false'; ?>">Monthly Metrics</a>
+                        <a class="cmn-finance-metrics-tab<?php echo $finance_focus === 'academic' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_focus_url('academic')); ?>" role="tab" aria-selected="<?php echo $finance_focus === 'academic' ? 'true' : 'false'; ?>">Academic Year Metrics</a>
+                    </nav>
                     <span class="cmn-finance-export-scope">Scope: <?php echo esc_html((string) ($export_range['label'] ?? $selected_month_label)); ?> (<?php echo esc_html($paid_label); ?>)</span>
                 </div>
-            </div>
-
-            <div class="cmn-portal-grid">
-                <div class="cmn-dashboard-card cmn-finance-section-card">
-                    <div class="cmn-finance-section-head">
-                        <h3>Monthly Performance Snapshot – <?php echo esc_html($selected_month_label); ?></h3>
-                    </div>
-                    <div class="cmn-finance-metric-grid">
-                        <div class="cmn-finance-metric-card">
-                            <span class="cmn-finance-metric-label">Total invoice value</span>
-                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['subtotal_total'] ?? 0))); ?></strong>
-                            <small class="cmn-finance-metric-helper">Before credits</small>
+                <div class="cmn-finance-metrics-content">
+                    <section class="cmn-finance-section-card cmn-finance-metrics-panel cmn-finance-metrics-panel--monthly"<?php if ($finance_focus !== 'monthly') : ?> hidden<?php endif; ?>>
+                        <div class="cmn-finance-section-head">
+                            <h3>Monthly Performance Snapshot – <?php echo esc_html($selected_month_label); ?></h3>
                         </div>
-                        <div class="cmn-finance-metric-card">
-                            <span class="cmn-finance-metric-label">Total partner credits</span>
-                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['partner_credit_total'] ?? 0))); ?></strong>
-                            <small class="cmn-finance-metric-helper">Credits applied this month</small>
+                        <div class="cmn-finance-metric-grid">
+                            <div class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Total invoice value</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['subtotal_total'] ?? 0))); ?></strong>
+                                <small class="cmn-finance-metric-helper">Before credits</small>
+                            </div>
+                            <div class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Total partner credits</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['partner_credit_total'] ?? 0))); ?></strong>
+                                <small class="cmn-finance-metric-helper">Credits applied this month</small>
+                            </div>
+                            <div class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Net invoiced amount</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['net_invoiced_total'] ?? 0))); ?></strong>
+                                <small class="cmn-finance-metric-helper">After partner credits</small>
+                            </div>
+                            <div class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Invoices generated</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html(number_format((float) ($monthly_metrics['invoice_count'] ?? 0), 0)); ?></strong>
+                                <small class="cmn-finance-metric-helper">Number of invoices raised</small>
+                            </div>
+                            <div class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Schools invoiced</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html(number_format((float) ($monthly_metrics['schools_invoiced'] ?? 0), 0)); ?></strong>
+                                <small class="cmn-finance-metric-helper">Number of schools billed</small>
+                            </div>
                         </div>
-                        <div class="cmn-finance-metric-card">
-                            <span class="cmn-finance-metric-label">Net invoiced amount</span>
-                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['net_invoiced_total'] ?? 0))); ?></strong>
-                            <small class="cmn-finance-metric-helper">After partner credits</small>
+                    </section>
+                    <section class="cmn-finance-section-card cmn-finance-section-card--academic cmn-finance-metrics-panel cmn-finance-metrics-panel--academic"<?php if ($finance_focus !== 'academic') : ?> hidden<?php endif; ?>>
+                        <div class="cmn-finance-section-head">
+                            <h3>Academic Year Performance – <?php echo esc_html($academic_year_label); ?></h3>
+                            <p>Cumulative performance across all invoiced schools this academic year.</p>
                         </div>
-                        <div class="cmn-finance-metric-card">
-                            <span class="cmn-finance-metric-label">Invoices generated</span>
-                            <strong class="cmn-finance-metric-value"><?php echo esc_html(number_format((float) ($monthly_metrics['invoice_count'] ?? 0), 0)); ?></strong>
-                            <small class="cmn-finance-metric-helper">Number of invoices raised</small>
+                        <div class="cmn-finance-metric-grid">
+                            <div class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Total partner savings</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_partner_savings'] ?? 0))); ?></strong>
+                                <small class="cmn-finance-metric-helper">Savings delivered to partner schools</small>
+                            </div>
+                            <div class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Total invoice revenue</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_invoice_revenue_gross'] ?? 0))); ?></strong>
+                                <small class="cmn-finance-metric-helper">Before credits</small>
+                            </div>
+                            <div class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Total net revenue</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_net_revenue'] ?? 0))); ?></strong>
+                                <small class="cmn-finance-metric-helper">After partner credits</small>
+                            </div>
                         </div>
-                        <div class="cmn-finance-metric-card">
-                            <span class="cmn-finance-metric-label">Schools invoiced</span>
-                            <strong class="cmn-finance-metric-value"><?php echo esc_html(number_format((float) ($monthly_metrics['schools_invoiced'] ?? 0), 0)); ?></strong>
-                            <small class="cmn-finance-metric-helper">Number of schools billed</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="cmn-portal-grid cmn-finance-academic-grid">
-                <div class="cmn-dashboard-card cmn-finance-section-card cmn-finance-section-card--academic">
-                    <div class="cmn-finance-section-head">
-                        <h3>Academic Year Performance – <?php echo esc_html($academic_year_label); ?></h3>
-                        <p>Cumulative performance across all invoiced schools this academic year.</p>
-                    </div>
-                    <div class="cmn-finance-metric-grid">
-                        <div class="cmn-finance-metric-card">
-                            <span class="cmn-finance-metric-label">Total partner savings</span>
-                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_partner_savings'] ?? 0))); ?></strong>
-                            <small class="cmn-finance-metric-helper">Savings delivered to partner schools</small>
-                        </div>
-                        <div class="cmn-finance-metric-card">
-                            <span class="cmn-finance-metric-label">Total invoice revenue</span>
-                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_invoice_revenue_gross'] ?? 0))); ?></strong>
-                            <small class="cmn-finance-metric-helper">Before credits</small>
-                        </div>
-                        <div class="cmn-finance-metric-card">
-                            <span class="cmn-finance-metric-label">Total net revenue</span>
-                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_net_revenue'] ?? 0))); ?></strong>
-                            <small class="cmn-finance-metric-helper">After partner credits</small>
-                        </div>
-                    </div>
-                    <div class="cmn-finance-toplists">
-                        <article class="cmn-finance-toplist-card">
-                            <h4>Top 5 schools by revenue</h4>
-                            <?php if (!empty($academic_metrics['top_schools_by_revenue'])) : ?>
-                                <table class="cmn-approval-table">
-                                    <thead>
-                                        <tr>
-                                            <th>School</th>
-                                            <th>Revenue</th>
-                                            <th>Invoices</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ((array) $academic_metrics['top_schools_by_revenue'] as $row) : ?>
+                        <div class="cmn-finance-toplists">
+                            <article class="cmn-finance-toplist-card">
+                                <h4>Top 5 schools by revenue</h4>
+                                <?php if (!empty($academic_metrics['top_schools_by_revenue'])) : ?>
+                                    <table class="cmn-approval-table">
+                                        <thead>
                                             <tr>
-                                                <td><?php echo esc_html((string) ($row['school_name'] ?? 'School')); ?></td>
-                                                <td><?php echo esc_html($format_money((float) ($row['gross_revenue'] ?? 0))); ?></td>
-                                                <td><?php echo esc_html(number_format((float) ($row['invoice_count'] ?? 0), 0)); ?></td>
+                                                <th>School</th>
+                                                <th>Revenue</th>
+                                                <th>Invoices</th>
                                             </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            <?php else : ?>
-                                <?php $render_finance_empty_state('No Invoice Data Yet', 'Invoice activity will populate once billing begins.'); ?>
-                            <?php endif; ?>
-                        </article>
-                        <article class="cmn-finance-toplist-card">
-                            <h4>Top 5 schools by savings</h4>
-                            <?php if (!empty($academic_metrics['top_schools_by_savings'])) : ?>
-                                <table class="cmn-approval-table">
-                                    <thead>
-                                        <tr>
-                                            <th>School</th>
-                                            <th>Savings</th>
-                                            <th>Invoices</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ((array) $academic_metrics['top_schools_by_savings'] as $row) : ?>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ((array) $academic_metrics['top_schools_by_revenue'] as $row) : ?>
+                                                <tr>
+                                                    <td><?php echo esc_html((string) ($row['school_name'] ?? 'School')); ?></td>
+                                                    <td><?php echo esc_html($format_money((float) ($row['gross_revenue'] ?? 0))); ?></td>
+                                                    <td><?php echo esc_html(number_format((float) ($row['invoice_count'] ?? 0), 0)); ?></td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                <?php else : ?>
+                                    <?php $render_finance_empty_state('No Invoice Data Yet', 'Invoice activity will populate once billing begins.'); ?>
+                                <?php endif; ?>
+                            </article>
+                            <article class="cmn-finance-toplist-card">
+                                <h4>Top 5 schools by savings</h4>
+                                <?php if (!empty($academic_metrics['top_schools_by_savings'])) : ?>
+                                    <table class="cmn-approval-table">
+                                        <thead>
                                             <tr>
-                                                <td><?php echo esc_html((string) ($row['school_name'] ?? 'School')); ?></td>
-                                                <td><?php echo esc_html($format_money((float) ($row['savings_total'] ?? 0))); ?></td>
-                                                <td><?php echo esc_html(number_format((float) ($row['invoice_count'] ?? 0), 0)); ?></td>
+                                                <th>School</th>
+                                                <th>Savings</th>
+                                                <th>Invoices</th>
                                             </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            <?php else : ?>
-                                <?php $render_finance_empty_state('No Invoice Data Yet', 'Invoice activity will populate once billing begins.'); ?>
-                            <?php endif; ?>
-                        </article>
-                    </div>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ((array) $academic_metrics['top_schools_by_savings'] as $row) : ?>
+                                                <tr>
+                                                    <td><?php echo esc_html((string) ($row['school_name'] ?? 'School')); ?></td>
+                                                    <td><?php echo esc_html($format_money((float) ($row['savings_total'] ?? 0))); ?></td>
+                                                    <td><?php echo esc_html(number_format((float) ($row['invoice_count'] ?? 0), 0)); ?></td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                <?php else : ?>
+                                    <?php $render_finance_empty_state('No Invoice Data Yet', 'Invoice activity will populate once billing begins.'); ?>
+                                <?php endif; ?>
+                            </article>
+                        </div>
+                    </section>
                 </div>
             </div>
 
@@ -30144,14 +30185,18 @@ final class CMN_One_Plugin {
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
+        <header class="cmn-school-header cmn-credit-ledger-header">
             <h2>Partner Credit Ledger</h2>
             <p>Read-only ledger of pending/applied/voided partner credits.</p>
         </header>
-        <div class="cmn-dashboard-card" style="margin-bottom:16px;">
-            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-inline cmn-finance-filter-form">
+        <div class="cmn-dashboard-card cmn-credit-ledger-card">
+            <div class="cmn-credit-ledger-card-head">
+                <h3>Ledger Entries</h3>
+                <p class="cmn-muted"><?php echo esc_html(number_format((float) $total_rows, 0)); ?> row(s)</p>
+            </div>
+            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-credit-ledger-filter-form">
                 <input type="hidden" name="view" value="partner-credit-ledger">
-                <label style="display:flex;flex-direction:column;gap:4px;">
+                <label class="cmn-credit-ledger-filter-control">
                     <span>Status</span>
                     <select name="cmn_credit_status">
                         <option value="all"<?php selected($status_filter, ''); ?>>All</option>
@@ -30160,58 +30205,73 @@ final class CMN_One_Plugin {
                         <option value="voided"<?php selected($status_filter, 'voided'); ?>>Voided</option>
                     </select>
                 </label>
-                <label style="display:flex;flex-direction:column;gap:4px;">
-                    <span>School User ID (optional)</span>
+                <label class="cmn-credit-ledger-filter-control">
+                    <span>School User ID</span>
                     <input type="number" min="1" step="1" name="cmn_credit_school_user" value="<?php echo $school_user_filter > 0 ? esc_attr((string) $school_user_filter) : ''; ?>" placeholder="e.g. 245">
                 </label>
-                <button class="cmn-primary" type="submit">Apply</button>
-                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'partner-credit-ledger'], $portal_url)); ?>">Clear</a>
+                <div class="cmn-credit-ledger-filter-actions">
+                    <button class="cmn-primary" type="submit">Apply</button>
+                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'partner-credit-ledger'], $portal_url)); ?>">Clear</a>
+                </div>
             </form>
-        </div>
-        <div class="cmn-dashboard-card">
-            <h3>Ledger Entries</h3>
-            <p class="cmn-muted"><?php echo esc_html(number_format((float) $total_rows, 0)); ?> row(s)</p>
             <?php if (!$rows) : ?>
                 <div class="cmn-empty">No credit ledger entries yet.</div>
             <?php else : ?>
-                <table class="cmn-approval-table">
-                    <thead>
-                        <tr>
-                            <th>School</th>
-                            <th>Booking ID</th>
-                            <th>Date</th>
-                            <th>Credit Amount (&pound;)</th>
-                            <th>Credit Type</th>
-                            <th>Status</th>
-                            <th>Created At</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($rows as $row) : ?>
-                            <?php
-                            $row_school_user_id = (int) ($row['school_user_id'] ?? 0);
-                            $row_school_name = $this->get_school_display_name_for_school_user_id($row_school_user_id);
-                            $row_booking_id = isset($row['booking_id']) && (int) $row['booking_id'] > 0 ? (int) $row['booking_id'] : 0;
-                            $row_date = (string) ($row['booking_day_date'] ?? '');
-                            $row_amount = round((float) ($row['credit_amount'] ?? 0), 2);
-                            $row_created = (string) ($row['created_at'] ?? '');
-                            $row_created_label = $row_created !== '' ? date_i18n('j M Y g:ia', strtotime($row_created)) : '—';
-                            ?>
+                <div class="cmn-credit-ledger-table-wrap">
+                    <table class="cmn-approval-table cmn-credit-ledger-table">
+                        <thead>
                             <tr>
-                                <td><?php echo esc_html($row_school_name); ?></td>
-                                <td><?php echo $row_booking_id > 0 ? esc_html((string) $row_booking_id) : '—'; ?></td>
-                                <td><?php echo esc_html($row_date !== '' ? $row_date : '—'); ?></td>
-                                <td><?php echo esc_html(number_format($row_amount, 2)); ?></td>
-                                <td><?php echo esc_html($this->get_school_partner_credit_type_label((string) ($row['credit_type'] ?? ''))); ?></td>
-                                <td><?php echo esc_html($this->get_school_partner_credit_status_label((string) ($row['credit_status'] ?? ''))); ?></td>
-                                <td><?php echo esc_html($row_created_label); ?></td>
+                                <th>School</th>
+                                <th>Credit Amount (&pound;)</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th>Credit Type</th>
+                                <th>Booking</th>
+                                <th>Actions</th>
                             </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($rows as $row) : ?>
+                                <?php
+                                $row_school_user_id = (int) ($row['school_user_id'] ?? 0);
+                                $row_school_name = $this->get_school_display_name_for_school_user_id($row_school_user_id);
+                                $row_booking_id = isset($row['booking_id']) && (int) $row['booking_id'] > 0 ? (int) $row['booking_id'] : 0;
+                                $row_date = (string) ($row['booking_day_date'] ?? '');
+                                $row_amount = round((float) ($row['credit_amount'] ?? 0), 2);
+                                $row_created = (string) ($row['created_at'] ?? '');
+                                $row_created_label = $row_created !== '' ? date_i18n('j M Y g:ia', strtotime($row_created)) : '—';
+                                $status_key = sanitize_key((string) ($row['credit_status'] ?? 'pending'));
+                                $status_chip = 'is-pending';
+                                if ($status_key === 'applied') {
+                                    $status_chip = 'is-approved';
+                                } elseif ($status_key === 'voided') {
+                                    $status_chip = 'is-declined';
+                                }
+                                $school_filter_url = add_query_arg([
+                                    'view' => 'partner-credit-ledger',
+                                    'cmn_credit_status' => $status_filter !== '' ? $status_filter : 'all',
+                                    'cmn_credit_school_user' => $row_school_user_id,
+                                ], $portal_url);
+                                ?>
+                                <tr>
+                                    <td><?php echo esc_html($row_school_name); ?></td>
+                                    <td><strong><?php echo esc_html(number_format($row_amount, 2)); ?></strong></td>
+                                    <td><span class="cmn-status-chip <?php echo esc_attr($status_chip); ?>"><?php echo esc_html($this->get_school_partner_credit_status_label((string) ($row['credit_status'] ?? ''))); ?></span></td>
+                                    <td>
+                                        <div><?php echo esc_html($row_date !== '' ? $row_date : '—'); ?></div>
+                                        <small class="cmn-muted"><?php echo esc_html($row_created_label); ?></small>
+                                    </td>
+                                    <td><?php echo esc_html($this->get_school_partner_credit_type_label((string) ($row['credit_type'] ?? ''))); ?></td>
+                                    <td><?php echo $row_booking_id > 0 ? esc_html((string) $row_booking_id) : '—'; ?></td>
+                                    <td><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_filter_url); ?>">View School Credits</a></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             <?php endif; ?>
             <?php if ($total_pages > 1) : ?>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                <div class="cmn-credit-ledger-pagination">
                     <?php $prev_page = max(1, $current_page - 1); ?>
                     <?php $next_page = min($total_pages, $current_page + 1); ?>
                     <a class="cmn-ghost" href="<?php echo esc_url($build_url(['cmn_credit_page' => $prev_page])); ?>">Prev</a>

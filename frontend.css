@@ -7825,6 +7825,34 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   padding: 13px;
 }
 
+.cmn-finance-filters-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.cmn-finance-filters-head-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cmn-finance-filters-head-copy h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #f8fbff;
+}
+
+.cmn-finance-filters-head-copy p {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(203, 213, 225, 0.74);
+}
+
 .cmn-finance-filter-form {
   display: grid;
   gap: 10px;
@@ -7890,8 +7918,6 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 11px;
 }
 
 .cmn-finance-export-btn {
@@ -7915,6 +7941,62 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   margin-left: auto;
   font-size: 11px;
   color: rgba(203, 213, 225, 0.74);
+}
+
+.cmn-finance-filter-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 11px;
+}
+
+.cmn-finance-metrics-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cmn-finance-metrics-tab {
+  min-height: 32px;
+  border-radius: 10px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 650;
+  color: rgba(214, 224, 239, 0.85);
+  background: rgba(10, 14, 22, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.cmn-finance-metrics-tab:hover {
+  border-color: rgba(208, 42, 42, 0.34);
+  color: #f8fbff;
+}
+
+.cmn-finance-metrics-tab.is-active {
+  border-color: rgba(208, 42, 42, 0.52);
+  background: rgba(127, 29, 29, 0.24);
+  color: #fff;
+  box-shadow: inset 0 -2px 0 rgba(208, 42, 42, 0.88);
+}
+
+.cmn-finance-metrics-content {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-finance-metrics-panel[hidden] {
+  display: none !important;
 }
 
 .cmn-finance-section-card {
@@ -8154,6 +8236,71 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   box-shadow: 0 0 12px rgba(245, 196, 95, 0.38);
 }
 
+.cmn-credit-ledger-header {
+  margin-bottom: 12px;
+}
+
+.cmn-credit-ledger-card {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-credit-ledger-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-credit-ledger-card-head h3 {
+  margin: 0;
+}
+
+.cmn-credit-ledger-filter-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.cmn-credit-ledger-filter-control {
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-credit-ledger-filter-control > span {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(203, 213, 225, 0.72);
+  font-weight: 650;
+}
+
+.cmn-credit-ledger-filter-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cmn-credit-ledger-table-wrap {
+  overflow: auto;
+  border-radius: 12px;
+}
+
+.cmn-credit-ledger-table th,
+.cmn-credit-ledger-table td {
+  white-space: nowrap;
+}
+
+.cmn-credit-ledger-pagination {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 @keyframes cmnFinanceTierFill {
   from {
     transform: scaleX(0);
@@ -8195,6 +8342,16 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
     justify-content: flex-start;
   }
 
+  .cmn-finance-filters-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cmn-finance-filter-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .cmn-finance-export-scope {
     margin-left: 0;
     width: 100%;
@@ -8214,6 +8371,14 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   .cmn-finance-tier-item {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .cmn-credit-ledger-filter-form {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-credit-ledger-filter-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -10037,6 +10202,19 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .cmn-rate-cards-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cmn-rate-cards-controls {
+    margin-left: 0;
+  }
+
+  .cmn-rate-cards-table-wrap {
+    max-height: min(62vh, 620px);
+  }
+
   .cmn-bulk-actions {
     display: grid;
     grid-template-columns: 1fr;
@@ -10070,6 +10248,119 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 
 .cmn-request-table td {
   vertical-align: top;
+}
+
+.cmn-rate-cards-card {
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-rate-cards-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--cmn-border);
+}
+
+.cmn-rate-cards-header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.cmn-rate-cards-header p {
+  margin: 3px 0 0;
+}
+
+.cmn-rate-cards-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-rate-cards-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--cmn-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--cmn-text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cmn-rate-cards-toggle input[type='checkbox'] {
+  margin: 0;
+}
+
+.cmn-rate-cards-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-rate-cards-table-wrap {
+  border: 1px solid var(--cmn-border);
+  border-radius: 12px;
+  background: rgba(12, 18, 28, 0.68);
+  overflow: auto;
+  max-height: min(68vh, 760px);
+}
+
+.cmn-rate-cards-table {
+  margin: 0;
+}
+
+.cmn-rate-cards-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: rgba(9, 13, 20, 0.98);
+  box-shadow: inset 0 -1px 0 var(--cmn-border);
+}
+
+.cmn-rate-cards-table th,
+.cmn-rate-cards-table td {
+  padding: 8px 8px;
+}
+
+.cmn-rate-cards-action-form {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.cmn-rate-cards-action-field {
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-rate-cards-action-field textarea {
+  width: 100%;
+  min-height: 56px;
+  border-radius: 10px;
+  border: 1px solid var(--cmn-border);
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--cmn-text);
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.cmn-rate-cards-action-buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .cmn-request-panel-row {
