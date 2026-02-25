@@ -30184,15 +30184,11 @@ final class CMN_One_Plugin {
         ob_start();
         ?>
         <header class="cmn-school-header cmn-credit-ledger-header">
-            <h2>Partner Credit Ledger</h2>
-            <p>Read-only ledger of pending/applied/voided partner credits.</p>
-        </header>
-        <div class="cmn-dashboard-card cmn-credit-ledger-card">
-            <div class="cmn-credit-ledger-card-head">
-                <h3>Ledger Entries</h3>
-                <p class="cmn-muted"><?php echo esc_html(number_format((float) $total_rows, 0)); ?> row(s)</p>
+            <div class="cmn-credit-ledger-header-main">
+                <h2>Credit Ledger</h2>
+                <p>Track school credit adjustments and current settlement status.</p>
             </div>
-            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-credit-ledger-filter-form">
+            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-credit-ledger-filter-form cmn-credit-ledger-filter-form--header">
                 <input type="hidden" name="view" value="partner-credit-ledger">
                 <label class="cmn-credit-ledger-filter-control">
                     <span>Status</span>
@@ -30212,28 +30208,33 @@ final class CMN_One_Plugin {
                     <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'partner-credit-ledger'], $portal_url)); ?>">Clear</a>
                 </div>
             </form>
-            <?php if (!$rows) : ?>
-                <div class="cmn-empty">No credit ledger entries yet.</div>
-            <?php else : ?>
-                <div class="cmn-credit-ledger-table-wrap">
-                    <table class="cmn-approval-table cmn-credit-ledger-table">
-                        <thead>
-                            <tr>
-                                <th>School</th>
-                                <th>Credit Amount (&pound;)</th>
-                                <th>Status</th>
-                                <th>Date</th>
-                                <th>Credit Type</th>
-                                <th>Booking</th>
-                                <th>Actions</th>
+        </header>
+        <div class="cmn-dashboard-card cmn-credit-ledger-card">
+            <div class="cmn-credit-ledger-card-head">
+                <h3>Credit Ledger Entries</h3>
+                <p class="cmn-muted"><?php echo esc_html(number_format((float) $total_rows, 0)); ?> row(s)</p>
+            </div>
+            <div class="cmn-credit-ledger-table-wrap">
+                <table class="cmn-approval-table cmn-credit-ledger-table">
+                    <thead>
+                        <tr>
+                            <th>School</th>
+                            <th>Credit Amount (&pound;)</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$rows) : ?>
+                            <tr class="cmn-credit-ledger-empty-row">
+                                <td colspan="5">No credit entries found for the selected filters.</td>
                             </tr>
-                        </thead>
-                        <tbody>
+                        <?php else : ?>
                             <?php foreach ($rows as $row) : ?>
                                 <?php
                                 $row_school_user_id = (int) ($row['school_user_id'] ?? 0);
                                 $row_school_name = $this->get_school_display_name_for_school_user_id($row_school_user_id);
-                                $row_booking_id = isset($row['booking_id']) && (int) $row['booking_id'] > 0 ? (int) $row['booking_id'] : 0;
                                 $row_date = (string) ($row['booking_day_date'] ?? '');
                                 $row_amount = round((float) ($row['credit_amount'] ?? 0), 2);
                                 $row_created = (string) ($row['created_at'] ?? '');
@@ -30259,15 +30260,13 @@ final class CMN_One_Plugin {
                                         <div><?php echo esc_html($row_date !== '' ? $row_date : '—'); ?></div>
                                         <small class="cmn-muted"><?php echo esc_html($row_created_label); ?></small>
                                     </td>
-                                    <td><?php echo esc_html($this->get_school_partner_credit_type_label((string) ($row['credit_type'] ?? ''))); ?></td>
-                                    <td><?php echo $row_booking_id > 0 ? esc_html((string) $row_booking_id) : '—'; ?></td>
                                     <td><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_filter_url); ?>">View School Credits</a></td>
                                 </tr>
                             <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
             <?php if ($total_pages > 1) : ?>
                 <div class="cmn-credit-ledger-pagination">
                     <?php $prev_page = max(1, $current_page - 1); ?>

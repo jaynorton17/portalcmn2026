@@ -8624,12 +8624,28 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
 }
 
 .cmn-credit-ledger-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 14px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.cmn-credit-ledger-header-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cmn-credit-ledger-header-main p {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.82);
 }
 
 .cmn-credit-ledger-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .cmn-credit-ledger-card-head {
@@ -8649,6 +8665,11 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   gap: 10px;
   align-items: end;
+}
+
+.cmn-credit-ledger-filter-form--header {
+  margin-left: auto;
+  min-width: min(660px, 100%);
 }
 
 .cmn-credit-ledger-filter-control {
@@ -8674,11 +8695,30 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
 .cmn-credit-ledger-table-wrap {
   overflow: auto;
   border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(9, 14, 25, 0.62);
 }
 
 .cmn-credit-ledger-table th,
 .cmn-credit-ledger-table td {
   white-space: nowrap;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.cmn-credit-ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(10, 16, 28, 0.95);
+}
+
+.cmn-credit-ledger-empty-row td {
+  text-align: center;
+  color: rgba(191, 201, 217, 0.82);
+  font-weight: 560;
+  letter-spacing: 0.01em;
+  padding: 16px 12px;
 }
 
 .cmn-credit-ledger-pagination {
@@ -8762,6 +8802,15 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
 
   .cmn-credit-ledger-filter-form {
     grid-template-columns: 1fr;
+  }
+
+  .cmn-credit-ledger-header {
+    align-items: flex-start;
+  }
+
+  .cmn-credit-ledger-filter-form--header {
+    min-width: 100%;
+    margin-left: 0;
   }
 
   .cmn-credit-ledger-filter-actions {
