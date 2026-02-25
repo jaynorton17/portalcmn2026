@@ -2096,6 +2096,130 @@ body.cmn-support-modal-lock {
   gap: 12px;
 }
 
+.cmn-broadcast-admin-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.cmn-broadcast-admin-header-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cmn-broadcast-admin-header-main p {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.82);
+}
+
+.cmn-broadcast-admin-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cmn-broadcast-history-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.cmn-broadcast-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-broadcast-history-head h3 {
+  margin: 0;
+}
+
+.cmn-broadcast-history-table-wrap {
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(9, 14, 25, 0.62);
+}
+
+.cmn-broadcast-history-table th,
+.cmn-broadcast-history-table td {
+  white-space: nowrap;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.cmn-broadcast-history-empty-row td {
+  text-align: center;
+  color: rgba(191, 201, 217, 0.82);
+  font-weight: 560;
+  letter-spacing: 0.01em;
+  padding: 16px 12px;
+}
+
+.cmn-broadcast-admin-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 12090;
+  display: grid;
+  place-items: center;
+}
+
+.cmn-broadcast-admin-modal[hidden] {
+  display: none !important;
+}
+
+.cmn-broadcast-admin-modal__overlay {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(2, 6, 12, 0.78);
+  backdrop-filter: blur(3px);
+}
+
+.cmn-broadcast-admin-modal__card {
+  position: relative;
+  width: min(860px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+}
+
+.cmn-broadcast-admin-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cmn-broadcast-admin-modal__head h3 {
+  margin: 0;
+}
+
+.cmn-broadcast-form {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-broadcast-form-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cmn-broadcast-snapshot-card {
+  display: grid;
+  gap: 10px;
+}
+
 .cmn-feedback-question {
   display: grid;
   gap: 8px;
@@ -9068,6 +9192,18 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
 
   .cmn-partner-programme-filter-actions {
     justify-content: flex-start;
+  }
+
+  .cmn-broadcast-admin-header {
+    align-items: flex-start;
+  }
+
+  .cmn-broadcast-form .cmn-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-broadcast-form-actions {
+    flex-wrap: wrap;
   }
 }
 

@@ -27134,6 +27134,106 @@ final class CMN_One_Plugin {
         ];
     }
 
+    private function get_broadcast_history_rows($limit = 20) {
+        global $wpdb;
+        $limit = max(1, min(100, (int) $limit));
+        $table = $this->get_candidate_requests_table();
+        $raw_rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT id, requested_date, requested_at, status, internal_note
+             FROM {$table}
+             WHERE internal_note LIKE %s
+             ORDER BY requested_at DESC, id DESC
+             LIMIT %d",
+            '%[broadcast:%]%',
+            max(50, $limit * 35)
+        ), ARRAY_A);
+        if (!$raw_rows) {
+            return [];
+        }
+
+        $grouped = [];
+        foreach ($raw_rows as $row) {
+            $internal_note = (string) ($row['internal_note'] ?? '');
+            if (!preg_match('/\[broadcast:([a-zA-Z0-9\-_]+)\]/', $internal_note, $matches)) {
+                continue;
+            }
+            $token = sanitize_key((string) ($matches[1] ?? ''));
+            if ($token === '') {
+                continue;
+            }
+            if (!isset($grouped[$token])) {
+                $requested_date = $this->normalize_invoice_date((string) ($row['requested_date'] ?? ''));
+                $title = $requested_date !== '' && strtotime($requested_date) !== false
+                    ? ('Emergency Cover - ' . date_i18n('j M Y', strtotime($requested_date)))
+                    : ('Emergency Broadcast - ' . strtoupper(substr($token, 0, 6)));
+                $grouped[$token] = [
+                    'token' => $token,
+                    'title' => $title,
+                    'audience_total' => 0,
+                    'sent_by' => 'Admin',
+                    'sent_at' => (string) ($row['requested_at'] ?? ''),
+                    'counts' => [
+                        'requested' => 0,
+                        'accepted' => 0,
+                        'declined' => 0,
+                        'expired' => 0,
+                        'confirmed' => 0,
+                        'cancelled' => 0,
+                    ],
+                ];
+            }
+
+            $grouped[$token]['audience_total']++;
+            $status = strtolower((string) ($row['status'] ?? 'requested'));
+            if ($status === 'pending') {
+                $status = 'requested';
+            }
+            if (!isset($grouped[$token]['counts'][$status])) {
+                $grouped[$token]['counts'][$status] = 0;
+            }
+            $grouped[$token]['counts'][$status]++;
+        }
+
+        if (!$grouped) {
+            return [];
+        }
+
+        $history_rows = [];
+        foreach ($grouped as $token => $entry) {
+            $counts = (array) ($entry['counts'] ?? []);
+            $requested = (int) ($counts['requested'] ?? 0);
+            $accepted = (int) ($counts['accepted'] ?? 0);
+            $confirmed = (int) ($counts['confirmed'] ?? 0);
+            $closed = (int) ($counts['declined'] ?? 0) + (int) ($counts['expired'] ?? 0) + (int) ($counts['cancelled'] ?? 0);
+            $audience_total = max(0, (int) ($entry['audience_total'] ?? 0));
+            $status_label = 'Open';
+            if (($accepted + $confirmed) > 0) {
+                $status_label = 'Responses Received';
+            }
+            if ($requested === 0 && ($accepted + $confirmed + $closed) >= $audience_total && $audience_total > 0) {
+                $status_label = 'Closed';
+            } elseif (($accepted + $confirmed) === 0 && $closed >= $audience_total && $audience_total > 0) {
+                $status_label = 'No Acceptances';
+            }
+            $history_rows[] = [
+                'token' => $token,
+                'title' => (string) ($entry['title'] ?? ''),
+                'audience_total' => $audience_total,
+                'sent_by' => (string) ($entry['sent_by'] ?? 'Admin'),
+                'sent_at' => (string) ($entry['sent_at'] ?? ''),
+                'status_label' => $status_label,
+            ];
+        }
+
+        usort($history_rows, static function ($a, $b) {
+            $a_time = strtotime((string) ($a['sent_at'] ?? '')) ?: 0;
+            $b_time = strtotime((string) ($b['sent_at'] ?? '')) ?: 0;
+            return $b_time <=> $a_time;
+        });
+
+        return array_slice($history_rows, 0, $limit);
+    }
+
     public function render_staff_broadcast_shortcode() {
         if (!is_user_logged_in()) {
             return $this->render_login_shortcode();
@@ -27147,55 +27247,123 @@ final class CMN_One_Plugin {
         $notice = sanitize_text_field((string) wp_unslash($_GET['cmn_broadcast_msg'] ?? ''));
         $snapshot = $token !== '' ? $this->get_broadcast_snapshot($token) : ['rows' => [], 'counts' => []];
         $portal_url = $this->get_portal_base_url();
+        $history_rows = $this->get_broadcast_history_rows(30);
 
         ob_start();
         ?>
-        <header class="cmn-school-header cmn-dashboard-header">
-            <div class="cmn-header-row">
-                <div>
-                    <h2>Emergency Broadcast</h2>
-                    <p>Send urgent booking requests to all matching available candidates.</p>
-                </div>
+        <header class="cmn-school-header cmn-broadcast-admin-header">
+            <div class="cmn-broadcast-admin-header-main">
+                <h2>Emergency Broadcast</h2>
+                <p>Urgent outreach to available candidates with live response monitoring.</p>
+            </div>
+            <div class="cmn-broadcast-admin-header-actions">
+                <button class="cmn-primary cmn-btn-mini" type="button" data-broadcast-open-modal>Send Broadcast</button>
             </div>
         </header>
         <?php if ($notice !== '') : ?>
-            <div class="cmn-panel-card"><strong><?php echo esc_html($notice); ?></strong></div>
+            <div class="cmn-dashboard-card" style="margin-bottom:12px;"><strong><?php echo esc_html($notice); ?></strong></div>
         <?php endif; ?>
-        <section class="cmn-panel-card">
-            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
-                <?php wp_nonce_field('cmn_send_emergency_broadcast', 'cmn_send_emergency_broadcast_nonce'); ?>
-                <input type="hidden" name="action" value="cmn_send_emergency_broadcast">
-                <div class="cmn-form-grid">
-                    <label>School (client) *
-                        <select name="cmn_school_id" required>
-                            <option value="">Select school</option>
-                            <?php foreach ($schools as $school) : ?>
-                                <option value="<?php echo esc_attr((string) $school->ID); ?>"><?php echo esc_html($school->post_title); ?></option>
+
+        <section class="cmn-dashboard-card cmn-broadcast-history-card">
+            <div class="cmn-broadcast-history-head">
+                <h3>Broadcast History</h3>
+                <p class="cmn-muted">Track recent broadcasts, audience coverage, and response outcomes.</p>
+            </div>
+            <div class="cmn-broadcast-history-table-wrap">
+                <table class="cmn-approval-table cmn-broadcast-history-table">
+                    <thead>
+                        <tr>
+                            <th>Broadcast Title</th>
+                            <th>Audience</th>
+                            <th>Sent By</th>
+                            <th>Date Sent</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$history_rows) : ?>
+                            <tr class="cmn-broadcast-history-empty-row">
+                                <td colspan="5">No emergency broadcasts have been sent yet.</td>
+                            </tr>
+                        <?php else : ?>
+                            <?php foreach ($history_rows as $history_row) : ?>
+                                <?php
+                                $history_token = sanitize_key((string) ($history_row['token'] ?? ''));
+                                $history_url = add_query_arg(['view' => 'broadcast', 'cmn_broadcast_token' => $history_token], $portal_url);
+                                $history_sent_at = sanitize_text_field((string) ($history_row['sent_at'] ?? ''));
+                                $history_sent_label = $history_sent_at !== '' && strtotime($history_sent_at) !== false
+                                    ? date_i18n('j M Y g:ia', strtotime($history_sent_at))
+                                    : '—';
+                                $history_status = sanitize_text_field((string) ($history_row['status_label'] ?? 'Open'));
+                                $history_status_class = 'is-pending';
+                                if ($history_status === 'Closed') {
+                                    $history_status_class = 'is-verified';
+                                } elseif ($history_status === 'No Acceptances') {
+                                    $history_status_class = 'is-declined';
+                                }
+                                ?>
+                                <tr>
+                                    <td>
+                                        <a href="<?php echo esc_url($history_url); ?>"><?php echo esc_html((string) ($history_row['title'] ?? 'Emergency Broadcast')); ?></a><br>
+                                        <small class="cmn-muted">Token: <?php echo esc_html($history_token); ?></small>
+                                    </td>
+                                    <td><?php echo esc_html((string) max(0, (int) ($history_row['audience_total'] ?? 0))); ?> candidates</td>
+                                    <td><?php echo esc_html((string) ($history_row['sent_by'] ?? 'Admin')); ?></td>
+                                    <td><?php echo esc_html($history_sent_label); ?></td>
+                                    <td><span class="cmn-status-chip <?php echo esc_attr($history_status_class); ?>"><?php echo esc_html($history_status); ?></span></td>
+                                </tr>
                             <?php endforeach; ?>
-                        </select>
-                    </label>
-                    <label>Requested date *
-                        <input type="date" name="cmn_requested_date" value="<?php echo esc_attr($this->get_tomorrow_date()); ?>" required>
-                    </label>
-                    <label>Role filter
-                        <input type="text" name="cmn_role_filter" placeholder="e.g. Teaching Assistant">
-                    </label>
-                    <label>Location filter
-                        <input type="text" name="cmn_location_filter" placeholder="e.g. Leeds">
-                    </label>
-                    <label>Candidate pay rate (GBP )
-                        <input type="number" step="0.01" min="0" name="cmn_candidate_pay_rate" placeholder="Auto">
-                    </label>
-                    <label>School charge rate (GBP )
-                        <input type="number" step="0.01" min="0" name="cmn_school_charge_rate" placeholder="Auto">
-                    </label>
-                </div>
-                <button class="cmn-primary" type="submit">Send emergency broadcast</button>
-            </form>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
         </section>
 
+        <div class="cmn-broadcast-admin-modal" data-broadcast-modal hidden>
+            <button type="button" class="cmn-broadcast-admin-modal__overlay" data-broadcast-close-modal></button>
+            <section class="cmn-dashboard-card cmn-broadcast-admin-modal__card">
+                <div class="cmn-broadcast-admin-modal__head">
+                    <h3>Send Broadcast</h3>
+                    <button class="cmn-ghost cmn-btn-mini" type="button" data-broadcast-close-modal>Close</button>
+                </div>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form cmn-broadcast-form">
+                    <?php wp_nonce_field('cmn_send_emergency_broadcast', 'cmn_send_emergency_broadcast_nonce'); ?>
+                    <input type="hidden" name="action" value="cmn_send_emergency_broadcast">
+                    <div class="cmn-form-grid">
+                        <label>School (client) *
+                            <select name="cmn_school_id" required>
+                                <option value="">Select school</option>
+                                <?php foreach ($schools as $school) : ?>
+                                    <option value="<?php echo esc_attr((string) $school->ID); ?>"><?php echo esc_html($school->post_title); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Requested date *
+                            <input type="date" name="cmn_requested_date" value="<?php echo esc_attr($this->get_tomorrow_date()); ?>" required>
+                        </label>
+                        <label>Role filter
+                            <input type="text" name="cmn_role_filter" placeholder="e.g. Teaching Assistant">
+                        </label>
+                        <label>Location filter
+                            <input type="text" name="cmn_location_filter" placeholder="e.g. Leeds">
+                        </label>
+                        <label>Candidate pay rate (GBP )
+                            <input type="number" step="0.01" min="0" name="cmn_candidate_pay_rate" placeholder="Auto">
+                        </label>
+                        <label>School charge rate (GBP )
+                            <input type="number" step="0.01" min="0" name="cmn_school_charge_rate" placeholder="Auto">
+                        </label>
+                    </div>
+                    <div class="cmn-broadcast-form-actions">
+                        <button class="cmn-primary" type="submit">Send Broadcast</button>
+                        <button class="cmn-ghost" type="button" data-broadcast-close-modal>Cancel</button>
+                    </div>
+                </form>
+            </section>
+        </div>
+
         <?php if ($token !== '') : ?>
-            <section class="cmn-panel-card">
+            <section class="cmn-dashboard-card cmn-broadcast-snapshot-card">
                 <div class="cmn-panel-header">
                     <h3>Broadcast Status - <?php echo esc_html($token); ?></h3>
                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'broadcast'], $portal_url)); ?>">New broadcast</a>
@@ -27238,6 +27406,23 @@ final class CMN_One_Plugin {
                 </table>
             </section>
         <?php endif; ?>
+        <script>
+        (function () {
+            var modal = document.querySelector('[data-broadcast-modal]');
+            if (!modal) { return; }
+            var openButtons = document.querySelectorAll('[data-broadcast-open-modal]');
+            var closeButtons = document.querySelectorAll('[data-broadcast-close-modal]');
+            var openModal = function () { modal.hidden = false; document.body.classList.add('cmn-support-modal-lock'); };
+            var closeModal = function () { modal.hidden = true; document.body.classList.remove('cmn-support-modal-lock'); };
+            openButtons.forEach(function (button) { button.addEventListener('click', openModal); });
+            closeButtons.forEach(function (button) { button.addEventListener('click', closeModal); });
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && !modal.hidden) {
+                    closeModal();
+                }
+            });
+        })();
+        </script>
         <?php
         return $this->render_staff_shell('broadcast', ob_get_clean());
     }
