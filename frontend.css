@@ -8802,6 +8802,11 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   word-break: break-word;
 }
 
+.cmn-data-integrity-summary {
+  display: grid;
+  gap: 10px;
+}
+
 @media (max-width: 1200px) {
   .cmn-candidate-rewards-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

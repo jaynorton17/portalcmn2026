@@ -29944,6 +29944,7 @@ final class CMN_One_Plugin {
         $candidate_rows = $this->get_data_integrity_audit_rows('candidate', 200);
         $school_rows = $this->get_data_integrity_audit_rows('school', 200);
         $portal_url = $this->get_portal_base_url();
+        $run_checks_url = add_query_arg(['view' => 'data-integrity', 'cmn_integrity_run' => '1'], $portal_url);
         $export_candidate_url = add_query_arg([
             'action' => 'cmn_export_data_integrity_csv',
             'entity_type' => 'candidate',
@@ -29954,25 +29955,74 @@ final class CMN_One_Plugin {
             'entity_type' => 'school',
             'cmn_nonce' => wp_create_nonce('cmn_export_data_integrity_csv_school'),
         ], admin_url('admin-post.php'));
+        $candidate_issue_total = 0;
+        foreach ((array) $candidate_rows as $row) {
+            if ((int) ($row['missing_count'] ?? 0) > 0) {
+                $candidate_issue_total++;
+            }
+        }
+        $school_issue_total = 0;
+        foreach ((array) $school_rows as $row) {
+            if ((int) ($row['missing_count'] ?? 0) > 0) {
+                $school_issue_total++;
+            }
+        }
+        $last_run_label = date_i18n('M j, Y g:ia', current_time('timestamp'));
         ob_start();
         ?>
         <header class="cmn-school-header">
             <div class="cmn-header-row">
                 <div>
-                    <h2>Data Integrity Auditor</h2>
-                    <p>Registration-to-profile mapping checks for candidates and schools.</p>
+                    <h2>Data Integrity</h2>
+                    <p>Registration-to-profile mapping checks across candidates and schools.</p>
                 </div>
                 <div class="cmn-header-actions">
+                    <a class="cmn-primary cmn-button-link" href="<?php echo esc_url($run_checks_url); ?>">Run Checks</a>
                     <a class="cmn-ghost" href="<?php echo esc_url($export_candidate_url); ?>">Export Candidate CSV</a>
                     <a class="cmn-ghost" href="<?php echo esc_url($export_school_url); ?>">Export School CSV</a>
                 </div>
             </div>
         </header>
+        <section class="cmn-dashboard-card cmn-data-integrity-summary">
+            <div class="cmn-panel-header">
+                <h3>Integrity Checks</h3>
+                <span class="cmn-muted">Last run: <?php echo esc_html($last_run_label); ?></span>
+            </div>
+            <div class="cmn-table-scroll">
+                <table class="cmn-approval-table">
+                    <thead>
+                        <tr>
+                            <th>Check Name</th>
+                            <th>Last Run</th>
+                            <th>Status</th>
+                            <th>Issues</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Candidate Profile Mapping</td>
+                            <td><?php echo esc_html($last_run_label); ?></td>
+                            <td><span class="cmn-status-chip"><?php echo esc_html($candidate_issue_total > 0 ? 'Warning' : 'Healthy'); ?></span></td>
+                            <td><?php echo esc_html((string) $candidate_issue_total); ?></td>
+                            <td><a class="cmn-ghost cmn-btn-mini" href="#candidate-integrity">View Results</a></td>
+                        </tr>
+                        <tr>
+                            <td>School Profile Mapping</td>
+                            <td><?php echo esc_html($last_run_label); ?></td>
+                            <td><span class="cmn-status-chip"><?php echo esc_html($school_issue_total > 0 ? 'Warning' : 'Healthy'); ?></span></td>
+                            <td><?php echo esc_html((string) $school_issue_total); ?></td>
+                            <td><a class="cmn-ghost cmn-btn-mini" href="#school-integrity">View Results</a></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
         <div class="cmn-system-health-tabs" role="tablist" aria-label="Data Integrity tabs">
             <button type="button" class="cmn-ghost is-active" data-health-tab="candidate-integrity">Candidates</button>
             <button type="button" class="cmn-ghost" data-health-tab="school-integrity">Schools</button>
         </div>
-        <div class="cmn-system-health-panel is-active" data-health-panel="candidate-integrity">
+        <div class="cmn-system-health-panel is-active" data-health-panel="candidate-integrity" id="candidate-integrity">
             <div class="cmn-dashboard-card">
                 <h3>Candidate integrity checks</h3>
                 <table class="cmn-approval-table">
@@ -30005,7 +30055,7 @@ final class CMN_One_Plugin {
                 </table>
             </div>
         </div>
-        <div class="cmn-system-health-panel" data-health-panel="school-integrity">
+        <div class="cmn-system-health-panel" data-health-panel="school-integrity" id="school-integrity">
             <div class="cmn-dashboard-card">
                 <h3>School integrity checks</h3>
                 <table class="cmn-approval-table">
