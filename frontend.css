@@ -4944,7 +4944,8 @@ body.cmn-booking-feedback-lock {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(8, 11, 17, 0.9);
   color: #d4dde9;
-  cursor: pointer;
+  cursor: default;
+  text-decoration: none;
 }
 
 .cmn-school-feedback-stars:focus-visible {
@@ -4989,6 +4990,8 @@ body.cmn-booking-feedback-lock {
   padding: 0 2px 0;
   visibility: visible;
   opacity: 1;
+  position: relative;
+  z-index: 3;
 }
 
 .cmn-school-profile-tab {
@@ -5009,6 +5012,23 @@ body.cmn-booking-feedback-lock {
   white-space: nowrap;
   visibility: visible;
   opacity: 1;
+}
+
+body.cmn-portal-page .cmn-school-main .cmn-school-profile-tabs {
+  background: rgba(8, 12, 18, 0.98) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+}
+
+body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab {
+  color: #dbe4f4 !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
+  color: #fff !important;
+  border-color: rgba(208, 42, 42, 0.5) !important;
+  box-shadow: inset 0 -2px 0 rgba(208, 42, 42, 0.9);
 }
 
 .cmn-school-profile-tab.is-active {
@@ -5170,6 +5190,14 @@ body.cmn-booking-feedback-lock {
 .cmn-school-profile-grid .cmn-meta-grid--school-extra-fields {
   margin-top: 4px;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.cmn-school-overview-ops {
+  align-content: start;
+}
+
+.cmn-school-profile-grid .cmn-meta-grid--school-ops {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .cmn-school-profile-grid .cmn-meta-grid--school-app-compact {

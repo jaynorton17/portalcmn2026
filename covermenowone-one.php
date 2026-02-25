@@ -39986,12 +39986,72 @@ final class CMN_One_Plugin {
             if ($details_manager_or_contact === '' && $assigned_manager_name !== '') {
                 $details_manager_or_contact = $assigned_manager_name;
             }
+            $pipeline_stage_raw = sanitize_key((string) $meta('cmn_pipeline_stage'));
+            $pipeline_stage_label = $pipeline_stage_raw !== '' ? ucwords(str_replace('_', ' ', $pipeline_stage_raw)) : 'Not set';
             $feedback_avg_overall = (float) ($feedback_summary['avg_overall'] ?? 0);
             $feedback_count = (int) ($feedback_summary['feedback_count'] ?? 0);
-            $feedback_stars_filled = $feedback_count > 0 ? max(0, min(5, (int) round($feedback_avg_overall))) : 0;
-            $feedback_summary_label = $feedback_count > 0
-                ? number_format($feedback_avg_overall, 1) . '/5 (' . number_format_i18n($feedback_count) . ')'
-                : 'No feedback yet';
+            $feedback_fallback_average = (float) $meta('cmn_feedback_average');
+            if ($feedback_fallback_average <= 0) {
+                $feedback_fallback_average = (float) $meta('feedback_average');
+            }
+            $feedback_rating_for_stars = $feedback_avg_overall > 0 ? $feedback_avg_overall : $feedback_fallback_average;
+            $feedback_rating_for_stars = max(0.0, min(5.0, $feedback_rating_for_stars));
+            $feedback_stars_filled = max(0, min(5, (int) round($feedback_rating_for_stars)));
+            $feedback_summary_label = number_format($feedback_rating_for_stars, 1) . '/5';
+            $latest_call_activity = null;
+            $latest_email_activity = null;
+            $latest_note_activity = null;
+            foreach ((array) $activities as $activity_row) {
+                $activity_type = sanitize_key((string) ($activity_row['activity_type'] ?? ''));
+                if ($latest_call_activity === null && $activity_type === 'call') {
+                    $latest_call_activity = $activity_row;
+                }
+                if ($latest_email_activity === null && $activity_type === 'email') {
+                    $latest_email_activity = $activity_row;
+                }
+                if ($latest_note_activity === null && in_array($activity_type, ['note', 'task'], true)) {
+                    $latest_note_activity = $activity_row;
+                }
+                if ($latest_call_activity !== null && $latest_email_activity !== null && $latest_note_activity !== null) {
+                    break;
+                }
+            }
+            $format_activity_excerpt = function ($activity_row, $fallback = 'No updates yet') {
+                if (!is_array($activity_row)) {
+                    return $fallback;
+                }
+                $subject = trim((string) ($activity_row['subject'] ?? ''));
+                $notes = trim((string) ($activity_row['notes'] ?? ''));
+                $text = $subject;
+                if ($notes !== '') {
+                    $text .= ($text !== '' ? ' - ' : '') . wp_strip_all_tags($notes);
+                }
+                $text = trim($text);
+                return $text !== '' ? wp_trim_words($text, 18, '...') : $fallback;
+            };
+            $format_activity_time = function ($activity_row) {
+                if (!is_array($activity_row)) {
+                    return '';
+                }
+                foreach (['due_date', 'completed_at', 'created_at'] as $time_key) {
+                    $time_value = trim((string) ($activity_row[$time_key] ?? ''));
+                    if ($time_value === '') {
+                        continue;
+                    }
+                    $ts = strtotime($time_value);
+                    if ($ts) {
+                        return date_i18n('M j, Y g:ia', $ts);
+                    }
+                    return $time_value;
+                }
+                return '';
+            };
+            $last_call_excerpt = $format_activity_excerpt($latest_call_activity, 'No call logged yet.');
+            $last_email_excerpt = $format_activity_excerpt($latest_email_activity, 'No email logged yet.');
+            $last_note_excerpt = $format_activity_excerpt($latest_note_activity, 'No notes logged yet.');
+            $last_call_time = $format_activity_time($latest_call_activity);
+            $last_email_time = $format_activity_time($latest_email_activity);
+            $last_note_time = $format_activity_time($latest_note_activity);
             $issues_preview = array_slice(array_values($profile_issues), 0, 3);
             if (count($profile_issues) > 3) {
                 $issues_preview[] = '+' . (count($profile_issues) - 3) . ' more';
@@ -40067,18 +40127,16 @@ final class CMN_One_Plugin {
 	                <div class="cmn-school-profile-status">
 	                    <span class="cmn-pill cmn-pill--school-id">ID: <?php echo esc_html($display_school_identifier); ?></span>
 	                    <span class="cmn-pill cmn-pill--status"><?php echo esc_html(ucfirst($status_display)); ?></span>
-	                    <?php if ($request_status !== '') : ?>
-	                        <span class="cmn-status-chip <?php echo esc_attr($request_status_class); ?>"><?php echo esc_html($request_status_label); ?></span>
-	                    <?php endif; ?>
+	                    <span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_stage_label); ?></span>
 	                </div>
-	                <a class="cmn-school-feedback-stars" href="<?php echo esc_url($build_tab_url('overview') . '#cmn-school-feedback-summary'); ?>" data-school-feedback-open aria-label="Open feedback summary" title="<?php echo esc_attr($feedback_summary_label); ?>">
+	                <div class="cmn-school-feedback-stars" aria-label="School rating" title="<?php echo esc_attr($feedback_summary_label); ?>">
 	                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
 	                        <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
 	                            <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>">★</span>
 	                        <?php endfor; ?>
 	                    </span>
 	                    <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
-	                </a>
+	                </div>
 	            </div>
 	        </header>
         <?php if ($watchdog('after_header')) { return ob_get_clean(); } ?>
@@ -40227,17 +40285,29 @@ final class CMN_One_Plugin {
 	                    <p class="cmn-muted">Latest school reply<?php echo $latest_school_reply_at !== '' ? (' (' . esc_html(date_i18n('M j, Y g:ia', strtotime($latest_school_reply_at))) . ')') : ''; ?>: <?php echo esc_html($latest_school_reply); ?></p>
 	                <?php endif; ?>
 	            </div>
-	            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-feedback-summary" data-school-feedback-panel>
-	                <?php if ($watchdog('panel_feedback_summary')) { return ob_get_clean(); } ?>
-	                <h3>Feedback Summary</h3>
-	                <?php if ($feedback_count < 1) : ?>
-	                    <p class="cmn-muted">No feedback yet.</p>
-	                <?php endif; ?>
-	                <div class="cmn-meta-grid">
-	                    <div><strong>Average Rating:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_overall'] ?? 0), 2)); ?>/5</div>
-	                    <div><strong>Reliability Rating:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 2)); ?>/5</div>
-	                    <div><strong>Total Feedback Count:</strong> <?php echo esc_html((string) ((int) ($feedback_summary['feedback_count'] ?? 0))); ?></div>
-	                    <div><strong>Trend:</strong> <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></div>
+	            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-overview-ops">
+	                <?php if ($watchdog('panel_ops_snapshot')) { return ob_get_clean(); } ?>
+	                <h3>Operational Snapshot</h3>
+	                <div class="cmn-meta-grid cmn-meta-grid--school-ops">
+	                    <div><strong>Outstanding tasks:</strong> <?php echo esc_html((string) ((int) $activity_quick_counts['open_tasks'])); ?></div>
+	                    <div>
+	                        <strong>Last call note:</strong> <?php echo esc_html($last_call_excerpt); ?>
+	                        <?php if ($last_call_time !== '') : ?>
+	                            <div class="cmn-muted"><?php echo esc_html($last_call_time); ?></div>
+	                        <?php endif; ?>
+	                    </div>
+	                    <div>
+	                        <strong>Last email sent:</strong> <?php echo esc_html($last_email_excerpt); ?>
+	                        <?php if ($last_email_time !== '') : ?>
+	                            <div class="cmn-muted"><?php echo esc_html($last_email_time); ?></div>
+	                        <?php endif; ?>
+	                    </div>
+	                    <div>
+	                        <strong>Latest note:</strong> <?php echo esc_html($last_note_excerpt); ?>
+	                        <?php if ($last_note_time !== '') : ?>
+	                            <div class="cmn-muted"><?php echo esc_html($last_note_time); ?></div>
+	                        <?php endif; ?>
+	                    </div>
 	                </div>
 	            </div>
 	            <?php if ($has_application_context) : ?>
