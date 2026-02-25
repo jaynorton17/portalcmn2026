@@ -38030,43 +38030,59 @@ final class CMN_One_Plugin {
         }
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Support</h2>
-            <p>Manage support tickets and reply to users.</p>
+        <header class="cmn-school-header cmn-support-admin-header">
+            <div class="cmn-header-row">
+                <div>
+                    <h2>Support Tickets</h2>
+                    <p>Unified queue for open, feedback-required and closed support tickets.</p>
+                </div>
+                <div class="cmn-support-dashboard" data-support-dashboard>
+                    <button class="cmn-support-tile is-active" type="button" data-support-tile="open">
+                        <span>Open</span>
+                        <strong data-support-count="open">0</strong>
+                    </button>
+                    <button class="cmn-support-tile" type="button" data-support-tile="needs_feedback">
+                        <span>Needs Feedback</span>
+                        <strong data-support-count="needs_feedback">0</strong>
+                    </button>
+                    <button class="cmn-support-tile" type="button" data-support-tile="closed">
+                        <span>Closed</span>
+                        <strong data-support-count="closed">0</strong>
+                    </button>
+                    <button class="cmn-support-tile" type="button" data-support-tile="feedback_insights">
+                        <span>Feedback Avg</span>
+                        <strong data-support-count="feedback_avg">0.0/5</strong>
+                    </button>
+                </div>
+            </div>
         </header>
-        <div class="cmn-support-hub-wrap" data-support-root data-support-mode="admin">
-            <div class="cmn-support-dashboard" data-support-dashboard>
-                <button class="cmn-support-tile is-active" type="button" data-support-tile="open">
-                    <span>Open tickets</span>
-                    <strong data-support-count="open">0</strong>
-                </button>
-                <button class="cmn-support-tile" type="button" data-support-tile="closed">
-                    <span>Closed tickets</span>
-                    <strong data-support-count="closed">0</strong>
-                </button>
-                <button class="cmn-support-tile" type="button" data-support-tile="needs_feedback">
-                    <span>Needs feedback</span>
-                    <strong data-support-count="needs_feedback">0</strong>
-                </button>
-                <button class="cmn-support-tile" type="button" data-support-tile="feedback_insights">
-                    <span>Recent feedback</span>
-                    <strong data-support-count="feedback_avg">0.0/5</strong>
-                </button>
-            </div>
-            <div class="cmn-support-hub" data-support-shell>
-            <div class="cmn-support-sidebar">
-                <div class="cmn-support-filters">
-                    <button class="cmn-ghost is-active" type="button" data-support-filter="active">New + Open</button>
-                    <button class="cmn-ghost" type="button" data-support-filter="new">New</button>
-                    <button class="cmn-ghost" type="button" data-support-filter="open">Open</button>
-                    <button class="cmn-ghost" type="button" data-support-filter="closed">Closed</button>
-                    <button class="cmn-ghost" type="button" data-support-filter="needs_feedback">Needs feedback</button>
+        <div class="cmn-support-hub-wrap cmn-support-admin-wrap" data-support-root data-support-mode="admin">
+            <section class="cmn-dashboard-card cmn-support-admin-queue-card">
+                <div class="cmn-support-admin-tabs">
+                    <button class="cmn-ghost is-active" type="button" data-support-tile="open">Open</button>
+                    <button class="cmn-ghost" type="button" data-support-tile="needs_feedback">Needs Feedback</button>
+                    <button class="cmn-ghost" type="button" data-support-tile="closed">Closed</button>
                 </div>
-                <div class="cmn-support-list" data-support-list>
-                    <div class="cmn-muted">Loading tickets...</div>
+                <div class="cmn-support-list-table-wrap">
+                    <table class="cmn-approval-table cmn-support-list-table">
+                        <thead>
+                            <tr>
+                                <th>Ticket ID</th>
+                                <th>Subject</th>
+                                <th>Requester</th>
+                                <th>Assigned Agent</th>
+                                <th>Last Updated</th>
+                                <th>SLA Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody data-support-list>
+                            <tr><td colspan="7">Loading tickets...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-            <div class="cmn-support-thread" data-support-thread>
+            </section>
+            <div class="cmn-dashboard-card cmn-support-thread" data-support-thread>
                 <div class="cmn-support-thread-header">
                     <div>
                         <strong data-support-thread-title>Support</strong>
@@ -38089,7 +38105,6 @@ final class CMN_One_Plugin {
                     <button class="cmn-primary" type="submit">Send Reply</button>
                 </form>
                 <div class="cmn-support-feedback" data-support-feedback></div>
-            </div>
             </div>
             <div class="cmn-support-insights-modal" data-support-insights-modal hidden>
                 <div class="cmn-support-insights-modal__overlay" data-support-insights-close></div>

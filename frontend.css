@@ -2145,6 +2145,104 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
   align-items: center;
 }
 
+.cmn-support-admin-wrap {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-support-admin-header .cmn-support-dashboard {
+  margin: 0;
+  min-width: min(680px, 100%);
+}
+
+.cmn-support-admin-queue-card {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-support-admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-support-admin-tabs .cmn-ghost.is-active {
+  border-color: rgba(208, 42, 42, 0.58);
+  background: rgba(208, 42, 42, 0.14);
+  color: #fff;
+}
+
+.cmn-support-list-table-wrap {
+  border: 1px solid var(--cmn-border);
+  border-radius: 12px;
+  background: rgba(13, 18, 28, 0.68);
+  overflow: auto;
+}
+
+.cmn-support-list-table {
+  width: 100%;
+  min-width: 980px;
+  margin: 0;
+}
+
+.cmn-support-list-table th,
+.cmn-support-list-table td {
+  padding: 10px 8px;
+  vertical-align: middle;
+}
+
+.cmn-support-list-table tbody tr.cmn-support-ticket {
+  display: table-row;
+  width: auto;
+  min-height: 0;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  text-align: inherit;
+  overflow: visible;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cmn-support-list-table tbody tr.cmn-support-ticket:hover {
+  background: rgba(34, 43, 61, 0.56);
+}
+
+.cmn-support-list-table tbody tr.cmn-support-ticket.is-selected {
+  background: rgba(127, 29, 29, 0.24);
+}
+
+.cmn-support-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmn-support-row-actions .cmn-btn-mini {
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+@media (max-width: 1024px) {
+  .cmn-support-admin-header .cmn-support-dashboard {
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cmn-support-row-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 767px) {
+  .cmn-support-admin-header .cmn-support-dashboard {
+    grid-template-columns: 1fr;
+  }
+}
+
 .cmn-support-thread-channel {
   margin-top: 4px;
   font-size: 12px;

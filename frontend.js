@@ -6303,6 +6303,88 @@ document.addEventListener('DOMContentLoaded', function () {
       };
 
       var buildTicketListItem = function (ticket) {
+        if (mode === 'admin' && listEl && String(listEl.tagName || '').toLowerCase() === 'tbody') {
+          var adminRow = document.createElement('tr');
+          adminRow.className = 'cmn-support-ticket';
+          adminRow.setAttribute('data-ticket-id', ticket.id);
+          var requesterLabel = 'Portal user';
+          if (ticket.channel_key === 'website_live_chat') {
+            var guestName = String(ticket.livechat_guest_name || '').trim();
+            var guestEmail = String(ticket.livechat_guest_email || '').trim();
+            requesterLabel = guestName || guestEmail || 'Website chat';
+          } else if (parseInt(ticket.linked_user_id || '0', 10) > 0) {
+            requesterLabel = 'User #' + String(parseInt(ticket.linked_user_id || '0', 10));
+          }
+          var slaLabel = 'In SLA';
+          var statusKey = String(ticket.status || '').toLowerCase();
+          var priorityKeyAdmin = getSupportTicketPriority(ticket);
+          if (statusKey === 'closed') {
+            slaLabel = 'Resolved';
+          } else if (priorityKeyAdmin === 'urgent' || priorityKeyAdmin === 'high') {
+            slaLabel = 'Priority';
+          } else if (String(ticket.feedback_request_status || '') === 'active') {
+            slaLabel = 'Awaiting Feedback';
+          }
+          var closeDisabled = statusKey === 'closed';
+          var feedbackDisabled = statusKey !== 'closed' || parseInt(ticket.feedback_count || '0', 10) > 0;
+
+          adminRow.innerHTML = ''
+            + '<td><strong>' + supportEsc(ticket.ref || ('#' + String(ticket.id || ''))) + '</strong></td>'
+            + '<td>' + supportEsc(ticket.subject || '') + '</td>'
+            + '<td>' + supportEsc(requesterLabel) + '</td>'
+            + '<td>Support Queue</td>'
+            + '<td>' + supportEsc(ticket.updated_at || '') + '</td>'
+            + '<td><span class="cmn-status-chip ' + (slaLabel === 'Resolved' ? 'is-approved' : (slaLabel === 'Priority' ? 'is-pending' : 'is-muted')) + '">' + supportEsc(slaLabel) + '</span></td>'
+            + '<td class="cmn-support-row-actions">'
+              + '<button type="button" class="cmn-ghost cmn-btn-mini" data-support-row-action="view">View</button>'
+              + '<button type="button" class="cmn-ghost cmn-btn-mini" data-support-row-action="close"' + (closeDisabled ? ' disabled' : '') + '>Close</button>'
+              + '<button type="button" class="cmn-ghost cmn-btn-mini" data-support-row-action="request_feedback"' + (feedbackDisabled ? ' disabled' : '') + '>Request Feedback</button>'
+            + '</td>';
+
+          adminRow.addEventListener('click', function () {
+            setDeepTicketParam(ticket.id);
+            loadTicket(ticket.id);
+          });
+          adminRow.querySelectorAll('[data-support-row-action]').forEach(function (actionBtn) {
+            actionBtn.addEventListener('click', function (event) {
+              event.preventDefault();
+              event.stopPropagation();
+              var action = actionBtn.getAttribute('data-support-row-action') || '';
+              if (action === 'view') {
+                setDeepTicketParam(ticket.id);
+                loadTicket(ticket.id);
+                return;
+              }
+              if (action === 'close') {
+                if (actionBtn.disabled) {
+                  return;
+                }
+                supportFetch('cmn_support_close_ticket', { ticket_id: ticket.id, status: 'closed' }).then(function () {
+                  loadTickets();
+                  loadTicket(ticket.id);
+                });
+                return;
+              }
+              if (action === 'request_feedback') {
+                if (actionBtn.disabled) {
+                  return;
+                }
+                actionBtn.disabled = true;
+                supportFetch('cmn_support_request_feedback', { ticket_id: ticket.id }).then(function () {
+                  loadTickets();
+                  loadTicket(ticket.id);
+                }).catch(function () {
+                  actionBtn.disabled = false;
+                });
+              }
+            });
+          });
+          if (activeTicketId && parseInt(ticket.id, 10) === parseInt(activeTicketId, 10)) {
+            adminRow.classList.add('is-selected');
+          }
+          return adminRow;
+        }
+
         var visual = getTicketVisualState(ticket);
         var item = document.createElement('button');
         item.type = 'button';
@@ -6357,7 +6439,19 @@ document.addEventListener('DOMContentLoaded', function () {
           });
         }
         if (!filteredTickets.length) {
-          listEl.innerHTML = hasPendingSelection ? '<div class="cmn-empty">Loading selected ticket...</div>' : '<div class="cmn-empty">No tickets in this filter.</div>';
+          if (mode === 'admin' && String(listEl.tagName || '').toLowerCase() === 'tbody') {
+            listEl.innerHTML = '<tr><td colspan="7" class="cmn-empty">' + (hasPendingSelection ? 'Loading selected ticket...' : 'No tickets in this filter.') + '</td></tr>';
+          } else {
+            listEl.innerHTML = hasPendingSelection ? '<div class="cmn-empty">Loading selected ticket...</div>' : '<div class="cmn-empty">No tickets in this filter.</div>';
+          }
+          return;
+        }
+        if (mode === 'admin' && String(listEl.tagName || '').toLowerCase() === 'tbody') {
+          listEl.innerHTML = '';
+          filteredTickets.forEach(function (ticket) {
+            listEl.appendChild(buildTicketListItem(ticket));
+          });
+          syncSelectedTicketRow();
           return;
         }
         var ul = document.createElement('div');
@@ -6818,11 +6912,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 is_new_for_admin: ticket.is_new_for_admin || 0,
                 feedback_count: 0
               };
-              listEl.innerHTML = '';
-              var ul = document.createElement('div');
-              ul.className = 'cmn-support-ticket-list';
-              ul.appendChild(buildTicketListItem(fallbackTicket));
-              listEl.appendChild(ul);
+              if (mode === 'admin' && String(listEl.tagName || '').toLowerCase() === 'tbody') {
+                listEl.innerHTML = '';
+                listEl.appendChild(buildTicketListItem(fallbackTicket));
+              } else {
+                listEl.innerHTML = '';
+                var ul = document.createElement('div');
+                ul.className = 'cmn-support-ticket-list';
+                ul.appendChild(buildTicketListItem(fallbackTicket));
+                listEl.appendChild(ul);
+              }
               syncSelectedTicketRow();
             }
           }
