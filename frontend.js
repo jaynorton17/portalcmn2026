@@ -162,6 +162,73 @@ document.addEventListener('DOMContentLoaded', function () {
   };
   initCandidateNoteCounter();
 
+  var initCandidateDocDeleteModal = function () {
+    var modal = document.querySelector('[data-cmn-doc-delete-modal]');
+    if (!modal) {
+      return;
+    }
+    var openButtons = document.querySelectorAll('[data-cmn-doc-delete-open]');
+    if (!openButtons.length) {
+      return;
+    }
+    var cancelButtons = modal.querySelectorAll('[data-cmn-doc-delete-cancel]');
+    var confirmButton = modal.querySelector('[data-cmn-doc-delete-confirm]');
+    var activeForm = null;
+
+    var closeModal = function () {
+      modal.hidden = true;
+      activeForm = null;
+      document.body.classList.remove('cmn-support-modal-lock');
+    };
+
+    var openModal = function (form) {
+      if (!form) {
+        return;
+      }
+      activeForm = form;
+      modal.hidden = false;
+      document.body.classList.add('cmn-support-modal-lock');
+    };
+
+    openButtons.forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        var form = button.closest('form[data-cmn-doc-delete-form]');
+        openModal(form);
+      });
+    });
+
+    cancelButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        closeModal();
+      });
+    });
+
+    modal.addEventListener('click', function (event) {
+      if (event.target === modal) {
+        closeModal();
+      }
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !modal.hidden) {
+        closeModal();
+      }
+    });
+
+    if (confirmButton) {
+      confirmButton.addEventListener('click', function () {
+        if (!activeForm) {
+          closeModal();
+          return;
+        }
+        activeForm.submit();
+        closeModal();
+      });
+    }
+  };
+  initCandidateDocDeleteModal();
+
   var initSchoolProfileControlPanel = function () {
     var profileRoot = document.querySelector('[data-school-profile-root]');
     if (!profileRoot) {
@@ -574,7 +641,15 @@ document.addEventListener('DOMContentLoaded', function () {
     var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
     var staffNavEditModeLegacyKey = 'cmn_sidebar_edit_mode';
     var staffNavEditModeKey = 'cmn_sidebar_edit_mode_' + staffViewKey;
+    var staffNavExpandedGroupKey = 'cmn_staff_nav_expanded_group_v1_' + staffNavUserId;
+    var staffNavGroupStateKey = 'cmn_staff_nav_group_state_v1_' + staffNavUserId;
+    var staffNavScrollKey = 'cmn_staff_nav_scroll_v1_' + staffNavUserId;
+    var staffNavScrollParentKey = 'cmn_staff_nav_scroll_parent_v1_' + staffNavUserId;
+    var staffNavScrollMapKey = 'cmn_staff_nav_scroll_map_v2_' + staffNavUserId;
+    var staffMainScrollPayloadKey = 'cmn_staff_main_scroll_payload_v1_' + staffNavUserId;
+    var staffMainScrollMapKey = 'cmn_staff_main_scroll_map_v2_' + staffNavUserId;
     var staffShell = staffNav.closest('.cmn-staff-shell');
+    var staffMainScrollHost = null;
     var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
     var staffNavEditToggleBtn = staffNav.querySelector('[data-staff-nav-edit-toggle]');
     var staffNavEditPanel = staffNav.querySelector('[data-staff-nav-edit-panel]');
@@ -588,6 +663,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var isNavEditing = false;
     var navOrderDirty = false;
     var navOrderSaveInFlight = false;
+    var staffMainScrollIntentSet = false;
+    var staffNavActiveAutoScrollDone = false;
+    var staffInitialScrollHydrationComplete = false;
+    staffNav.classList.add('is-nav-hydrating');
     var dragType = '';
     var dragNode = null;
     var dragGroupKey = '';
@@ -816,6 +895,753 @@ document.addEventListener('DOMContentLoaded', function () {
         // Ignore storage failures.
       }
     };
+    var readStorageString = function (storage, key) {
+      try {
+        return String(storage.getItem(key) || '');
+      } catch (e) {
+        return '';
+      }
+    };
+    var writeStorageString = function (storage, key, value) {
+      try {
+        if (value === null || value === undefined || value === '') {
+          storage.removeItem(key);
+          return;
+        }
+        storage.setItem(key, String(value));
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    };
+    var readStorageJson = function (storage, key, fallback) {
+      var fallbackValue = (fallback && typeof fallback === 'object') ? fallback : {};
+      var raw = readStorageString(storage, key);
+      if (!raw) {
+        return cloneJson(fallbackValue, {});
+      }
+      try {
+        var parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') {
+          return cloneJson(fallbackValue, {});
+        }
+        return parsed;
+      } catch (e) {
+        return cloneJson(fallbackValue, {});
+      }
+    };
+    var writeStorageJson = function (storage, key, value) {
+      try {
+        if (!value || typeof value !== 'object') {
+          storage.removeItem(key);
+          return;
+        }
+        storage.setItem(key, JSON.stringify(value));
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    };
+    var readStaffExpandedGroupState = function () {
+      return readStorageString(window.localStorage, staffNavExpandedGroupKey).trim();
+    };
+    var writeStaffExpandedGroupState = function (groupKey) {
+      writeStorageString(window.localStorage, staffNavExpandedGroupKey, String(groupKey || '').trim());
+    };
+    var readStaffGroupOpenState = function () {
+      return readStorageJson(window.localStorage, staffNavGroupStateKey, {});
+    };
+    var writeStaffGroupOpenState = function (state) {
+      writeStorageJson(window.localStorage, staffNavGroupStateKey, state && typeof state === 'object' ? state : {});
+    };
+    var readCurrentStaffSearchParams = function () {
+      try {
+        return new URLSearchParams(window.location.search || '');
+      } catch (e) {
+        return new URLSearchParams();
+      }
+    };
+    var getLowerQueryValue = function (params, key) {
+      if (!params || typeof params.get !== 'function') {
+        return '';
+      }
+      return String(params.get(key) || '').trim().toLowerCase();
+    };
+    var normalizeRouteValue = function (key, value) {
+      var normalizedKey = String(key || '').trim().toLowerCase();
+      var normalizedValue = String(value || '').trim().toLowerCase();
+      if (!normalizedValue) {
+        return '';
+      }
+      if (normalizedKey === 'view') {
+        if (normalizedValue === 'finance_overview') {
+          return 'finance-overview';
+        }
+        if (normalizedValue === 'invoices') {
+          return 'invoicing';
+        }
+        return normalizedValue.replace(/_/g, '-');
+      }
+      if (normalizedKey === 'cmn_tab') {
+        return normalizedValue.replace(/-/g, '_');
+      }
+      return normalizedValue;
+    };
+    var routeMatchKeys = [
+      'cmn_tab',
+      'view',
+      'cmn_candidate_tab',
+      'cmn_school_tab',
+      'school',
+      'candidate',
+      'candidate_id',
+      'cmn_status',
+      'support_filter',
+      'status',
+      'marketing_tab',
+      'cmn_email_centre_tab',
+      'cmn_intelligence',
+      'cmn_finance_focus',
+      'cmn_doc_review',
+      'cmn_bucket'
+    ];
+    var routeKeyQueryOrder = [
+      'view',
+      'cmn_tab',
+      'cmn_candidate_tab',
+      'cmn_school_tab',
+      'school',
+      'candidate',
+      'candidate_id',
+      'cmn_status',
+      'support_filter',
+      'status',
+      'cmn_finance_focus',
+      'marketing_tab',
+      'cmn_email_centre_tab',
+      'cmn_intelligence',
+      'cmn_doc_review',
+      'cmn_bucket',
+      'tab'
+    ];
+    var getRouteKey = function (params) {
+      var source = params && typeof params.get === 'function' ? params : readCurrentStaffSearchParams();
+      var parts = [];
+      routeKeyQueryOrder.forEach(function (routeKey) {
+        var value = normalizeRouteValue(routeKey, getLowerQueryValue(source, routeKey));
+        if (!value) {
+          return;
+        }
+        parts.push(routeKey + '=' + encodeURIComponent(value));
+      });
+      if (!parts.length) {
+        return 'dashboard';
+      }
+      return parts.join('&');
+    };
+    var getRouteKeyFromUrl = function (url) {
+      try {
+        var parsed = new URL(String(url || ''), window.location.href);
+        return getRouteKey(parsed.searchParams);
+      } catch (e) {
+        return getRouteKey(readCurrentStaffSearchParams());
+      }
+    };
+    var resolveMajorRouteKeyFromParams = function (params) {
+      var view = normalizeRouteValue('view', getLowerQueryValue(params, 'view'));
+      if (view) {
+        return 'view:' + view;
+      }
+      var tab = normalizeRouteValue('cmn_tab', getLowerQueryValue(params, 'cmn_tab'));
+      if (tab) {
+        return 'tab:' + tab;
+      }
+      var school = normalizeRouteValue('school', getLowerQueryValue(params, 'school'));
+      if (school) {
+        return 'school:' + school;
+      }
+      return 'dashboard';
+    };
+    var resolveMajorRouteKeyFromUrl = function (url) {
+      try {
+        var parsed = new URL(String(url || ''), window.location.href);
+        return String(parsed.pathname || '').replace(/\/+$/, '') + '|' + resolveMajorRouteKeyFromParams(parsed.searchParams);
+      } catch (e) {
+        return String(window.location.pathname || '').replace(/\/+$/, '') + '|' + resolveMajorRouteKeyFromParams(readCurrentStaffSearchParams());
+      }
+    };
+    var resolveRouteMappedNavItemKey = function (params) {
+      var view = normalizeRouteValue('view', getLowerQueryValue(params, 'view'));
+      if (view === 'finance-overview') {
+        return 'finance_overview';
+      }
+      if (view === 'invoicing') {
+        return 'invoicing';
+      }
+      var tab = normalizeRouteValue('cmn_tab', getLowerQueryValue(params, 'cmn_tab'));
+      if (tab === 'staff_payroll') {
+        return 'staff_payroll';
+      }
+      return '';
+    };
+    var resolveDynamicActiveNavItemKey = function (params, pathnameOverride) {
+      var currentParams = params || readCurrentStaffSearchParams();
+      var currentPath = String(pathnameOverride || window.location.pathname || '').replace(/\/+$/, '');
+      var best = { key: '', score: -1 };
+      staffNav.querySelectorAll('[data-staff-nav-item]').forEach(function (itemEl) {
+        var itemKey = String(itemEl.getAttribute('data-staff-nav-item-key') || '').trim();
+        if (!itemKey) {
+          return;
+        }
+        var linkEl = itemEl.querySelector('.cmn-school-nav-link[href]');
+        if (!linkEl) {
+          return;
+        }
+        var parsedHref;
+        try {
+          parsedHref = new URL(String(linkEl.getAttribute('href') || ''), window.location.href);
+        } catch (e) {
+          return;
+        }
+        var hrefPath = String(parsedHref.pathname || '').replace(/\/+$/, '');
+        if (hrefPath !== currentPath) {
+          return;
+        }
+
+        var score = 0;
+        var matched = 0;
+        var mismatch = false;
+        routeMatchKeys.forEach(function (routeKey) {
+          var linkValue = normalizeRouteValue(routeKey, getLowerQueryValue(parsedHref.searchParams, routeKey));
+          if (!linkValue) {
+            return;
+          }
+          var currentValue = normalizeRouteValue(routeKey, getLowerQueryValue(currentParams, routeKey));
+          if (!currentValue || currentValue !== linkValue) {
+            mismatch = true;
+            return;
+          }
+          matched++;
+          if (routeKey === 'cmn_tab' || routeKey === 'view' || routeKey === 'school' || routeKey === 'candidate') {
+            score += 40;
+            return;
+          }
+          score += 10;
+        });
+        if (mismatch || matched < 1) {
+          return;
+        }
+        if (score > best.score) {
+          best = { key: itemKey, score: score };
+        }
+      });
+      return String(best.key || '').trim();
+    };
+    var findStaffNavItemByKey = function (targetKey) {
+      var needle = String(targetKey || '').trim();
+      if (!needle) {
+        return null;
+      }
+      var found = null;
+      staffNav.querySelectorAll('[data-staff-nav-item]').forEach(function (itemEl) {
+        if (found) {
+          return;
+        }
+        var itemKey = String(itemEl.getAttribute('data-staff-nav-item-key') || '').trim();
+        if (itemKey === needle) {
+          found = itemEl;
+        }
+      });
+      return found;
+    };
+    var getFirstActiveGroupKey = function () {
+      var activeGroupKey = '';
+      staffNav.querySelectorAll('[data-staff-nav-group]').forEach(function (groupEl) {
+        if (activeGroupKey) {
+          return;
+        }
+        if (!groupEl.querySelector('.cmn-school-nav-link.is-active')) {
+          return;
+        }
+        activeGroupKey = String(groupEl.getAttribute('data-staff-nav-group') || '').trim();
+      });
+      return activeGroupKey;
+    };
+    var resolveCurrentNavParentGroupKey = function () {
+      var activeGroupKey = getFirstActiveGroupKey();
+      if (activeGroupKey) {
+        return activeGroupKey;
+      }
+      return readStaffExpandedGroupState();
+    };
+    var syncStaffNavGroupActiveState = function (preferredGroupKey) {
+      var activeGroupKey = String(preferredGroupKey || '').trim();
+      if (!activeGroupKey) {
+        activeGroupKey = getFirstActiveGroupKey();
+      }
+      staffNav.querySelectorAll('[data-staff-nav-group]').forEach(function (groupEl) {
+        var groupKey = String(groupEl.getAttribute('data-staff-nav-group') || '').trim();
+        var isActiveGroup = !!activeGroupKey && groupKey === activeGroupKey;
+        if (!activeGroupKey) {
+          isActiveGroup = !!groupEl.querySelector('.cmn-school-nav-link.is-active');
+        }
+        groupEl.classList.toggle('is-active-group', isActiveGroup);
+      });
+      return activeGroupKey;
+    };
+    var triggerStaffNavActiveAnimation = function () {
+      var activeLink = staffNav.querySelector('.cmn-school-nav-link.is-active');
+      if (!activeLink) {
+        return;
+      }
+      activeLink.classList.remove('cmn-nav-active-animate');
+      // Trigger reflow so class re-application animates on load.
+      void activeLink.offsetWidth;
+      activeLink.classList.add('cmn-nav-active-animate');
+      window.setTimeout(function () {
+        activeLink.classList.remove('cmn-nav-active-animate');
+      }, 180);
+    };
+    var applyActiveItemByKey = function (targetKey) {
+      var itemEl = findStaffNavItemByKey(targetKey);
+      if (!itemEl) {
+        return '';
+      }
+      staffNav.querySelectorAll('.cmn-school-nav-link.is-active').forEach(function (activeLinkEl) {
+        activeLinkEl.classList.remove('is-active');
+      });
+      var itemLinkEl = itemEl.querySelector('.cmn-school-nav-link');
+      if (itemLinkEl) {
+        itemLinkEl.classList.add('is-active');
+      }
+      return String(itemEl.getAttribute('data-staff-nav-item-group') || '').trim();
+    };
+    var getNavGroupKeyForLink = function (linkEl) {
+      if (!linkEl) {
+        return '';
+      }
+      var itemEl = linkEl.closest('[data-staff-nav-item]');
+      if (!itemEl) {
+        return '';
+      }
+      return String(itemEl.getAttribute('data-staff-nav-item-group') || '').trim();
+    };
+    var normalizePathname = function (pathname) {
+      var normalized = String(pathname || '').trim();
+      if (!normalized) {
+        return '/';
+      }
+      normalized = normalized.replace(/\/+$/, '');
+      return normalized || '/';
+    };
+    var isPlainLeftClick = function (event) {
+      if (!event) {
+        return false;
+      }
+      return !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && Number(event.button || 0) === 0;
+    };
+    var isInternalPortalNavigationUrl = function (url) {
+      try {
+        var parsed = new URL(String(url || ''), window.location.href);
+        if (parsed.origin !== window.location.origin) {
+          return false;
+        }
+        return normalizePathname(parsed.pathname) === normalizePathname(window.location.pathname);
+      } catch (e) {
+        return false;
+      }
+    };
+    var isInternalPortalReferrer = function () {
+      var referrer = String(document.referrer || '').trim();
+      if (!referrer) {
+        return false;
+      }
+      try {
+        var parsed = new URL(referrer, window.location.href);
+        if (parsed.origin !== window.location.origin) {
+          return false;
+        }
+        return normalizePathname(parsed.pathname) === normalizePathname(window.location.pathname);
+      } catch (e) {
+        return false;
+      }
+    };
+    var shouldRestoreStoredScrollState = function (hasPayload) {
+      if (hasPayload) {
+        return true;
+      }
+      var navType = 'navigate';
+      try {
+        var navEntries = window.performance && typeof window.performance.getEntriesByType === 'function'
+          ? window.performance.getEntriesByType('navigation')
+          : [];
+        if (navEntries && navEntries.length && navEntries[0] && navEntries[0].type) {
+          navType = String(navEntries[0].type);
+        }
+      } catch (e) {
+        navType = 'navigate';
+      }
+      if (navType === 'reload' || navType === 'back_forward') {
+        return true;
+      }
+      return isInternalPortalReferrer();
+    };
+    var resolveNavParentGroupKeyForUrl = function (url) {
+      try {
+        var parsed = new URL(String(url || ''), window.location.href);
+        var params = parsed.searchParams;
+        var mappedItemKey = resolveRouteMappedNavItemKey(params);
+        var dynamicItemKey = resolveDynamicActiveNavItemKey(params, parsed.pathname);
+        var activeItemKey = mappedItemKey || dynamicItemKey;
+        if (!activeItemKey) {
+          return '';
+        }
+        var activeItemEl = findStaffNavItemByKey(activeItemKey);
+        if (!activeItemEl) {
+          return '';
+        }
+        return String(activeItemEl.getAttribute('data-staff-nav-item-group') || '').trim();
+      } catch (e) {
+        return '';
+      }
+    };
+    var setActiveNavFromURL = function (params) {
+      var currentParams = params || readCurrentStaffSearchParams();
+      var mappedItemKey = resolveRouteMappedNavItemKey(currentParams);
+      var dynamicItemKey = resolveDynamicActiveNavItemKey(currentParams);
+      var activeItemKey = mappedItemKey || dynamicItemKey;
+      var mappedGroupKey = applyActiveItemByKey(activeItemKey);
+      return syncStaffNavGroupActiveState(mappedGroupKey || getFirstActiveGroupKey() || readStaffExpandedGroupState());
+    };
+    var readMainScrollPayload = function () {
+      var raw = readStorageString(window.sessionStorage, staffMainScrollPayloadKey);
+      if (!raw) {
+        return null;
+      }
+      try {
+        var payload = JSON.parse(raw);
+        return payload && typeof payload === 'object' ? payload : null;
+      } catch (e) {
+        return null;
+      }
+    };
+    var writeMainScrollPayload = function (payload) {
+      try {
+        if (!payload || typeof payload !== 'object') {
+          window.sessionStorage.removeItem(staffMainScrollPayloadKey);
+          return;
+        }
+        window.sessionStorage.setItem(staffMainScrollPayloadKey, JSON.stringify(payload));
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    };
+    var readStaffMainScrollMap = function () {
+      return readStorageJson(window.sessionStorage, staffMainScrollMapKey, {});
+    };
+    var writeStaffMainScrollMap = function (map) {
+      writeStorageJson(window.sessionStorage, staffMainScrollMapKey, map && typeof map === 'object' ? map : {});
+    };
+    var readMainScrollForRoute = function (routeKey) {
+      var key = String(routeKey || '').trim();
+      if (!key) {
+        return -1;
+      }
+      var map = readStaffMainScrollMap();
+      if (!Object.prototype.hasOwnProperty.call(map, key)) {
+        return -1;
+      }
+      var value = Number(map[key]);
+      if (!isFinite(value) || value < 0) {
+        return -1;
+      }
+      return Math.round(value);
+    };
+    var persistMainScrollForRoute = function (routeKey, scrollTop) {
+      var key = String(routeKey || '').trim();
+      if (!key) {
+        return;
+      }
+      var y = Math.max(0, Math.round(Number(scrollTop) || 0));
+      var map = readStaffMainScrollMap();
+      map[key] = y;
+      writeStaffMainScrollMap(map);
+    };
+    var readStaffNavScrollMap = function () {
+      return readStorageJson(window.sessionStorage, staffNavScrollMapKey, {});
+    };
+    var writeStaffNavScrollMap = function (map) {
+      writeStorageJson(window.sessionStorage, staffNavScrollMapKey, map && typeof map === 'object' ? map : {});
+    };
+    var readNavScrollForRoute = function (routeKey) {
+      var key = String(routeKey || '').trim();
+      if (!key) {
+        return null;
+      }
+      var map = readStaffNavScrollMap();
+      if (!Object.prototype.hasOwnProperty.call(map, key)) {
+        return null;
+      }
+      var payload = map[key];
+      if (!payload || typeof payload !== 'object') {
+        return null;
+      }
+      var y = Number(payload.y);
+      var parent = String(payload.parent || '').trim();
+      if (!isFinite(y) || y < 0) {
+        return null;
+      }
+      return {
+        y: Math.round(y),
+        parent: parent
+      };
+    };
+    var persistNavScrollForRoute = function (routeKey, scrollTop, parentGroupKey) {
+      var key = String(routeKey || '').trim();
+      if (!key) {
+        return;
+      }
+      var y = Math.max(0, Math.round(Number(scrollTop) || 0));
+      var map = readStaffNavScrollMap();
+      map[key] = {
+        y: y,
+        parent: String(parentGroupKey || '').trim()
+      };
+      writeStaffNavScrollMap(map);
+    };
+    var resolveStaffMainScrollHost = function () {
+      if (staffMainScrollHost && document.body.contains(staffMainScrollHost)) {
+        return staffMainScrollHost;
+      }
+      if (staffShell) {
+        staffMainScrollHost = staffShell.querySelector('.cmn-staff-main, .cmn-school-main');
+      }
+      if (!staffMainScrollHost) {
+        staffMainScrollHost = document.querySelector('.cmn-staff-main, .cmn-school-main');
+      }
+      return staffMainScrollHost;
+    };
+    var getCurrentMainScrollTop = function () {
+      var host = resolveStaffMainScrollHost();
+      if (host) {
+        return Math.max(0, Number(host.scrollTop) || 0);
+      }
+      return Math.max(0, window.scrollY || window.pageYOffset || 0);
+    };
+    var setCurrentMainScrollTop = function (scrollTop) {
+      var targetScroll = Math.max(0, Number(scrollTop) || 0);
+      var host = resolveStaffMainScrollHost();
+      if (host) {
+        host.scrollTop = targetScroll;
+        return;
+      }
+      if (typeof window.scrollTo === 'function') {
+        window.scrollTo(0, targetScroll);
+      }
+    };
+    var getCurrentMajorRouteKey = function () {
+      return normalizePathname(window.location.pathname) + '|' + resolveMajorRouteKeyFromParams(readCurrentStaffSearchParams());
+    };
+    var stashMainScrollForNavigation = function (targetRouteKey, targetParentGroupKey, preserveScroll) {
+      var routeKey = String(targetRouteKey || '').trim() || getRouteKey(readCurrentStaffSearchParams());
+      var currentRouteKey = getRouteKey(readCurrentStaffSearchParams());
+      var currentY = getCurrentMainScrollTop();
+      persistMainScrollForRoute(currentRouteKey, currentY);
+      var parentGroupKey = String(targetParentGroupKey || '').trim();
+      var targetSavedY = readMainScrollForRoute(routeKey);
+      var y = targetSavedY >= 0 ? targetSavedY : (preserveScroll ? currentY : 0);
+      writeMainScrollPayload({
+        targetRoute: routeKey,
+        targetParent: parentGroupKey,
+        y: Math.max(0, Math.round(y))
+      });
+    };
+    var persistScrollBeforeNav = function (targetUrl, preferredTargetGroupKey, preserveWithinModule) {
+      var targetHref = String(targetUrl || '').trim();
+      if (!targetHref) {
+        return;
+      }
+      var currentParams = readCurrentStaffSearchParams();
+      var currentRouteKey = getRouteKey(currentParams);
+      var targetRouteKey = getRouteKeyFromUrl(targetHref);
+      var currentParentGroupKey = resolveCurrentNavParentGroupKey() || activeGroupKey;
+      var targetGroupKey = String(preferredTargetGroupKey || '').trim();
+      if (!targetGroupKey) {
+        targetGroupKey = resolveNavParentGroupKeyForUrl(targetHref);
+      }
+      var preserveMainScroll = false;
+      if (targetGroupKey && currentParentGroupKey && targetGroupKey === currentParentGroupKey) {
+        preserveMainScroll = true;
+      }
+      if (!preserveMainScroll && preserveWithinModule) {
+        preserveMainScroll = resolveMajorRouteKeyFromUrl(targetHref) === getCurrentMajorRouteKey();
+      }
+      if (!preserveMainScroll) {
+        preserveMainScroll = resolveMajorRouteKeyFromUrl(targetHref) === getCurrentMajorRouteKey();
+      }
+      if (targetGroupKey) {
+        writeStaffExpandedGroupState(targetGroupKey);
+      }
+      persistStaffNavScrollPosition(currentParentGroupKey, currentRouteKey);
+      if (!readNavScrollForRoute(targetRouteKey)) {
+        persistNavScrollForRoute(
+          targetRouteKey,
+          Math.max(0, Math.round(Number(staffNav.scrollTop) || 0)),
+          targetGroupKey || currentParentGroupKey || activeGroupKey
+        );
+      }
+      stashMainScrollForNavigation(targetRouteKey, targetGroupKey || currentParentGroupKey, preserveMainScroll);
+      staffMainScrollIntentSet = true;
+    };
+    var deriveFormSubmitTargetUrl = function (formEl, submitterEl) {
+      var form = formEl && formEl.nodeType === 1 ? formEl : null;
+      if (!form) {
+        return window.location.href;
+      }
+      var action = String(form.getAttribute('action') || window.location.href || '').trim() || window.location.href;
+      var method = String(form.getAttribute('method') || 'get').trim().toLowerCase();
+      var target;
+      try {
+        target = new URL(action, window.location.href);
+      } catch (e) {
+        return window.location.href;
+      }
+      if (method !== 'get') {
+        return target.href;
+      }
+      var formData;
+      try {
+        formData = new FormData(form);
+      } catch (e) {
+        return target.href;
+      }
+      if (submitterEl && submitterEl.name) {
+        formData.append(submitterEl.name, submitterEl.value || '');
+      }
+      formData.forEach(function (value, key) {
+        if (typeof value !== 'string') {
+          return;
+        }
+        target.searchParams.delete(key);
+        target.searchParams.append(key, value);
+      });
+      return target.href;
+    };
+    var restoreMainScrollFromNavigation = function () {
+      var payload = readMainScrollPayload();
+      var currentRoute = getRouteKey(readCurrentStaffSearchParams());
+      var currentParent = resolveCurrentNavParentGroupKey();
+      var resolvedY = -1;
+      var allowMapRestore = staffInitialScrollHydrationComplete ? true : shouldRestoreStoredScrollState(!!payload);
+
+      if (payload && typeof payload === 'object') {
+        var targetRoute = String(payload.targetRoute || '').trim();
+        if (targetRoute && targetRoute === currentRoute) {
+          var targetParent = String(payload.targetParent || '').trim();
+          var shouldRestoreFromPayload = false;
+          if (targetParent === '' || currentParent === '') {
+            shouldRestoreFromPayload = true;
+          } else if (targetParent === currentParent) {
+            shouldRestoreFromPayload = true;
+          }
+          if (shouldRestoreFromPayload) {
+            var payloadY = Number(payload.y || 0);
+            if (isFinite(payloadY) && payloadY >= 0) {
+              resolvedY = Math.max(0, Math.round(payloadY));
+            }
+          }
+        }
+      }
+
+      if (resolvedY < 0 && allowMapRestore) {
+        resolvedY = readMainScrollForRoute(currentRoute);
+      }
+
+      if (resolvedY >= 0) {
+        persistMainScrollForRoute(currentRoute, resolvedY);
+        window.requestAnimationFrame(function () {
+          setCurrentMainScrollTop(resolvedY);
+        });
+      }
+      writeMainScrollPayload(null);
+    };
+    var readStaffNavScrollTop = function () {
+      var raw = readStorageString(window.sessionStorage, staffNavScrollKey);
+      if (!raw) {
+        return -1;
+      }
+      var parsed = Number(raw);
+      if (!isFinite(parsed) || parsed < 0) {
+        return -1;
+      }
+      return Math.round(parsed);
+    };
+    var persistStaffNavScrollPosition = function (preferredParentGroupKey, routeKeyOverride) {
+      var scrollTop = Math.max(0, Math.round(Number(staffNav.scrollTop) || 0));
+      writeStorageString(window.sessionStorage, staffNavScrollKey, String(scrollTop));
+      var parentGroupKey = String(preferredParentGroupKey || '').trim() || resolveCurrentNavParentGroupKey();
+      writeStorageString(window.sessionStorage, staffNavScrollParentKey, parentGroupKey);
+      var routeKey = String(routeKeyOverride || '').trim() || getRouteKey(readCurrentStaffSearchParams());
+      persistNavScrollForRoute(routeKey, scrollTop, parentGroupKey);
+    };
+    var restoreStaffNavScrollPosition = function (routeKeyOverride) {
+      var hasMainPayload = !!readMainScrollPayload();
+      if (!staffInitialScrollHydrationComplete && !shouldRestoreStoredScrollState(hasMainPayload)) {
+        staffNav.scrollTop = 0;
+        return;
+      }
+      var routeKey = String(routeKeyOverride || '').trim() || getRouteKey(readCurrentStaffSearchParams());
+      var mappedPayload = readNavScrollForRoute(routeKey);
+      if (mappedPayload) {
+        var mappedParent = String(mappedPayload.parent || '').trim();
+        var currentMappedParent = resolveCurrentNavParentGroupKey();
+        if ((mappedParent || currentMappedParent) && mappedParent && currentMappedParent && mappedParent !== currentMappedParent) {
+          staffNav.scrollTop = 0;
+          persistStaffNavScrollPosition(currentMappedParent, routeKey);
+          return;
+        }
+        staffNav.scrollTop = mappedPayload.y;
+        return;
+      }
+
+      var savedScrollTop = readStaffNavScrollTop();
+      if (savedScrollTop < 0) {
+        return;
+      }
+      var savedParent = readStorageString(window.sessionStorage, staffNavScrollParentKey).trim();
+      var currentParent = resolveCurrentNavParentGroupKey();
+      if ((savedParent || currentParent) && savedParent !== currentParent) {
+        staffNav.scrollTop = 0;
+        persistStaffNavScrollPosition(currentParent, routeKey);
+        return;
+      }
+      staffNav.scrollTop = savedScrollTop;
+      writeStorageString(window.sessionStorage, staffNavScrollParentKey, currentParent || savedParent);
+    };
+    var ensureActiveNavItemVisible = function () {
+      if (staffNavActiveAutoScrollDone) {
+        return;
+      }
+      staffNavActiveAutoScrollDone = true;
+      var activeLink = staffNav.querySelector('.cmn-school-nav-link.is-active');
+      if (!activeLink) {
+        return;
+      }
+      var containerTop = Math.max(0, Number(staffNav.scrollTop) || 0);
+      var containerBottom = containerTop + Math.max(0, Number(staffNav.clientHeight) || 0);
+      var itemTop = Math.max(0, Number(activeLink.offsetTop) || 0);
+      var itemBottom = itemTop + Math.max(0, Number(activeLink.offsetHeight) || 0);
+      if (itemTop >= containerTop && itemBottom <= containerBottom) {
+        return;
+      }
+      if (typeof activeLink.scrollIntoView === 'function') {
+        activeLink.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      }
+    };
+    var persistCurrentMainScrollState = function () {
+      if (staffMainScrollIntentSet) {
+        return;
+      }
+      persistMainScrollForRoute(getRouteKey(readCurrentStaffSearchParams()), getCurrentMainScrollTop());
+    };
     var isStaffNavMobileViewport = function () {
       if (!window.matchMedia) {
         return window.innerWidth <= 900;
@@ -985,28 +1811,41 @@ document.addEventListener('DOMContentLoaded', function () {
       persistCurrentNavEditModeState();
     };
 
+    var currentStaffRouteParams = readCurrentStaffSearchParams();
+    var activeGroupKey = setActiveNavFromURL(currentStaffRouteParams);
     var navState = readStaffNavState();
     var serverNavState = readServerStaffNavState();
+    var persistedExpandedGroup = readStaffExpandedGroupState();
+    var storedGroupOpenState = readStaffGroupOpenState();
     Object.keys(serverNavState).forEach(function (key) {
       if (!Object.prototype.hasOwnProperty.call(navState, key)) {
         navState[key] = !!serverNavState[key] ? 1 : 0;
       }
     });
     staffNav.querySelectorAll('[data-staff-nav-group]').forEach(function (groupEl) {
-      var key = groupEl.getAttribute('data-staff-nav-group') || '';
+      var key = String(groupEl.getAttribute('data-staff-nav-group') || '').trim();
       var hasActive = !!groupEl.querySelector('.cmn-school-nav-link.is-active');
-      if (hasActive) {
-        setStaffGroupState(groupEl, true);
-        navState[key] = 1;
-        return;
+      var shouldOpen = false;
+      if (hasActive || (!!activeGroupKey && key === activeGroupKey)) {
+        shouldOpen = true;
+      } else if (Object.prototype.hasOwnProperty.call(storedGroupOpenState, key)) {
+        shouldOpen = !!storedGroupOpenState[key];
+      } else if (Object.prototype.hasOwnProperty.call(navState, key)) {
+        shouldOpen = !!navState[key];
       }
-      if (Object.prototype.hasOwnProperty.call(navState, key)) {
-        setStaffGroupState(groupEl, !!navState[key]);
-      } else {
-        setStaffGroupState(groupEl, false);
-        navState[key] = 0;
+      if (!shouldOpen && persistedExpandedGroup && key === persistedExpandedGroup) {
+        shouldOpen = true;
       }
+      setStaffGroupState(groupEl, shouldOpen);
+      navState[key] = shouldOpen ? 1 : 0;
+      storedGroupOpenState[key] = shouldOpen ? 1 : 0;
     });
+    activeGroupKey = syncStaffNavGroupActiveState(activeGroupKey);
+    if (activeGroupKey) {
+      writeStaffExpandedGroupState(activeGroupKey);
+    }
+    writeStaffGroupOpenState(storedGroupOpenState);
+    triggerStaffNavActiveAnimation();
     persistStaffNavState(navState);
     staffNav.querySelectorAll('[data-staff-nav-toggle]').forEach(function (toggleBtn) {
       toggleBtn.addEventListener('click', function (event) {
@@ -1025,15 +1864,76 @@ document.addEventListener('DOMContentLoaded', function () {
           openedFromCollapsed = true;
         }
         var willOpen = openedFromCollapsed ? true : !groupEl.classList.contains('is-open');
+        if (!willOpen && groupEl.querySelector('.cmn-school-nav-link.is-active')) {
+          willOpen = true;
+        }
         setStaffGroupState(groupEl, willOpen);
         navState[key] = willOpen ? 1 : 0;
+        storedGroupOpenState[key] = willOpen ? 1 : 0;
+        writeStaffGroupOpenState(storedGroupOpenState);
+        if (willOpen) {
+          writeStaffExpandedGroupState(key);
+        } else if (readStaffExpandedGroupState() === key) {
+          var fallbackExpandedGroup = '';
+          staffNav.querySelectorAll('[data-staff-nav-group].is-open').forEach(function (openGroupEl) {
+            if (fallbackExpandedGroup) {
+              return;
+            }
+            fallbackExpandedGroup = String(openGroupEl.getAttribute('data-staff-nav-group') || '').trim();
+          });
+          writeStaffExpandedGroupState(fallbackExpandedGroup);
+        }
+        activeGroupKey = syncStaffNavGroupActiveState('');
+        persistStaffNavScrollPosition(activeGroupKey);
         persistStaffNavState(navState);
       });
     });
+    var navScrollTicking = false;
+    staffNav.addEventListener('scroll', function () {
+      if (navScrollTicking) {
+        return;
+      }
+      navScrollTicking = true;
+      window.requestAnimationFrame(function () {
+        navScrollTicking = false;
+        persistStaffNavScrollPosition('');
+      });
+    }, { passive: true });
+    var restoreScrollAfterRender = function () {
+      var initialRouteKey = getRouteKey(readCurrentStaffSearchParams());
+      restoreStaffNavScrollPosition(initialRouteKey);
+      restoreMainScrollFromNavigation();
+      ensureActiveNavItemVisible();
+      staffInitialScrollHydrationComplete = true;
+    };
     setStaffNavCompactState(readStaffNavCompactState());
     enforceStaffNavMobileState();
+    window.requestAnimationFrame(function () {
+      restoreScrollAfterRender();
+      window.requestAnimationFrame(function () {
+        staffNav.classList.remove('is-nav-hydrating');
+        staffNav.classList.add('is-nav-ready');
+      });
+    });
     window.addEventListener('resize', function () {
       enforceStaffNavMobileState();
+    });
+    window.addEventListener('popstate', function () {
+      var currentParams = readCurrentStaffSearchParams();
+      activeGroupKey = setActiveNavFromURL(currentParams);
+      if (activeGroupKey) {
+        var activeGroupEl = staffNav.querySelector('[data-staff-nav-group="' + activeGroupKey + '"]');
+        if (activeGroupEl) {
+          setStaffGroupState(activeGroupEl, true);
+          navState[activeGroupKey] = 1;
+          storedGroupOpenState[activeGroupKey] = 1;
+          writeStaffGroupOpenState(storedGroupOpenState);
+          persistStaffNavState(navState);
+        }
+        writeStaffExpandedGroupState(activeGroupKey);
+      }
+      triggerStaffNavActiveAnimation();
+      restoreScrollAfterRender();
     });
     if (staffNavMinimizeBtn) {
       staffNavMinimizeBtn.addEventListener('click', function () {
@@ -1056,6 +1956,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isNavEditing) {
           event.preventDefault();
           return;
+        }
+        if (isPlainLeftClick(event)) {
+          persistScrollBeforeNav(linkEl.getAttribute('href') || window.location.href, getNavGroupKeyForLink(linkEl), false);
         }
         if (staffNav.classList.contains('is-collapsed')) {
           setStaffNavPeekState(false);
@@ -1214,6 +2117,49 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
       writeStaffNavEditModeState(false, false);
     }
+    var persistStaffNavStateBeforeUnload = function () {
+      persistStaffNavScrollPosition(resolveCurrentNavParentGroupKey() || activeGroupKey);
+      persistCurrentMainScrollState();
+    };
+    window.addEventListener('pagehide', persistStaffNavStateBeforeUnload);
+    window.addEventListener('beforeunload', persistStaffNavStateBeforeUnload);
+    document.addEventListener('click', function (event) {
+      if (event.defaultPrevented || !isPlainLeftClick(event)) {
+        return;
+      }
+      var linkEl = event.target && typeof event.target.closest === 'function'
+        ? event.target.closest('a[href]')
+        : null;
+      if (!linkEl || staffNav.contains(linkEl)) {
+        return;
+      }
+      var href = String(linkEl.getAttribute('href') || '').trim();
+      if (!href || href.charAt(0) === '#' || /^javascript:/i.test(href)) {
+        return;
+      }
+      var targetAttr = String(linkEl.getAttribute('target') || '').toLowerCase();
+      if (targetAttr === '_blank' || linkEl.hasAttribute('download')) {
+        return;
+      }
+      if (!isInternalPortalNavigationUrl(href)) {
+        return;
+      }
+      persistScrollBeforeNav(href, '', true);
+    });
+    document.addEventListener('submit', function (event) {
+      if (event.defaultPrevented) {
+        return;
+      }
+      var formEl = event.target && event.target.nodeName === 'FORM' ? event.target : null;
+      if (!formEl || staffNav.contains(formEl)) {
+        return;
+      }
+      var targetUrl = deriveFormSubmitTargetUrl(formEl, event.submitter || null);
+      if (!isInternalPortalNavigationUrl(targetUrl)) {
+        return;
+      }
+      persistScrollBeforeNav(targetUrl, '', true);
+    });
     document.addEventListener('click', function (event) {
       if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
         return;
@@ -4787,6 +5733,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var supportLastListRefreshAt = 0;
       var supportParams = new URLSearchParams(window.location.search);
       var initialSupportFilter = (supportParams.get('support_filter') || '').toLowerCase();
+      var initialSupportPriority = (supportParams.get('support_priority') || '').toLowerCase();
       var supportFeedbackParam = (supportParams.get('support_feedback') || '').toLowerCase();
       var supportShouldPromptFeedback = ['1', 'true', 'yes', 'on'].indexOf(supportFeedbackParam) !== -1;
       var supportOpenPrefill = (supportParams.get('support_open') || '').toLowerCase();
@@ -4798,6 +5745,8 @@ document.addEventListener('DOMContentLoaded', function () {
         initialSupportFilter = 'needs_feedback';
       }
       var filter = initialSupportFilter || (mode === 'admin' ? 'active' : 'all');
+      var priorityFilter = initialSupportPriority || 'all';
+      var priorityFilterControl = root.querySelector('[data-support-priority-filter]');
       var dashboard = root.querySelector('[data-support-dashboard]');
       var feedbackModal = root.parentElement.querySelector('[data-support-feedback-modal]') || root.querySelector('[data-support-feedback-modal]');
       var feedbackModalForm = feedbackModal ? feedbackModal.querySelector('[data-support-feedback-modal-form]') : null;
@@ -5140,6 +6089,24 @@ document.addEventListener('DOMContentLoaded', function () {
         return value;
       };
 
+      var normalizeSupportPriority = function (nextPriority) {
+        var value = String(nextPriority || '').toLowerCase();
+        if (['all', 'low', 'normal', 'high', 'urgent'].indexOf(value) === -1) {
+          return 'all';
+        }
+        return value;
+      };
+
+      var getSupportTicketPriority = function (ticket) {
+        var value = String(ticket && ticket.priority ? ticket.priority : 'normal').toLowerCase();
+        if (['low', 'normal', 'high', 'urgent'].indexOf(value) === -1) {
+          return 'normal';
+        }
+        return value;
+      };
+
+      priorityFilter = normalizeSupportPriority(priorityFilter);
+
       var syncFilterUiState = function () {
         var activeFilter = normalizeSupportFilterForMode(filter);
         root.querySelectorAll('[data-support-filter]').forEach(function (btn) {
@@ -5154,6 +6121,9 @@ document.addEventListener('DOMContentLoaded', function () {
           var expected = mode === 'admin' && tileKey === 'open' ? 'active' : tileKey;
           tileBtn.classList.toggle('is-active', expected === activeFilter);
         });
+        if (priorityFilterControl) {
+          priorityFilterControl.value = normalizeSupportPriority(priorityFilter);
+        }
       };
 
       var renderInsightsList = function () {
@@ -5209,6 +6179,15 @@ document.addEventListener('DOMContentLoaded', function () {
         item.type = 'button';
         item.className = 'cmn-support-ticket';
         item.setAttribute('data-ticket-id', ticket.id);
+        var priorityKey = getSupportTicketPriority(ticket);
+        var priorityLabels = {
+          low: 'Low',
+          normal: 'Normal',
+          high: 'High',
+          urgent: 'Urgent'
+        };
+        var priorityLabel = priorityLabels[priorityKey] || 'Normal';
+        var priorityBadge = '<span class="cmn-support-ticket-badge cmn-support-ticket-badge--priority is-' + supportEsc(priorityKey) + '">' + supportEsc(priorityLabel) + '</span>';
         var channelBadge = '';
         if (mode === 'admin' && String(ticket.channel_key || '') === 'website_live_chat') {
           channelBadge = '<span class="cmn-support-ticket-badge cmn-support-ticket-badge--channel">' + supportEsc(ticket.channel_label || 'Website Live Chat') + '</span>';
@@ -5222,9 +6201,9 @@ document.addEventListener('DOMContentLoaded', function () {
           } else if (needsFeedback) {
             feedbackBadge = '<span class="cmn-support-ticket-badge is-warning">Needs feedback</span>';
           }
-          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || '') + '</span><em>' + supportEsc(visual.statusLabel + ' - ' + (ticket.updated_at || '')) + '</em>' + channelBadge + feedbackBadge;
+          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || '') + '</span><em>' + supportEsc(visual.statusLabel + ' - ' + (ticket.updated_at || '')) + '</em>' + priorityBadge + channelBadge + feedbackBadge;
         } else {
-          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><em>' + supportEsc(visual.statusLabel) + '</em>';
+          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><em>' + supportEsc(visual.statusLabel) + '</em>' + priorityBadge;
         }
         item.addEventListener('click', function () {
           root.querySelectorAll('.cmn-support-ticket').forEach(function (row) { row.classList.remove('is-selected'); });
@@ -5242,13 +6221,19 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!listEl) {
           return;
         }
-        if (!tickets.length) {
+        var filteredTickets = Array.isArray(tickets) ? tickets.slice() : [];
+        if (normalizeSupportPriority(priorityFilter) !== 'all') {
+          filteredTickets = filteredTickets.filter(function (ticket) {
+            return getSupportTicketPriority(ticket) === normalizeSupportPriority(priorityFilter);
+          });
+        }
+        if (!filteredTickets.length) {
           listEl.innerHTML = hasPendingSelection ? '<div class="cmn-empty">Loading selected ticket...</div>' : '<div class="cmn-empty">No tickets in this filter.</div>';
           return;
         }
         var ul = document.createElement('div');
         ul.className = 'cmn-support-ticket-list';
-        tickets.forEach(function (ticket) {
+        filteredTickets.forEach(function (ticket) {
           ul.appendChild(buildTicketListItem(ticket));
         });
         listEl.innerHTML = '';
@@ -5699,6 +6684,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 ref: ticket.ticket_ref || ticket.ref || ('#' + String(activeTicketId)),
                 subject: ticket.subject || 'Support ticket',
                 status: ticket.status || 'open',
+                priority: ticket.priority || 'normal',
                 updated_at: ticket.updated_at || '',
                 is_new_for_admin: ticket.is_new_for_admin || 0,
                 feedback_count: 0
@@ -5718,6 +6704,9 @@ document.addEventListener('DOMContentLoaded', function () {
         var payload = {};
         if (filter) {
           payload.status = filter;
+        }
+        if (normalizeSupportPriority(priorityFilter) !== 'all') {
+          payload.priority = normalizeSupportPriority(priorityFilter);
         }
         var deepTicket = getDeepTicketParam();
         if (deepTicket) {
@@ -5742,11 +6731,20 @@ document.addEventListener('DOMContentLoaded', function () {
           if (data.data && data.data.forced_filter) {
             filter = normalizeSupportFilterForMode(data.data.forced_filter);
           }
+          if (data.data && data.data.priority_filter) {
+            priorityFilter = normalizeSupportPriority(data.data.priority_filter);
+          }
           syncFilterUiState();
           if (data.data && data.data.selected_ticket_id) {
             activeTicketId = parseInt(data.data.selected_ticket_id, 10) || activeTicketId;
           }
           var ticketsPayload = Array.isArray(data.data.tickets) ? data.data.tickets : [];
+          var filteredTicketsPayload = ticketsPayload.slice();
+          if (normalizeSupportPriority(priorityFilter) !== 'all') {
+            filteredTicketsPayload = filteredTicketsPayload.filter(function (ticket) {
+              return getSupportTicketPriority(ticket) === normalizeSupportPriority(priorityFilter);
+            });
+          }
           var allCount = (data.data && data.data.dashboard && data.data.dashboard.counts) ? parseInt(data.data.dashboard.counts.all || '0', 10) : 0;
           if (!deepTicket && mode !== 'admin' && ticketsPayload.length === 0 && allCount > 0 && normalizeSupportFilterForMode(filter) !== 'all') {
             filter = 'all';
@@ -5757,10 +6755,10 @@ document.addEventListener('DOMContentLoaded', function () {
           renderList(ticketsPayload, !!deepTicket);
           if (deepTicket) {
             loadTicket(deepTicket);
-          } else if (mode === 'admin' && ticketsPayload.length) {
-            loadTicket(ticketsPayload[0].id);
-          } else if (mode !== 'admin' && ticketsPayload.length) {
-            loadTicket(ticketsPayload[0].id);
+          } else if (mode === 'admin' && filteredTicketsPayload.length) {
+            loadTicket(filteredTicketsPayload[0].id);
+          } else if (mode !== 'admin' && filteredTicketsPayload.length) {
+            loadTicket(filteredTicketsPayload[0].id);
           } else {
             forceCloseFeedbackModals();
             activeTicketId = null;
@@ -5782,6 +6780,14 @@ document.addEventListener('DOMContentLoaded', function () {
           loadTickets();
         });
       });
+
+      if (priorityFilterControl) {
+        priorityFilterControl.addEventListener('change', function () {
+          priorityFilter = normalizeSupportPriority(priorityFilterControl.value || 'all');
+          syncFilterUiState();
+          loadTickets();
+        });
+      }
 
       root.querySelectorAll('[data-support-tile]').forEach(function (tileBtn) {
         tileBtn.addEventListener('click', function () {

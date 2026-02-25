@@ -131,6 +131,123 @@ final class CmnRateEngine {
     }
 }
 
+final class CmnBookingMarginService {
+    private $wpdb;
+    private $rate_engine;
+    private $booking_margins_table;
+    private $cache_ttl_seconds;
+
+    public function __construct($wpdb, CmnRateEngine $rate_engine, $booking_margins_table, $cache_ttl_seconds = 300) {
+        $this->wpdb = $wpdb;
+        $this->rate_engine = $rate_engine;
+        $this->booking_margins_table = (string) $booking_margins_table;
+        $this->cache_ttl_seconds = max(60, (int) $cache_ttl_seconds);
+    }
+
+    private function get_cache_key($booking_id) {
+        return 'cmn_booking_margin_' . (int) $booking_id;
+    }
+
+    private function normalize_margin_status($guardrail_status, $override_flag = 0) {
+        if (!empty($override_flag)) {
+            return 'compliant';
+        }
+        $guardrail_status = strtoupper(sanitize_key((string) $guardrail_status));
+        if (in_array($guardrail_status, ['LOW', 'NEGATIVE'], true)) {
+            return 'at_risk';
+        }
+        return 'compliant';
+    }
+
+    public function get_cached_margin($booking_id, $force_refresh = false) {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1 || $this->booking_margins_table === '') {
+            return [];
+        }
+
+        $cache_key = $this->get_cache_key($booking_id);
+        if (!$force_refresh) {
+            $cached = get_transient($cache_key);
+            if (is_array($cached) && !empty($cached)) {
+                return $cached;
+            }
+        }
+
+        $row = $this->wpdb->get_row($this->wpdb->prepare(
+            "SELECT * FROM {$this->booking_margins_table} WHERE booking_id = %d LIMIT 1",
+            $booking_id
+        ), ARRAY_A);
+        if (!is_array($row)) {
+            return [];
+        }
+
+        set_transient($cache_key, $row, $this->cache_ttl_seconds);
+        return $row;
+    }
+
+    public function calculate_and_cache($booking_id, $request_id, $role_key, $region_key, $school_charge_rate, $candidate_pay_rate, $override_flag = 0, $rule = []) {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1 || $this->booking_margins_table === '') {
+            return [];
+        }
+
+        $request_id = (int) $request_id;
+        $role_key = sanitize_key((string) $role_key);
+        $region_key = sanitize_key((string) $region_key);
+        if ($role_key === '') {
+            $role_key = 'default';
+        }
+        if ($region_key === '') {
+            $region_key = 'default';
+        }
+
+        $school_charge_rate = round((float) $school_charge_rate, 2);
+        $candidate_pay_rate = round((float) $candidate_pay_rate, 2);
+        $rule = is_array($rule) ? $rule : [];
+
+        $previous_row = $this->get_cached_margin($booking_id, true);
+        $validation = $this->rate_engine->validate_rates($school_charge_rate, $candidate_pay_rate, $rule);
+        $guardrail_status = strtoupper((string) ($validation['status'] ?? 'OK'));
+        $status = $this->normalize_margin_status($guardrail_status, $override_flag);
+        $status_reason = !empty($validation['reason_codes']) && is_array($validation['reason_codes'])
+            ? implode(',', array_map('sanitize_key', (array) $validation['reason_codes']))
+            : ($status === 'at_risk' ? 'guardrail_' . strtolower($guardrail_status) : 'guardrail_ok');
+        $now = current_time('mysql');
+
+        $this->wpdb->replace($this->booking_margins_table, [
+            'booking_id' => $booking_id,
+            'request_id' => $request_id > 0 ? $request_id : null,
+            'role_key' => $role_key,
+            'region_key' => $region_key,
+            'school_charge_rate' => $school_charge_rate,
+            'candidate_pay_rate' => $candidate_pay_rate,
+            'margin_amount' => round((float) ($validation['margin_amount'] ?? 0), 2),
+            'margin_percent' => round((float) ($validation['margin_percent'] ?? 0), 2),
+            'guardrail_status' => $guardrail_status,
+            'status' => $status,
+            'status_reason' => $status_reason,
+            'validation_json' => wp_json_encode($validation),
+            'calculated_at' => $now,
+            'updated_at' => $now,
+            'created_at' => !empty($previous_row['created_at']) ? (string) $previous_row['created_at'] : $now,
+        ], ['%d', '%d', '%s', '%s', '%f', '%f', '%f', '%f', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
+
+        $current_row = $this->get_cached_margin($booking_id, true);
+        $previous_status = sanitize_key((string) ($previous_row['status'] ?? ''));
+        $current_status = sanitize_key((string) ($current_row['status'] ?? $status));
+        set_transient($this->get_cache_key($booking_id), $current_row, $this->cache_ttl_seconds);
+
+        return [
+            'row' => $current_row,
+            'validation' => $validation,
+            'previous_status' => $previous_status,
+            'status' => $current_status,
+            'became_at_risk' => ($current_status === 'at_risk' && $previous_status !== 'at_risk'),
+            'became_compliant' => ($current_status === 'compliant' && $previous_status !== 'compliant'),
+        ];
+    }
+}
+
 final class CmnVettingEngine {
     private $weights = [
         'document_completeness' => 25,
@@ -532,7 +649,7 @@ final class CmnFeedbackInsights {
 final class CMN_One_Plugin {
     const VERSION = '0.1.19';
     const SCHEMA_BASE_VERSION = 38;
-    const SCHEMA_VERSION = 73;
+    const SCHEMA_VERSION = 74;
     const EMAIL_CANDIDATE_DECLINED = false;
     const AUTOMATION_DEFAULT_COOLDOWN_HOURS = 24;
     const AUTOMATION_MAX_RECURSION_DEPTH = 3;
@@ -586,6 +703,7 @@ final class CMN_One_Plugin {
 
     private $automation_engine = null;
     private $rate_engine = null;
+    private $booking_margin_service = null;
     private $vetting_engine = null;
     private $feedback_insights = null;
     private $training_mode_state_cache = null;
@@ -771,6 +889,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_generate_monthly_invoices', [$this, 'handle_generate_monthly_invoices']);
         add_action('admin_post_cmn_run_monthly_invoice_job_now', [$this, 'handle_run_monthly_invoice_job_now']);
         add_action('admin_post_cmn_run_invoice_overdue_reminder_job_now', [$this, 'handle_run_invoice_overdue_reminder_job_now']);
+        add_action('admin_post_cmn_margin_override_action', [$this, 'handle_margin_override_action']);
         add_action('admin_post_cmn_update_invoice_school_reminder_opt_out', [$this, 'handle_update_invoice_school_reminder_opt_out']);
         add_action('admin_post_cmn_run_candidate_rewards_reset_now', [$this, 'handle_run_candidate_rewards_reset_now']);
         add_action('admin_post_cmn_run_rewards_payroll_addon_processor', [$this, 'handle_run_rewards_payroll_addon_processor']);
@@ -1529,6 +1648,11 @@ final class CMN_One_Plugin {
         if ($installed < 73) {
             self::migrate_schema_v73_support_feedback_request_lifecycle();
             $installed = 73;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 74) {
+            self::migrate_schema_v74_booking_margin_controls();
+            $installed = 74;
             update_option('cmn_schema_version', $installed, false);
         }
         if ($installed < self::SCHEMA_VERSION) {
@@ -5140,6 +5264,195 @@ final class CMN_One_Plugin {
         $wpdb->query("UPDATE {$table_sql} SET feedback_request_status = 'none' WHERE feedback_request_status IS NULL OR feedback_request_status = ''");
     }
 
+    /*
+     * Booking margin controls acceptance checks:
+     * 1) Booking margin cache table stores computed margin status per booking.
+     * 2) At-risk alerts + override exceptions can be persisted without schema errors.
+     * 3) Existing booking rate rows are backfilled into booking margins idempotently.
+     */
+    private static function migrate_schema_v74_booking_margin_controls() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $charset = $wpdb->get_charset_collate();
+        $booking_margins = self::get_booking_margins_table_name();
+        $margin_alerts = self::get_margin_alerts_table_name();
+        $margin_exceptions = self::get_margin_exceptions_table_name();
+
+        $sql = "CREATE TABLE {$booking_margins} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            booking_id bigint(20) unsigned NOT NULL,
+            request_id bigint(20) unsigned NULL,
+            role_key varchar(80) NOT NULL DEFAULT 'default',
+            region_key varchar(80) NOT NULL DEFAULT 'default',
+            school_charge_rate decimal(10,2) NOT NULL DEFAULT 0.00,
+            candidate_pay_rate decimal(10,2) NOT NULL DEFAULT 0.00,
+            margin_amount decimal(10,2) NOT NULL DEFAULT 0.00,
+            margin_percent decimal(6,2) NOT NULL DEFAULT 0.00,
+            guardrail_status varchar(20) NOT NULL DEFAULT 'OK',
+            status varchar(20) NOT NULL DEFAULT 'compliant',
+            status_reason varchar(190) NULL,
+            override_margin_amount decimal(10,2) NULL,
+            validation_json longtext NULL,
+            calculated_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY booking_id (booking_id),
+            KEY request_id (request_id),
+            KEY status (status),
+            KEY guardrail_status (guardrail_status),
+            KEY updated_at (updated_at)
+        ) {$charset};
+
+        CREATE TABLE {$margin_alerts} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            booking_id bigint(20) unsigned NOT NULL,
+            margin_id bigint(20) unsigned NULL,
+            alert_type varchar(40) NOT NULL DEFAULT 'at_risk',
+            alert_status varchar(20) NOT NULL DEFAULT 'open',
+            message text NULL,
+            notified tinyint(1) NOT NULL DEFAULT 0,
+            notified_at datetime NULL,
+            resolved_at datetime NULL,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY booking_id (booking_id),
+            KEY margin_id (margin_id),
+            KEY alert_status (alert_status),
+            KEY created_at (created_at)
+        ) {$charset};
+
+        CREATE TABLE {$margin_exceptions} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            booking_id bigint(20) unsigned NOT NULL,
+            margin_id bigint(20) unsigned NULL,
+            user_id bigint(20) unsigned NULL,
+            decision varchar(20) NOT NULL DEFAULT 'approved',
+            reason text NULL,
+            new_margin decimal(10,2) NOT NULL DEFAULT 0.00,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY booking_id (booking_id),
+            KEY margin_id (margin_id),
+            KEY user_id (user_id),
+            KEY decision (decision),
+            KEY created_at (created_at)
+        ) {$charset};";
+        dbDelta($sql);
+
+        self::maybe_add_missing_column($booking_margins, 'booking_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($booking_margins, 'request_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($booking_margins, 'role_key', "varchar(80) NOT NULL DEFAULT 'default'");
+        self::maybe_add_missing_column($booking_margins, 'region_key', "varchar(80) NOT NULL DEFAULT 'default'");
+        self::maybe_add_missing_column($booking_margins, 'school_charge_rate', "decimal(10,2) NOT NULL DEFAULT 0.00");
+        self::maybe_add_missing_column($booking_margins, 'candidate_pay_rate', "decimal(10,2) NOT NULL DEFAULT 0.00");
+        self::maybe_add_missing_column($booking_margins, 'margin_amount', "decimal(10,2) NOT NULL DEFAULT 0.00");
+        self::maybe_add_missing_column($booking_margins, 'margin_percent', "decimal(6,2) NOT NULL DEFAULT 0.00");
+        self::maybe_add_missing_column($booking_margins, 'guardrail_status', "varchar(20) NOT NULL DEFAULT 'OK'");
+        self::maybe_add_missing_column($booking_margins, 'status', "varchar(20) NOT NULL DEFAULT 'compliant'");
+        self::maybe_add_missing_column($booking_margins, 'status_reason', "varchar(190) NULL");
+        self::maybe_add_missing_column($booking_margins, 'override_margin_amount', "decimal(10,2) NULL");
+        self::maybe_add_missing_column($booking_margins, 'validation_json', "longtext NULL");
+        self::maybe_add_missing_column($booking_margins, 'calculated_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($booking_margins, 'updated_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($booking_margins, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($booking_margins, 'booking_id', "UNIQUE KEY booking_id (booking_id)");
+        self::maybe_add_missing_index($booking_margins, 'request_id', "KEY request_id (request_id)");
+        self::maybe_add_missing_index($booking_margins, 'status', "KEY status (status)");
+        self::maybe_add_missing_index($booking_margins, 'guardrail_status', "KEY guardrail_status (guardrail_status)");
+        self::maybe_add_missing_index($booking_margins, 'updated_at', "KEY updated_at (updated_at)");
+
+        self::maybe_add_missing_column($margin_alerts, 'booking_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($margin_alerts, 'margin_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($margin_alerts, 'alert_type', "varchar(40) NOT NULL DEFAULT 'at_risk'");
+        self::maybe_add_missing_column($margin_alerts, 'alert_status', "varchar(20) NOT NULL DEFAULT 'open'");
+        self::maybe_add_missing_column($margin_alerts, 'message', "text NULL");
+        self::maybe_add_missing_column($margin_alerts, 'notified', "tinyint(1) NOT NULL DEFAULT 0");
+        self::maybe_add_missing_column($margin_alerts, 'notified_at', "datetime NULL");
+        self::maybe_add_missing_column($margin_alerts, 'resolved_at', "datetime NULL");
+        self::maybe_add_missing_column($margin_alerts, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($margin_alerts, 'updated_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($margin_alerts, 'booking_id', "KEY booking_id (booking_id)");
+        self::maybe_add_missing_index($margin_alerts, 'margin_id', "KEY margin_id (margin_id)");
+        self::maybe_add_missing_index($margin_alerts, 'alert_status', "KEY alert_status (alert_status)");
+        self::maybe_add_missing_index($margin_alerts, 'created_at', "KEY created_at (created_at)");
+
+        self::maybe_add_missing_column($margin_exceptions, 'booking_id', "bigint(20) unsigned NOT NULL");
+        self::maybe_add_missing_column($margin_exceptions, 'margin_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($margin_exceptions, 'user_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($margin_exceptions, 'decision', "varchar(20) NOT NULL DEFAULT 'approved'");
+        self::maybe_add_missing_column($margin_exceptions, 'reason', "text NULL");
+        self::maybe_add_missing_column($margin_exceptions, 'new_margin', "decimal(10,2) NOT NULL DEFAULT 0.00");
+        self::maybe_add_missing_column($margin_exceptions, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($margin_exceptions, 'booking_id', "KEY booking_id (booking_id)");
+        self::maybe_add_missing_index($margin_exceptions, 'margin_id', "KEY margin_id (margin_id)");
+        self::maybe_add_missing_index($margin_exceptions, 'user_id', "KEY user_id (user_id)");
+        self::maybe_add_missing_index($margin_exceptions, 'decision', "KEY decision (decision)");
+        self::maybe_add_missing_index($margin_exceptions, 'created_at', "KEY created_at (created_at)");
+
+        $booking_rates = $wpdb->prefix . 'cmn_booking_rates';
+        if (self::table_exists($booking_rates) && self::table_exists($booking_margins)) {
+            $booking_margins_sql = self::quote_sql_identifier($booking_margins);
+            $now = esc_sql(current_time('mysql'));
+            $wpdb->query(
+                "INSERT INTO {$booking_margins} (
+                    booking_id,
+                    request_id,
+                    role_key,
+                    region_key,
+                    school_charge_rate,
+                    candidate_pay_rate,
+                    margin_amount,
+                    margin_percent,
+                    guardrail_status,
+                    status,
+                    status_reason,
+                    validation_json,
+                    calculated_at,
+                    updated_at,
+                    created_at
+                )
+                SELECT
+                    br.booking_id,
+                    br.request_id,
+                    COALESCE(NULLIF(br.role_key, ''), 'default'),
+                    COALESCE(NULLIF(br.region_key, ''), 'default'),
+                    COALESCE(br.school_charge_rate, 0),
+                    COALESCE(br.candidate_pay_rate, 0),
+                    COALESCE(br.margin_amount, 0),
+                    COALESCE(br.margin_percent, 0),
+                    COALESCE(NULLIF(br.guardrail_status, ''), 'OK'),
+                    CASE
+                        WHEN br.override_flag = 1 THEN 'compliant'
+                        WHEN UPPER(COALESCE(br.guardrail_status, 'OK')) IN ('LOW', 'NEGATIVE') THEN 'at_risk'
+                        ELSE 'compliant'
+                    END,
+                    CASE
+                        WHEN br.override_flag = 1 THEN 'override_approved'
+                        WHEN UPPER(COALESCE(br.guardrail_status, 'OK')) = 'NEGATIVE' THEN 'guardrail_negative'
+                        WHEN UPPER(COALESCE(br.guardrail_status, 'OK')) = 'LOW' THEN 'guardrail_low'
+                        ELSE 'guardrail_ok'
+                    END,
+                    br.validation_json,
+                    COALESCE(br.updated_at, '{$now}'),
+                    COALESCE(br.updated_at, '{$now}'),
+                    COALESCE(NULLIF(br.created_at, ''), br.updated_at, '{$now}')
+                FROM {$booking_rates} br
+                WHERE br.booking_id IS NOT NULL
+                  AND br.booking_id > 0
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM {$booking_margins_sql} bm
+                    WHERE bm.booking_id = br.booking_id
+                  )"
+            );
+        }
+    }
+
     private static function table_exists($table_name) {
         global $wpdb;
         $table_name = trim((string) $table_name);
@@ -5714,6 +6027,21 @@ final class CMN_One_Plugin {
     private static function get_finance_config_table_name() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_finance_config';
+    }
+
+    private static function get_booking_margins_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_booking_margins';
+    }
+
+    private static function get_margin_alerts_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_margin_alerts';
+    }
+
+    private static function get_margin_exceptions_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_margin_exceptions';
     }
 
     private static function get_candidate_bank_details_table_name() {
@@ -8553,7 +8881,7 @@ final class CMN_One_Plugin {
                 </div>
             </div>
             <div class="cmn-school-shell cmn-staff-shell">
-                <aside class="cmn-school-nav cmn-staff-nav" data-staff-nav data-user-id="<?php echo esc_attr((string) $user_id); ?>" data-nav-state="<?php echo esc_attr($stored_nav_state_json); ?>" data-nav-order="<?php echo esc_attr($stored_nav_order_json); ?>" data-nav-order-default="<?php echo esc_attr($default_nav_order_json); ?>">
+                <aside class="cmn-school-nav cmn-staff-nav is-nav-hydrating" data-staff-nav data-user-id="<?php echo esc_attr((string) $user_id); ?>" data-nav-state="<?php echo esc_attr($stored_nav_state_json); ?>" data-nav-order="<?php echo esc_attr($stored_nav_order_json); ?>" data-nav-order-default="<?php echo esc_attr($default_nav_order_json); ?>">
                     <div class="cmn-staff-nav-header">
                         <div class="cmn-staff-nav-header-row">
                             <button type="button" class="cmn-staff-nav-minimize" data-staff-nav-minimize aria-pressed="false" data-tooltip="Minimise sidebar">
@@ -24077,16 +24405,29 @@ final class CMN_One_Plugin {
             number_format_i18n(max(0, (int) $this->count_school_status_for_navigation('needs_attention')))
         );
         $is_lead_surface = in_array($status, ['lead', 'needs_attention', 'all'], true) || $bucket === 'sales' || $view === 'leads';
+        $is_all_schools_view = ($status === 'all');
         $lead_list_fields = $is_lead_surface ? $this->get_lead_fields_for_context('list') : [];
+        if ($is_all_schools_view) {
+            if (isset($lead_list_fields['cover_manager'])) {
+                $lead_list_fields = ['cover_manager' => $lead_list_fields['cover_manager']];
+            } else {
+                $lead_list_fields = [];
+            }
+        }
         $lead_list_column_count = count($lead_list_fields);
+        $schools_page_classes = 'cmn-schools-page cmn-ui-page' . ($is_all_schools_view ? ' cmn-schools-page--all' : '');
+        $schools_toolbar_classes = 'cmn-school-toolbar' . ($is_all_schools_view ? ' cmn-school-toolbar--all' : '');
+        $schools_bulk_form_classes = 'cmn-bulk-form' . ($is_all_schools_view ? ' cmn-bulk-form--all' : '');
+        $schools_table_classes = 'cmn-approval-table cmn-schools-table' . ($is_all_schools_view ? ' cmn-schools-table--all' : '');
+        $schools_heading = $is_all_schools_view ? 'All Schools' : 'Schools CRM';
 
         ob_start();
         ?>
-        <section class="cmn-schools-page cmn-ui-page">
+        <section class="<?php echo esc_attr($schools_page_classes); ?>">
         <header class="cmn-school-header">
             <div class="cmn-header-row">
                 <div>
-                    <h2>Schools CRM</h2>
+                    <h2><?php echo esc_html($schools_heading); ?></h2>
                 </div>
             </div>
             <div class="cmn-segmented" role="tablist" aria-label="Schools view">
@@ -24362,7 +24703,7 @@ final class CMN_One_Plugin {
             </div>
 	        </div>
 	        <?php endif; ?>
-	        <form method="get" class="cmn-school-toolbar" data-school-toolbar>
+	        <form method="get" class="<?php echo esc_attr($schools_toolbar_classes); ?>" data-school-toolbar>
             <input type="hidden" name="view" value="<?php echo esc_attr($view_param); ?>">
             <input type="hidden" name="cmn_status" value="<?php echo esc_attr($status); ?>">
             <input type="hidden" name="cmn_bucket" value="<?php echo esc_attr($bucket); ?>">
@@ -24423,7 +24764,7 @@ final class CMN_One_Plugin {
                 </div>
             </div>
         </form>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-bulk-form">
+	        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="<?php echo esc_attr($schools_bulk_form_classes); ?>">
             <?php wp_nonce_field('cmn_bulk_schools', 'cmn_bulk_schools_nonce'); ?>
             <input type="hidden" name="action" value="cmn_bulk_schools">
             <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
@@ -24470,7 +24811,7 @@ final class CMN_One_Plugin {
                 <button class="cmn-ghost" type="submit">Apply</button>
             </div>
             <div class="cmn-table-scroll">
-            <table class="cmn-approval-table cmn-schools-table">
+            <table class="<?php echo esc_attr($schools_table_classes); ?>">
                 <thead>
                     <tr>
                         <th><input type="checkbox" id="cmn-select-all-schools" aria-label="Select all schools"></th>
@@ -24687,33 +25028,51 @@ final class CMN_One_Plugin {
             }
         }
         $query = new WP_Query($args);
+        $portal_url = $this->get_portal_base_url();
+        $is_onboarding_pending_view = ($status === 'pending');
+        $header_title = $is_onboarding_pending_view ? 'Candidates Pending Onboarding' : 'All Candidates';
+        $header_subtitle = $is_onboarding_pending_view
+            ? 'Candidates who have not yet completed registration or compliance requirements.'
+            : 'Manage candidate onboarding, documentation, and approval actions.';
+        $counter_title = $is_onboarding_pending_view
+            ? sprintf('Onboarding / Pending (%s)', number_format_i18n((int) $query->found_posts))
+            : sprintf('All Candidates (%s)', number_format_i18n((int) $query->found_posts));
+        $clear_filter_args = ['view' => 'candidates'];
+        if ($is_onboarding_pending_view) {
+            $clear_filter_args['cmn_status'] = 'pending';
+        }
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Candidates CRM</h2>
-            <p>Front-end CRM for staff. No WordPress admin required.</p>
+        <header class="cmn-school-header cmn-candidates-page-header<?php echo $is_onboarding_pending_view ? ' is-onboarding' : ''; ?>">
+            <div>
+                <h2><?php echo esc_html($header_title); ?></h2>
+                <p><?php echo esc_html($header_subtitle); ?></p>
+            </div>
+            <span class="cmn-candidates-counter-badge"><?php echo esc_html($counter_title); ?></span>
         </header>
-        <form method="get" class="cmn-filters cmn-candidates-filters">
+        <form method="get" class="cmn-filters cmn-candidates-filters<?php echo $is_onboarding_pending_view ? ' cmn-candidates-filters-onboarding' : ''; ?>">
             <input type="hidden" name="view" value="candidates">
-            <input type="search" name="s" placeholder="Search candidates..." value="<?php echo esc_attr($search); ?>">
-            <input type="hidden" name="cmn_doc_review" value="<?php echo esc_attr($doc_review); ?>">
+            <?php if ($doc_review !== '') : ?>
+                <input type="hidden" name="cmn_doc_review" value="<?php echo esc_attr($doc_review); ?>">
+            <?php endif; ?>
+            <label class="cmn-candidates-search-field">
+                <span class="cmn-candidates-search-icon" aria-hidden="true">⌕</span>
+                <input type="search" name="s" placeholder="Search candidates" value="<?php echo esc_attr($search); ?>">
+            </label>
             <select name="cmn_status">
                 <option value="">All Statuses</option>
-                <?php foreach (['approved', 'rejected', 'deletion_requested'] as $opt) : ?>
+                <?php foreach (['pending', 'approved', 'rejected', 'deletion_requested'] as $opt) : ?>
                     <option value="<?php echo esc_attr($opt); ?>"<?php echo $status === $opt ? ' selected' : ''; ?>><?php echo esc_html(ucfirst(str_replace('_', ' ', $opt))); ?></option>
                 <?php endforeach; ?>
             </select>
             <div class="cmn-candidates-filter-actions">
-                <button class="cmn-ghost" type="submit">Filter</button>
-                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates']), home_url('/portal'))); ?>">Clear</a>
+                <button class="<?php echo $is_onboarding_pending_view ? 'cmn-primary' : 'cmn-ghost'; ?>" type="submit"><?php echo $is_onboarding_pending_view ? 'Apply Filters' : 'Filter'; ?></button>
+                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg($clear_filter_args, $portal_url)); ?>">Clear</a>
             </div>
-            <?php if ($doc_review === 'pending') : ?>
-                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates']), home_url('/portal'))); ?>">Clear pending-doc filter</a>
-            <?php endif; ?>
         </form>
-        <div class="cmn-table-scroll cmn-candidates-table-wrap">
-        <table class="cmn-approval-table cmn-candidates-table">
+        <div class="cmn-table-scroll cmn-candidates-table-wrap<?php echo $is_onboarding_pending_view ? ' cmn-candidates-table-wrap-onboarding' : ''; ?>">
+        <table class="cmn-approval-table cmn-candidates-table<?php echo $is_onboarding_pending_view ? ' cmn-candidates-table-onboarding' : ''; ?>">
             <thead>
                 <tr>
                     <th>Candidate</th>
@@ -24721,10 +25080,8 @@ final class CMN_One_Plugin {
                     <th>Email</th>
                     <th>Documents</th>
                     <th>Status</th>
+                    <th>Profile</th>
                     <th>Actions</th>
-                    <?php if ($this->can_manage_staff_users()) : ?>
-                        <th>Admin</th>
-                    <?php endif; ?>
                 </tr>
             </thead>
             <tbody>
@@ -24735,8 +25092,8 @@ final class CMN_One_Plugin {
                     $candidate_user_id = (int) get_post_meta(get_the_ID(), 'cmn_user_id', true);
                     $deletion_requested = $candidate_user_id ? get_user_meta($candidate_user_id, 'cmn_deletion_requested', true) : '';
                     $status_value = strtolower((string) get_post_meta(get_the_ID(), 'cmn_status', true));
-                    if ($status_value === '' || $status_value === 'pending') {
-                        $status_value = 'approved';
+                    if ($status_value === '') {
+                        $status_value = 'pending';
                     }
                     if ($deletion_requested) {
                         $status_value = 'deletion_requested';
@@ -24775,9 +25132,15 @@ final class CMN_One_Plugin {
                         $status_chip_class = 'is-declined';
                     }
                     $status_label = ucfirst(str_replace('_', ' ', $status_value));
-                    $profile_url = add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => $candidate_post_id]), home_url('/portal'));
+                    $profile_url = add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => $candidate_post_id]), $portal_url);
+                    $vetting_score = 0;
+                    if ($candidate_user_id > 0) {
+                        $vetting = $this->get_candidate_vetting_payload($candidate_post_id, $candidate_user_id);
+                        $vetting_score = (int) ($vetting['score'] ?? 0);
+                    }
+                    $needs_attention_row = ($vetting_score > 0 && $vetting_score < 50) || $doc_outstanding_count > 0 || $doc_rejected_count > 0;
                     ?>
-                    <tr class="cmn-candidates-row">
+                    <tr class="cmn-candidates-row<?php echo $needs_attention_row ? ' cmn-candidates-row-needs-attention' : ''; ?>">
                         <td class="cmn-candidate-cell">
                             <strong class="cmn-candidate-name"><?php the_title(); ?></strong>
                             <?php if ($candidate_post_id > 0) : ?>
@@ -24791,11 +25154,10 @@ final class CMN_One_Plugin {
                             <span class="cmn-candidate-email" title="<?php echo esc_attr($candidate_email !== '' ? $candidate_email : 'No email provided'); ?>"><?php echo esc_html($candidate_email !== '' ? $candidate_email : 'No email'); ?></span>
                         </td>
                         <td class="cmn-candidate-docs-cell">
-                            <span class="cmn-pill cmn-candidate-docs-pill">Docs: <?php echo esc_html($doc_uploaded_count); ?>/3</span>
+                            <span class="cmn-pill cmn-candidate-docs-pill"><?php echo esc_html((string) $doc_uploaded_count); ?>/3 uploaded</span>
                             <span class="cmn-candidate-docs-breakdown">
                                 <span>A<?php echo esc_html((string) $doc_approved_count); ?></span>
                                 <span>P<?php echo esc_html((string) $doc_pending_count); ?></span>
-                                <span>O<?php echo esc_html((string) $doc_outstanding_count); ?></span>
                                 <span>R<?php echo esc_html((string) $doc_rejected_count); ?></span>
                             </span>
                         </td>
@@ -24804,23 +25166,34 @@ final class CMN_One_Plugin {
                         </td>
                         <td class="cmn-candidate-profile-cell">
                             <div class="cmn-candidate-row-actions cmn-candidate-action-group">
-                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url); ?>">View profile</a>
-                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url . '#candidate-documents'); ?>">View docs</a>
+                                <a class="cmn-ghost cmn-btn-mini cmn-candidate-profile-btn" href="<?php echo esc_url($profile_url); ?>">View profile</a>
+                                <a class="cmn-ghost cmn-btn-mini cmn-candidate-profile-btn" href="<?php echo esc_url($profile_url . '#candidate-documents'); ?>">View docs</a>
                             </div>
                         </td>
-                        <?php if ($this->can_manage_staff_users()) : ?>
-                            <td>
-                                <?php if ($deletion_requested && $candidate_user_id) : ?>
-                                    <button class="cmn-danger" type="button" data-candidate-delete-btn data-candidate-id="<?php echo esc_attr(get_the_ID()); ?>" data-candidate-name="<?php echo esc_attr(get_the_title()); ?>" data-candidate-email="<?php echo esc_attr(get_post_meta(get_the_ID(), 'cmn_email', true)); ?>">Delete candidate</button>
-                                <?php else : ?>
-                                    <span class="cmn-muted">—</span>
-                                <?php endif; ?>
-                            </td>
-                        <?php endif; ?>
+                        <td class="cmn-candidate-actions-cell">
+                            <?php if ($this->can_manage_staff_users() && $deletion_requested && $candidate_user_id) : ?>
+                                <button class="cmn-danger cmn-btn-mini" type="button" data-candidate-delete-btn data-candidate-id="<?php echo esc_attr(get_the_ID()); ?>" data-candidate-name="<?php echo esc_attr(get_the_title()); ?>" data-candidate-email="<?php echo esc_attr(get_post_meta(get_the_ID(), 'cmn_email', true)); ?>">Delete candidate</button>
+                            <?php else : ?>
+                                <span class="cmn-muted">—</span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endwhile; wp_reset_postdata(); ?>
             <?php else : ?>
-                <tr><td colspan="<?php echo $this->can_manage_staff_users() ? '7' : '6'; ?>">No candidates found.</td></tr>
+                <?php if ($is_onboarding_pending_view) : ?>
+                    <tr class="cmn-candidates-empty-row">
+                        <td colspan="7">
+                            <div class="cmn-candidates-empty-state">
+                                <span class="cmn-candidates-empty-icon" aria-hidden="true">🗂</span>
+                                <h3>No Candidates Currently Pending</h3>
+                                <p>All candidates have completed onboarding or none have started registration.</p>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'candidates', 'cmn_status' => false], $portal_url)); ?>">View All Candidates</a>
+                            </div>
+                        </td>
+                    </tr>
+                <?php else : ?>
+                    <tr><td colspan="7">No candidates found.</td></tr>
+                <?php endif; ?>
             <?php endif; ?>
             </tbody>
         </table>
@@ -24888,9 +25261,30 @@ final class CMN_One_Plugin {
         $notice = isset($_GET['cmn_doc_review_msg']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_doc_review_msg'])) : '';
         $rows = $this->get_staff_compliance_review_rows($search, 400);
         $groups = [
-            'awaiting_review' => ['title' => 'Candidates Awaiting Document Review', 'rows' => []],
-            'ready_for_approval' => ['title' => 'Candidates Ready For Approval', 'rows' => []],
-            'high_risk' => ['title' => 'Candidates Flagged High Risk', 'rows' => []],
+            'awaiting_review' => [
+                'title' => 'Candidates Awaiting Document Review',
+                'helper' => 'Documents must be approved before candidates become bookable.',
+                'empty_icon' => '🛡',
+                'empty_title' => 'No Candidates Awaiting Review',
+                'empty_copy' => 'All submitted documents have been processed.',
+                'rows' => [],
+            ],
+            'ready_for_approval' => [
+                'title' => 'Candidates Ready For Approval',
+                'helper' => '',
+                'empty_icon' => '✅',
+                'empty_title' => 'No Candidates Ready For Approval',
+                'empty_copy' => 'No candidates are currently eligible for final approval.',
+                'rows' => [],
+            ],
+            'high_risk' => [
+                'title' => 'Candidates Flagged High Risk',
+                'helper' => 'Flagged candidates require manual override before approval.',
+                'empty_icon' => '⚠',
+                'empty_title' => 'No High-Risk Candidates',
+                'empty_copy' => 'No compliance risks detected at this time.',
+                'rows' => [],
+            ],
         ];
         foreach ($rows as $row) {
             $bucket = (string) ($row['bucket'] ?? 'awaiting_review');
@@ -24900,9 +25294,20 @@ final class CMN_One_Plugin {
             $groups[$bucket]['rows'][] = $row;
         }
 
-        $render_table = function ($queue_rows) use ($portal_url) {
+        $render_table = function ($queue_key, $queue_group) use ($portal_url) {
+            $queue_rows = (array) ($queue_group['rows'] ?? []);
+            if (!$queue_rows) :
+                ?>
+                <div class="cmn-compliance-empty-state">
+                    <span class="cmn-compliance-empty-icon" aria-hidden="true"><?php echo esc_html((string) ($queue_group['empty_icon'] ?? 'ℹ')); ?></span>
+                    <h4><?php echo esc_html((string) ($queue_group['empty_title'] ?? 'Queue empty')); ?></h4>
+                    <p><?php echo esc_html((string) ($queue_group['empty_copy'] ?? 'No candidates in this queue.')); ?></p>
+                </div>
+                <?php
+                return;
+            endif;
             ?>
-            <table class="cmn-approval-table">
+            <table class="cmn-approval-table cmn-compliance-review-table">
                 <thead>
                     <tr>
                         <th>Name</th>
@@ -24914,67 +25319,102 @@ final class CMN_One_Plugin {
                     </tr>
                 </thead>
                 <tbody>
-                <?php if ($queue_rows) : ?>
-                    <?php foreach ($queue_rows as $row) : ?>
-                        <tr>
-                            <td>
-                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'compliance-review', 'candidate_id' => (int) $row['candidate_id']], $portal_url)); ?>"><?php echo esc_html((string) $row['name']); ?></a>
-                                <div class="cmn-muted"><?php echo esc_html((string) $row['email']); ?></div>
-                            </td>
-                            <td><?php echo esc_html((string) ((int) $row['score'])); ?>%</td>
-                            <td><?php echo esc_html(!empty($row['docs_pending']) ? implode(', ', (array) $row['docs_pending']) : 'None'); ?></td>
-                            <td><span class="cmn-status-chip <?php echo esc_attr((string) $row['risk_badge_class']); ?>"><?php echo esc_html((string) $row['risk_level']); ?></span></td>
-                            <td>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                                    <?php wp_nonce_field('cmn_staff_candidate_compliance_decision', 'cmn_staff_candidate_compliance_decision_nonce'); ?>
-                                    <input type="hidden" name="action" value="cmn_staff_candidate_compliance_decision">
-                                    <input type="hidden" name="candidate_id" value="<?php echo esc_attr((string) ((int) $row['candidate_id'])); ?>">
-                                    <input type="hidden" name="decision" value="approved">
-                                    <button class="cmn-primary cmn-btn-mini" type="submit">Quick Approve</button>
-                                </form>
-                            </td>
-                            <td>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                                    <?php wp_nonce_field('cmn_staff_candidate_compliance_decision', 'cmn_staff_candidate_compliance_decision_nonce'); ?>
-                                    <input type="hidden" name="action" value="cmn_staff_candidate_compliance_decision">
-                                    <input type="hidden" name="candidate_id" value="<?php echo esc_attr((string) ((int) $row['candidate_id'])); ?>">
-                                    <input type="hidden" name="decision" value="rejected">
-                                    <input type="text" name="reason" placeholder="Reason required" required>
-                                    <button class="cmn-ghost cmn-btn-mini" type="submit">Quick Reject</button>
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php else : ?>
-                    <tr><td colspan="6">No candidates in this queue.</td></tr>
-                <?php endif; ?>
+                <?php foreach ($queue_rows as $row) : ?>
+                    <?php
+                    $score_value = max(0, min(100, (int) ($row['score'] ?? 0)));
+                    $risk_level = strtolower((string) ($row['risk_level'] ?? 'medium'));
+                    $risk_class = 'is-medium';
+                    if ($risk_level === 'low') {
+                        $risk_class = 'is-low';
+                    } elseif ($risk_level === 'high') {
+                        $risk_class = 'is-high';
+                    }
+                    ?>
+                    <tr class="cmn-compliance-row cmn-compliance-row-<?php echo esc_attr($queue_key); ?>">
+                        <td>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'compliance-review', 'candidate_id' => (int) $row['candidate_id']], $portal_url)); ?>"><?php echo esc_html((string) $row['name']); ?></a>
+                            <div class="cmn-muted"><?php echo esc_html((string) $row['email']); ?></div>
+                        </td>
+                        <td>
+                            <div class="cmn-compliance-percent-cell">
+                                <strong><?php echo esc_html((string) $score_value); ?>%</strong>
+                                <span class="cmn-compliance-mini-progress" aria-hidden="true"><span style="width: <?php echo esc_attr((string) $score_value); ?>%;"></span></span>
+                            </div>
+                        </td>
+                        <td><?php echo esc_html(!empty($row['docs_pending']) ? implode(', ', (array) $row['docs_pending']) : 'None'); ?></td>
+                        <td><span class="cmn-status-chip cmn-compliance-risk-pill <?php echo esc_attr($risk_class); ?>"><?php echo esc_html((string) $row['risk_level']); ?></span></td>
+                        <td>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-compliance-quick-form">
+                                <?php wp_nonce_field('cmn_staff_candidate_compliance_decision', 'cmn_staff_candidate_compliance_decision_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_staff_candidate_compliance_decision">
+                                <input type="hidden" name="candidate_id" value="<?php echo esc_attr((string) ((int) $row['candidate_id'])); ?>">
+                                <input type="hidden" name="decision" value="approved">
+                                <button class="cmn-ghost cmn-btn-mini cmn-compliance-approve-btn" type="submit">Quick Approve</button>
+                            </form>
+                        </td>
+                        <td>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-compliance-quick-form cmn-compliance-quick-form-reject">
+                                <?php wp_nonce_field('cmn_staff_candidate_compliance_decision', 'cmn_staff_candidate_compliance_decision_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_staff_candidate_compliance_decision">
+                                <input type="hidden" name="candidate_id" value="<?php echo esc_attr((string) ((int) $row['candidate_id'])); ?>">
+                                <input type="hidden" name="decision" value="rejected">
+                                <input type="text" name="reason" placeholder="Reason required" required>
+                                <button class="cmn-ghost cmn-btn-mini cmn-compliance-reject-btn" type="submit">Quick Reject</button>
+                            </form>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
                 </tbody>
             </table>
             <?php
         };
 
+        $awaiting_count = count((array) ($groups['awaiting_review']['rows'] ?? []));
+        $ready_count = count((array) ($groups['ready_for_approval']['rows'] ?? []));
+        $high_risk_count = count((array) ($groups['high_risk']['rows'] ?? []));
+
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Compliance Review</h2>
-            <p>Rule-based candidate vetting queue.</p>
+        <header class="cmn-school-header cmn-compliance-centre-header">
+            <div>
+                <h2>Compliance Review Centre</h2>
+                <p>Manual document approval, risk assessment and compliance validation queue.</p>
+            </div>
+            <div class="cmn-compliance-centre-stats" aria-label="Compliance review queue stats">
+                <article class="cmn-compliance-centre-stat-card">
+                    <span>Awaiting Review</span>
+                    <strong class="cmn-status-chip is-pending<?php echo $awaiting_count === 0 ? ' is-zero' : ''; ?>"><?php echo esc_html((string) $awaiting_count); ?></strong>
+                </article>
+                <article class="cmn-compliance-centre-stat-card">
+                    <span>Ready For Approval</span>
+                    <strong class="cmn-status-chip is-verified<?php echo $ready_count === 0 ? ' is-zero' : ''; ?>"><?php echo esc_html((string) $ready_count); ?></strong>
+                </article>
+                <article class="cmn-compliance-centre-stat-card">
+                    <span>High Risk</span>
+                    <strong class="cmn-status-chip is-declined<?php echo $high_risk_count === 0 ? ' is-zero' : ''; ?>"><?php echo esc_html((string) $high_risk_count); ?></strong>
+                </article>
+            </div>
         </header>
         <?php if ($notice !== '') : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($notice); ?></strong></div>
         <?php endif; ?>
-        <form method="get" class="cmn-filters">
+        <form method="get" class="cmn-filters cmn-compliance-review-filters">
             <input type="hidden" name="view" value="compliance-review">
             <input type="search" name="s" placeholder="Search candidates..." value="<?php echo esc_attr($search); ?>">
-            <button class="cmn-ghost" type="submit">Filter</button>
+            <button class="cmn-primary" type="submit">Apply Filters</button>
             <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'compliance-review'], $portal_url)); ?>">Clear</a>
         </form>
-        <?php foreach ($groups as $group) : ?>
-            <section class="cmn-dashboard-card">
+        <?php foreach ($groups as $group_key => $group) : ?>
+            <?php $group_count = count((array) $group['rows']); ?>
+            <section class="cmn-dashboard-card cmn-compliance-review-panel">
                 <div class="cmn-panel-header">
                     <h3><?php echo esc_html((string) $group['title']); ?></h3>
-                    <span class="cmn-status-chip is-pending"><?php echo esc_html((string) count((array) $group['rows'])); ?></span>
+                    <span class="cmn-status-chip cmn-compliance-section-count<?php echo $group_count === 0 ? ' is-zero' : ''; ?>"><?php echo esc_html((string) $group_count); ?></span>
                 </div>
-                <?php $render_table($group['rows']); ?>
+                <?php if (!empty($group['helper'])) : ?>
+                    <p class="cmn-compliance-helper"><?php echo esc_html((string) $group['helper']); ?></p>
+                <?php endif; ?>
+                <?php $render_table($group_key, $group); ?>
             </section>
         <?php endforeach; ?>
         <?php
@@ -25899,10 +26339,10 @@ final class CMN_One_Plugin {
             'Address Line 1' => (string) get_post_meta($candidate_id, 'cmn_address_line1', true),
             'Address Line 2' => (string) get_post_meta($candidate_id, 'cmn_address_line2', true),
             'Address Line 3' => (string) get_post_meta($candidate_id, 'cmn_address_line3', true),
-            'Town / City' => (string) get_post_meta($candidate_id, 'cmn_town', true),
+            'Town/City' => (string) get_post_meta($candidate_id, 'cmn_town', true),
             'County' => (string) get_post_meta($candidate_id, 'cmn_county', true),
             'Postcode' => $postcode,
-            'Roles (registration)' => $roles_meta ? implode(', ', array_filter(array_map('sanitize_text_field', $roles_meta))) : '',
+            'Roles (Registration)' => $roles_meta ? implode(', ', array_filter(array_map('sanitize_text_field', $roles_meta))) : '',
             'Role Other' => (string) get_post_meta($candidate_id, 'cmn_roles_other', true),
             'Travel Distance' => (string) get_post_meta($candidate_id, 'cmn_travel_distance', true),
             'Driving Licence' => (string) get_post_meta($candidate_id, 'cmn_driving_licence', true),
@@ -25910,7 +26350,7 @@ final class CMN_One_Plugin {
             'QTS' => $qts_status_label,
             'DBS Update Service' => (string) get_post_meta($candidate_id, 'cmn_dbs_update_service', true),
             'Availability Days' => $availability_days ? implode(', ', array_filter(array_map('sanitize_text_field', $availability_days))) : '',
-            'No DBS selected' => ((string) get_post_meta($candidate_id, 'cmn_no_dbs', true) === '1') ? 'Yes' : 'No',
+            'No DBS Selected' => ((string) get_post_meta($candidate_id, 'cmn_no_dbs', true) === '1') ? 'Yes' : 'No',
             'Email Verified' => $email_verified === '1' ? 'Yes' : 'No',
             'Admin Verification Status' => $verification_status !== '' ? str_replace('_', ' ', ucfirst($verification_status)) : '',
             'Notes' => (string) get_post_meta($candidate_id, 'cmn_notes', true),
@@ -25949,6 +26389,16 @@ final class CMN_One_Plugin {
         $candidate_feedback_avg_label = number_format((float) ($feedback_summary['avg_overall'] ?? 0), 1) . ' / 5';
         $candidate_feedback_reliability_label = number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 1) . ' / 5';
         $candidate_feedback_trend_url = $build_candidate_tab_url('feedback') . '#cmn-candidate-feedback-categories';
+        $compliance_items_remaining = (int) ($compliance_status_payload['vetting']['docs_pending_count'] ?? 0);
+        if ($completion_percent < 100) {
+            $compliance_items_remaining = max(1, $compliance_items_remaining);
+        }
+        $compliance_remaining_label = sprintf(
+            '%d compliance item%s remaining',
+            $compliance_items_remaining,
+            $compliance_items_remaining === 1 ? '' : 's'
+        );
+        $documents_tab_keys = ['id', 'dbs', 'cv'];
 
         ob_start();
         ?>
@@ -25969,11 +26419,14 @@ final class CMN_One_Plugin {
         <?php endif; ?>
 
         <div class="cmn-profile-progress cmn-staff-candidate-progress">
-            <div>
-                <span>Profile Completion</span>
-                <div class="cmn-progress-bar"><span style="width: <?php echo esc_attr($completion_percent); ?>%;"></span></div>
+            <div class="cmn-staff-candidate-progress-main">
+                <span class="cmn-staff-candidate-progress-title">Profile Completion</span>
+                <div class="cmn-progress-bar cmn-staff-candidate-progress-bar">
+                    <span style="width: <?php echo esc_attr($completion_percent); ?>%;"></span>
+                    <strong class="cmn-staff-candidate-progress-value"><?php echo esc_html($completion_percent); ?>% Complete</strong>
+                </div>
             </div>
-            <strong><?php echo esc_html($completion_percent); ?>% Complete</strong>
+            <p class="cmn-staff-candidate-progress-sub"><?php echo esc_html($compliance_remaining_label); ?></p>
         </div>
 
         <nav class="cmn-tabs cmn-staff-candidate-tabs" aria-label="Candidate profile sections">
@@ -26004,9 +26457,9 @@ final class CMN_One_Plugin {
                         </div>
                     </div>
                     <div class="cmn-meta-grid cmn-meta-grid--staff-candidate-overview">
-                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Role Type</span><strong class="cmn-profile-meta-value"><?php echo esc_html($role_type !== '' ? $role_type : 'Not set'); ?></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Location</span><strong class="cmn-profile-meta-value"><?php echo esc_html($location !== '' ? $location : 'Not set'); ?></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Postcode</span><strong class="cmn-profile-meta-value"><?php echo esc_html($postcode !== '' ? $postcode : 'Not set'); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Role Type</span><strong class="cmn-profile-meta-value"><?php echo esc_html($role_type !== '' ? $role_type : 'Not set'); ?></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Travel Radius</span><strong class="cmn-profile-meta-value"><?php echo esc_html($travel_radius !== '' ? $travel_radius : 'Not set'); ?></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">QTS</span><strong class="cmn-profile-meta-value"><span class="cmn-pill cmn-staff-candidate-boolean-pill <?php echo esc_attr($qts_boolean_class); ?>"><?php echo esc_html($qts_boolean_label); ?></span></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Next Available Date</span><strong class="cmn-profile-meta-value"><?php echo esc_html($next_available_label); ?></strong></div>
@@ -26102,80 +26555,120 @@ final class CMN_One_Plugin {
                     <?php endif; ?>
                 </div>
             <?php elseif ($active_candidate_tab === 'documents') : ?>
-                <div class="cmn-dashboard-card cmn-doc-upload-card cmn-dashboard-card-wide" id="candidate-documents">
+                <?php
+                $compliance_checks = [];
+                $compliance_warnings = [];
+                foreach ($documents_tab_keys as $doc_key) {
+                    $doc_state = sanitize_key((string) ($docs[$doc_key]['status']['doc_status'] ?? 'not_uploaded'));
+                    $doc_label = (string) ($docs[$doc_key]['label'] ?? strtoupper($doc_key));
+                    if ($doc_state === 'approved') {
+                        $compliance_checks[] = $doc_label . ' Approved';
+                    } elseif ($doc_state === 'pending') {
+                        $compliance_warnings[] = $doc_label . ' Pending Review';
+                    } elseif ($doc_state === 'rejected') {
+                        $compliance_warnings[] = $doc_label . ' Rejected';
+                    } else {
+                        $compliance_warnings[] = 'Missing ' . $doc_label;
+                    }
+                }
+                ?>
+                <div class="cmn-dashboard-card cmn-doc-upload-card cmn-doc-upload-card-premium cmn-dashboard-card-wide" id="candidate-documents">
                     <div class="cmn-card-header">
                         <h3>Uploaded Documents</h3>
                     </div>
-                    <div class="cmn-doc-actions">
-                        <?php foreach ($docs as $doc_type => $doc) : ?>
+                    <div class="cmn-candidate-compliance-strip">
+                        <strong>Compliance Status:</strong>
+                        <ul class="cmn-candidate-compliance-strip-list">
+                            <?php foreach ($compliance_checks as $check_row) : ?>
+                                <li class="is-ok">✔ <?php echo esc_html($check_row); ?></li>
+                            <?php endforeach; ?>
+                            <?php foreach ($compliance_warnings as $warning_row) : ?>
+                                <li class="is-warn">⚠ <?php echo esc_html($warning_row); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                    <div class="cmn-doc-actions cmn-doc-actions-premium">
+                        <?php foreach ($documents_tab_keys as $doc_type) : ?>
                             <?php
+                            $doc = $docs[$doc_type];
                             $doc_status = $doc['status'];
                             $is_uploaded = !empty($doc_status['uploaded']);
+                            $doc_state = sanitize_key((string) ($doc_status['doc_status'] ?? 'not_uploaded'));
+                            $doc_status_badge = 'MISSING';
+                            $doc_status_badge_class = 'is-missing';
+                            if ($doc_state === 'approved') {
+                                $doc_status_badge = 'APPROVED';
+                                $doc_status_badge_class = 'is-approved';
+                            } elseif ($doc_state === 'pending') {
+                                $doc_status_badge = 'PENDING';
+                                $doc_status_badge_class = 'is-pending';
+                            } elseif ($doc_state === 'rejected') {
+                                $doc_status_badge = 'REJECTED';
+                                $doc_status_badge_class = 'is-rejected';
+                            }
+                            $doc_visibility = $this->get_candidate_doc_visibility($candidate_id, (string) $doc_type);
+                            $visibility_input_id = 'cmn-doc-visibility-' . $candidate_id . '-' . $doc_type;
                             ?>
-                            <div class="cmn-doc-card cmn-doc-tile">
+                            <article class="cmn-doc-card cmn-doc-tile cmn-doc-tile-premium">
                                 <div class="cmn-doc-card-head">
                                     <strong><?php echo esc_html($doc['label']); ?></strong>
-                                    <span class="cmn-status-chip <?php echo esc_attr($doc_status['badge_class'] ?? ($is_uploaded ? 'is-pending' : 'is-declined')); ?>"><?php echo esc_html($doc_status['status_label'] ?? ($is_uploaded ? 'Pending Review' : 'Not Uploaded')); ?></span>
+                                    <span class="cmn-doc-status-pill <?php echo esc_attr($doc_status_badge_class); ?>"><?php echo esc_html($doc_status_badge); ?></span>
                                 </div>
-                                <div class="cmn-doc-card-meta">
-                                    <div class="cmn-doc-line"><?php echo esc_html($is_uploaded ? ($doc_status['filename'] ?: 'Uploaded file') : 'Not uploaded'); ?></div>
-                                    <div class="cmn-doc-subline">
-                                        <span><?php echo esc_html($doc_status['uploaded_at_label'] ?: '-'); ?></span>
-                                        <span><?php echo esc_html($doc_status['filesize_label'] ?: '-'); ?></span>
+                                <div class="cmn-doc-card-meta cmn-doc-card-meta-top">
+                                    <div class="cmn-doc-file-main">
+                                        <div class="cmn-doc-line"><?php echo esc_html($is_uploaded ? ($doc_status['filename'] ?: 'Uploaded file') : 'No file uploaded'); ?></div>
+                                        <div class="cmn-doc-subline"><?php echo esc_html($doc_status['uploaded_at_label'] ?: '-'); ?></div>
                                     </div>
-                                    <?php if (!empty($doc_status['review_reason']) && ($doc_status['doc_status'] ?? '') === 'rejected') : ?>
-                                        <div class="cmn-doc-subline"><span>Reason: <?php echo esc_html($doc_status['review_reason']); ?></span></div>
-                                    <?php endif; ?>
+                                    <span class="cmn-doc-size"><?php echo esc_html($doc_status['filesize_label'] ?: '-'); ?></span>
                                 </div>
-                                <div class="cmn-doc-buttons">
-                                    <?php $doc_visibility = $this->get_candidate_doc_visibility($candidate_id, (string) $doc_type); ?>
-                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form">
-                                        <?php wp_nonce_field('cmn_staff_set_candidate_doc_visibility', 'cmn_staff_set_candidate_doc_visibility_nonce'); ?>
-                                        <input type="hidden" name="action" value="cmn_staff_set_candidate_doc_visibility">
-                                        <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                                        <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
-                                        <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
-                                        <label style="display:block;font-size:12px;margin-bottom:6px;">Visibility</label>
-                                        <select name="visibility">
+                                <?php if (!empty($doc_status['review_reason']) && $doc_state === 'rejected') : ?>
+                                    <p class="cmn-doc-reject-reason">Reason: <?php echo esc_html($doc_status['review_reason']); ?></p>
+                                <?php endif; ?>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form cmn-doc-visibility-form">
+                                    <?php wp_nonce_field('cmn_staff_set_candidate_doc_visibility', 'cmn_staff_set_candidate_doc_visibility_nonce'); ?>
+                                    <input type="hidden" name="action" value="cmn_staff_set_candidate_doc_visibility">
+                                    <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
+                                    <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
+                                    <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
+                                    <div class="cmn-doc-visibility-row">
+                                        <label class="cmn-doc-field-label" for="<?php echo esc_attr($visibility_input_id); ?>">Visibility</label>
+                                        <select id="<?php echo esc_attr($visibility_input_id); ?>" name="visibility">
                                             <option value="staff"<?php selected($doc_visibility, 'staff'); ?>>Staff only</option>
                                             <option value="all"<?php selected($doc_visibility, 'all'); ?>>Visible to all</option>
                                         </select>
-                                        <div class="cmn-doc-review-actions" style="margin-top:8px;">
-                                            <button class="cmn-ghost" type="submit">Save visibility</button>
-                                        </div>
-                                    </form>
+                                        <button class="cmn-ghost cmn-btn-mini cmn-doc-visibility-save" type="submit">Save visibility</button>
+                                    </div>
+                                </form>
+                                <div class="cmn-doc-buttons cmn-doc-buttons-premium">
                                     <?php if ($is_uploaded && !empty($doc['download_url'])) : ?>
-                                        <a class="cmn-ghost cmn-doc-link" href="<?php echo esc_url($doc['download_url']); ?>" target="_blank" rel="noopener noreferrer">View / Download</a>
-                                        <?php if (in_array((string) $doc_type, ['cv', 'cv_formatted'], true)) : ?>
-                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form" onsubmit="return confirm('Delete this CV document?');">
-                                                <?php wp_nonce_field('cmn_staff_delete_candidate_doc', 'cmn_staff_delete_candidate_doc_nonce'); ?>
-                                                <input type="hidden" name="action" value="cmn_staff_delete_candidate_doc">
-                                                <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                                                <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
-                                                <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
-                                                <button class="cmn-ghost" type="submit">Delete</button>
-                                            </form>
-                                        <?php endif; ?>
-                                        <?php if (($doc_status['doc_status'] ?? '') !== 'approved') : ?>
-                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form">
-                                                <?php wp_nonce_field('cmn_staff_review_candidate_doc', 'cmn_staff_review_candidate_doc_nonce'); ?>
-                                                <input type="hidden" name="action" value="cmn_staff_review_candidate_doc">
-                                                <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                                                <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
-                                                <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
-                                                <textarea name="review_reason" rows="2" placeholder="Reason (only used for rejection)"></textarea>
-                                                <div class="cmn-doc-review-actions">
-                                                    <button class="cmn-primary" type="submit" name="review_action" value="approved">Approve</button>
-                                                    <button class="cmn-ghost" type="submit" name="review_action" value="rejected">Reject</button>
-                                                </div>
-                                            </form>
-                                        <?php endif; ?>
+                                        <a class="cmn-ghost cmn-doc-link cmn-doc-view-btn" href="<?php echo esc_url($doc['download_url']); ?>" target="_blank" rel="noopener noreferrer">View / Download</a>
                                     <?php else : ?>
-                                        <span class="cmn-muted">No file uploaded</span>
+                                        <span class="cmn-doc-link cmn-doc-link-disabled">View / Download</span>
+                                    <?php endif; ?>
+                                    <?php if ($doc_type === 'cv' && $is_uploaded) : ?>
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form cmn-doc-delete-form" data-cmn-doc-delete-form>
+                                            <?php wp_nonce_field('cmn_staff_delete_candidate_doc', 'cmn_staff_delete_candidate_doc_nonce'); ?>
+                                            <input type="hidden" name="action" value="cmn_staff_delete_candidate_doc">
+                                            <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
+                                            <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
+                                            <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
+                                            <button class="cmn-ghost cmn-doc-delete-btn" type="button" data-cmn-doc-delete-open>Delete</button>
+                                        </form>
                                     <?php endif; ?>
                                 </div>
-                            </div>
+                            </article>
                         <?php endforeach; ?>
+                    </div>
+                    <div class="cmn-doc-delete-modal" data-cmn-doc-delete-modal hidden>
+                        <div class="cmn-doc-delete-modal__overlay" data-cmn-doc-delete-cancel></div>
+                        <div class="cmn-doc-delete-modal__card" role="dialog" aria-modal="true" aria-label="Delete document">
+                            <h4>Delete CV document?</h4>
+                            <p>This will permanently remove the selected CV from this candidate profile.</p>
+                            <div class="cmn-doc-delete-modal__actions">
+                                <button class="cmn-ghost cmn-btn-mini" type="button" data-cmn-doc-delete-cancel>Cancel</button>
+                                <button class="cmn-danger cmn-btn-mini" type="button" data-cmn-doc-delete-confirm>Delete</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             <?php elseif ($active_candidate_tab === 'compliance') : ?>
@@ -26226,20 +26719,14 @@ final class CMN_One_Plugin {
                         <?php wp_nonce_field('cmn_add_candidate_internal_note', 'cmn_add_candidate_internal_note_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_add_candidate_internal_note">
                         <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                        <textarea name="note" rows="4" placeholder="Add private note for internal team..." data-candidate-note-input required></textarea>
-                        <div class="cmn-candidate-note-footer">
-                            <span class="cmn-candidate-note-counter cmn-muted" data-candidate-note-counter>0 characters</span>
-                            <div class="cmn-doc-review-actions cmn-candidate-note-actions">
-                                <button class="cmn-primary cmn-candidate-note-submit" type="submit">Add Note</button>
-                            </div>
+                        <textarea name="note" rows="8" placeholder="Add private note for internal team..." required></textarea>
+                        <div class="cmn-doc-review-actions cmn-candidate-note-actions">
+                            <button class="cmn-primary cmn-candidate-note-submit" type="submit">Add Note</button>
                         </div>
                     </form>
                     <div class="cmn-list cmn-candidate-notes-list">
                         <?php if (!$internal_notes) : ?>
-                            <div class="cmn-candidate-notes-empty-state" role="status" aria-live="polite">
-                                <h4>No notes yet</h4>
-                                <p>Add internal notes for call outcomes, preferences, red flags, reliability.</p>
-                            </div>
+                            <p class="cmn-candidate-notes-empty-inline">No internal notes yet.</p>
                         <?php else : ?>
                             <?php foreach ($internal_notes as $note_item) : ?>
                                 <div class="cmn-list-item cmn-candidate-note-item">
@@ -26254,21 +26741,13 @@ final class CMN_One_Plugin {
                     </div>
                 </div>
             <?php elseif ($active_candidate_tab === 'settings') : ?>
-                <?php
-                $snapshot_groups = [
-                    'Address' => ['House Number', 'Address Line 1', 'Address Line 2', 'Address Line 3', 'Town / City', 'County', 'Postcode'],
-                    'Eligibility' => ['Roles (registration)', 'Role Other', 'Travel Distance', 'Driving Licence', 'Car Owner', 'QTS', 'DBS Update Service', 'No DBS selected'],
-                    'Availability' => ['Availability Days'],
-                    'Admin status' => ['Email Verified', 'Admin Verification Status', 'Notes'],
-                ];
-                ?>
                 <div class="cmn-dashboard-card cmn-dashboard-card-wide cmn-candidate-settings-role-rates-card">
                     <div class="cmn-candidate-settings-head">
                         <div>
                             <h3>Role Rates (Staff Only)</h3>
-                            <p class="cmn-muted">Set school charge and candidate pay per role.</p>
+                            <p class="cmn-muted">No candidate roles found yet. Add roles in candidate profile/registration to set per-role pricing.</p>
                         </div>
-                        <span class="cmn-ghost cmn-btn-mini cmn-candidate-settings-rate-badge">School charge vs candidate pay</span>
+                        <span class="cmn-ghost cmn-btn-mini cmn-candidate-settings-rate-badge">SCHOOL CHARGE VS CANDIDATE PAY</span>
                     </div>
                     <?php if (!empty($candidate_role_labels)) : ?>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-role-rate-form">
@@ -26292,67 +26771,37 @@ final class CMN_One_Plugin {
                             <p class="cmn-muted">Candidate can never see school charge. Schools only see school charge. Staff/admin can see both.</p>
                             <button class="cmn-primary" type="submit">Save role rates</button>
                         </form>
-                    <?php else : ?>
-                        <section class="cmn-candidate-settings-empty-state" role="status" aria-live="polite">
-                            <h4>No role pricing set yet</h4>
-                            <p>Add roles in registration to enable per-role pricing.</p>
-                        </section>
                     <?php endif; ?>
                 </div>
                 <div class="cmn-dashboard-card cmn-dashboard-card-wide cmn-candidate-settings-snapshot-card">
                     <div class="cmn-candidate-settings-head">
                         <div>
                             <h3>Full Registration Snapshot</h3>
-                            <p class="cmn-muted">Grouped for quick scanning.</p>
+                            <p class="cmn-muted">Read-only registration fields for staff verification.</p>
                         </div>
                     </div>
-                    <nav class="cmn-candidate-settings-snapshot-nav" aria-label="Registration snapshot sections">
-                        <?php foreach (array_keys($snapshot_groups) as $snapshot_group_label) : ?>
-                            <?php $snapshot_group_anchor = 'cmn-snapshot-' . sanitize_title($snapshot_group_label); ?>
-                            <a href="#<?php echo esc_attr($snapshot_group_anchor); ?>"><?php echo esc_html($snapshot_group_label); ?></a>
+                    <div class="cmn-candidate-settings-snapshot-grid cmn-candidate-settings-snapshot-grid-full">
+                        <?php foreach ($profile_snapshot as $field_label => $field_value) : ?>
+                            <?php
+                            $field_raw_value = trim((string) $field_value);
+                            $field_normalized_value = strtolower($field_raw_value);
+                            $field_is_not_set = ($field_raw_value === '' || $field_normalized_value === 'not set' || $field_raw_value === '-');
+                            $field_is_boolean = in_array($field_normalized_value, ['yes', 'no'], true);
+                            ?>
+                            <article class="cmn-candidate-settings-snapshot-item">
+                                <span class="cmn-profile-meta-label"><?php echo esc_html($field_label); ?></span>
+                                <?php if ($field_is_boolean) : ?>
+                                    <strong class="cmn-profile-meta-value">
+                                        <span class="cmn-pill cmn-candidate-settings-bool-pill <?php echo $field_normalized_value === 'yes' ? 'is-yes' : 'is-no'; ?>"><?php echo esc_html(ucfirst($field_normalized_value)); ?></span>
+                                    </strong>
+                                <?php elseif ($field_is_not_set) : ?>
+                                    <strong class="cmn-profile-meta-value cmn-candidate-settings-not-set">Not set</strong>
+                                <?php else : ?>
+                                    <strong class="cmn-profile-meta-value"><?php echo esc_html($field_raw_value); ?></strong>
+                                <?php endif; ?>
+                            </article>
                         <?php endforeach; ?>
-                    </nav>
-                    <?php foreach ($snapshot_groups as $group_label => $group_fields) : ?>
-                        <?php
-                        $group_anchor = 'cmn-snapshot-' . sanitize_title($group_label);
-                        $group_has_fields = false;
-                        foreach ($group_fields as $group_field_check) {
-                            if (array_key_exists($group_field_check, $profile_snapshot)) {
-                                $group_has_fields = true;
-                                break;
-                            }
-                        }
-                        if (!$group_has_fields) {
-                            continue;
-                        }
-                        ?>
-                        <section class="cmn-candidate-settings-snapshot-section" id="<?php echo esc_attr($group_anchor); ?>">
-                            <h4 class="cmn-candidate-settings-snapshot-title"><?php echo esc_html($group_label); ?></h4>
-                            <div class="cmn-candidate-settings-snapshot-grid">
-                                <?php foreach ($group_fields as $field_label) : ?>
-                                    <?php if (!array_key_exists($field_label, $profile_snapshot)) { continue; } ?>
-                                    <?php
-                                    $field_raw_value = trim((string) ($profile_snapshot[$field_label] ?? ''));
-                                    $field_normalized_value = strtolower($field_raw_value);
-                                    $field_is_not_set = ($field_raw_value === '' || $field_normalized_value === 'not set' || $field_raw_value === '-');
-                                    $field_is_boolean = in_array($field_normalized_value, ['yes', 'no'], true);
-                                    ?>
-                                    <article class="cmn-candidate-settings-snapshot-item">
-                                        <span class="cmn-profile-meta-label"><?php echo esc_html($field_label); ?></span>
-                                        <?php if ($field_is_boolean) : ?>
-                                            <strong class="cmn-profile-meta-value">
-                                                <span class="cmn-pill cmn-candidate-settings-bool-pill <?php echo $field_normalized_value === 'yes' ? 'is-yes' : 'is-no'; ?>"><?php echo esc_html(ucfirst($field_normalized_value)); ?></span>
-                                            </strong>
-                                        <?php elseif ($field_is_not_set) : ?>
-                                            <strong class="cmn-profile-meta-value cmn-candidate-settings-not-set">Not set</strong>
-                                        <?php else : ?>
-                                            <strong class="cmn-profile-meta-value"><?php echo esc_html($field_raw_value); ?></strong>
-                                        <?php endif; ?>
-                                    </article>
-                                <?php endforeach; ?>
-                            </div>
-                        </section>
-                    <?php endforeach; ?>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>
@@ -28057,23 +28506,42 @@ final class CMN_One_Plugin {
     }
 
     private function get_rate_guardrail_rows($only_risk = false, $limit = 150) {
+        self::migrate_schema_v74_booking_margin_controls();
         global $wpdb;
-        $table = $this->get_booking_rates_table();
+        $table = $this->get_booking_margins_table();
+        $exceptions_table = $this->get_margin_exceptions_table();
         $limit = max(1, (int) $limit);
         $where = '';
         if ($only_risk) {
-            $where = "WHERE guardrail_status IN ('LOW','NEGATIVE')";
+            $where = "WHERE bm.status <> 'compliant'";
         }
-        return (array) $wpdb->get_results(
-            "SELECT * FROM {$table} {$where} ORDER BY updated_at DESC, id DESC LIMIT {$limit}",
-            ARRAY_A
-        );
+        $sql = "SELECT bm.*,
+                       mex.decision AS exception_decision,
+                       mex.reason AS exception_reason,
+                       mex.new_margin AS exception_new_margin,
+                       mex.created_at AS exception_created_at,
+                       mex.user_id AS exception_user_id
+                FROM {$table} bm
+                LEFT JOIN {$exceptions_table} mex
+                    ON mex.id = (
+                        SELECT me2.id
+                        FROM {$exceptions_table} me2
+                        WHERE me2.booking_id = bm.booking_id
+                        ORDER BY me2.id DESC
+                        LIMIT 1
+                    )
+                {$where}
+                ORDER BY bm.updated_at DESC, bm.id DESC
+                LIMIT %d";
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $limit), ARRAY_A);
+        return is_array($rows) ? $rows : [];
     }
 
     private function count_bookings_at_risk_low_margin() {
+        self::migrate_schema_v74_booking_margin_controls();
         global $wpdb;
-        $table = $this->get_booking_rates_table();
-        $count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE guardrail_status IN ('LOW','NEGATIVE')");
+        $table = $this->get_booking_margins_table();
+        $count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status <> 'compliant'");
         return $count > 0 ? $count : 0;
     }
 
@@ -28085,20 +28553,28 @@ final class CMN_One_Plugin {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to staff only.</p></div></section>';
         }
         $risk_only = isset($_GET['cmn_risk_only']) ? (int) $_GET['cmn_risk_only'] : 1;
+        $message = isset($_GET['cmn_request_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_request_msg'])) : '';
         $rows = $this->get_rate_guardrail_rows($risk_only === 1, 250);
         $portal_url = $this->get_portal_base_url();
+        $current_url = add_query_arg([
+            'view' => 'rate-guardrails',
+            'cmn_risk_only' => $risk_only,
+        ], $portal_url);
 
         ob_start();
         ?>
         <header class="cmn-school-header">
             <h2>Rate Guardrails</h2>
-            <p>Monitor and review booking margins before confirmation.</p>
+            <p>Monitor booking margin risk and process finance overrides.</p>
         </header>
+        <?php if ($message !== '') : ?>
+            <div class="cmn-panel-card"><strong><?php echo esc_html($message); ?></strong></div>
+        <?php endif; ?>
         <form method="get" class="cmn-filters">
             <input type="hidden" name="view" value="rate-guardrails">
             <select name="cmn_risk_only">
-                <option value="1"<?php echo $risk_only === 1 ? ' selected' : ''; ?>>Bookings at risk only</option>
-                <option value="0"<?php echo $risk_only === 0 ? ' selected' : ''; ?>>All bookings with rate records</option>
+                <option value="1"<?php echo $risk_only === 1 ? ' selected' : ''; ?>>At-risk and non-compliant bookings</option>
+                <option value="0"<?php echo $risk_only === 0 ? ' selected' : ''; ?>>All cached booking margins</option>
             </select>
             <button class="cmn-ghost" type="submit">Filter</button>
             <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Go to Requests</a>
@@ -28114,7 +28590,7 @@ final class CMN_One_Plugin {
                     <th>Pay (GBP )</th>
                     <th>Margin</th>
                     <th>Status</th>
-                    <th>Override</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -28126,7 +28602,19 @@ final class CMN_One_Plugin {
                     $candidate_id = $booking_id ? (int) get_post_meta($booking_id, 'cmn_candidate_id', true) : 0;
                     $school_name = $school_id ? get_the_title($school_id) : 'School';
                     $candidate_name = $candidate_id ? get_the_title($candidate_id) : 'Candidate';
-                    $status = strtoupper((string) ($row['guardrail_status'] ?? 'OK'));
+                    $guardrail_status = strtoupper((string) ($row['guardrail_status'] ?? 'OK'));
+                    $status_key = sanitize_key((string) ($row['status'] ?? 'compliant'));
+                    $status_class = $guardrail_status === 'NEGATIVE' ? 'negative' : ($guardrail_status === 'LOW' || $status_key !== 'compliant' ? 'low' : 'ok');
+                    $status_label = $status_key === 'compliant' ? 'COMPLIANT' : 'AT_RISK';
+                    if ($guardrail_status === 'NEGATIVE') {
+                        $status_label = 'NEGATIVE';
+                    } elseif ($guardrail_status === 'LOW') {
+                        $status_label = 'LOW';
+                    }
+                    $exception_label = '';
+                    if (!empty($row['exception_decision'])) {
+                        $exception_label = strtoupper((string) $row['exception_decision']) . ' - ' . (string) ($row['exception_reason'] ?? '');
+                    }
                     ?>
                     <tr>
                         <td>
@@ -28140,9 +28628,39 @@ final class CMN_One_Plugin {
                         <td><?php echo esc_html((string) ($row['role_key'] ?? 'default') . ' / ' . (string) ($row['region_key'] ?? 'default')); ?></td>
                         <td><?php echo esc_html(number_format((float) ($row['school_charge_rate'] ?? 0), 2)); ?></td>
                         <td><?php echo esc_html(number_format((float) ($row['candidate_pay_rate'] ?? 0), 2)); ?></td>
-                        <td>GBP <?php echo esc_html(number_format((float) ($row['margin_amount'] ?? 0), 2)); ?> (<?php echo esc_html(number_format((float) ($row['margin_percent'] ?? 0), 2)); ?>%)</td>
-                        <td><span class="cmn-pill cmn-pill--<?php echo esc_attr(strtolower($status)); ?>"><?php echo esc_html($status); ?></span></td>
-                        <td><?php echo !empty($row['override_flag']) ? esc_html((string) ($row['override_reason'] ?: 'Yes')) : 'No'; ?></td>
+                        <td>
+                            GBP <?php echo esc_html(number_format((float) ($row['margin_amount'] ?? 0), 2)); ?> (<?php echo esc_html(number_format((float) ($row['margin_percent'] ?? 0), 2)); ?>%)
+                            <?php if (!empty($row['override_margin_amount'])) : ?>
+                                <br><span class="cmn-table-meta">Override margin: GBP <?php echo esc_html(number_format((float) ($row['override_margin_amount'] ?? 0), 2)); ?></span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <span class="cmn-pill cmn-pill--<?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span>
+                            <?php if ($exception_label !== '') : ?>
+                                <br><span class="cmn-table-meta"><?php echo esc_html($exception_label); ?></span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-request-panel" style="margin:0;">
+                                <?php wp_nonce_field('cmn_margin_override_' . $booking_id, 'cmn_margin_override_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_margin_override_action">
+                                <input type="hidden" name="cmn_booking_id" value="<?php echo esc_attr((string) $booking_id); ?>">
+                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr($current_url); ?>">
+                                <label style="display:block;margin-bottom:6px;">
+                                    <span class="cmn-muted">New margin (GBP)</span>
+                                    <input type="number" step="0.01" name="cmn_override_new_margin" value="<?php echo esc_attr(number_format((float) ($row['margin_amount'] ?? 0), 2, '.', '')); ?>">
+                                </label>
+                                <label style="display:block;margin-bottom:6px;">
+                                    <span class="cmn-muted">Reason</span>
+                                    <textarea name="cmn_override_reason" rows="2" placeholder="Required for approve/reject"></textarea>
+                                </label>
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                    <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="view">View</button>
+                                    <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="approve">Approve override</button>
+                                    <button class="cmn-ghost cmn-btn-mini" type="submit" name="cmn_override_decision" value="reject">Reject override</button>
+                                </div>
+                            </form>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
             <?php else : ?>
@@ -29252,21 +29770,44 @@ final class CMN_One_Plugin {
         $export_range = $this->get_finance_report_date_range($month_filter, $date_from, $date_to);
 
         $paid_labels = [
-            'all' => 'All',
+            'all' => 'All invoices',
             'paid' => 'Paid only',
             'unpaid' => 'Unpaid only',
         ];
-        $paid_label = (string) ($paid_labels[$paid_filter] ?? 'All');
+        $paid_label = (string) ($paid_labels[$paid_filter] ?? 'All invoices');
+        $selected_month_label = (string) ($monthly_metrics['month_label'] ?? date_i18n('F Y', strtotime($month_filter . '-01')));
+        $academic_year_label_raw = (string) ($academic_metrics['academic_year_label'] ?? '');
+        $academic_year_label = str_replace('-', '–', $academic_year_label_raw);
+        if ($academic_year_label === '') {
+            $academic_year_label = $academic_year_label_raw;
+        }
         $tier_rows = (array) ($tier_distribution['rows'] ?? []);
-        $max_tier_count = 0;
-        foreach ($tier_rows as $tier_row) {
-            $max_tier_count = max($max_tier_count, (int) ($tier_row['count'] ?? 0));
-        }
-        if ($max_tier_count < 1) {
-            $max_tier_count = 1;
-        }
+        $total_active_schools = max(0, (int) ($tier_distribution['total'] ?? 0));
         $format_money = function ($value) {
             return 'GBP ' . number_format((float) $value, 2);
+        };
+        $format_percent = function ($value) {
+            $value = max(0, (float) $value);
+            if (abs($value - round($value)) < 0.05) {
+                return number_format($value, 0);
+            }
+            return number_format($value, 1);
+        };
+        $render_finance_empty_state = function ($heading, $subtext) {
+            ?>
+            <div class="cmn-finance-empty-state" role="status" aria-live="polite">
+                <span class="cmn-finance-empty-state-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 20h16"></path>
+                        <path d="M7 17V13"></path>
+                        <path d="M12 17V9"></path>
+                        <path d="M17 17V11"></path>
+                    </svg>
+                </span>
+                <strong><?php echo esc_html((string) $heading); ?></strong>
+                <p><?php echo esc_html((string) $subtext); ?></p>
+            </div>
+            <?php
         };
         $invoice_export_url = add_query_arg([
             'action' => 'cmn_export_finance_invoices_csv',
@@ -29283,173 +29824,223 @@ final class CMN_One_Plugin {
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Finance Overview</h2>
-            <p>Internal finance reporting for invoicing performance and Partner Programme analytics.</p>
-        </header>
-
-        <div class="cmn-dashboard-card" style="margin-bottom:16px;">
-            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-inline cmn-finance-filter-form">
-                <input type="hidden" name="view" value="finance-overview">
-                <label style="display:flex;flex-direction:column;gap:4px;">
-                    <span>Month</span>
-                    <select name="cmn_finance_month">
-                        <?php foreach ((array) $month_options as $opt) : ?>
-                            <option value="<?php echo esc_attr((string) ($opt['value'] ?? '')); ?>"<?php selected((string) ($opt['value'] ?? ''), $month_filter); ?>><?php echo esc_html((string) ($opt['label'] ?? '')); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-                <label style="display:flex;flex-direction:column;gap:4px;">
-                    <span>Invoice state</span>
-                    <select name="cmn_finance_paid">
-                        <option value="all"<?php selected($paid_filter, 'all'); ?>>All invoices</option>
-                        <option value="paid"<?php selected($paid_filter, 'paid'); ?>>Paid only</option>
-                        <option value="unpaid"<?php selected($paid_filter, 'unpaid'); ?>>Unpaid only</option>
-                    </select>
-                </label>
-                <label style="display:flex;flex-direction:column;gap:4px;">
-                    <span>Export from (optional)</span>
-                    <input type="date" name="cmn_finance_from" value="<?php echo esc_attr($date_from); ?>">
-                </label>
-                <label style="display:flex;flex-direction:column;gap:4px;">
-                    <span>Export to (optional)</span>
-                    <input type="date" name="cmn_finance_to" value="<?php echo esc_attr($date_to); ?>">
-                </label>
-                <button class="cmn-primary" type="submit">Apply</button>
-                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'finance-overview'], $portal_url)); ?>">Clear</a>
-            </form>
-            <div class="cmn-finance-export-actions">
-                <a class="cmn-ghost" href="<?php echo esc_url($invoice_export_url); ?>">Export Invoices CSV</a>
-                <a class="cmn-ghost" href="<?php echo esc_url($partner_export_url); ?>">Export Partner Programme CSV</a>
-                <span class="cmn-muted">Invoice export scope: <?php echo esc_html((string) ($export_range['label'] ?? date_i18n('F Y', strtotime($month_filter . '-01')))); ?> (<?php echo esc_html($paid_label); ?>)</span>
-            </div>
-        </div>
-
-        <div class="cmn-portal-grid">
-            <div class="cmn-dashboard-card">
-                <h3>Monthly Metrics - <?php echo esc_html((string) ($monthly_metrics['month_label'] ?? date_i18n('F Y', strtotime($month_filter . '-01')))); ?></h3>
-                <div class="cmn-finance-metric-grid">
-                    <div class="cmn-finance-metric-card">
-                        <span>Total invoice value (subtotal)</span>
-                        <strong><?php echo esc_html($format_money((float) ($monthly_metrics['subtotal_total'] ?? 0))); ?></strong>
+        <section class="cmn-finance-overview-page">
+            <header class="cmn-school-header cmn-finance-overview-header">
+                <div class="cmn-finance-overview-header-main">
+                    <h2>Finance &amp; Margin Overview</h2>
+                    <p>Invoice performance, partner credits, revenue tracking and tier distribution.</p>
+                </div>
+                <div class="cmn-finance-overview-stats" role="list" aria-label="Finance overview context">
+                    <div class="cmn-finance-overview-stat" role="listitem">
+                        <span>Selected Month</span>
+                        <strong><?php echo esc_html($selected_month_label); ?></strong>
                     </div>
-                    <div class="cmn-finance-metric-card">
-                        <span>Total partner credits applied</span>
-                        <strong><?php echo esc_html($format_money((float) ($monthly_metrics['partner_credit_total'] ?? 0))); ?></strong>
+                    <div class="cmn-finance-overview-stat" role="listitem">
+                        <span>Invoice State</span>
+                        <strong><?php echo esc_html($paid_label); ?></strong>
                     </div>
-                    <div class="cmn-finance-metric-card">
-                        <span>Net invoiced amount</span>
-                        <strong><?php echo esc_html($format_money((float) ($monthly_metrics['net_invoiced_total'] ?? 0))); ?></strong>
-                    </div>
-                    <div class="cmn-finance-metric-card">
-                        <span>Invoices generated</span>
-                        <strong><?php echo esc_html(number_format((float) ($monthly_metrics['invoice_count'] ?? 0), 0)); ?></strong>
-                    </div>
-                    <div class="cmn-finance-metric-card">
-                        <span>Schools invoiced</span>
-                        <strong><?php echo esc_html(number_format((float) ($monthly_metrics['schools_invoiced'] ?? 0), 0)); ?></strong>
+                    <div class="cmn-finance-overview-stat" role="listitem">
+                        <span>Academic Year</span>
+                        <strong><?php echo esc_html($academic_year_label); ?></strong>
                     </div>
                 </div>
-            </div>
-        </div>
+            </header>
 
-        <div class="cmn-portal-grid">
-            <div class="cmn-dashboard-card">
-                <h3>Academic Year Metrics - <?php echo esc_html((string) ($academic_metrics['academic_year_label'] ?? '')); ?></h3>
-                <div class="cmn-finance-metric-grid">
-                    <div class="cmn-finance-metric-card">
-                        <span>Total partner savings (all schools)</span>
-                        <strong><?php echo esc_html($format_money((float) ($academic_metrics['total_partner_savings'] ?? 0))); ?></strong>
-                    </div>
-                    <div class="cmn-finance-metric-card">
-                        <span>Total invoice revenue (gross)</span>
-                        <strong><?php echo esc_html($format_money((float) ($academic_metrics['total_invoice_revenue_gross'] ?? 0))); ?></strong>
-                    </div>
-                    <div class="cmn-finance-metric-card">
-                        <span>Total net revenue (after partner credits)</span>
-                        <strong><?php echo esc_html($format_money((float) ($academic_metrics['total_net_revenue'] ?? 0))); ?></strong>
-                    </div>
-                </div>
-                <div class="cmn-portal-grid" style="margin-top:14px;">
-                    <div>
-                        <h4>Top 5 schools by revenue</h4>
-                        <?php if (!empty($academic_metrics['top_schools_by_revenue'])) : ?>
-                            <table class="cmn-approval-table">
-                                <thead>
-                                    <tr>
-                                        <th>School</th>
-                                        <th>Revenue</th>
-                                        <th>Invoices</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ((array) $academic_metrics['top_schools_by_revenue'] as $row) : ?>
-                                        <tr>
-                                            <td><?php echo esc_html((string) ($row['school_name'] ?? 'School')); ?></td>
-                                            <td><?php echo esc_html($format_money((float) ($row['gross_revenue'] ?? 0))); ?></td>
-                                            <td><?php echo esc_html(number_format((float) ($row['invoice_count'] ?? 0), 0)); ?></td>
-                                        </tr>
+            <div class="cmn-dashboard-card cmn-finance-filters-card">
+                <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-finance-filter-form">
+                    <input type="hidden" name="view" value="finance-overview">
+                    <div class="cmn-finance-filter-row">
+                        <div class="cmn-finance-filter-zone is-left">
+                            <label class="cmn-finance-filter-control">
+                                <span>Month</span>
+                                <select name="cmn_finance_month">
+                                    <?php foreach ((array) $month_options as $opt) : ?>
+                                        <option value="<?php echo esc_attr((string) ($opt['value'] ?? '')); ?>"<?php selected((string) ($opt['value'] ?? ''), $month_filter); ?>><?php echo esc_html((string) ($opt['label'] ?? '')); ?></option>
                                     <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php else : ?>
-                            <div class="cmn-empty">No invoice data in this academic year yet.</div>
-                        <?php endif; ?>
+                                </select>
+                            </label>
+                            <label class="cmn-finance-filter-control">
+                                <span>Invoice State</span>
+                                <select name="cmn_finance_paid">
+                                    <option value="all"<?php selected($paid_filter, 'all'); ?>>All invoices</option>
+                                    <option value="paid"<?php selected($paid_filter, 'paid'); ?>>Paid only</option>
+                                    <option value="unpaid"<?php selected($paid_filter, 'unpaid'); ?>>Unpaid only</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="cmn-finance-filter-zone is-middle">
+                            <label class="cmn-finance-filter-control">
+                                <span>Export From</span>
+                                <input type="date" name="cmn_finance_from" value="<?php echo esc_attr($date_from); ?>">
+                            </label>
+                            <label class="cmn-finance-filter-control">
+                                <span>Export To</span>
+                                <input type="date" name="cmn_finance_to" value="<?php echo esc_attr($date_to); ?>">
+                            </label>
+                        </div>
+                        <div class="cmn-finance-filter-zone is-right">
+                            <button class="cmn-primary" type="submit">Apply</button>
+                            <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'finance-overview'], $portal_url)); ?>">Clear</a>
+                        </div>
                     </div>
-                    <div>
-                        <h4>Top 5 schools by savings</h4>
-                        <?php if (!empty($academic_metrics['top_schools_by_savings'])) : ?>
-                            <table class="cmn-approval-table">
-                                <thead>
-                                    <tr>
-                                        <th>School</th>
-                                        <th>Savings</th>
-                                        <th>Invoices</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ((array) $academic_metrics['top_schools_by_savings'] as $row) : ?>
-                                        <tr>
-                                            <td><?php echo esc_html((string) ($row['school_name'] ?? 'School')); ?></td>
-                                            <td><?php echo esc_html($format_money((float) ($row['savings_total'] ?? 0))); ?></td>
-                                            <td><?php echo esc_html(number_format((float) ($row['invoice_count'] ?? 0), 0)); ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php else : ?>
-                            <div class="cmn-empty">No partner-credit data in this academic year yet.</div>
-                        <?php endif; ?>
+                </form>
+                <div class="cmn-finance-export-actions">
+                    <a class="cmn-ghost cmn-finance-export-btn" href="<?php echo esc_url($invoice_export_url); ?>">Export Invoices CSV</a>
+                    <a class="cmn-ghost cmn-finance-export-btn" href="<?php echo esc_url($partner_export_url); ?>">Export Partner Programme CSV</a>
+                    <span class="cmn-finance-export-scope">Scope: <?php echo esc_html((string) ($export_range['label'] ?? $selected_month_label)); ?> (<?php echo esc_html($paid_label); ?>)</span>
+                </div>
+            </div>
+
+            <div class="cmn-portal-grid">
+                <div class="cmn-dashboard-card cmn-finance-section-card">
+                    <div class="cmn-finance-section-head">
+                        <h3>Monthly Performance Snapshot – <?php echo esc_html($selected_month_label); ?></h3>
+                    </div>
+                    <div class="cmn-finance-metric-grid">
+                        <div class="cmn-finance-metric-card">
+                            <span class="cmn-finance-metric-label">Total invoice value</span>
+                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['subtotal_total'] ?? 0))); ?></strong>
+                            <small class="cmn-finance-metric-helper">Before credits</small>
+                        </div>
+                        <div class="cmn-finance-metric-card">
+                            <span class="cmn-finance-metric-label">Total partner credits</span>
+                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['partner_credit_total'] ?? 0))); ?></strong>
+                            <small class="cmn-finance-metric-helper">Credits applied this month</small>
+                        </div>
+                        <div class="cmn-finance-metric-card">
+                            <span class="cmn-finance-metric-label">Net invoiced amount</span>
+                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($monthly_metrics['net_invoiced_total'] ?? 0))); ?></strong>
+                            <small class="cmn-finance-metric-helper">After partner credits</small>
+                        </div>
+                        <div class="cmn-finance-metric-card">
+                            <span class="cmn-finance-metric-label">Invoices generated</span>
+                            <strong class="cmn-finance-metric-value"><?php echo esc_html(number_format((float) ($monthly_metrics['invoice_count'] ?? 0), 0)); ?></strong>
+                            <small class="cmn-finance-metric-helper">Number of invoices raised</small>
+                        </div>
+                        <div class="cmn-finance-metric-card">
+                            <span class="cmn-finance-metric-label">Schools invoiced</span>
+                            <strong class="cmn-finance-metric-value"><?php echo esc_html(number_format((float) ($monthly_metrics['schools_invoiced'] ?? 0), 0)); ?></strong>
+                            <small class="cmn-finance-metric-helper">Number of schools billed</small>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="cmn-portal-grid">
-            <div class="cmn-dashboard-card">
-                <h3>Tier Distribution</h3>
-                <?php if ((int) ($tier_distribution['total'] ?? 0) < 1) : ?>
-                    <div class="cmn-empty">No schools found.</div>
-                <?php else : ?>
-                    <div class="cmn-finance-tier-list">
-                        <?php foreach ($tier_rows as $tier_row) : ?>
-                            <?php
-                            $tier_key = sanitize_key((string) ($tier_row['tier'] ?? 'standard'));
-                            $tier_count = max(0, (int) ($tier_row['count'] ?? 0));
-                            $width_percent = max(0, min(100, round(($tier_count / $max_tier_count) * 100, 2)));
-                            ?>
-                            <div class="cmn-finance-tier-item">
-                                <span class="cmn-status-chip cmn-partner-tier-chip is-<?php echo esc_attr($tier_key); ?>"><?php echo esc_html((string) ($tier_row['label'] ?? ucfirst($tier_key))); ?></span>
-                                <div class="cmn-finance-tier-bar">
-                                    <span style="width: <?php echo esc_attr(number_format($width_percent, 2, '.', '')); ?>%"></span>
+            <div class="cmn-portal-grid cmn-finance-academic-grid">
+                <div class="cmn-dashboard-card cmn-finance-section-card cmn-finance-section-card--academic">
+                    <div class="cmn-finance-section-head">
+                        <h3>Academic Year Performance – <?php echo esc_html($academic_year_label); ?></h3>
+                        <p>Cumulative performance across all invoiced schools this academic year.</p>
+                    </div>
+                    <div class="cmn-finance-metric-grid">
+                        <div class="cmn-finance-metric-card">
+                            <span class="cmn-finance-metric-label">Total partner savings</span>
+                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_partner_savings'] ?? 0))); ?></strong>
+                            <small class="cmn-finance-metric-helper">Savings delivered to partner schools</small>
+                        </div>
+                        <div class="cmn-finance-metric-card">
+                            <span class="cmn-finance-metric-label">Total invoice revenue</span>
+                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_invoice_revenue_gross'] ?? 0))); ?></strong>
+                            <small class="cmn-finance-metric-helper">Before credits</small>
+                        </div>
+                        <div class="cmn-finance-metric-card">
+                            <span class="cmn-finance-metric-label">Total net revenue</span>
+                            <strong class="cmn-finance-metric-value"><?php echo esc_html($format_money((float) ($academic_metrics['total_net_revenue'] ?? 0))); ?></strong>
+                            <small class="cmn-finance-metric-helper">After partner credits</small>
+                        </div>
+                    </div>
+                    <div class="cmn-finance-toplists">
+                        <article class="cmn-finance-toplist-card">
+                            <h4>Top 5 schools by revenue</h4>
+                            <?php if (!empty($academic_metrics['top_schools_by_revenue'])) : ?>
+                                <table class="cmn-approval-table">
+                                    <thead>
+                                        <tr>
+                                            <th>School</th>
+                                            <th>Revenue</th>
+                                            <th>Invoices</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ((array) $academic_metrics['top_schools_by_revenue'] as $row) : ?>
+                                            <tr>
+                                                <td><?php echo esc_html((string) ($row['school_name'] ?? 'School')); ?></td>
+                                                <td><?php echo esc_html($format_money((float) ($row['gross_revenue'] ?? 0))); ?></td>
+                                                <td><?php echo esc_html(number_format((float) ($row['invoice_count'] ?? 0), 0)); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            <?php else : ?>
+                                <?php $render_finance_empty_state('No Invoice Data Yet', 'Invoice activity will populate once billing begins.'); ?>
+                            <?php endif; ?>
+                        </article>
+                        <article class="cmn-finance-toplist-card">
+                            <h4>Top 5 schools by savings</h4>
+                            <?php if (!empty($academic_metrics['top_schools_by_savings'])) : ?>
+                                <table class="cmn-approval-table">
+                                    <thead>
+                                        <tr>
+                                            <th>School</th>
+                                            <th>Savings</th>
+                                            <th>Invoices</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ((array) $academic_metrics['top_schools_by_savings'] as $row) : ?>
+                                            <tr>
+                                                <td><?php echo esc_html((string) ($row['school_name'] ?? 'School')); ?></td>
+                                                <td><?php echo esc_html($format_money((float) ($row['savings_total'] ?? 0))); ?></td>
+                                                <td><?php echo esc_html(number_format((float) ($row['invoice_count'] ?? 0), 0)); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            <?php else : ?>
+                                <?php $render_finance_empty_state('No Invoice Data Yet', 'Invoice activity will populate once billing begins.'); ?>
+                            <?php endif; ?>
+                        </article>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cmn-portal-grid cmn-finance-tier-grid">
+                <div class="cmn-dashboard-card cmn-finance-section-card">
+                    <div class="cmn-finance-section-head">
+                        <h3>Tier Distribution</h3>
+                        <p>Distribution of schools across partner tiers.</p>
+                    </div>
+                    <div class="cmn-finance-tier-summary">
+                        <span>Total Active Schools:</span>
+                        <strong><?php echo esc_html(number_format((float) $total_active_schools, 0)); ?></strong>
+                    </div>
+                    <?php if ($total_active_schools < 1) : ?>
+                        <?php $render_finance_empty_state('No Invoice Data Yet', 'Invoice activity will populate once billing begins.'); ?>
+                    <?php else : ?>
+                        <div class="cmn-finance-tier-list">
+                            <?php foreach ($tier_rows as $tier_row) : ?>
+                                <?php
+                                $tier_key = sanitize_key((string) ($tier_row['tier'] ?? 'standard'));
+                                $tier_count = max(0, (int) ($tier_row['count'] ?? 0));
+                                $tier_percent = $total_active_schools > 0 ? (($tier_count / $total_active_schools) * 100) : 0;
+                                $width_percent = max(0, min(100, round($tier_percent, 2)));
+                                ?>
+                                <div class="cmn-finance-tier-item">
+                                    <span class="cmn-status-chip cmn-partner-tier-chip is-<?php echo esc_attr($tier_key); ?>"><?php echo esc_html((string) ($tier_row['label'] ?? ucfirst($tier_key))); ?></span>
+                                    <div class="cmn-finance-tier-bar">
+                                        <span class="is-<?php echo esc_attr($tier_key); ?>" style="width: <?php echo esc_attr(number_format($width_percent, 2, '.', '')); ?>%"></span>
+                                    </div>
+                                    <div class="cmn-finance-tier-count">
+                                        <strong><?php echo esc_html((string) $tier_count); ?></strong>
+                                        <small>(<?php echo esc_html($format_percent($tier_percent)); ?>%)</small>
+                                    </div>
                                 </div>
-                                <strong><?php echo esc_html((string) $tier_count); ?></strong>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
-        </div>
+        </section>
         <?php
         return $this->render_staff_shell('finance_overview', ob_get_clean());
     }
@@ -41264,6 +41855,21 @@ final class CMN_One_Plugin {
     private function get_booking_rates_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_booking_rates';
+    }
+
+    private function get_booking_margins_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_booking_margins';
+    }
+
+    private function get_margin_alerts_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_margin_alerts';
+    }
+
+    private function get_margin_exceptions_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_margin_exceptions';
     }
 
     private function get_invoices_table() {
@@ -56237,7 +56843,434 @@ final class CMN_One_Plugin {
         if ($new_row) {
             $this->log_rate_audit($booking_id, $old_row, $new_row, $override_reason !== '' ? $override_reason : 'Rate updated');
         }
+        $margin_sync = $this->sync_booking_margin_for_booking(
+            $booking_id,
+            (int) $request_id,
+            $role_key,
+            $region_key,
+            $school_rate,
+            $candidate_pay,
+            $override_flag ? 1 : 0,
+            $override_reason !== '' ? $override_reason : 'Rate updated'
+        );
+        if (!empty($margin_sync['status'])) {
+            $validation['margin_cache_status'] = (string) $margin_sync['status'];
+        }
         return $validation;
+    }
+
+    private function get_booking_margin_service() {
+        if ($this->booking_margin_service instanceof CmnBookingMarginService) {
+            return $this->booking_margin_service;
+        }
+        self::migrate_schema_v74_booking_margin_controls();
+        global $wpdb;
+        $this->booking_margin_service = new CmnBookingMarginService(
+            $wpdb,
+            $this->get_rate_engine(),
+            $this->get_booking_margins_table(),
+            5 * MINUTE_IN_SECONDS
+        );
+        return $this->booking_margin_service;
+    }
+
+    private function get_booking_margin_row($booking_id, $force_refresh = false) {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1) {
+            return [];
+        }
+        return (array) $this->get_booking_margin_service()->get_cached_margin($booking_id, (bool) $force_refresh);
+    }
+
+    private function sync_booking_margin_for_booking($booking_id, $request_id, $role_key, $region_key, $school_rate, $candidate_pay, $override_flag = 0, $audit_reason = '') {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1) {
+            return [];
+        }
+        self::migrate_schema_v74_booking_margin_controls();
+
+        $role_key = $this->normalize_rate_role_key($role_key);
+        $region_key = $this->normalize_rate_region_key($region_key);
+        $rule = $this->fetch_applicable_rate_rule($role_key, $region_key);
+        $result = (array) $this->get_booking_margin_service()->calculate_and_cache(
+            $booking_id,
+            (int) $request_id,
+            $role_key,
+            $region_key,
+            (float) $school_rate,
+            (float) $candidate_pay,
+            !empty($override_flag) ? 1 : 0,
+            $rule
+        );
+
+        $row = isset($result['row']) && is_array($result['row']) ? (array) $result['row'] : [];
+        $status = sanitize_key((string) ($result['status'] ?? ($row['status'] ?? 'compliant')));
+        $result['status'] = $status;
+        if ($status === 'at_risk' && !empty($result['became_at_risk'])) {
+            $result['margin_alert_id'] = $this->create_margin_alert_for_booking($booking_id, $row, $audit_reason);
+        } elseif ($status === 'compliant' && !empty($result['became_compliant'])) {
+            $this->resolve_margin_alerts_for_booking($booking_id, 'status_compliant');
+        }
+
+        $this->add_audit_log('booking_margin_cached', 'booking', (string) $booking_id, [
+            'request_id' => (int) $request_id,
+            'status' => $status !== '' ? $status : 'compliant',
+            'previous_status' => sanitize_key((string) ($result['previous_status'] ?? '')),
+            'guardrail_status' => sanitize_key((string) ($row['guardrail_status'] ?? '')),
+            'margin_amount' => round((float) ($row['margin_amount'] ?? 0), 2),
+            'margin_percent' => round((float) ($row['margin_percent'] ?? 0), 2),
+            'override_flag' => !empty($override_flag) ? 1 : 0,
+            'reason' => sanitize_text_field((string) $audit_reason),
+        ]);
+
+        return $result;
+    }
+
+    private function create_margin_alert_for_booking($booking_id, $margin_row = [], $context_reason = '') {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1) {
+            return 0;
+        }
+        self::migrate_schema_v74_booking_margin_controls();
+        global $wpdb;
+
+        $table = $this->get_margin_alerts_table();
+        $existing_open_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table} WHERE booking_id = %d AND alert_status = %s ORDER BY id DESC LIMIT 1",
+            $booking_id,
+            'open'
+        ));
+        if ($existing_open_id > 0) {
+            return $existing_open_id;
+        }
+
+        $margin_row = is_array($margin_row) ? $margin_row : [];
+        $margin_amount = round((float) ($margin_row['margin_amount'] ?? 0), 2);
+        $margin_percent = round((float) ($margin_row['margin_percent'] ?? 0), 2);
+        $message = sprintf(
+            'Booking #%d is at risk (margin GBP %.2f / %.2f%%).',
+            $booking_id,
+            $margin_amount,
+            $margin_percent
+        );
+        $now = current_time('mysql');
+        $wpdb->insert($table, [
+            'booking_id' => $booking_id,
+            'margin_id' => isset($margin_row['id']) ? (int) $margin_row['id'] : null,
+            'alert_type' => 'at_risk',
+            'alert_status' => 'open',
+            'message' => $message,
+            'notified' => 0,
+            'notified_at' => null,
+            'resolved_at' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], ['%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s']);
+        $alert_id = (int) $wpdb->insert_id;
+        if ($alert_id < 1) {
+            return 0;
+        }
+
+        $notified_count = $this->notify_finance_team_about_margin_alert($alert_id, $booking_id, $margin_row);
+        if ($notified_count > 0) {
+            $wpdb->update($table, [
+                'notified' => 1,
+                'notified_at' => $now,
+                'updated_at' => $now,
+            ], ['id' => $alert_id], ['%d', '%s', '%s'], ['%d']);
+        }
+
+        $this->add_audit_log('booking_margin_alert_created', 'booking', (string) $booking_id, [
+            'margin_alert_id' => $alert_id,
+            'margin_id' => isset($margin_row['id']) ? (int) $margin_row['id'] : 0,
+            'margin_amount' => $margin_amount,
+            'margin_percent' => $margin_percent,
+            'guardrail_status' => sanitize_key((string) ($margin_row['guardrail_status'] ?? '')),
+            'notified_count' => $notified_count,
+            'reason' => sanitize_text_field((string) $context_reason),
+        ]);
+        return $alert_id;
+    }
+
+    private function resolve_margin_alerts_for_booking($booking_id, $context = '') {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1) {
+            return 0;
+        }
+        self::migrate_schema_v74_booking_margin_controls();
+        global $wpdb;
+
+        $table = $this->get_margin_alerts_table();
+        $now = current_time('mysql');
+        $updated = $wpdb->query($wpdb->prepare(
+            "UPDATE {$table}
+             SET alert_status = %s,
+                 resolved_at = %s,
+                 updated_at = %s
+             WHERE booking_id = %d
+               AND alert_status = %s",
+            'resolved',
+            $now,
+            $now,
+            $booking_id,
+            'open'
+        ));
+        $updated = (int) $updated;
+        if ($updated > 0) {
+            $this->add_audit_log('booking_margin_alert_resolved', 'booking', (string) $booking_id, [
+                'resolved_count' => $updated,
+                'context' => sanitize_key((string) $context),
+            ]);
+        }
+        return $updated;
+    }
+
+    private function get_finance_notification_user_ids() {
+        static $cached_user_ids = null;
+        if (is_array($cached_user_ids)) {
+            return $cached_user_ids;
+        }
+
+        $cached_user_ids = [];
+        $users = get_users([
+            'fields' => ['ID'],
+            'number' => 2000,
+        ]);
+        foreach ((array) $users as $row) {
+            $user_id = is_object($row) ? (int) ($row->ID ?? 0) : (int) ($row['ID'] ?? 0);
+            if ($user_id > 0 && $this->can_access_finance_reporting($user_id)) {
+                $cached_user_ids[$user_id] = $user_id;
+            }
+        }
+        if (empty($cached_user_ids)) {
+            $current_user_id = (int) get_current_user_id();
+            if ($current_user_id > 0 && $this->can_access_finance_reporting($current_user_id)) {
+                $cached_user_ids[$current_user_id] = $current_user_id;
+            }
+        }
+        return array_values($cached_user_ids);
+    }
+
+    private function notify_finance_team_about_margin_alert($alert_id, $booking_id, $margin_row = []) {
+        $alert_id = (int) $alert_id;
+        $booking_id = (int) $booking_id;
+        if ($alert_id < 1 || $booking_id < 1) {
+            return 0;
+        }
+
+        $margin_row = is_array($margin_row) ? $margin_row : [];
+        $message = sprintf(
+            'Booking #%d is at risk (margin GBP %.2f / %.2f%%).',
+            $booking_id,
+            round((float) ($margin_row['margin_amount'] ?? 0), 2),
+            round((float) ($margin_row['margin_percent'] ?? 0), 2)
+        );
+        $link_url = add_query_arg([
+            'view' => 'rate-guardrails',
+            'cmn_focus_booking' => $booking_id,
+        ], $this->get_portal_base_url());
+        $context = [
+            'margin_alert_id' => $alert_id,
+            'booking_id' => $booking_id,
+            'guardrail_status' => sanitize_key((string) ($margin_row['guardrail_status'] ?? '')),
+            'status' => sanitize_key((string) ($margin_row['status'] ?? 'at_risk')),
+        ];
+
+        $inserted = 0;
+        foreach ($this->get_finance_notification_user_ids() as $user_id) {
+            $notification_id = $this->add_notification((int) $user_id, 'finance_margin_alert', 'Margin alert raised', $message, $link_url, $context);
+            if ($notification_id > 0) {
+                $inserted++;
+            }
+        }
+        return $inserted;
+    }
+
+    private function insert_margin_exception($booking_id, $margin_id, $actor_user_id, $decision, $reason, $new_margin) {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1) {
+            return 0;
+        }
+        self::migrate_schema_v74_booking_margin_controls();
+        global $wpdb;
+        $table = $this->get_margin_exceptions_table();
+        $now = current_time('mysql');
+        $result = $wpdb->insert($table, [
+            'booking_id' => $booking_id,
+            'margin_id' => (int) $margin_id > 0 ? (int) $margin_id : null,
+            'user_id' => (int) $actor_user_id > 0 ? (int) $actor_user_id : null,
+            'decision' => sanitize_key((string) $decision),
+            'reason' => sanitize_textarea_field((string) $reason),
+            'new_margin' => round((float) $new_margin, 2),
+            'created_at' => $now,
+        ], ['%d', '%d', '%d', '%s', '%s', '%f', '%s']);
+        if ($result === false) {
+            return 0;
+        }
+        return (int) $wpdb->insert_id;
+    }
+
+    private function update_booking_margin_status($booking_id, $status, $status_reason = '', $override_margin = null) {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1) {
+            return 0;
+        }
+        self::migrate_schema_v74_booking_margin_controls();
+        global $wpdb;
+
+        $table = $this->get_booking_margins_table();
+        $status = sanitize_key((string) $status);
+        if (!in_array($status, ['compliant', 'at_risk'], true)) {
+            $status = 'at_risk';
+        }
+        $now = current_time('mysql');
+        $update = [
+            'status' => $status,
+            'status_reason' => sanitize_text_field((string) $status_reason),
+            'updated_at' => $now,
+        ];
+        $format = ['%s', '%s', '%s'];
+        if ($override_margin !== null && $override_margin !== '') {
+            $update['override_margin_amount'] = round((float) $override_margin, 2);
+            $format[] = '%f';
+        }
+        $updated = $wpdb->update($table, $update, ['booking_id' => $booking_id], $format, ['%d']);
+        $this->get_booking_margin_service()->get_cached_margin($booking_id, true);
+        return (int) $updated;
+    }
+
+    private function update_booking_rate_override_state($booking_id, $override_flag = 0, $override_reason = '', $actor_user_id = 0) {
+        $booking_id = (int) $booking_id;
+        if ($booking_id < 1) {
+            return 0;
+        }
+
+        global $wpdb;
+        $table = $this->get_booking_rates_table();
+        $updated = $wpdb->update($table, [
+            'override_flag' => !empty($override_flag) ? 1 : 0,
+            'override_reason' => sanitize_textarea_field((string) $override_reason),
+            'updated_by' => (int) $actor_user_id > 0 ? (int) $actor_user_id : (get_current_user_id() ?: null),
+            'updated_at' => current_time('mysql'),
+        ], ['booking_id' => $booking_id], ['%d', '%s', '%d', '%s'], ['%d']);
+        return (int) $updated;
+    }
+
+    public function handle_margin_override_action() {
+        if (!is_user_logged_in()) {
+            wp_die('Unauthorized');
+        }
+        $actor_user_id = (int) get_current_user_id();
+        if (!$this->can_access_finance_reporting($actor_user_id)) {
+            wp_die('Unauthorized');
+        }
+
+        $default_redirect = add_query_arg(['view' => 'rate-guardrails'], $this->get_portal_base_url());
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? $default_redirect));
+        if ($redirect === '') {
+            $redirect = $default_redirect;
+        }
+        $build_redirect = function ($message) use ($redirect) {
+            return add_query_arg(['cmn_request_msg' => rawurlencode((string) $message)], $redirect);
+        };
+
+        $booking_id = isset($_POST['cmn_booking_id']) ? (int) $_POST['cmn_booking_id'] : 0;
+        $nonce = isset($_POST['cmn_margin_override_nonce']) ? (string) $_POST['cmn_margin_override_nonce'] : '';
+        if ($booking_id < 1 || $nonce === '' || !wp_verify_nonce($nonce, 'cmn_margin_override_' . $booking_id)) {
+            wp_safe_redirect($build_redirect('Invalid request. Please refresh and try again.'));
+            exit;
+        }
+
+        $decision = sanitize_key((string) ($_POST['cmn_override_decision'] ?? ''));
+        if (!in_array($decision, ['view', 'approve', 'reject'], true)) {
+            wp_safe_redirect($build_redirect('No override decision selected.'));
+            exit;
+        }
+
+        $margin_row = $this->get_booking_margin_row($booking_id);
+        if (empty($margin_row)) {
+            $rate_row = $this->get_booking_rate_row($booking_id);
+            if (!empty($rate_row)) {
+                $this->sync_booking_margin_for_booking(
+                    $booking_id,
+                    (int) ($rate_row['request_id'] ?? 0),
+                    (string) ($rate_row['role_key'] ?? 'default'),
+                    (string) ($rate_row['region_key'] ?? 'default'),
+                    (float) ($rate_row['school_charge_rate'] ?? 0),
+                    (float) ($rate_row['candidate_pay_rate'] ?? 0),
+                    !empty($rate_row['override_flag']) ? 1 : 0,
+                    'Auto backfill for override action'
+                );
+                $margin_row = $this->get_booking_margin_row($booking_id, true);
+            }
+        }
+
+        if ($decision === 'view') {
+            $view_url = add_query_arg([
+                'view' => 'requests',
+                'cmn_booking_chat' => $booking_id,
+                'cmn_thread_type' => 'booking_details',
+            ], $this->get_portal_base_url()) . '#cmn-request-chat';
+            $this->add_audit_log('booking_margin_override_viewed', 'booking', (string) $booking_id, [
+                'margin_id' => (int) ($margin_row['id'] ?? 0),
+                'source' => 'rate_guardrails',
+            ], $actor_user_id);
+            wp_safe_redirect($view_url);
+            exit;
+        }
+
+        $reason = sanitize_textarea_field((string) ($_POST['cmn_override_reason'] ?? ''));
+        if ($reason === '') {
+            wp_safe_redirect($build_redirect('Override reason is required.'));
+            exit;
+        }
+
+        $new_margin_raw = isset($_POST['cmn_override_new_margin']) ? trim((string) wp_unslash($_POST['cmn_override_new_margin'])) : '';
+        $fallback_margin = round((float) ($margin_row['margin_amount'] ?? 0), 2);
+        $new_margin = $new_margin_raw !== '' ? round((float) $new_margin_raw, 2) : $fallback_margin;
+        $decision_value = $decision === 'approve' ? 'approved' : 'rejected';
+        $exception_id = $this->insert_margin_exception(
+            $booking_id,
+            (int) ($margin_row['id'] ?? 0),
+            $actor_user_id,
+            $decision_value,
+            $reason,
+            $new_margin
+        );
+        if ($exception_id < 1) {
+            wp_safe_redirect($build_redirect('Unable to save override decision.'));
+            exit;
+        }
+
+        if ($decision === 'approve') {
+            $this->update_booking_margin_status($booking_id, 'compliant', 'override_approved', $new_margin);
+            $this->update_booking_rate_override_state($booking_id, 1, $reason, $actor_user_id);
+            $this->resolve_margin_alerts_for_booking($booking_id, 'override_approved');
+            $this->add_audit_log('booking_margin_override_approved', 'booking', (string) $booking_id, [
+                'margin_id' => (int) ($margin_row['id'] ?? 0),
+                'exception_id' => $exception_id,
+                'new_margin' => $new_margin,
+                'reason' => $reason,
+            ], $actor_user_id);
+            wp_safe_redirect($build_redirect('Override approved.'));
+            exit;
+        }
+
+        $this->update_booking_margin_status($booking_id, 'at_risk', 'override_rejected', $new_margin);
+        $this->update_booking_rate_override_state($booking_id, 0, $reason, $actor_user_id);
+        $latest_margin_row = $this->get_booking_margin_row($booking_id, true);
+        if (!empty($latest_margin_row)) {
+            $this->create_margin_alert_for_booking($booking_id, $latest_margin_row, 'override_rejected');
+        }
+        $this->add_audit_log('booking_margin_override_rejected', 'booking', (string) $booking_id, [
+            'margin_id' => (int) ($margin_row['id'] ?? 0),
+            'exception_id' => $exception_id,
+            'new_margin' => $new_margin,
+            'reason' => $reason,
+        ], $actor_user_id);
+
+        wp_safe_redirect($build_redirect('Override rejected.'));
+        exit;
     }
 
     private function get_request_rate_values($request, $candidate_id = 0, $school_id = 0) {
@@ -63574,9 +64607,10 @@ final class CMN_One_Plugin {
         $school_coords = $user_school_id ? $this->get_geo_coordinates_for_post($user_school_id) : null;
         $portal_page = get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
-        $school_requests_url = add_query_arg(['school' => 'requests'], $portal_url);
-        $school_cover_url = add_query_arg(['school' => 'cover'], $portal_url);
+        $school_requests_url = add_query_arg(['school' => 'bookings'], $portal_url);
+        $school_cover_url = add_query_arg(['school' => 'candidates'], $portal_url);
         $school_settings_url = add_query_arg(['school' => 'settings'], $portal_url);
+        $school_finance_url = add_query_arg(['school' => 'finance'], $portal_url);
         $school_support_url = add_query_arg(['school' => 'support'], $portal_url);
         $tab = isset($_GET['school']) ? sanitize_text_field($_GET['school']) : 'dashboard';
         $cmn_tab = isset($_GET['cmn_tab']) ? sanitize_key((string) wp_unslash($_GET['cmn_tab'])) : '';
@@ -63584,6 +64618,15 @@ final class CMN_One_Plugin {
             $tab = 'partner_savings';
         } elseif ($tab === 'partner-savings') {
             $tab = 'partner_savings';
+        }
+        if ($tab === 'requests') {
+            $tab = 'bookings';
+        }
+        if ($tab === 'cover') {
+            $tab = 'candidates';
+        }
+        if ($tab === 'invoices') {
+            $tab = 'finance';
         }
         $availability_candidates = $this->get_school_dashboard_available_candidates($user_school_id ?: 0, 24);
         $availability_debug_report = null;
@@ -63628,6 +64671,145 @@ final class CMN_One_Plugin {
         $priority_notice = isset($_GET['cmn_priority_notice']) ? sanitize_text_field(wp_unslash($_GET['cmn_priority_notice'])) : '';
         $priority_notice_type = sanitize_key((string) ($_GET['cmn_priority_notice_type'] ?? ''));
         $can_request = !$is_preview && $user_school_id && $school_status === 'client';
+        $today_ymd = current_time('Y-m-d');
+        $open_cover_requests_count = 0;
+        $active_bookings_count = 0;
+        $credits_balance = 0;
+        $recent_activity_items = [];
+        foreach ((array) $school_requests as $school_request_row) {
+            $request_status = sanitize_key((string) ($school_request_row['status'] ?? ''));
+            if (in_array($request_status, $active_request_statuses, true)) {
+                $open_cover_requests_count++;
+            }
+            $request_candidate_id = (int) ($school_request_row['candidate_id'] ?? 0);
+            $request_candidate = $request_candidate_id > 0 ? get_post($request_candidate_id) : null;
+            $request_candidate_name = $request_candidate ? (string) $request_candidate->post_title : 'Candidate';
+            $request_date_raw = (string) ($school_request_row['requested_date'] ?? '');
+            $request_date_label = $request_date_raw !== '' ? date_i18n('M j, Y', strtotime($request_date_raw)) : 'No date set';
+            $request_status_label = ucfirst(str_replace('_', ' ', $request_status !== '' ? $request_status : 'pending'));
+            $request_created = (string) ($school_request_row['created_at'] ?? '');
+            $request_timestamp = $request_created !== '' ? strtotime($request_created) : 0;
+            if ($request_timestamp < 1 && $request_date_raw !== '') {
+                $request_timestamp = strtotime($request_date_raw);
+            }
+            if ($request_timestamp < 1) {
+                $request_timestamp = current_time('timestamp');
+            }
+            $recent_activity_items[] = [
+                'ts' => (int) $request_timestamp,
+                'type' => 'Request',
+                'title' => sprintf('Cover request sent to %s', $request_candidate_name),
+                'meta' => trim($request_date_label . ' - ' . $request_status_label),
+            ];
+        }
+        foreach ((array) $school_bookings as $booking_post) {
+            if (!($booking_post instanceof WP_Post)) {
+                continue;
+            }
+            $booking_date_raw = (string) get_post_meta($booking_post->ID, 'cmn_date', true);
+            if ($booking_date_raw === '') {
+                $booking_date_raw = (string) get_post_meta($booking_post->ID, 'cmn_start_date', true);
+            }
+            if ($booking_date_raw !== '' && $booking_date_raw >= $today_ymd) {
+                $active_bookings_count++;
+            }
+            $booking_candidate_id = (int) get_post_meta($booking_post->ID, 'cmn_candidate_id', true);
+            $booking_candidate_post = $booking_candidate_id > 0 ? get_post($booking_candidate_id) : null;
+            $booking_candidate_name = $booking_candidate_post ? (string) $booking_candidate_post->post_title : 'Candidate';
+            $booking_start_time = trim((string) get_post_meta($booking_post->ID, 'cmn_start_time', true));
+            $booking_end_time = trim((string) get_post_meta($booking_post->ID, 'cmn_end_time', true));
+            $booking_time_range = '';
+            if ($booking_start_time !== '' && $booking_end_time !== '') {
+                $booking_time_range = $booking_start_time . ' - ' . $booking_end_time;
+            } elseif ($booking_start_time !== '') {
+                $booking_time_range = $booking_start_time;
+            }
+            $booking_date_label = $booking_date_raw !== '' ? date_i18n('M j, Y', strtotime($booking_date_raw)) : 'Date pending';
+            $booking_meta = $booking_time_range !== '' ? ($booking_date_label . ' - ' . $booking_time_range) : $booking_date_label;
+            $booking_timestamp = $booking_date_raw !== '' ? strtotime($booking_date_raw) : 0;
+            if ($booking_timestamp < 1) {
+                $booking_timestamp = strtotime((string) ($booking_post->post_date_gmt ?? '')) ?: strtotime((string) ($booking_post->post_date ?? ''));
+            }
+            if ($booking_timestamp < 1) {
+                $booking_timestamp = current_time('timestamp');
+            }
+            $recent_activity_items[] = [
+                'ts' => (int) $booking_timestamp,
+                'type' => 'Booking',
+                'title' => sprintf('Booking confirmed for %s', $booking_candidate_name),
+                'meta' => $booking_meta,
+            ];
+        }
+        usort($recent_activity_items, function ($left, $right) {
+            $left_ts = (int) ($left['ts'] ?? 0);
+            $right_ts = (int) ($right['ts'] ?? 0);
+            if ($left_ts === $right_ts) {
+                return 0;
+            }
+            return $left_ts > $right_ts ? -1 : 1;
+        });
+        $recent_activity_items = array_slice($recent_activity_items, 0, 6);
+        if ($user_school_id > 0) {
+            $partner_snapshot = $this->get_or_create_school_partner((int) $user_school_id);
+            if (!is_wp_error($partner_snapshot) && is_array($partner_snapshot)) {
+                $credits_balance = max(0, (int) ($partner_snapshot['lifetime_credits'] ?? 0));
+            }
+        }
+        $location_verified = trim((string) $school_postcode) !== '' && !empty($school_coords);
+        $school_status_label = $school_status_key !== '' ? ucfirst(str_replace('_', ' ', $school_status_key)) : 'Pending review';
+        $dashboard_status_badges = [
+            [
+                'label' => 'School status',
+                'value' => $school_is_active_status ? 'Live' : $school_status_label,
+                'tone' => $school_is_active_status ? 'ok' : 'warn',
+            ],
+            [
+                'label' => 'Location',
+                'value' => $location_verified ? 'Verified' : 'Verification needed',
+                'tone' => $location_verified ? 'ok' : 'warn',
+            ],
+            [
+                'label' => 'Request access',
+                'value' => $can_request ? 'Enabled' : 'Limited',
+                'tone' => $can_request ? 'ok' : 'info',
+            ],
+        ];
+        $dashboard_announcements = [];
+        if ($show_location_warning) {
+            $dashboard_announcements[] = [
+                'tone' => 'warn',
+                'title' => 'Location check required',
+                'message' => 'Add a valid postcode to improve matching accuracy for open requests.',
+            ];
+        }
+        if (!$can_request) {
+            $dashboard_announcements[] = [
+                'tone' => 'info',
+                'title' => 'Requesting is restricted',
+                'message' => 'Cover requests unlock once your school reaches client status.',
+            ];
+        }
+        if ($open_cover_requests_count > 0) {
+            $dashboard_announcements[] = [
+                'tone' => 'ok',
+                'title' => 'Open requests in progress',
+                'message' => sprintf('%d request(s) are currently active in the queue.', $open_cover_requests_count),
+            ];
+        }
+        if ($credits_balance > 0) {
+            $dashboard_announcements[] = [
+                'tone' => 'ok',
+                'title' => 'Credits available',
+                'message' => sprintf('You currently hold %d partner credit(s).', $credits_balance),
+            ];
+        }
+        if (!$dashboard_announcements) {
+            $dashboard_announcements[] = [
+                'tone' => 'info',
+                'title' => 'No new alerts',
+                'message' => 'Everything looks stable. Use Bookings to create new cover activity.',
+            ];
+        }
         $nav_items = [
             [
                 'key' => 'dashboard',
@@ -63635,9 +64817,9 @@ final class CMN_One_Plugin {
                 'args' => ['school' => 'dashboard', 'cmn_tab' => false],
             ],
             [
-                'key' => 'cover',
-                'label' => 'COVER ME NOW',
-                'args' => ['school' => 'cover', 'cmn_tab' => false],
+                'key' => 'candidates',
+                'label' => 'Candidates',
+                'args' => ['school' => 'candidates', 'cmn_tab' => false],
             ],
             [
                 'key' => 'calendar',
@@ -63645,14 +64827,14 @@ final class CMN_One_Plugin {
                 'args' => ['school' => 'calendar', 'cmn_tab' => false],
             ],
             [
-                'key' => 'requests',
-                'label' => 'Requests / Jobs',
-                'args' => ['school' => 'requests', 'cmn_tab' => false],
+                'key' => 'bookings',
+                'label' => 'Bookings',
+                'args' => ['school' => 'bookings', 'cmn_tab' => false],
             ],
             [
-                'key' => 'invoices',
-                'label' => 'Invoices',
-                'args' => ['school' => 'invoices', 'cmn_tab' => false],
+                'key' => 'finance',
+                'label' => 'Finance',
+                'args' => ['school' => 'finance', 'cmn_tab' => false],
             ],
             [
                 'key' => 'partner_savings',
@@ -63743,9 +64925,280 @@ final class CMN_One_Plugin {
                 <main class="cmn-school-main cmn-page cmn-page--school">
                     <div class="cmn-container cmn-ui-container">
                     <?php if ($tab === 'dashboard') : ?>
-                        <header class="cmn-school-header">
-                            <h2>Candidates Available This and Next Morning</h2>
-                            <p>Updated daily for <?php echo esc_html($availability_label); ?>.</p>
+                        <section class="cmn-school-dashboard-console">
+                            <header class="cmn-school-header cmn-school-dashboard-header">
+                                <div class="cmn-school-dashboard-header-main">
+                                    <h2>Dashboard</h2>
+                                    <p>Operational view of cover demand, active bookings and current partner credits.</p>
+                                </div>
+                                <ul class="cmn-school-dashboard-status" role="list">
+                                    <?php foreach ($dashboard_status_badges as $status_badge) : ?>
+                                        <?php
+                                        $status_label = (string) ($status_badge['label'] ?? '');
+                                        $status_value = (string) ($status_badge['value'] ?? '');
+                                        $status_tone = sanitize_html_class((string) ($status_badge['tone'] ?? 'info'));
+                                        ?>
+                                        <li class="cmn-school-dashboard-status-item is-<?php echo esc_attr($status_tone); ?>">
+                                            <span><?php echo esc_html($status_label); ?></span>
+                                            <strong><?php echo esc_html($status_value); ?></strong>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </header>
+                            <?php if (is_array($availability_debug_report)) : ?>
+                                <div class="cmn-dashboard-card">
+                                    <h3>Debug: Availability Filters</h3>
+                                    <pre style="max-height:280px;overflow:auto;background:rgba(8,11,17,0.76);border:1px solid rgba(255,255,255,0.12);padding:12px;border-radius:10px;"><?php echo esc_html(wp_json_encode($availability_debug_report, JSON_PRETTY_PRINT)); ?></pre>
+                                </div>
+                            <?php endif; ?>
+                            <div class="cmn-school-dashboard-metrics">
+                                <article class="cmn-dashboard-card cmn-school-metric-card">
+                                    <span class="cmn-school-metric-label">Upcoming Cover Requests</span>
+                                    <strong class="cmn-school-metric-value"><?php echo esc_html(number_format((float) $open_cover_requests_count, 0)); ?></strong>
+                                    <span class="cmn-school-metric-help">Requests currently in progress</span>
+                                </article>
+                                <article class="cmn-dashboard-card cmn-school-metric-card">
+                                    <span class="cmn-school-metric-label">Active Bookings</span>
+                                    <strong class="cmn-school-metric-value"><?php echo esc_html(number_format((float) $active_bookings_count, 0)); ?></strong>
+                                    <span class="cmn-school-metric-help">Approved bookings from today onward</span>
+                                </article>
+                                <article class="cmn-dashboard-card cmn-school-metric-card">
+                                    <span class="cmn-school-metric-label">Credits Balance</span>
+                                    <strong class="cmn-school-metric-value"><?php echo esc_html(number_format((float) $credits_balance, 0)); ?></strong>
+                                    <span class="cmn-school-metric-help">Partner credits on your account</span>
+                                </article>
+                            </div>
+                            <article class="cmn-dashboard-card cmn-school-dashboard-panel">
+                                <div class="cmn-card-header">
+                                    <h3>Recent Activity</h3>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_requests_url); ?>">Open Bookings</a>
+                                </div>
+                                <?php if ($recent_activity_items) : ?>
+                                    <ul class="cmn-school-activity-list" role="list">
+                                        <?php foreach ($recent_activity_items as $activity_item) : ?>
+                                            <?php
+                                            $activity_type = (string) ($activity_item['type'] ?? 'Activity');
+                                            $activity_title = (string) ($activity_item['title'] ?? '');
+                                            $activity_meta = (string) ($activity_item['meta'] ?? '');
+                                            ?>
+                                            <li class="cmn-school-activity-row">
+                                                <span class="cmn-school-activity-type"><?php echo esc_html($activity_type); ?></span>
+                                                <div class="cmn-school-activity-copy">
+                                                    <strong><?php echo esc_html($activity_title); ?></strong>
+                                                    <span><?php echo esc_html($activity_meta); ?></span>
+                                                </div>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                <?php else : ?>
+                                    <div class="cmn-empty">No recent activity yet.</div>
+                                <?php endif; ?>
+                            </article>
+                            <article class="cmn-dashboard-card cmn-school-dashboard-panel">
+                                <div class="cmn-card-header">
+                                    <h3>Announcements</h3>
+                                </div>
+                                <ul class="cmn-school-announcements" role="list">
+                                    <?php foreach ($dashboard_announcements as $announcement_item) : ?>
+                                        <?php
+                                        $announcement_tone = sanitize_html_class((string) ($announcement_item['tone'] ?? 'info'));
+                                        $announcement_title = (string) ($announcement_item['title'] ?? 'Update');
+                                        $announcement_message = (string) ($announcement_item['message'] ?? '');
+                                        ?>
+                                        <li class="cmn-school-announcement is-<?php echo esc_attr($announcement_tone); ?>">
+                                            <strong><?php echo esc_html($announcement_title); ?></strong>
+                                            <p><?php echo esc_html($announcement_message); ?></p>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </article>
+                        </section>
+                    <?php elseif ($tab === 'candidates') : ?>
+                        <?php
+                        $candidate_subject_filter = sanitize_key((string) ($_GET['cmn_candidate_subject'] ?? 'all'));
+                        if ($candidate_subject_filter === '') {
+                            $candidate_subject_filter = 'all';
+                        }
+                        $candidate_experience_filter = sanitize_key((string) ($_GET['cmn_candidate_experience'] ?? 'all'));
+                        if (!in_array($candidate_experience_filter, ['all', 'junior', 'mid', 'senior'], true)) {
+                            $candidate_experience_filter = 'all';
+                        }
+                        $candidate_availability_filter = sanitize_key((string) ($_GET['cmn_candidate_availability'] ?? 'all'));
+                        if (!in_array($candidate_availability_filter, ['all', 'today', 'tomorrow'], true)) {
+                            $candidate_availability_filter = 'all';
+                        }
+                        $candidate_search_filter = sanitize_text_field((string) ($_GET['cmn_candidate_search'] ?? ''));
+                        $candidate_search_needle = function_exists('mb_strtolower') ? mb_strtolower($candidate_search_filter) : strtolower($candidate_search_filter);
+
+                        $school_candidates_clear_url = add_query_arg(['school' => 'candidates', 'cmn_tab' => false], $portal_url);
+                        $get_candidate_years_experience = static function ($candidate_id) {
+                            $candidate_id = (int) $candidate_id;
+                            foreach (['cmn_years_experience', 'years_experience', 'cmn_experience_years'] as $experience_key) {
+                                $raw_value = get_post_meta($candidate_id, $experience_key, true);
+                                if ($raw_value === '' || $raw_value === null) {
+                                    continue;
+                                }
+                                if (is_numeric($raw_value)) {
+                                    return max(0, (int) round((float) $raw_value));
+                                }
+                                if (preg_match('/(-?\d+(?:\.\d+)?)/', (string) $raw_value, $experience_match) === 1) {
+                                    return max(0, (int) round((float) ($experience_match[1] ?? 0)));
+                                }
+                            }
+                            return 0;
+                        };
+                        $matches_experience_filter = static function ($years_experience, $experience_filter) {
+                            $years_experience = max(0, (int) $years_experience);
+                            if ($experience_filter === 'junior') {
+                                return $years_experience <= 2;
+                            }
+                            if ($experience_filter === 'mid') {
+                                return $years_experience >= 3 && $years_experience <= 5;
+                            }
+                            if ($experience_filter === 'senior') {
+                                return $years_experience >= 6;
+                            }
+                            return true;
+                        };
+
+                        $candidate_subject_options = ['all' => 'All subjects'];
+                        $candidate_rows = [];
+                        foreach ((array) $availability_candidates as $candidate_item) {
+                            $candidate_post = $candidate_item['post'] ?? null;
+                            if (!($candidate_post instanceof WP_Post)) {
+                                continue;
+                            }
+                            $candidate_id = (int) $candidate_post->ID;
+                            if ($candidate_id < 1) {
+                                continue;
+                            }
+                            $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+                            if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                                continue;
+                            }
+                            $role_labels = $this->get_candidate_role_labels($candidate_id);
+                            $role_labels = array_values(array_filter(array_map('sanitize_text_field', (array) $role_labels)));
+                            if (!$role_labels) {
+                                $role_labels = ['General Cover'];
+                            }
+                            foreach ($role_labels as $role_label_option) {
+                                $role_key_option = sanitize_title((string) $role_label_option);
+                                if ($role_key_option === '') {
+                                    continue;
+                                }
+                                if (!isset($candidate_subject_options[$role_key_option])) {
+                                    $candidate_subject_options[$role_key_option] = (string) $role_label_option;
+                                }
+                            }
+                            $role_subject_keys = array_values(array_filter(array_map(static function ($role_label_value) {
+                                return sanitize_title((string) $role_label_value);
+                            }, $role_labels)));
+                            if ($candidate_subject_filter !== 'all' && !in_array($candidate_subject_filter, $role_subject_keys, true)) {
+                                continue;
+                            }
+
+                            $availability_label = sanitize_text_field((string) ($candidate_item['availability_label'] ?? 'Available Morning'));
+                            $availability_key = 'today';
+                            if (stripos($availability_label, 'tomorrow') !== false) {
+                                $availability_key = 'tomorrow';
+                            }
+                            if ($candidate_availability_filter !== 'all' && $candidate_availability_filter !== $availability_key) {
+                                continue;
+                            }
+
+                            $years_experience = $get_candidate_years_experience($candidate_id);
+                            if (!$matches_experience_filter($years_experience, $candidate_experience_filter)) {
+                                continue;
+                            }
+
+                            $candidate_name = sanitize_text_field((string) $candidate_post->post_title);
+                            $candidate_location = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_location', true));
+                            $search_haystack = implode(' ', [
+                                $candidate_name,
+                                $candidate_location,
+                                implode(' ', $role_labels),
+                                $availability_label,
+                            ]);
+                            $search_haystack = function_exists('mb_strtolower') ? mb_strtolower($search_haystack) : strtolower($search_haystack);
+                            if ($candidate_search_needle !== '' && strpos($search_haystack, $candidate_search_needle) === false) {
+                                continue;
+                            }
+
+                            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+                            $candidate_rating_payload = $this->get_candidate_average_rating_payload($candidate_user_id);
+                            $candidate_avg_rating = (float) ($candidate_rating_payload['avg_rating'] ?? 0);
+                            $candidate_feedback_count = max(0, (int) ($candidate_rating_payload['feedback_count'] ?? 0));
+                            $candidate_profile_url = $this->get_school_candidate_profile_url($candidate_id, get_current_user_id());
+                            $availability_date = sanitize_text_field((string) ($candidate_item['availability_date'] ?? ''));
+                            $existing_request_id = $can_request ? $this->get_school_candidate_request_id_for_date((int) $user_school_id, $candidate_id, $availability_date) : 0;
+                            $can_request_booking = $can_request && $availability_date !== '';
+                            $request_message = '';
+                            if (!$can_request) {
+                                $request_message = 'Requests are available to client schools.';
+                            } elseif ($availability_date === '') {
+                                $request_message = 'Availability date not set.';
+                            } elseif ($existing_request_id > 0) {
+                                $request_message = 'Request already sent.';
+                            }
+                            $candidate_rows[] = [
+                                'candidate_id' => $candidate_id,
+                                'name' => $candidate_name !== '' ? $candidate_name : ('Candidate #' . $candidate_id),
+                                'subject' => (string) ($role_labels[0] ?? 'General Cover'),
+                                'experience' => $years_experience > 0 ? ($years_experience . ' yrs') : 'Not set',
+                                'rating' => number_format($candidate_avg_rating, 1) . ' / 5 (' . $candidate_feedback_count . ')',
+                                'availability_label' => $availability_label,
+                                'availability_date' => $availability_date,
+                                'location' => $candidate_location,
+                                'profile_url' => (string) $candidate_profile_url,
+                                'can_request_booking' => $can_request_booking,
+                                'existing_request_id' => $existing_request_id,
+                                'request_message' => $request_message,
+                            ];
+                        }
+                        $dynamic_subject_options = $candidate_subject_options;
+                        unset($dynamic_subject_options['all']);
+                        if ($dynamic_subject_options) {
+                            natcasesort($dynamic_subject_options);
+                        }
+                        $candidate_subject_options = ['all' => 'All subjects'] + $dynamic_subject_options;
+                        ?>
+                        <header class="cmn-school-header cmn-school-candidates-header">
+                            <div class="cmn-school-candidates-header-main">
+                                <h2>Candidates</h2>
+                                <p>Browse available candidates, filter quickly, and request bookings in one compact queue.</p>
+                            </div>
+                            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-school-candidates-filters">
+                                <input type="hidden" name="school" value="candidates">
+                                <label>Subject
+                                    <select name="cmn_candidate_subject">
+                                        <?php foreach ($candidate_subject_options as $subject_key => $subject_label) : ?>
+                                            <option value="<?php echo esc_attr((string) $subject_key); ?>"<?php selected($candidate_subject_filter, (string) $subject_key); ?>><?php echo esc_html((string) $subject_label); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <label>Experience
+                                    <select name="cmn_candidate_experience">
+                                        <option value="all"<?php selected($candidate_experience_filter, 'all'); ?>>All experience</option>
+                                        <option value="junior"<?php selected($candidate_experience_filter, 'junior'); ?>>0-2 years</option>
+                                        <option value="mid"<?php selected($candidate_experience_filter, 'mid'); ?>>3-5 years</option>
+                                        <option value="senior"<?php selected($candidate_experience_filter, 'senior'); ?>>6+ years</option>
+                                    </select>
+                                </label>
+                                <label>Availability
+                                    <select name="cmn_candidate_availability">
+                                        <option value="all"<?php selected($candidate_availability_filter, 'all'); ?>>All availability</option>
+                                        <option value="today"<?php selected($candidate_availability_filter, 'today'); ?>>Today morning</option>
+                                        <option value="tomorrow"<?php selected($candidate_availability_filter, 'tomorrow'); ?>>Tomorrow morning</option>
+                                    </select>
+                                </label>
+                                <label class="cmn-school-candidates-search">Search
+                                    <input type="search" name="cmn_candidate_search" value="<?php echo esc_attr($candidate_search_filter); ?>" placeholder="Search by name, subject or location">
+                                </label>
+                                <div class="cmn-school-candidates-filter-actions">
+                                    <button class="cmn-primary" type="submit">Apply Filters</button>
+                                    <a class="cmn-ghost" href="<?php echo esc_url($school_candidates_clear_url); ?>">Clear</a>
+                                </div>
+                            </form>
                         </header>
                         <?php if (is_array($availability_debug_report)) : ?>
                             <div class="cmn-dashboard-card">
@@ -63753,255 +65206,69 @@ final class CMN_One_Plugin {
                                 <pre style="max-height:280px;overflow:auto;background:rgba(8,11,17,0.76);border:1px solid rgba(255,255,255,0.12);padding:12px;border-radius:10px;"><?php echo esc_html(wp_json_encode($availability_debug_report, JSON_PRETTY_PRINT)); ?></pre>
                             </div>
                         <?php endif; ?>
-                        <div class="cmn-available-list">
-                            <?php
-                            if ($availability_candidates) :
-                                foreach ($availability_candidates as $item) :
-                                    $candidate = $item['post'];
-                                    $candidate_status = get_post_meta($candidate->ID, 'cmn_status', true);
-                                    if ($candidate_status && $candidate_status !== 'approved') {
-                                        continue;
-                                    }
-                                    $role_labels = $this->get_candidate_role_labels($candidate->ID);
-                                    $role_label = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
-                                    $location = get_post_meta($candidate->ID, 'cmn_location', true);
-                                    $candidate_card_user_id = (int) $this->get_candidate_user_id($candidate->ID);
-                                    $candidate_rating = $this->get_candidate_average_rating_payload($candidate_card_user_id);
-                                    $name_parts = preg_split('/\\s+/', trim((string) $candidate->post_title));
-                                    $first_name = $name_parts ? $name_parts[0] : $candidate->post_title;
-                                    $profile_url = $this->get_school_candidate_profile_url($candidate->ID, get_current_user_id());
-                                    $role_rate_map = $this->get_candidate_role_rate_map($candidate->ID);
-                                    $availability_date = (string) ($item['availability_date'] ?? '');
-                                    $existing_request_id = $can_request ? $this->get_school_candidate_request_id_for_date((int) $user_school_id, (int) $candidate->ID, $availability_date) : 0;
-                                    $default_role_entry = $this->get_candidate_role_rate_entry($candidate->ID, $role_label);
-                            ?>
-                                    <div class="cmn-available-card">
-                                        <div class="cmn-available-header">
-                                            <strong><?php echo esc_html($first_name); ?></strong>
-                                            <span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($item['availability_label'] ?? 'Available Morning')); ?></span>
-                                        </div>
-                                        <span class="cmn-muted"><?php echo esc_html($role_label . ($location ? ' - ' . $location : '')); ?></span>
-                                        <span class="cmn-muted">
-                                            Rating: <?php echo esc_html(number_format((float) ($candidate_rating['avg_rating'] ?? 0), 1)); ?>/5
-                                            (<?php echo esc_html((string) ((int) ($candidate_rating['feedback_count'] ?? 0))); ?> reviews)
-                                        </span>
-                                        <?php if (!empty($profile_url)) : ?>
-                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url); ?>" target="_blank" rel="noopener noreferrer">View full profile</a>
-                                        <?php endif; ?>
-                                        <?php $default_school_charge = isset($default_role_entry['school_charge_rate']) ? (float) $default_role_entry['school_charge_rate'] : 0.0; ?>
-                                        <div class="cmn-role-rate-inline">
-                                            <label>Position
-                                                <select data-request-role-select>
-                                                    <?php foreach ($role_labels as $role_label_opt) : ?>
-                                                        <?php $role_key_opt = sanitize_title((string) $role_label_opt); ?>
-                                                        <?php $entry_opt = $role_rate_map[$role_key_opt] ?? ['school_charge_rate' => 0, 'candidate_pay_rate' => 0]; ?>
-                                                        <option value="<?php echo esc_attr((string) $role_label_opt); ?>" data-school-rate="<?php echo esc_attr(number_format((float) ($entry_opt['school_charge_rate'] ?? 0), 2, '.', '')); ?>" data-candidate-rate="<?php echo esc_attr(number_format((float) ($entry_opt['candidate_pay_rate'] ?? 0), 2, '.', '')); ?>"<?php selected((string) $role_label_opt, (string) $role_label); ?>><?php echo esc_html((string) $role_label_opt); ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </label>
-                                            <strong>School charge: <span data-request-school-rate>GBP <?php echo esc_html(number_format($default_school_charge, 2)); ?></span></strong>
-                                        </div>
-                                        <?php if ($can_request) : ?>
-                                            <label class="cmn-inline-ready-response">Auto-message
-                                                <select data-request-ready-response>
-                                                    <option value="">Default template</option>
-                                                    <option value="none">None</option>
-                                                    <?php foreach ($school_ready_responses as $ready_response) : ?>
-                                                        <option value="<?php echo esc_attr((int) ($ready_response['id'] ?? 0)); ?>"><?php echo esc_html((string) ($ready_response['title'] ?? 'Template')); ?><?php echo (int) ($ready_response['is_default'] ?? 0) === 1 ? ' (Default)' : ''; ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </label>
-                                            <button class="cmn-primary" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr($candidate->ID); ?>" data-request-date="<?php echo esc_attr($availability_date); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>><?php echo $existing_request_id > 0 ? 'Request sent' : 'Request This Candidate'; ?></button>
-                                            <div class="cmn-request-message" data-request-message><?php echo $existing_request_id > 0 ? 'Request already sent.' : ''; ?></div>
-                                        <?php else : ?>
-                                            <span class="cmn-muted">Requests are available to client schools.</span>
-                                        <?php endif; ?>
-                                    </div>
-                            <?php
-                                endforeach;
-                            else :
-                            ?>
-                                <?php
-                                $availability_empty_reason = 'No candidates have confirmed availability for ' . $availability_label . ' yet.';
-                                $availability_empty_action_label = 'Open support';
-                                $availability_empty_action_url = $school_support_url;
-                                echo $this->render_empty_explain_panel('No availability yet', $availability_empty_reason, $availability_empty_action_label, $availability_empty_action_url);
-                                ?>
-                            <?php endif; ?>
-                        </div>
-                        <div class="cmn-dashboard-row cmn-dashboard-row-equal">
-                            <div class="cmn-dashboard-card cmn-compliance-status">
-                                <div class="cmn-card-header">
-                                    <h3>My Requests</h3>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'requests'], $portal_url)); ?>">View all</a>
+                        <section class="cmn-dashboard-card cmn-school-candidates-card">
+                            <?php if ($candidate_rows) : ?>
+                                <div class="cmn-table-scroll">
+                                    <table class="cmn-approval-table cmn-school-candidates-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Subject</th>
+                                                <th>Experience</th>
+                                                <th>Rating</th>
+                                                <th>Availability</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($candidate_rows as $candidate_row) : ?>
+                                                <?php
+                                                $candidate_profile_url = (string) ($candidate_row['profile_url'] ?? '');
+                                                $existing_request_id = (int) ($candidate_row['existing_request_id'] ?? 0);
+                                                $request_enabled = !empty($candidate_row['can_request_booking']);
+                                                ?>
+                                                <tr>
+                                                    <td>
+                                                        <div class="cmn-school-candidates-name">
+                                                            <strong><?php echo esc_html((string) ($candidate_row['name'] ?? 'Candidate')); ?></strong>
+                                                            <?php if (!empty($candidate_row['location'])) : ?>
+                                                                <span><?php echo esc_html((string) $candidate_row['location']); ?></span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </td>
+                                                    <td><?php echo esc_html((string) ($candidate_row['subject'] ?? 'General Cover')); ?></td>
+                                                    <td><?php echo esc_html((string) ($candidate_row['experience'] ?? 'Not set')); ?></td>
+                                                    <td><span class="cmn-school-candidates-rating"><?php echo esc_html((string) ($candidate_row['rating'] ?? '0.0 / 5 (0)')); ?></span></td>
+                                                    <td><span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($candidate_row['availability_label'] ?? 'Available')); ?></span></td>
+                                                    <td class="cmn-school-candidates-actions-cell">
+                                                        <div class="cmn-school-candidates-actions">
+                                                            <?php if ($candidate_profile_url !== '') : ?>
+                                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View profile</a>
+                                                            <?php else : ?>
+                                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View profile</button>
+                                                            <?php endif; ?>
+                                                            <?php if ($request_enabled) : ?>
+                                                                <button class="cmn-primary cmn-btn-mini" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr((int) ($candidate_row['candidate_id'] ?? 0)); ?>" data-request-date="<?php echo esc_attr((string) ($candidate_row['availability_date'] ?? '')); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>>
+                                                                    <?php echo $existing_request_id > 0 ? 'Request sent' : 'Request booking'; ?>
+                                                                </button>
+                                                            <?php else : ?>
+                                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Request booking</button>
+                                                            <?php endif; ?>
+                                                            <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($candidate_row['request_message'] ?? '')); ?></span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
                                 </div>
-                                <?php if ($school_requests) : ?>
-                                    <div class="cmn-list">
-                                        <?php foreach (array_slice($school_requests, 0, 5) as $request) : ?>
-                                            <?php
-                                            $candidate = get_post((int) $request['candidate_id']);
-                                            if (!$candidate) {
-                                                continue;
-                                            }
-                                            $requested_date = $request['requested_date'] ?? '';
-                                            $requested_label = $requested_date ? date_i18n('M j, Y', strtotime($requested_date)) : 'Tomorrow';
-                                            $status_label = ucfirst($request['status'] ?? 'pending');
-                                            $status_class = 'cmn-pill--' . sanitize_html_class($request['status'] ?? 'pending');
-                                            ?>
-                                            <div class="cmn-list-item">
-                                                <strong><?php echo esc_html($candidate->post_title); ?></strong>
-                                                <span><?php echo esc_html($requested_label); ?> <span class="cmn-pill <?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span></span>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php else : ?>
-                                    <?php
-                                    echo $this->render_empty_explain_panel(
-                                        'No requests yet',
-                                        'You have not sent any candidate requests yet.',
-                                        'Browse availability',
-                                        $school_cover_url
-                                    );
-                                    ?>
-                                <?php endif; ?>
-                            </div>
-                            <div class="cmn-dashboard-card cmn-doc-upload-card">
-                                <div class="cmn-card-header">
-                                    <h3>Bookings</h3>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'requests'], $portal_url)); ?>">View all</a>
+                            <?php else : ?>
+                                <div class="cmn-school-candidates-empty">
+                                    <strong>No candidates found.</strong>
+                                    <p>Try adjusting subject, experience, availability or search filters.</p>
                                 </div>
-                                <?php if ($school_bookings) : ?>
-                                    <div class="cmn-list">
-                                        <?php foreach (array_slice($school_bookings, 0, 5) as $booking) : ?>
-                                            <?php
-                                            $booking_candidate_id = (int) get_post_meta($booking->ID, 'cmn_candidate_id', true);
-                                            $booking_date = get_post_meta($booking->ID, 'cmn_date', true) ?: get_post_meta($booking->ID, 'cmn_start_date', true);
-                                            $booking_start_time = (string) get_post_meta($booking->ID, 'cmn_start_time', true);
-                                            $booking_end_time = (string) get_post_meta($booking->ID, 'cmn_end_time', true);
-                                            $booking_candidate_pay_rate = (float) get_post_meta($booking->ID, 'cmn_candidate_pay_rate', true);
-                                            $booking_school_charge_rate = (float) get_post_meta($booking->ID, 'cmn_school_charge_rate', true);
-                                            $candidate_post = $booking_candidate_id ? get_post($booking_candidate_id) : null;
-                                            $candidate_name = $candidate_post ? $candidate_post->post_title : 'Candidate';
-                                            $name_bits = preg_split('/\\s+/', trim((string) $candidate_name));
-                                            $first = $name_bits ? $name_bits[0] : $candidate_name;
-                                            $initial = isset($name_bits[1]) ? strtoupper(substr($name_bits[1], 0, 1)) . '.' : '';
-                                            $display_name = trim($first . ' ' . $initial);
-                                            ?>
-                                            <div class="cmn-list-item">
-                                                <strong><?php echo esc_html($display_name); ?></strong>
-                                                <span><?php echo esc_html($booking_date ? date_i18n('M j, Y', strtotime($booking_date)) : ''); ?></span>
-                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline-form">
-                                                    <?php wp_nonce_field('cmn_school_rebook_candidate', 'cmn_school_rebook_nonce'); ?>
-                                                    <input type="hidden" name="action" value="cmn_school_rebook_candidate">
-                                                    <input type="hidden" name="candidate_id" value="<?php echo esc_attr($booking_candidate_id); ?>">
-                                                    <input type="hidden" name="school_charge_rate" value="<?php echo esc_attr($booking_school_charge_rate > 0 ? number_format($booking_school_charge_rate, 2, '.', '') : ''); ?>">
-                                                    <input type="hidden" name="start_time" value="<?php echo esc_attr($booking_start_time); ?>">
-                                                    <input type="hidden" name="end_time" value="<?php echo esc_attr($booking_end_time); ?>">
-                                                    <input type="date" name="requested_date" value="<?php echo esc_attr($this->get_tomorrow_date()); ?>" min="<?php echo esc_attr(current_time('Y-m-d')); ?>">
-                                                    <button class="cmn-ghost cmn-btn-mini" type="submit">Rebook this candidate</button>
-                                                </form>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php else : ?>
-                                    <?php
-                                    echo $this->render_empty_explain_panel(
-                                        'No bookings yet',
-                                        'No confirmed bookings are recorded for your school yet.',
-                                        'View requests',
-                                        $school_requests_url
-                                    );
-                                    ?>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    <?php elseif ($tab === 'cover') : ?>
-                        <header class="cmn-school-header">
-                            <h2>COVER ME NOW</h2>
-                        </header>
-                        <p>Candidates available for <?php echo esc_html($availability_label); ?>.</p>
-                        <?php if (is_array($availability_debug_report)) : ?>
-                            <div class="cmn-dashboard-card">
-                                <h3>Debug: Availability Filters</h3>
-                                <pre style="max-height:280px;overflow:auto;background:rgba(8,11,17,0.76);border:1px solid rgba(255,255,255,0.12);padding:12px;border-radius:10px;"><?php echo esc_html(wp_json_encode($availability_debug_report, JSON_PRETTY_PRINT)); ?></pre>
-                            </div>
-                        <?php endif; ?>
-                        <div class="cmn-available-list">
-                            <?php
-                            if ($availability_candidates) :
-                                foreach ($availability_candidates as $item) :
-                                    $candidate = $item['post'];
-                                    $candidate_status = get_post_meta($candidate->ID, 'cmn_status', true);
-                                    if ($candidate_status && $candidate_status !== 'approved') {
-                                        continue;
-                                    }
-                                    $role_labels = $this->get_candidate_role_labels($candidate->ID);
-                                    $role_label = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
-                                    $location = get_post_meta($candidate->ID, 'cmn_location', true);
-                                    $candidate_card_user_id = (int) $this->get_candidate_user_id($candidate->ID);
-                                    $candidate_rating = $this->get_candidate_average_rating_payload($candidate_card_user_id);
-                                    $name_parts = preg_split('/\\s+/', trim((string) $candidate->post_title));
-                                    $first_name = $name_parts ? $name_parts[0] : $candidate->post_title;
-                                    $profile_url = $this->get_school_candidate_profile_url($candidate->ID, get_current_user_id());
-                                    $role_rate_map = $this->get_candidate_role_rate_map($candidate->ID);
-                                    $availability_date = (string) ($item['availability_date'] ?? '');
-                                    $existing_request_id = $can_request ? $this->get_school_candidate_request_id_for_date((int) $user_school_id, (int) $candidate->ID, $availability_date) : 0;
-                                    $default_role_entry = $this->get_candidate_role_rate_entry($candidate->ID, $role_label);
-                            ?>
-                                    <div class="cmn-available-card">
-                                        <div class="cmn-available-header">
-                                            <strong><?php echo esc_html($first_name); ?></strong>
-                                            <span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($item['availability_label'] ?? 'Available Morning')); ?></span>
-                                        </div>
-                                        <span class="cmn-muted"><?php echo esc_html($role_label . ($location ? ' - ' . $location : '')); ?></span>
-                                        <span class="cmn-muted">
-                                            Rating: <?php echo esc_html(number_format((float) ($candidate_rating['avg_rating'] ?? 0), 1)); ?>/5
-                                            (<?php echo esc_html((string) ((int) ($candidate_rating['feedback_count'] ?? 0))); ?> reviews)
-                                        </span>
-                                        <?php if (!empty($profile_url)) : ?>
-                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url); ?>" target="_blank" rel="noopener noreferrer">View full profile</a>
-                                        <?php endif; ?>
-                                        <?php $default_school_charge = isset($default_role_entry['school_charge_rate']) ? (float) $default_role_entry['school_charge_rate'] : 0.0; ?>
-                                        <div class="cmn-role-rate-inline">
-                                            <label>Position
-                                                <select data-request-role-select>
-                                                    <?php foreach ($role_labels as $role_label_opt) : ?>
-                                                        <?php $role_key_opt = sanitize_title((string) $role_label_opt); ?>
-                                                        <?php $entry_opt = $role_rate_map[$role_key_opt] ?? ['school_charge_rate' => 0, 'candidate_pay_rate' => 0]; ?>
-                                                        <option value="<?php echo esc_attr((string) $role_label_opt); ?>" data-school-rate="<?php echo esc_attr(number_format((float) ($entry_opt['school_charge_rate'] ?? 0), 2, '.', '')); ?>" data-candidate-rate="<?php echo esc_attr(number_format((float) ($entry_opt['candidate_pay_rate'] ?? 0), 2, '.', '')); ?>"<?php selected((string) $role_label_opt, (string) $role_label); ?>><?php echo esc_html((string) $role_label_opt); ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </label>
-                                            <strong>School charge: <span data-request-school-rate>GBP <?php echo esc_html(number_format($default_school_charge, 2)); ?></span></strong>
-                                        </div>
-                                        <?php if ($can_request) : ?>
-                                            <label class="cmn-inline-ready-response">Auto-message
-                                                <select data-request-ready-response>
-                                                    <option value="">Default template</option>
-                                                    <option value="none">None</option>
-                                                    <?php foreach ($school_ready_responses as $ready_response) : ?>
-                                                        <option value="<?php echo esc_attr((int) ($ready_response['id'] ?? 0)); ?>"><?php echo esc_html((string) ($ready_response['title'] ?? 'Template')); ?><?php echo (int) ($ready_response['is_default'] ?? 0) === 1 ? ' (Default)' : ''; ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </label>
-                                            <button class="cmn-primary" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr($candidate->ID); ?>" data-request-date="<?php echo esc_attr($availability_date); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>><?php echo $existing_request_id > 0 ? 'Request sent' : 'Request This Candidate'; ?></button>
-                                            <div class="cmn-request-message" data-request-message><?php echo $existing_request_id > 0 ? 'Request already sent.' : ''; ?></div>
-                                        <?php else : ?>
-                                            <span class="cmn-muted">Requests are available to client schools.</span>
-                                        <?php endif; ?>
-                                    </div>
-                            <?php
-                                endforeach;
-                            else :
-                            ?>
-                                <?php
-                                $availability_empty_reason = 'No candidates have confirmed availability for ' . $availability_label . ' yet.';
-                                $availability_empty_action_label = 'Open support';
-                                $availability_empty_action_url = $school_support_url;
-                                echo $this->render_empty_explain_panel('No availability yet', $availability_empty_reason, $availability_empty_action_label, $availability_empty_action_url);
-                                ?>
                             <?php endif; ?>
-                        </div>
+                        </section>
                     <?php elseif ($tab === 'calendar') : ?>
                         <header class="cmn-school-header">
                             <h2>Calendar</h2>
@@ -64035,54 +65302,325 @@ final class CMN_One_Plugin {
                                 <button class="cmn-primary">Add Cover Need</button>
                             </div>
                         </div>
-                    <?php elseif ($tab === 'requests') : ?>
-                        <header class="cmn-school-header">
-                            <h2>Requests / Jobs</h2>
+                    <?php elseif ($tab === 'bookings') : ?>
+                        <?php
+                        $booking_status_options = [
+                            'all' => 'All statuses',
+                            'requested' => 'Requested',
+                            'tentative' => 'Tentative',
+                            'accepted' => 'Accepted',
+                            'confirmed' => 'Confirmed',
+                            'approved' => 'Approved',
+                            'completed' => 'Completed',
+                            'declined' => 'Declined',
+                            'cancelled' => 'Cancelled',
+                            'expired' => 'Expired',
+                        ];
+                        $booking_status_filter = sanitize_key((string) ($_GET['cmn_booking_status'] ?? 'all'));
+                        if (!isset($booking_status_options[$booking_status_filter])) {
+                            $booking_status_filter = 'all';
+                        }
+                        $normalize_filter_date = static function ($raw_date) {
+                            $raw_date = sanitize_text_field((string) $raw_date);
+                            return preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw_date) ? $raw_date : '';
+                        };
+                        $booking_date_from = $normalize_filter_date($_GET['cmn_booking_from'] ?? '');
+                        $booking_date_to = $normalize_filter_date($_GET['cmn_booking_to'] ?? '');
+                        $active_bookings_tab = sanitize_key((string) ($_GET['cmn_school_bookings_tab'] ?? 'requests'));
+                        if (!in_array($active_bookings_tab, ['requests', 'upcoming', 'past'], true)) {
+                            $active_bookings_tab = 'requests';
+                        }
+                        $matches_booking_filters = static function ($row_status, $row_date) use ($booking_status_filter, $booking_date_from, $booking_date_to) {
+                            $row_status = sanitize_key((string) $row_status);
+                            $row_date = sanitize_text_field((string) $row_date);
+                            if ($booking_status_filter !== 'all' && $row_status !== $booking_status_filter) {
+                                return false;
+                            }
+                            if ($booking_date_from !== '' && ($row_date === '' || $row_date < $booking_date_from)) {
+                                return false;
+                            }
+                            if ($booking_date_to !== '' && ($row_date === '' || $row_date > $booking_date_to)) {
+                                return false;
+                            }
+                            return true;
+                        };
+                        $build_school_bookings_url = static function ($overrides = []) use ($portal_url, $active_bookings_tab, $booking_status_filter, $booking_date_from, $booking_date_to) {
+                            $args = [
+                                'school' => 'bookings',
+                            ];
+                            if ($active_bookings_tab !== 'requests') {
+                                $args['cmn_school_bookings_tab'] = $active_bookings_tab;
+                            }
+                            if ($booking_status_filter !== 'all') {
+                                $args['cmn_booking_status'] = $booking_status_filter;
+                            }
+                            if ($booking_date_from !== '') {
+                                $args['cmn_booking_from'] = $booking_date_from;
+                            }
+                            if ($booking_date_to !== '') {
+                                $args['cmn_booking_to'] = $booking_date_to;
+                            }
+                            foreach ((array) $overrides as $key => $value) {
+                                if ($value === null || $value === false || $value === '') {
+                                    unset($args[$key]);
+                                    continue;
+                                }
+                                $args[$key] = $value;
+                            }
+                            return add_query_arg($args, $portal_url);
+                        };
+                        $bookings_clear_url = add_query_arg(['school' => 'bookings', 'cmn_tab' => false], $portal_url);
+
+                        $request_rows = [];
+                        foreach ((array) $school_requests as $request_row) {
+                            $request_id = (int) ($request_row['id'] ?? 0);
+                            if ($request_id < 1) {
+                                continue;
+                            }
+                            $request_candidate_id = (int) ($request_row['candidate_id'] ?? 0);
+                            $request_candidate_post = $request_candidate_id > 0 ? get_post($request_candidate_id) : null;
+                            $request_candidate_name = $request_candidate_post ? (string) $request_candidate_post->post_title : 'Candidate';
+                            $request_date_raw = sanitize_text_field((string) ($request_row['requested_date'] ?? ''));
+                            $request_status_key = sanitize_key((string) ($request_row['status'] ?? 'requested'));
+                            if ($request_status_key === '') {
+                                $request_status_key = 'requested';
+                            }
+                            if (!$matches_booking_filters($request_status_key, $request_date_raw)) {
+                                continue;
+                            }
+                            $request_status_label = ucfirst(str_replace('_', ' ', $request_status_key));
+                            $request_charge_rate = isset($request_row['school_charge_rate']) ? (float) $request_row['school_charge_rate'] : 0.0;
+                            $request_created_raw = (string) ($request_row['requested_at'] ?? '');
+                            if ($request_created_raw === '') {
+                                $request_created_raw = (string) ($request_row['created_at'] ?? '');
+                            }
+                            $request_created_label = $request_created_raw !== '' && strtotime($request_created_raw)
+                                ? date_i18n('j M Y g:ia', strtotime($request_created_raw))
+                                : 'Not logged';
+                            $request_booking_id = $this->get_booking_id_for_request($request_id);
+                            $request_candidate_profile_url = $this->get_school_candidate_profile_url($request_candidate_id, get_current_user_id());
+                            $request_view_url = $request_booking_id > 0
+                                ? $build_school_bookings_url([
+                                    'cmn_school_bookings_tab' => 'requests',
+                                    'cmn_booking_chat' => $request_booking_id,
+                                    'cmn_thread_type' => 'booking_details',
+                                ])
+                                : ($request_candidate_profile_url ?: $school_cover_url);
+                            $request_rows[] = [
+                                'candidate' => $request_candidate_name,
+                                'date_raw' => $request_date_raw,
+                                'date_label' => $request_date_raw !== '' && strtotime($request_date_raw) ? date_i18n('j M Y', strtotime($request_date_raw)) : 'Date pending',
+                                'status_key' => $request_status_key,
+                                'status_label' => $request_status_label,
+                                'charge_rate' => $request_charge_rate,
+                                'updated_label' => $request_created_label,
+                                'view_url' => $request_view_url,
+                                'edit_url' => add_query_arg([
+                                    'school' => 'candidates',
+                                    'cmn_edit_request_id' => $request_id,
+                                ], $portal_url),
+                                'cancel_url' => add_query_arg([
+                                    'school' => 'support',
+                                    'cmn_support_context' => 'cancel_request',
+                                    'cmn_request_id' => $request_id,
+                                ], $portal_url),
+                            ];
+                        }
+
+                        $upcoming_rows = [];
+                        $past_rows = [];
+                        foreach ((array) $school_bookings as $booking_post) {
+                            if (!($booking_post instanceof WP_Post)) {
+                                continue;
+                            }
+                            $booking_id = (int) $booking_post->ID;
+                            $booking_date_raw = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_date', true));
+                            if ($booking_date_raw === '') {
+                                $booking_date_raw = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_start_date', true));
+                            }
+                            $booking_status_key = sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
+                            if ($booking_status_key === '') {
+                                $booking_status_key = 'approved';
+                            }
+                            if (!$matches_booking_filters($booking_status_key, $booking_date_raw)) {
+                                continue;
+                            }
+                            $booking_status_label = ucfirst(str_replace('_', ' ', $booking_status_key));
+                            $booking_role = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_role', true));
+                            $booking_candidate_name = 'Candidate';
+                            $booking_candidate_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+                            if ($booking_candidate_id > 0) {
+                                $booking_candidate_post = get_post($booking_candidate_id);
+                                if ($booking_candidate_post) {
+                                    $booking_candidate_name = (string) $booking_candidate_post->post_title;
+                                }
+                            }
+                            $booking_start_time = trim((string) get_post_meta($booking_id, 'cmn_start_time', true));
+                            $booking_end_time = trim((string) get_post_meta($booking_id, 'cmn_end_time', true));
+                            $booking_time_label = 'Time pending';
+                            if ($booking_start_time !== '' && $booking_end_time !== '') {
+                                $booking_time_label = $booking_start_time . ' - ' . $booking_end_time;
+                            } elseif ($booking_start_time !== '') {
+                                $booking_time_label = $booking_start_time;
+                            }
+                            $booking_row = [
+                                'date_raw' => $booking_date_raw,
+                                'date_label' => $booking_date_raw !== '' && strtotime($booking_date_raw) ? date_i18n('j M Y', strtotime($booking_date_raw)) : 'Date pending',
+                                'candidate' => $booking_candidate_name,
+                                'role' => $booking_role !== '' ? $booking_role : 'Cover booking',
+                                'status_key' => $booking_status_key,
+                                'status_label' => $booking_status_label,
+                                'time_label' => $booking_time_label,
+                                'view_url' => $build_school_bookings_url([
+                                    'cmn_booking_chat' => $booking_id,
+                                    'cmn_thread_type' => 'booking_details',
+                                ]),
+                                'edit_url' => $build_school_bookings_url([
+                                    'cmn_booking_chat' => $booking_id,
+                                    'cmn_thread_type' => 'school_coordination',
+                                ]),
+                                'cancel_url' => add_query_arg([
+                                    'school' => 'support',
+                                    'cmn_support_context' => 'cancel_booking',
+                                    'cmn_booking_id' => $booking_id,
+                                ], $portal_url),
+                            ];
+                            if ($booking_date_raw !== '' && $booking_date_raw < $today_ymd) {
+                                $past_rows[] = $booking_row;
+                            } else {
+                                $upcoming_rows[] = $booking_row;
+                            }
+                        }
+                        usort($upcoming_rows, static function ($left, $right) {
+                            return strcmp((string) ($left['date_raw'] ?? ''), (string) ($right['date_raw'] ?? ''));
+                        });
+                        usort($past_rows, static function ($left, $right) {
+                            return strcmp((string) ($right['date_raw'] ?? ''), (string) ($left['date_raw'] ?? ''));
+                        });
+
+                        $active_table_rows = $active_bookings_tab === 'upcoming'
+                            ? $upcoming_rows
+                            : ($active_bookings_tab === 'past' ? $past_rows : $request_rows);
+                        ?>
+                        <header class="cmn-school-header cmn-school-bookings-header">
+                            <div class="cmn-school-bookings-header-top">
+                                <div>
+                                    <h2>Bookings</h2>
+                                    <p>Manage requests, upcoming placements, and past bookings in one operational view.</p>
+                                </div>
+                                <a class="cmn-primary" href="<?php echo esc_url($school_cover_url); ?>">Add Request</a>
+                            </div>
+                            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-school-bookings-filters">
+                                <input type="hidden" name="school" value="bookings">
+                                <input type="hidden" name="cmn_school_bookings_tab" value="<?php echo esc_attr($active_bookings_tab); ?>">
+                                <label>Status
+                                    <select name="cmn_booking_status">
+                                        <?php foreach ($booking_status_options as $status_key => $status_label) : ?>
+                                            <option value="<?php echo esc_attr($status_key); ?>"<?php selected($booking_status_filter, $status_key); ?>><?php echo esc_html($status_label); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <label>Date From
+                                    <input type="date" name="cmn_booking_from" value="<?php echo esc_attr($booking_date_from); ?>">
+                                </label>
+                                <label>Date To
+                                    <input type="date" name="cmn_booking_to" value="<?php echo esc_attr($booking_date_to); ?>">
+                                </label>
+                                <div class="cmn-school-bookings-filter-actions">
+                                    <button class="cmn-primary" type="submit">Apply Filters</button>
+                                    <a class="cmn-ghost" href="<?php echo esc_url($bookings_clear_url); ?>">Clear</a>
+                                </div>
+                            </form>
                         </header>
-                        <div class="cmn-dashboard-card">
-                            <h3>Requests Sent</h3>
-                            <?php if ($school_requests) : ?>
-                                <div class="cmn-list">
-                                    <?php foreach ($school_requests as $request) : ?>
-                                        <?php
-                                        $candidate = get_post((int) $request['candidate_id']);
-                                        if (!$candidate) {
-                                            continue;
-                                        }
-                                        $requested_date = $request['requested_date'] ?? '';
-                                        $requested_label = $requested_date ? date_i18n('M j, Y', strtotime($requested_date)) : 'Tomorrow';
-                                        $charge_rate = isset($request['school_charge_rate']) ? (float) $request['school_charge_rate'] : 0.0;
-                                        $request_status = strtolower((string) ($request['status'] ?? 'requested'));
-                                        $request_booking_id = $this->get_booking_id_for_request((int) ($request['id'] ?? 0));
-                                        $is_completed_booking = $request_booking_id ? $this->is_school_candidate_feedback_eligible($request_booking_id) : false;
-                                        $school_feedback_submitted = $is_completed_booking ? $this->school_has_submitted_candidate_feedback($request_booking_id, get_current_user_id()) : false;
-                                        ?>
-                                        <div class="cmn-list-item">
-                                            <strong><?php echo esc_html($candidate->post_title); ?></strong>
-                                            <span><?php echo esc_html($requested_label . ' - ' . ucfirst($request_status)); ?> - Charge GBP <?php echo esc_html(number_format($charge_rate, 2)); ?></span>
-                                            <?php if ($request_booking_id && in_array($request_status, ['accepted', 'confirmed', 'tentative'], true)) : ?>
-                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => 'booking_details'], $portal_url)); ?>">Open booking chat</a>
-                                            <?php endif; ?>
-                                            <?php if ($is_completed_booking && !$school_feedback_submitted) : ?>
-                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => 'booking_details', 'cmn_feedback_prompt' => '1'], $portal_url)); ?>">Rate Candidate</a>
-                                                <span class="cmn-status-chip is-pending">Feedback pending</span>
-                                            <?php elseif ($school_feedback_submitted) : ?>
-                                                <span class="cmn-status-chip is-approved">Feedback submitted</span>
-                                            <?php endif; ?>
-                                        </div>
-                                    <?php endforeach; ?>
+                        <section class="cmn-dashboard-card cmn-school-bookings-card">
+                            <div class="cmn-booking-tabs">
+                                <a class="cmn-booking-tab<?php echo $active_bookings_tab === 'requests' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_bookings_url(['cmn_school_bookings_tab' => 'requests', 'cmn_booking_chat' => null, 'cmn_thread_type' => null])); ?>">
+                                    Requests <span class="cmn-school-bookings-tab-count">(<?php echo esc_html((string) count($request_rows)); ?>)</span>
+                                </a>
+                                <a class="cmn-booking-tab<?php echo $active_bookings_tab === 'upcoming' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_bookings_url(['cmn_school_bookings_tab' => 'upcoming', 'cmn_booking_chat' => null, 'cmn_thread_type' => null])); ?>">
+                                    Upcoming <span class="cmn-school-bookings-tab-count">(<?php echo esc_html((string) count($upcoming_rows)); ?>)</span>
+                                </a>
+                                <a class="cmn-booking-tab<?php echo $active_bookings_tab === 'past' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_bookings_url(['cmn_school_bookings_tab' => 'past', 'cmn_booking_chat' => null, 'cmn_thread_type' => null])); ?>">
+                                    Past <span class="cmn-school-bookings-tab-count">(<?php echo esc_html((string) count($past_rows)); ?>)</span>
+                                </a>
+                            </div>
+                            <?php if ($active_table_rows) : ?>
+                                <div class="cmn-table-scroll">
+                                    <?php if ($active_bookings_tab === 'requests') : ?>
+                                        <table class="cmn-approval-table cmn-school-bookings-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Candidate</th>
+                                                    <th>Requested Date</th>
+                                                    <th>Status</th>
+                                                    <th>Charge</th>
+                                                    <th>Updated</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($active_table_rows as $request_row) : ?>
+                                                    <tr>
+                                                        <td><?php echo esc_html((string) ($request_row['candidate'] ?? 'Candidate')); ?></td>
+                                                        <td><?php echo esc_html((string) ($request_row['date_label'] ?? 'Date pending')); ?></td>
+                                                        <td><span class="cmn-pill cmn-pill--<?php echo esc_attr((string) ($request_row['status_key'] ?? 'requested')); ?>"><?php echo esc_html((string) ($request_row['status_label'] ?? 'Requested')); ?></span></td>
+                                                        <td>GBP <?php echo esc_html(number_format((float) ($request_row['charge_rate'] ?? 0), 2)); ?></td>
+                                                        <td><?php echo esc_html((string) ($request_row['updated_label'] ?? '')); ?></td>
+                                                        <td class="cmn-school-bookings-actions">
+                                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($request_row['edit_url'] ?? $school_cover_url)); ?>">Edit</a>
+                                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($request_row['cancel_url'] ?? $school_support_url)); ?>">Cancel</a>
+                                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($request_row['view_url'] ?? $school_cover_url)); ?>">View details</a>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    <?php else : ?>
+                                        <table class="cmn-approval-table cmn-school-bookings-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Date</th>
+                                                    <th>Candidate</th>
+                                                    <th>Role</th>
+                                                    <th>Status</th>
+                                                    <th>Time</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($active_table_rows as $booking_row) : ?>
+                                                    <tr>
+                                                        <td><?php echo esc_html((string) ($booking_row['date_label'] ?? 'Date pending')); ?></td>
+                                                        <td><?php echo esc_html((string) ($booking_row['candidate'] ?? 'Candidate')); ?></td>
+                                                        <td><?php echo esc_html((string) ($booking_row['role'] ?? 'Cover booking')); ?></td>
+                                                        <td><span class="cmn-pill cmn-pill--<?php echo esc_attr((string) ($booking_row['status_key'] ?? 'approved')); ?>"><?php echo esc_html((string) ($booking_row['status_label'] ?? 'Approved')); ?></span></td>
+                                                        <td><?php echo esc_html((string) ($booking_row['time_label'] ?? 'Time pending')); ?></td>
+                                                        <td class="cmn-school-bookings-actions">
+                                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($booking_row['edit_url'] ?? $school_support_url)); ?>">Edit</a>
+                                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($booking_row['cancel_url'] ?? $school_support_url)); ?>">Cancel</a>
+                                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($booking_row['view_url'] ?? $school_support_url)); ?>">View details</a>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    <?php endif; ?>
                                 </div>
                             <?php else : ?>
-                                <?php
-                                echo $this->render_empty_explain_panel(
-                                    'No requests sent yet',
-                                    'No candidate requests have been sent yet.',
-                                    'Browse availability',
-                                    $school_cover_url
-                                );
-                                ?>
+                                <div class="cmn-school-bookings-empty">
+                                    <?php if ($active_bookings_tab === 'requests') : ?>
+                                        <strong>No requests found.</strong>
+                                        <p>No booking requests match your current filters.</p>
+                                    <?php elseif ($active_bookings_tab === 'upcoming') : ?>
+                                        <strong>No upcoming bookings.</strong>
+                                        <p>There are no upcoming placements within the selected range.</p>
+                                    <?php else : ?>
+                                        <strong>No past bookings.</strong>
+                                        <p>Past booking records will appear here once completed.</p>
+                                    <?php endif; ?>
+                                </div>
                             <?php endif; ?>
-                        </div>
+                        </section>
                         <?php
                         $school_chat_booking_id = isset($_GET['cmn_booking_chat']) ? (int) $_GET['cmn_booking_chat'] : 0;
                         $school_chat_thread_type = sanitize_key((string) ($_GET['cmn_thread_type'] ?? 'booking_details'));
@@ -64205,262 +65743,331 @@ final class CMN_One_Plugin {
                             endif;
                         endif;
                         ?>
-                    <?php elseif ($tab === 'invoices') : ?>
+                    <?php elseif ($tab === 'finance') : ?>
                         <?php
-                        $school_invoice_status_raw = isset($_GET['cmn_school_invoice_status'])
-                            ? sanitize_key(wp_unslash((string) $_GET['cmn_school_invoice_status']))
-                            : '';
-                        if ($school_invoice_status_raw === 'all') {
-                            $school_invoice_status_raw = '';
-                        }
-                        $school_invoice_status = in_array($school_invoice_status_raw, $this->get_allowed_invoice_statuses(), true)
-                            ? $school_invoice_status_raw
-                            : '';
-                        $school_invoice_month = isset($_GET['cmn_school_invoice_month'])
-                            ? sanitize_text_field(wp_unslash((string) $_GET['cmn_school_invoice_month']))
-                            : current_time('Y-m');
-                        if (!preg_match('/^\d{4}-\d{2}$/', $school_invoice_month)) {
-                            $school_invoice_month = current_time('Y-m');
-                        }
-                        $school_invoice_page = max(1, (int) ($_GET['cmn_school_invoice_page'] ?? 1));
-                        $school_invoice_id = max(0, (int) ($_GET['cmn_school_invoice_id'] ?? 0));
-                        $school_invoice_base_url = add_query_arg(['school' => 'invoices'], $portal_url);
-                        $school_invoice_payload = $this->get_school_invoice_list_results((int) $user_school_id, [
-                            'status' => $school_invoice_status,
-                            'month' => $school_invoice_month,
-                            'page' => $school_invoice_page,
-                            'per_page' => 12,
-                        ]);
-                        $school_invoice_rows = (array) ($school_invoice_payload['rows'] ?? []);
-                        $school_invoice_total_rows = (int) ($school_invoice_payload['total_rows'] ?? 0);
-                        $school_invoice_total_pages = (int) ($school_invoice_payload['total_pages'] ?? 1);
-                        $school_invoice_page = (int) ($school_invoice_payload['page'] ?? $school_invoice_page);
-                        $selected_school_invoice = [];
-                        $selected_school_invoice_items = [];
-                        $selected_school_invoice_adjustments = [];
-                        $school_invoice_view_error = '';
-                        if ($school_invoice_id > 0) {
-                            $selected_school_invoice = $this->get_invoice_by_id($school_invoice_id);
-                            if (!$selected_school_invoice) {
-                                $school_invoice_view_error = 'Invoice not found.';
-                            } elseif ((int) ($selected_school_invoice['school_id'] ?? 0) !== (int) $user_school_id) {
-                                $school_invoice_view_error = 'Not authorised to view this invoice.';
-                                $selected_school_invoice = [];
-                            } else {
-                                $selected_school_invoice_items = $this->get_invoice_items($school_invoice_id);
-                                $selected_school_invoice_adjustments = $this->get_invoice_adjustments($school_invoice_id);
+                        $normalize_school_finance_date = static function ($raw_value, $fallback = '') {
+                            $raw_value = sanitize_text_field((string) $raw_value);
+                            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw_value)) {
+                                return $raw_value;
                             }
+                            return $fallback;
+                        };
+                        $finance_date_from = $normalize_school_finance_date($_GET['cmn_school_finance_from'] ?? '', current_time('Y-m-01'));
+                        $finance_date_to = $normalize_school_finance_date($_GET['cmn_school_finance_to'] ?? '', current_time('Y-m-d'));
+                        if ($finance_date_from !== '' && $finance_date_to !== '' && $finance_date_from > $finance_date_to) {
+                            $finance_swap = $finance_date_from;
+                            $finance_date_from = $finance_date_to;
+                            $finance_date_to = $finance_swap;
                         }
-                        $school_invoice_month_label = date_i18n('F Y', strtotime($school_invoice_month . '-01'));
-                        $build_school_invoice_url = function ($overrides = []) use ($school_invoice_base_url, $school_invoice_status, $school_invoice_month, $school_invoice_page, $school_invoice_id) {
+                        $active_school_finance_tab = sanitize_key((string) ($_GET['cmn_school_finance_tab'] ?? 'invoices'));
+                        if (!in_array($active_school_finance_tab, ['invoices', 'payments', 'credits'], true)) {
+                            $active_school_finance_tab = 'invoices';
+                        }
+                        $school_finance_clear_url = $school_finance_url;
+                        $build_school_finance_url = static function ($overrides = []) use ($portal_url, $active_school_finance_tab, $finance_date_from, $finance_date_to) {
                             $args = [
-                                'cmn_school_invoice_status' => $school_invoice_status !== '' ? $school_invoice_status : 'all',
-                                'cmn_school_invoice_month' => $school_invoice_month,
+                                'school' => 'finance',
                             ];
-                            if ($school_invoice_page > 1) {
-                                $args['cmn_school_invoice_page'] = $school_invoice_page;
+                            if ($active_school_finance_tab !== 'invoices') {
+                                $args['cmn_school_finance_tab'] = $active_school_finance_tab;
                             }
-                            if ($school_invoice_id > 0) {
-                                $args['cmn_school_invoice_id'] = $school_invoice_id;
+                            if ($finance_date_from !== '') {
+                                $args['cmn_school_finance_from'] = $finance_date_from;
+                            }
+                            if ($finance_date_to !== '') {
+                                $args['cmn_school_finance_to'] = $finance_date_to;
                             }
                             foreach ((array) $overrides as $key => $value) {
-                                if ($value === null) {
+                                if ($value === null || $value === false || $value === '') {
                                     unset($args[$key]);
                                     continue;
                                 }
                                 $args[$key] = $value;
                             }
-                            return add_query_arg($args, $school_invoice_base_url);
+                            return add_query_arg($args, $portal_url);
                         };
-                        $invoice_snapshot_value = function ($value) {
-                            $value = trim((string) $value);
-                            return $value !== '' ? $value : '—';
+                        $in_school_finance_range = static function ($raw_value) use ($finance_date_from, $finance_date_to) {
+                            $raw_value = sanitize_text_field((string) $raw_value);
+                            if ($raw_value === '') {
+                                return false;
+                            }
+                            $date_only = substr($raw_value, 0, 10);
+                            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_only)) {
+                                $value_ts = strtotime($raw_value);
+                                if (!$value_ts) {
+                                    return false;
+                                }
+                                $date_only = date('Y-m-d', $value_ts);
+                            }
+                            if ($finance_date_from !== '' && $date_only < $finance_date_from) {
+                                return false;
+                            }
+                            if ($finance_date_to !== '' && $date_only > $finance_date_to) {
+                                return false;
+                            }
+                            return true;
                         };
+                        $format_school_finance_date = static function ($raw_value, $fallback = '—') {
+                            $raw_value = sanitize_text_field((string) $raw_value);
+                            $value_ts = $raw_value !== '' ? strtotime($raw_value) : false;
+                            return $value_ts ? date_i18n('j M Y', $value_ts) : $fallback;
+                        };
+                        $finance_month_keys = [];
+                        if ($finance_date_from !== '' && $finance_date_to !== '') {
+                            $finance_month_cursor = strtotime(substr($finance_date_from, 0, 7) . '-01');
+                            $finance_month_end = strtotime(substr($finance_date_to, 0, 7) . '-01');
+                            $finance_guard = 0;
+                            while ($finance_month_cursor !== false && $finance_month_end !== false && $finance_month_cursor <= $finance_month_end && $finance_guard < 36) {
+                                $finance_month_keys[] = date('Y-m', $finance_month_cursor);
+                                $finance_month_cursor = strtotime('+1 month', $finance_month_cursor);
+                                $finance_guard++;
+                            }
+                        }
+                        if (!$finance_month_keys) {
+                            $finance_month_keys[] = current_time('Y-m');
+                        }
+                        $school_finance_invoice_rows = [];
+                        if ((int) $user_school_id > 0) {
+                            $school_finance_invoice_map = [];
+                            foreach ($finance_month_keys as $finance_month_key) {
+                                $school_finance_payload = $this->get_school_invoice_list_results((int) $user_school_id, [
+                                    'status' => '',
+                                    'month' => $finance_month_key,
+                                    'page' => 1,
+                                    'per_page' => 80,
+                                ]);
+                                foreach ((array) ($school_finance_payload['rows'] ?? []) as $finance_invoice_row) {
+                                    $finance_invoice_id = max(0, (int) ($finance_invoice_row['id'] ?? 0));
+                                    if ($finance_invoice_id < 1 || isset($school_finance_invoice_map[$finance_invoice_id])) {
+                                        continue;
+                                    }
+                                    $school_finance_invoice_map[$finance_invoice_id] = (array) $finance_invoice_row;
+                                }
+                            }
+                            $school_finance_invoice_rows = array_values($school_finance_invoice_map);
+                        }
+                        $school_finance_invoice_rows = array_values(array_filter($school_finance_invoice_rows, static function ($finance_invoice_row) use ($in_school_finance_range) {
+                            $period_end = sanitize_text_field((string) ($finance_invoice_row['period_end'] ?? ''));
+                            $created_at = sanitize_text_field((string) ($finance_invoice_row['created_at'] ?? ''));
+                            $filter_date = $period_end !== '' ? $period_end : $created_at;
+                            return $in_school_finance_range($filter_date);
+                        }));
+                        usort($school_finance_invoice_rows, static function ($left, $right) {
+                            return strcmp((string) ($right['created_at'] ?? ''), (string) ($left['created_at'] ?? ''));
+                        });
+                        $school_finance_invoice_table_rows = [];
+                        $school_finance_payment_table_rows = [];
+                        $school_finance_credit_table_rows = [];
+                        $school_statement_download_url = '';
+                        foreach ($school_finance_invoice_rows as $finance_invoice_row) {
+                            $finance_invoice_id = max(0, (int) ($finance_invoice_row['id'] ?? 0));
+                            if ($finance_invoice_id < 1) {
+                                continue;
+                            }
+                            $finance_invoice_number = sanitize_text_field((string) ($finance_invoice_row['invoice_number'] ?? ('INV-' . $finance_invoice_id)));
+                            $finance_invoice_status = $this->normalize_invoice_status((string) ($finance_invoice_row['status'] ?? 'draft'));
+                            $finance_invoice_total = (float) ($finance_invoice_row['total'] ?? 0);
+                            $finance_invoice_amount_paid = (float) ($finance_invoice_row['amount_paid'] ?? 0);
+                            $finance_invoice_amount_due = (float) ($finance_invoice_row['amount_due'] ?? 0);
+                            $finance_invoice_period_label = trim(
+                                $format_school_finance_date((string) ($finance_invoice_row['period_start'] ?? ''), '—')
+                                . ' - '
+                                . $format_school_finance_date((string) ($finance_invoice_row['period_end'] ?? ''), '—')
+                            );
+                            $finance_invoice_pdf_url = wp_nonce_url(
+                                add_query_arg([
+                                    'action' => 'cmn_download_invoice_pdf',
+                                    'invoice_id' => $finance_invoice_id,
+                                ], admin_url('admin-post.php')),
+                                'cmn_download_invoice_pdf_' . $finance_invoice_id,
+                                'cmn_invoice_pdf_nonce'
+                            );
+                            if ($school_statement_download_url === '') {
+                                $school_statement_download_url = $finance_invoice_pdf_url;
+                            }
+                            $school_finance_invoice_table_rows[] = [
+                                'date_sort' => (string) ($finance_invoice_row['created_at'] ?? ''),
+                                'date_label' => $format_school_finance_date((string) ($finance_invoice_row['created_at'] ?? '')),
+                                'meta' => $finance_invoice_number . ' - ' . $finance_invoice_period_label,
+                                'amount_label' => 'GBP ' . number_format($finance_invoice_total, 2),
+                                'status_label' => $this->get_invoice_status_label($finance_invoice_status),
+                                'status_class' => $this->get_invoice_status_chip_class($finance_invoice_status),
+                                'view_url' => $finance_invoice_pdf_url,
+                                'download_url' => $finance_invoice_pdf_url,
+                            ];
+                            $finance_payment_rows = (array) $this->get_invoice_payments($finance_invoice_id, 50);
+                            foreach ($finance_payment_rows as $finance_payment_row) {
+                                $payment_date = sanitize_text_field((string) ($finance_payment_row['paid_at'] ?? ''));
+                                if ($payment_date === '' || !$in_school_finance_range($payment_date)) {
+                                    continue;
+                                }
+                                $payment_amount = (float) ($finance_payment_row['amount'] ?? 0);
+                                if ($payment_amount <= 0) {
+                                    continue;
+                                }
+                                $payment_is_complete = $finance_invoice_amount_due <= 0.01 || $finance_invoice_status === 'paid';
+                                $school_finance_payment_table_rows[] = [
+                                    'date_sort' => $payment_date,
+                                    'date_label' => $format_school_finance_date($payment_date),
+                                    'meta' => $finance_invoice_number,
+                                    'amount_label' => 'GBP ' . number_format($payment_amount, 2),
+                                    'status_label' => $payment_is_complete ? 'Paid' : 'Part paid',
+                                    'status_class' => $this->get_invoice_status_chip_class($payment_is_complete ? 'paid' : 'sent'),
+                                    'view_url' => $finance_invoice_pdf_url,
+                                ];
+                            }
+                            if (!$finance_payment_rows && $finance_invoice_amount_paid > 0) {
+                                $payment_fallback_date = (string) ($finance_invoice_row['paid_at'] ?? $finance_invoice_row['updated_at'] ?? $finance_invoice_row['created_at'] ?? '');
+                                if ($payment_fallback_date !== '' && $in_school_finance_range($payment_fallback_date)) {
+                                    $payment_is_complete = $finance_invoice_amount_due <= 0.01 || $finance_invoice_status === 'paid';
+                                    $school_finance_payment_table_rows[] = [
+                                        'date_sort' => $payment_fallback_date,
+                                        'date_label' => $format_school_finance_date($payment_fallback_date),
+                                        'meta' => $finance_invoice_number,
+                                        'amount_label' => 'GBP ' . number_format($finance_invoice_amount_paid, 2),
+                                        'status_label' => $payment_is_complete ? 'Paid' : 'Part paid',
+                                        'status_class' => $this->get_invoice_status_chip_class($payment_is_complete ? 'paid' : 'sent'),
+                                        'view_url' => $finance_invoice_pdf_url,
+                                    ];
+                                }
+                            }
+                            $finance_credit_total = 0.0;
+                            $finance_credit_date = '';
+                            $finance_adjustment_rows = (array) $this->get_invoice_adjustments($finance_invoice_id);
+                            foreach ($finance_adjustment_rows as $finance_adjustment_row) {
+                                if (sanitize_key((string) ($finance_adjustment_row['type'] ?? '')) !== 'partner_credit') {
+                                    continue;
+                                }
+                                $credit_amount = abs((float) ($finance_adjustment_row['amount'] ?? 0));
+                                if ($credit_amount <= 0) {
+                                    continue;
+                                }
+                                $credit_created_at = sanitize_text_field((string) ($finance_adjustment_row['created_at'] ?? ''));
+                                if ($credit_created_at !== '' && !$in_school_finance_range($credit_created_at)) {
+                                    continue;
+                                }
+                                $finance_credit_total += $credit_amount;
+                                if ($credit_created_at !== '' && ($finance_credit_date === '' || $credit_created_at > $finance_credit_date)) {
+                                    $finance_credit_date = $credit_created_at;
+                                }
+                            }
+                            if ($finance_credit_total > 0) {
+                                $credit_date_value = $finance_credit_date !== '' ? $finance_credit_date : (string) ($finance_invoice_row['created_at'] ?? '');
+                                if ($credit_date_value !== '' && $in_school_finance_range($credit_date_value)) {
+                                    $school_finance_credit_table_rows[] = [
+                                        'date_sort' => $credit_date_value,
+                                        'date_label' => $format_school_finance_date($credit_date_value),
+                                        'meta' => $finance_invoice_number,
+                                        'amount_label' => 'GBP ' . number_format($finance_credit_total, 2),
+                                        'status_label' => 'Applied',
+                                        'status_class' => $this->get_invoice_status_chip_class('paid'),
+                                        'view_url' => $finance_invoice_pdf_url,
+                                    ];
+                                }
+                            }
+                        }
+                        usort($school_finance_payment_table_rows, static function ($left, $right) {
+                            return strcmp((string) ($right['date_sort'] ?? ''), (string) ($left['date_sort'] ?? ''));
+                        });
+                        usort($school_finance_credit_table_rows, static function ($left, $right) {
+                            return strcmp((string) ($right['date_sort'] ?? ''), (string) ($left['date_sort'] ?? ''));
+                        });
+                        $school_finance_active_rows = $active_school_finance_tab === 'payments'
+                            ? $school_finance_payment_table_rows
+                            : ($active_school_finance_tab === 'credits' ? $school_finance_credit_table_rows : $school_finance_invoice_table_rows);
+                        $school_finance_empty_copy = [
+                            'invoices' => 'No invoices in this date range yet.',
+                            'payments' => 'No payments recorded in this date range yet.',
+                            'credits' => 'No credits applied in this date range yet.',
+                        ];
                         ?>
-                        <header class="cmn-school-header">
-                            <h2>Invoices</h2>
-                            <p>View your monthly invoices and charge breakdowns.</p>
+                        <header class="cmn-school-header cmn-school-finance-header">
+                            <div class="cmn-school-finance-header-top">
+                                <div>
+                                    <h2>Finance</h2>
+                                    <p>Track invoices, payments and credits in one controlled finance view.</p>
+                                </div>
+                                <?php if ($school_statement_download_url !== '') : ?>
+                                    <a class="cmn-primary cmn-btn-mini cmn-school-finance-statement-btn" href="<?php echo esc_url($school_statement_download_url); ?>" target="_blank" rel="noopener noreferrer">Download Statements</a>
+                                <?php else : ?>
+                                    <button class="cmn-ghost cmn-btn-mini cmn-school-finance-statement-btn" type="button" disabled>Download Statements</button>
+                                <?php endif; ?>
+                            </div>
+                            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-school-finance-range-form">
+                                <input type="hidden" name="school" value="finance">
+                                <input type="hidden" name="cmn_school_finance_tab" value="<?php echo esc_attr($active_school_finance_tab); ?>">
+                                <label>Date From
+                                    <input type="date" name="cmn_school_finance_from" value="<?php echo esc_attr($finance_date_from); ?>">
+                                </label>
+                                <label>Date To
+                                    <input type="date" name="cmn_school_finance_to" value="<?php echo esc_attr($finance_date_to); ?>">
+                                </label>
+                                <div class="cmn-school-finance-range-actions">
+                                    <button class="cmn-primary" type="submit">Apply</button>
+                                    <a class="cmn-ghost" href="<?php echo esc_url($school_finance_clear_url); ?>">Clear</a>
+                                </div>
+                            </form>
                         </header>
-                        <?php if ((int) $user_school_id < 1) : ?>
-                            <div class="cmn-dashboard-card">
-                                <div class="cmn-empty">We could not map this login to a school account yet.</div>
+                        <section class="cmn-dashboard-card cmn-school-finance-card">
+                            <div class="cmn-booking-tabs cmn-school-finance-tabs">
+                                <a class="cmn-booking-tab<?php echo $active_school_finance_tab === 'invoices' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_finance_url(['cmn_school_finance_tab' => null])); ?>">
+                                    Invoices <span class="cmn-school-finance-tab-count">(<?php echo esc_html((string) count($school_finance_invoice_table_rows)); ?>)</span>
+                                </a>
+                                <a class="cmn-booking-tab<?php echo $active_school_finance_tab === 'payments' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_finance_url(['cmn_school_finance_tab' => 'payments'])); ?>">
+                                    Payments <span class="cmn-school-finance-tab-count">(<?php echo esc_html((string) count($school_finance_payment_table_rows)); ?>)</span>
+                                </a>
+                                <a class="cmn-booking-tab<?php echo $active_school_finance_tab === 'credits' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_finance_url(['cmn_school_finance_tab' => 'credits'])); ?>">
+                                    Credits <span class="cmn-school-finance-tab-count">(<?php echo esc_html((string) count($school_finance_credit_table_rows)); ?>)</span>
+                                </a>
                             </div>
-                        <?php else : ?>
-                            <div class="cmn-dashboard-card" style="margin-bottom:16px;">
-                                <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-inline" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
-                                    <input type="hidden" name="school" value="invoices">
-                                    <label style="display:flex;flex-direction:column;gap:4px;">
-                                        <span>Status</span>
-                                        <select name="cmn_school_invoice_status">
-                                            <option value="all"<?php selected($school_invoice_status, ''); ?>>All statuses</option>
-                                            <option value="draft"<?php selected($school_invoice_status, 'draft'); ?>>Draft</option>
-                                            <option value="issued"<?php selected($school_invoice_status, 'issued'); ?>>Issued</option>
-                                            <option value="sent"<?php selected($school_invoice_status, 'sent'); ?>>Sent</option>
-                                            <option value="paid"<?php selected($school_invoice_status, 'paid'); ?>>Paid</option>
-                                            <option value="void"<?php selected($school_invoice_status, 'void'); ?>>Void</option>
-                                        </select>
-                                    </label>
-                                    <label style="display:flex;flex-direction:column;gap:4px;">
-                                        <span>Month</span>
-                                        <input type="month" name="cmn_school_invoice_month" value="<?php echo esc_attr($school_invoice_month); ?>">
-                                    </label>
-                                    <button class="cmn-primary" type="submit">Filter</button>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'invoices'], $portal_url)); ?>">Clear</a>
-                                </form>
-                            </div>
-                            <div class="cmn-portal-grid" style="align-items:start;">
-                                <div class="cmn-dashboard-card">
-                                    <h3>Invoice List - <?php echo esc_html($school_invoice_month_label); ?></h3>
-                                    <p class="cmn-muted"><?php echo esc_html((string) $school_invoice_total_rows); ?> invoice(s) found.</p>
-                                    <?php if (!$school_invoice_rows) : ?>
-                                        <div class="cmn-empty">No invoices match the current filters.</div>
-                                    <?php else : ?>
-                                        <table class="cmn-approval-table">
-                                            <thead>
+                            <?php if ($school_finance_active_rows) : ?>
+                                <div class="cmn-table-scroll">
+                                    <table class="cmn-approval-table cmn-school-finance-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Amount</th>
+                                                <th>Status</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($school_finance_active_rows as $finance_table_row) : ?>
                                                 <tr>
-                                                    <th>Invoice number</th>
-                                                    <th>Period</th>
-                                                    <th>Status</th>
-                                                    <th>Total (GBP)</th>
-                                                    <th>Created</th>
+                                                    <td>
+                                                        <div class="cmn-school-finance-date">
+                                                            <strong><?php echo esc_html((string) ($finance_table_row['date_label'] ?? '—')); ?></strong>
+                                                            <?php if (!empty($finance_table_row['meta'])) : ?>
+                                                                <span><?php echo esc_html((string) $finance_table_row['meta']); ?></span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </td>
+                                                    <td><?php echo esc_html((string) ($finance_table_row['amount_label'] ?? 'GBP 0.00')); ?></td>
+                                                    <td>
+                                                        <span class="cmn-status-chip <?php echo esc_attr((string) ($finance_table_row['status_class'] ?? $this->get_invoice_status_chip_class('issued'))); ?>">
+                                                            <?php echo esc_html((string) ($finance_table_row['status_label'] ?? 'Pending')); ?>
+                                                        </span>
+                                                    </td>
+                                                    <td class="cmn-school-finance-actions">
+                                                        <?php if (!empty($finance_table_row['view_url'])) : ?>
+                                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) $finance_table_row['view_url']); ?>" target="_blank" rel="noopener noreferrer">View</a>
+                                                        <?php endif; ?>
+                                                        <?php if (!empty($finance_table_row['download_url'])) : ?>
+                                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) $finance_table_row['download_url']); ?>" download>Download</a>
+                                                        <?php endif; ?>
+                                                    </td>
                                                 </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php foreach ((array) $school_invoice_rows as $invoice_row) : ?>
-                                                    <?php
-                                                    $row_invoice_id = (int) ($invoice_row['id'] ?? 0);
-                                                    $row_link = $build_school_invoice_url([
-                                                        'cmn_school_invoice_id' => $row_invoice_id,
-                                                        'cmn_school_invoice_page' => $school_invoice_page,
-                                                    ]);
-                                                    $row_status = (string) ($invoice_row['status'] ?? 'draft');
-                                                    $row_created_at = (string) ($invoice_row['created_at'] ?? '');
-                                                    $row_created_label = $row_created_at !== '' ? date_i18n('M j, Y', strtotime($row_created_at)) : '—';
-                                                    ?>
-                                                    <tr>
-                                                        <td><a href="<?php echo esc_url($row_link); ?>"><?php echo esc_html((string) ($invoice_row['invoice_number'] ?? ('INV-' . $row_invoice_id))); ?></a></td>
-                                                        <td><?php echo esc_html((string) ($invoice_row['period_start'] ?? '—') . ' -> ' . (string) ($invoice_row['period_end'] ?? '—')); ?></td>
-                                                        <td><span class="cmn-status-chip <?php echo esc_attr($this->get_invoice_status_chip_class($row_status)); ?>"><?php echo esc_html($this->get_invoice_status_label($row_status)); ?></span></td>
-                                                        <td><?php echo esc_html(number_format((float) ($invoice_row['total'] ?? 0), 2)); ?></td>
-                                                        <td><?php echo esc_html($row_created_label); ?></td>
-                                                    </tr>
-                                                <?php endforeach; ?>
-                                            </tbody>
-                                        </table>
-                                    <?php endif; ?>
-                                    <?php if ($school_invoice_total_pages > 1) : ?>
-                                        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-                                            <?php
-                                            $school_prev_page = max(1, $school_invoice_page - 1);
-                                            $school_next_page = min($school_invoice_total_pages, $school_invoice_page + 1);
-                                            ?>
-                                            <a class="cmn-ghost" href="<?php echo esc_url($build_school_invoice_url(['cmn_school_invoice_page' => $school_prev_page, 'cmn_school_invoice_id' => null])); ?>">Prev</a>
-                                            <?php for ($school_page_num = 1; $school_page_num <= $school_invoice_total_pages; $school_page_num++) : ?>
-                                                <a class="cmn-ghost<?php echo $school_page_num === $school_invoice_page ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_invoice_url(['cmn_school_invoice_page' => $school_page_num, 'cmn_school_invoice_id' => null])); ?>"><?php echo esc_html((string) $school_page_num); ?></a>
-                                            <?php endfor; ?>
-                                            <a class="cmn-ghost" href="<?php echo esc_url($build_school_invoice_url(['cmn_school_invoice_page' => $school_next_page, 'cmn_school_invoice_id' => null])); ?>">Next</a>
-                                        </div>
-                                    <?php endif; ?>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
                                 </div>
-                                <div class="cmn-dashboard-card">
-                                    <h3>Invoice Detail</h3>
-                                    <?php if ($school_invoice_view_error !== '') : ?>
-                                        <div class="cmn-empty"><?php echo esc_html($school_invoice_view_error); ?></div>
-                                    <?php elseif (!$selected_school_invoice) : ?>
-                                        <div class="cmn-empty">Select an invoice from the list to view details.</div>
-                                    <?php else : ?>
-                                        <?php
-                                        $selected_invoice_status = (string) ($selected_school_invoice['status'] ?? 'draft');
-                                        $selected_school_invoice_id = (int) ($selected_school_invoice['id'] ?? 0);
-                                        $school_pdf_download_url = wp_nonce_url(
-                                            add_query_arg([
-                                                'action' => 'cmn_download_invoice_pdf',
-                                                'invoice_id' => $selected_school_invoice_id,
-                                            ], admin_url('admin-post.php')),
-                                            'cmn_download_invoice_pdf_' . $selected_school_invoice_id,
-                                            'cmn_invoice_pdf_nonce'
-                                        );
-                                        ?>
-                                        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px;">
-                                            <div><strong>Invoice number</strong><br><?php echo esc_html((string) ($selected_school_invoice['invoice_number'] ?? '—')); ?></div>
-                                            <div><strong>Status</strong><br><span class="cmn-status-chip <?php echo esc_attr($this->get_invoice_status_chip_class($selected_invoice_status)); ?>"><?php echo esc_html($this->get_invoice_status_label($selected_invoice_status)); ?></span></div>
-                                            <div><strong>Period</strong><br><?php echo esc_html((string) ($selected_school_invoice['period_start'] ?? '—') . ' -> ' . (string) ($selected_school_invoice['period_end'] ?? '—')); ?></div>
-                                            <div><strong>Total (GBP)</strong><br><?php echo esc_html(number_format((float) ($selected_school_invoice['total'] ?? 0), 2)); ?></div>
-                                        </div>
-
-                                        <h4>Billing snapshot</h4>
-                                        <table class="cmn-approval-table" style="margin-bottom:14px;">
-                                            <tbody>
-                                                <tr><td>Billing contact</td><td><?php echo esc_html($invoice_snapshot_value($selected_school_invoice['billing_contact'] ?? '')); ?></td></tr>
-                                                <tr><td>Billing email</td><td><?php echo esc_html($invoice_snapshot_value($selected_school_invoice['billing_email'] ?? '')); ?></td></tr>
-                                                <tr><td>Billing reference</td><td><?php echo esc_html($invoice_snapshot_value($selected_school_invoice['billing_reference'] ?? '')); ?></td></tr>
-                                                <tr><td>Invoice email</td><td><?php echo esc_html($invoice_snapshot_value($selected_school_invoice['invoice_email'] ?? '')); ?></td></tr>
-                                            </tbody>
-                                        </table>
-
-                                        <h4>Items</h4>
-                                        <?php if (!$selected_school_invoice_items) : ?>
-                                            <div class="cmn-empty">No items found for this invoice.</div>
-                                        <?php else : ?>
-                                            <table class="cmn-approval-table" style="margin-bottom:14px;">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Shift date</th>
-                                                        <th>Role</th>
-                                                        <th>Unit price (GBP)</th>
-                                                        <th>Line total (GBP)</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <?php foreach ((array) $selected_school_invoice_items as $item_row) : ?>
-                                                        <tr>
-                                                            <td><?php echo esc_html((string) ($item_row['shift_date'] ?? '—')); ?></td>
-                                                            <td><?php echo esc_html((string) ($item_row['role_label'] ?? '—')); ?></td>
-                                                            <td><?php echo esc_html(number_format((float) ($item_row['unit_price'] ?? 0), 2)); ?></td>
-                                                            <td><?php echo esc_html(number_format((float) ($item_row['line_total'] ?? 0), 2)); ?></td>
-                                                        </tr>
-                                                    <?php endforeach; ?>
-                                                </tbody>
-                                            </table>
-                                        <?php endif; ?>
-
-                                        <h4>Adjustments</h4>
-                                        <?php if (!$selected_school_invoice_adjustments) : ?>
-                                            <div class="cmn-empty">No adjustments.</div>
-                                        <?php else : ?>
-                                            <table class="cmn-approval-table" style="margin-bottom:14px;">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Label</th>
-                                                        <th>Amount (GBP)</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <?php foreach ((array) $selected_school_invoice_adjustments as $adjustment_row) : ?>
-                                                        <tr>
-                                                            <td><?php echo esc_html((string) ($adjustment_row['label'] ?? '—')); ?></td>
-                                                            <td><?php echo esc_html(number_format((float) ($adjustment_row['amount'] ?? 0), 2)); ?></td>
-                                                        </tr>
-                                                    <?php endforeach; ?>
-                                                </tbody>
-                                            </table>
-                                        <?php endif; ?>
-
-                                        <h4>Totals</h4>
-                                        <table class="cmn-approval-table" style="margin-bottom:14px;">
-                                            <tbody>
-                                                <tr><td>Subtotal</td><td><?php echo esc_html(number_format((float) ($selected_school_invoice['subtotal'] ?? 0), 2)); ?></td></tr>
-                                                <tr><td>Adjustments</td><td><?php echo esc_html(number_format((float) ($selected_school_invoice['adjustments_total'] ?? 0), 2)); ?></td></tr>
-                                                <tr><td>VAT</td><td><?php echo esc_html(number_format((float) ($selected_school_invoice['vat_total'] ?? 0), 2)); ?></td></tr>
-                                                <tr><td><strong>Total</strong></td><td><strong><?php echo esc_html(number_format((float) ($selected_school_invoice['total'] ?? 0), 2)); ?></strong></td></tr>
-                                            </tbody>
-                                        </table>
-
-                                        <a class="cmn-ghost" href="<?php echo esc_url($school_pdf_download_url); ?>">Download PDF</a>
-                                    <?php endif; ?>
+                            <?php else : ?>
+                                <div class="cmn-school-finance-empty">
+                                    <strong>No finance records found.</strong>
+                                    <p><?php echo esc_html((string) ($school_finance_empty_copy[$active_school_finance_tab] ?? 'No finance records available.')); ?></p>
                                 </div>
-                            </div>
-                        <?php endif; ?>
+                            <?php endif; ?>
+                        </section>
                     <?php elseif ($tab === 'partner_savings') : ?>
                         <header class="cmn-school-header">
                             <h2>Partner Savings</h2>
@@ -64732,8 +66339,8 @@ final class CMN_One_Plugin {
                                                 <?php
                                                 $partner_invoice_id = (int) ($partner_invoice_row['id'] ?? 0);
                                                 $partner_invoice_link = add_query_arg([
-                                                    'school' => 'invoices',
-                                                    'cmn_school_invoice_id' => $partner_invoice_id,
+                                                    'school' => 'finance',
+                                                    'cmn_school_finance_tab' => 'invoices',
                                                 ], $portal_url);
                                                 $partner_invoice_number = (string) ($partner_invoice_row['invoice_number'] ?? ('INV-' . $partner_invoice_id));
                                                 $partner_invoice_status = (string) ($partner_invoice_row['status'] ?? 'draft');
@@ -64903,56 +66510,370 @@ final class CMN_One_Plugin {
                             <p><?php echo esc_html(get_post_meta($user_school_id, 'cmn_cover_manager', true) ?: ''); ?></p>
                         </div>
                     <?php elseif ($tab === 'profile') : ?>
-                        <header class="cmn-school-header">
-                            <h2>Profile</h2>
-                        </header>
-                        <?php if ($school_profile_notice) : ?>
-                            <div class="cmn-register-success"><?php echo esc_html($school_profile_notice); ?></div>
-                        <?php endif; ?>
                         <?php
+                        $school_profile_tabs = [
+                            'overview' => 'Overview',
+                            'contacts' => 'Contacts',
+                            'activity' => 'Activity',
+                            'bookings' => 'Bookings',
+                            'documents' => 'Documents',
+                            'settings' => 'Settings',
+                        ];
+                        $active_school_profile_tab = isset($_GET['cmn_school_tab']) ? sanitize_key((string) wp_unslash($_GET['cmn_school_tab'])) : 'overview';
+                        if (!isset($school_profile_tabs[$active_school_profile_tab])) {
+                            $active_school_profile_tab = 'overview';
+                        }
+
+                        $display_value = static function ($value, $fallback = 'Not set') {
+                            $text = trim((string) $value);
+                            return $text !== '' ? $text : $fallback;
+                        };
+
+                        $school_name_value = (string) get_the_title($user_school_id);
+                        $school_location_value = (string) get_post_meta($user_school_id, 'cmn_location', true);
                         $school_email_value = (string) get_post_meta($user_school_id, 'cmn_email', true);
+                        $school_phone_value = (string) get_post_meta($user_school_id, 'cmn_phone', true);
+                        $school_cover_manager_value = (string) get_post_meta($user_school_id, 'cmn_cover_manager', true);
+                        $school_primary_contact_value = (string) get_post_meta($user_school_id, 'cmn_contact1', true);
+                        $school_contact_role_value = (string) get_post_meta($user_school_id, 'cmn_contact_role', true);
+                        $school_primary_contact_email = (string) get_post_meta($user_school_id, 'cmn_contact1_email', true);
+                        $school_primary_contact_phone = (string) get_post_meta($user_school_id, 'cmn_primary_contact_phone', true);
+                        $school_identifier = trim((string) get_post_meta($user_school_id, 'cmn_school_id', true));
+                        if ($school_identifier === '') {
+                            $school_identifier = (string) $user_school_id;
+                        }
+                        $school_status_key = sanitize_key((string) get_post_meta($user_school_id, 'cmn_status', true));
+                        $school_status_label = strtoupper(str_replace('_', ' ', $school_status_key !== '' ? $school_status_key : 'pending'));
+                        $school_status_pill_class = ' is-pending';
+                        if (in_array($school_status_key, ['client', 'approved', 'active'], true)) {
+                            $school_status_pill_class = ' is-client';
+                        } elseif (in_array($school_status_key, ['lead', 'new_lead', 'pending', 'needs_attention', 'application'], true)) {
+                            $school_status_pill_class = ' is-lead';
+                        } elseif (in_array($school_status_key, ['rejected', 'declined', 'inactive'], true)) {
+                            $school_status_pill_class = ' is-declined';
+                        }
+
+                        $last_contacted_ts = !empty($recent_activity_items[0]['ts']) ? (int) $recent_activity_items[0]['ts'] : 0;
+                        if ($last_contacted_ts < 1) {
+                            $legacy_last_contacted = trim((string) get_post_meta($user_school_id, 'cmn_last_contacted', true));
+                            if ($legacy_last_contacted !== '' && strtotime($legacy_last_contacted)) {
+                                $last_contacted_ts = (int) strtotime($legacy_last_contacted);
+                            }
+                        }
+                        $last_contacted_label = $last_contacted_ts > 0 ? date_i18n('j M Y g:ia', $last_contacted_ts) : 'No recent contact';
+
+                        $cover_manager_contact_value = $school_cover_manager_value !== '' ? $school_cover_manager_value : $school_primary_contact_value;
+                        $feedback_summary = $this->get_feedback_summary_for_entity('school', (int) $user_school_id);
+                        $feedback_count = max(0, (int) ($feedback_summary['feedback_count'] ?? 0));
+                        $feedback_rating_for_stars = max(0.0, min(5.0, (float) ($feedback_summary['avg_overall'] ?? 0)));
+                        $feedback_stars_filled = max(0, min(5, (int) floor($feedback_rating_for_stars)));
+                        $feedback_summary_label = number_format($feedback_rating_for_stars, 1) . '/5';
+                        $feedback_has_entries = $feedback_count > 0;
+                        $feedback_count_label = $feedback_count === 1 ? '1 review' : $feedback_count . ' reviews';
+                        $feedback_link_title = $feedback_has_entries ? 'Open feedback history' : 'No feedback entries yet';
+                        $feedback_entries = $this->get_school_feedback_entries_for_school((int) $user_school_id, 12);
+
+                        $profile_booking_rows = [];
+                        $profile_booking_counts = [
+                            'upcoming' => 0,
+                            'completed' => 0,
+                            'other' => 0,
+                        ];
+                        foreach ((array) $school_bookings as $profile_booking_post) {
+                            if (!($profile_booking_post instanceof WP_Post)) {
+                                continue;
+                            }
+                            $booking_id = (int) $profile_booking_post->ID;
+                            $booking_status_key = sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
+                            $booking_status_label = $booking_status_key !== '' ? ucwords(str_replace('_', ' ', $booking_status_key)) : 'Approved';
+                            $booking_date_raw = trim((string) get_post_meta($booking_id, 'cmn_date', true));
+                            if ($booking_date_raw === '') {
+                                $booking_date_raw = trim((string) get_post_meta($booking_id, 'cmn_start_date', true));
+                            }
+                            $booking_date_ts = ($booking_date_raw !== '' && strtotime($booking_date_raw)) ? (int) strtotime($booking_date_raw) : 0;
+                            $booking_date_label = $booking_date_ts > 0 ? date_i18n('j M Y', $booking_date_ts) : 'Date pending';
+                            $booking_start_time = trim((string) get_post_meta($booking_id, 'cmn_start_time', true));
+                            $booking_end_time = trim((string) get_post_meta($booking_id, 'cmn_end_time', true));
+                            $booking_time_label = 'Time pending';
+                            if ($booking_start_time !== '' && $booking_end_time !== '') {
+                                $booking_time_label = $booking_start_time . ' - ' . $booking_end_time;
+                            } elseif ($booking_start_time !== '') {
+                                $booking_time_label = $booking_start_time;
+                            }
+                            $booking_candidate_name = '';
+                            $booking_candidate_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+                            if ($booking_candidate_id > 0) {
+                                $booking_candidate_name = (string) get_the_title($booking_candidate_id);
+                            }
+
+                            $booking_bucket = 'other';
+                            if (in_array($booking_status_key, ['completed', 'completed_attended'], true)) {
+                                $booking_bucket = 'completed';
+                            } elseif ($booking_date_raw !== '' && $booking_date_raw >= $today_ymd) {
+                                $booking_bucket = 'upcoming';
+                            }
+                            $profile_booking_counts[$booking_bucket]++;
+                            $profile_booking_rows[] = [
+                                'title' => (string) $profile_booking_post->post_title,
+                                'status_label' => $booking_status_label,
+                                'date_label' => $booking_date_label,
+                                'time_label' => $booking_time_label,
+                                'candidate_name' => $booking_candidate_name,
+                                'ts' => $booking_date_ts,
+                            ];
+                        }
+                        usort($profile_booking_rows, static function ($left, $right) {
+                            return (int) ($right['ts'] ?? 0) <=> (int) ($left['ts'] ?? 0);
+                        });
+
                         $school_type_options = ['Primary', 'Secondary', 'All-through', 'SEN / Alternative Provision', 'Academy (single school)', 'Multi-Academy Trust', 'Other'];
                         $pupil_count_options = ['Under 200', '200-500', '500-1,000', 'Over 1,000'];
                         $supply_frequency_options = ['Daily', 'Several times a week', 'Weekly', 'Monthly', 'Only in emergencies', 'Rarely / never'];
                         $agency_usage_options = ['Yes - regularly', 'Yes - occasionally', 'Only as a last resort', 'No - we do not use agencies'];
                         $agency_count_options = ['1', '2-3', '4-5', 'More than 5', 'Not sure'];
+
+                        $build_school_profile_tab_url = static function ($tab_key) use ($portal_url) {
+                            return add_query_arg([
+                                'school' => 'profile',
+                                'cmn_tab' => false,
+                                'cmn_school_tab' => sanitize_key((string) $tab_key),
+                            ], $portal_url);
+                        };
+                        $feedback_jump_url = add_query_arg([
+                            'school' => 'profile',
+                            'cmn_tab' => false,
+                            'cmn_school_tab' => 'activity',
+                            'cmn_focus_feedback' => '1',
+                        ], $portal_url) . '#cmn-school-feedback-panel';
+                        $profile_settings_redirect = $build_school_profile_tab_url('settings');
                         ?>
-                        <div class="cmn-profile-grid">
-                            <form class="cmn-dashboard-card cmn-doc-upload-card cmn-dashboard-card-wide cmn-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <header class="cmn-school-header cmn-school-profile-header" id="cmn-school-profile-header">
+                            <div class="cmn-school-profile-header-main">
+                                <h2><?php echo esc_html($school_name_value); ?></h2>
+                                <p class="cmn-school-profile-location"><?php echo esc_html($display_value($school_location_value, 'Location not set')); ?></p>
+                            </div>
+                            <div class="cmn-school-profile-status-wrap">
+                                <div class="cmn-school-profile-status">
+                                    <span class="cmn-pill cmn-pill--school-id">School ID: <?php echo esc_html($school_identifier); ?></span>
+                                    <span class="cmn-pill cmn-pill--status<?php echo esc_attr($school_status_pill_class); ?>"><?php echo esc_html($school_status_label); ?></span>
+                                </div>
+                                <a class="cmn-school-feedback-stars<?php echo !$feedback_has_entries ? ' is-empty' : ''; ?>" href="<?php echo esc_url($feedback_jump_url); ?>" data-school-feedback-jump aria-label="Open school feedback history" title="<?php echo esc_attr($feedback_link_title); ?>">
+                                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
+                                        <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
+                                            <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>"><?php echo $star_i <= $feedback_stars_filled ? '★' : '☆'; ?></span>
+                                        <?php endfor; ?>
+                                    </span>
+                                    <span class="cmn-school-feedback-stars-label">
+                                        <?php echo esc_html($feedback_summary_label); ?>
+                                        <span class="cmn-school-feedback-stars-count"><?php echo esc_html($feedback_count_label); ?></span>
+                                    </span>
+                                </a>
+                            </div>
+                        </header>
+
+                        <?php if ($school_profile_notice) : ?>
+                            <div class="cmn-register-success"><?php echo esc_html($school_profile_notice); ?></div>
+                        <?php endif; ?>
+
+                        <nav class="cmn-school-profile-tabs" aria-label="School profile sections" data-school-profile-tabs>
+                            <?php foreach ($school_profile_tabs as $tab_key => $tab_label) : ?>
+                                <a class="cmn-school-profile-tab<?php echo $active_school_profile_tab === $tab_key ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_profile_tab_url($tab_key)); ?>" data-school-profile-tab="<?php echo esc_attr($tab_key); ?>">
+                                    <?php echo esc_html($tab_label); ?>
+                                </a>
+                            <?php endforeach; ?>
+                        </nav>
+
+                        <div class="cmn-profile-grid cmn-school-profile-grid cmn-school-profile-grid--school-user" data-school-profile-root="1" data-school-active-tab="<?php echo esc_attr($active_school_profile_tab); ?>">
+                            <article class="cmn-dashboard-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-dashboard-card-wide">
+                                <h3>Overview</h3>
+                                <div class="cmn-meta-grid cmn-meta-grid--school-details-compact">
+                                    <div class="cmn-school-detail-item">
+                                        <span class="cmn-school-detail-label">School Name</span>
+                                        <strong class="cmn-school-detail-value"><?php echo esc_html($display_value($school_name_value)); ?></strong>
+                                    </div>
+                                    <div class="cmn-school-detail-item">
+                                        <span class="cmn-school-detail-label">Location</span>
+                                        <strong class="cmn-school-detail-value"><?php echo esc_html($display_value($school_location_value)); ?></strong>
+                                    </div>
+                                    <div class="cmn-school-detail-item">
+                                        <span class="cmn-school-detail-label">Cover Manager / Contact</span>
+                                        <strong class="cmn-school-detail-value"><?php echo esc_html($display_value($cover_manager_contact_value)); ?></strong>
+                                    </div>
+                                    <div class="cmn-school-detail-item">
+                                        <span class="cmn-school-detail-label">Phone</span>
+                                        <strong class="cmn-school-detail-value"><?php echo esc_html($display_value($school_phone_value)); ?></strong>
+                                    </div>
+                                    <div class="cmn-school-detail-item">
+                                        <span class="cmn-school-detail-label">Email</span>
+                                        <strong class="cmn-school-detail-value"><?php echo esc_html($display_value($school_email_value)); ?></strong>
+                                    </div>
+                                    <div class="cmn-school-detail-item">
+                                        <span class="cmn-school-detail-label">Last Contacted</span>
+                                        <strong class="cmn-school-detail-value"><?php echo esc_html($last_contacted_label); ?></strong>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="cmn-dashboard-card cmn-school-tab-panel cmn-school-tab-panel--contacts">
+                                <h3>Contacts</h3>
+                                <div class="cmn-meta-grid">
+                                    <div><strong>Primary Contact:</strong> <?php echo esc_html($display_value($school_primary_contact_value)); ?></div>
+                                    <div><strong>Role:</strong> <?php echo esc_html($display_value($school_contact_role_value)); ?></div>
+                                    <div><strong>Contact Email:</strong> <?php echo esc_html($display_value($school_primary_contact_email, $school_email_value !== '' ? $school_email_value : 'Not set')); ?></div>
+                                    <div><strong>Contact Phone:</strong> <?php echo esc_html($display_value($school_primary_contact_phone, $school_phone_value !== '' ? $school_phone_value : 'Not set')); ?></div>
+                                    <div><strong>Cover Manager:</strong> <?php echo esc_html($display_value($school_cover_manager_value)); ?></div>
+                                    <div><strong>Cover Manager Email:</strong> <?php echo esc_html($display_value((string) get_post_meta($user_school_id, 'cmn_cover_manager_email', true))); ?></div>
+                                </div>
+                            </article>
+
+                            <article class="cmn-dashboard-card cmn-school-tab-panel cmn-school-tab-panel--activity">
+                                <h3>Activity</h3>
+                                <?php if ($recent_activity_items) : ?>
+                                    <ul class="cmn-activity-list">
+                                        <?php foreach ($recent_activity_items as $recent_activity_item) : ?>
+                                            <?php
+                                            $activity_type = (string) ($recent_activity_item['type'] ?? 'Activity');
+                                            $activity_title = (string) ($recent_activity_item['title'] ?? 'Update');
+                                            $activity_meta = (string) ($recent_activity_item['meta'] ?? '');
+                                            ?>
+                                            <li>
+                                                <div>
+                                                    <strong><?php echo esc_html($activity_type); ?>:</strong> <?php echo esc_html($activity_title); ?>
+                                                    <?php if ($activity_meta !== '') : ?>
+                                                        <div class="cmn-muted"><?php echo esc_html($activity_meta); ?></div>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                <?php else : ?>
+                                    <p class="cmn-muted">No profile activity logged yet.</p>
+                                <?php endif; ?>
+                            </article>
+
+                            <article class="cmn-dashboard-card cmn-school-tab-panel cmn-school-tab-panel--activity" id="cmn-school-feedback-panel" data-school-feedback-panel>
+                                <h3>Feedback History</h3>
+                                <div class="cmn-school-feedback-inline">
+                                    <span class="cmn-school-feedback-stars<?php echo !$feedback_has_entries ? ' is-empty' : ''; ?>" aria-hidden="true">
+                                        <span class="cmn-school-feedback-stars-row">
+                                            <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
+                                                <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>">★</span>
+                                            <?php endfor; ?>
+                                        </span>
+                                        <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
+                                    </span>
+                                    <span class="cmn-muted"><?php echo esc_html($feedback_count_label); ?></span>
+                                </div>
+                                <?php if ($feedback_entries) : ?>
+                                    <ul class="cmn-activity-list cmn-school-feedback-entry-list">
+                                        <?php foreach ($feedback_entries as $feedback_entry) : ?>
+                                            <?php
+                                            $entry_rating = max(0, min(5, (int) ($feedback_entry['rating_overall'] ?? 0)));
+                                            $entry_comments = trim((string) ($feedback_entry['comments'] ?? ''));
+                                            $entry_created_at = trim((string) ($feedback_entry['created_at'] ?? ''));
+                                            $entry_created_ts = $entry_created_at !== '' ? strtotime($entry_created_at) : false;
+                                            $entry_created_label = $entry_created_ts ? date_i18n('M j, Y g:ia', $entry_created_ts) : ($entry_created_at !== '' ? $entry_created_at : 'Date unavailable');
+                                            ?>
+                                            <li>
+                                                <div class="cmn-school-feedback-entry-head">
+                                                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
+                                                        <?php for ($entry_star = 1; $entry_star <= 5; $entry_star++) : ?>
+                                                            <span class="cmn-school-feedback-star<?php echo $entry_star <= $entry_rating ? ' is-active' : ''; ?>">★</span>
+                                                        <?php endfor; ?>
+                                                    </span>
+                                                    <strong><?php echo esc_html(number_format((float) $entry_rating, 1)); ?>/5</strong>
+                                                    <span class="cmn-muted"><?php echo esc_html($entry_created_label); ?></span>
+                                                </div>
+                                                <?php if ($entry_comments !== '') : ?>
+                                                    <div class="cmn-activity-content"><?php echo esc_html(wp_trim_words($entry_comments, 24, '...')); ?></div>
+                                                <?php else : ?>
+                                                    <div class="cmn-muted">No additional comments.</div>
+                                                <?php endif; ?>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                <?php else : ?>
+                                    <p class="cmn-muted">No feedback history yet.</p>
+                                <?php endif; ?>
+                            </article>
+
+                            <article class="cmn-dashboard-card cmn-school-tab-panel cmn-school-tab-panel--bookings">
+                                <h3>Bookings</h3>
+                                <div class="cmn-school-profile-summary-strip">
+                                    <span class="cmn-pill">Upcoming: <?php echo esc_html((string) $profile_booking_counts['upcoming']); ?></span>
+                                    <span class="cmn-pill">Completed: <?php echo esc_html((string) $profile_booking_counts['completed']); ?></span>
+                                    <span class="cmn-pill">Other: <?php echo esc_html((string) $profile_booking_counts['other']); ?></span>
+                                </div>
+                                <?php if ($profile_booking_rows) : ?>
+                                    <ul class="cmn-activity-list">
+                                        <?php foreach ($profile_booking_rows as $booking_row) : ?>
+                                            <li>
+                                                <div>
+                                                    <strong><?php echo esc_html((string) ($booking_row['title'] ?? 'Booking')); ?></strong>
+                                                    <?php if (!empty($booking_row['candidate_name'])) : ?>
+                                                        <div class="cmn-muted"><?php echo esc_html((string) $booking_row['candidate_name']); ?></div>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div class="cmn-muted">
+                                                    <span class="cmn-pill cmn-pill--status"><?php echo esc_html((string) ($booking_row['status_label'] ?? '')); ?></span>
+                                                    <span><?php echo esc_html((string) ($booking_row['date_label'] ?? '')); ?></span>
+                                                    <span><?php echo esc_html((string) ($booking_row['time_label'] ?? '')); ?></span>
+                                                </div>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                <?php else : ?>
+                                    <p class="cmn-muted">No bookings available yet.</p>
+                                <?php endif; ?>
+                            </article>
+
+                            <article class="cmn-dashboard-card cmn-school-tab-panel cmn-school-tab-panel--documents">
+                                <h3>Documents</h3>
+                                <div class="cmn-meta-grid">
+                                    <div><strong>Registration Reference:</strong> <?php echo esc_html($display_value((string) get_post_meta($user_school_id, 'cmn_registration_ref', true))); ?></div>
+                                    <div><strong>Registration Requested:</strong> <?php echo esc_html($display_value((string) get_post_meta($user_school_id, 'cmn_registration_requested_at', true))); ?></div>
+                                    <div><strong>Website:</strong> <?php echo esc_html($display_value((string) get_post_meta($user_school_id, 'cmn_website', true))); ?></div>
+                                    <div><strong>Notes:</strong> <?php echo esc_html($display_value((string) get_post_meta($user_school_id, 'cmn_notes', true))); ?></div>
+                                </div>
+                                <p class="cmn-muted">Uploaded school documents will appear here when document storage is connected for this profile.</p>
+                            </article>
+
+                            <form class="cmn-dashboard-card cmn-school-tab-panel cmn-school-tab-panel--settings cmn-dashboard-card-wide cmn-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                                 <?php wp_nonce_field('cmn_school_profile_update', 'cmn_school_profile_nonce'); ?>
                                 <input type="hidden" name="action" value="cmn_school_update_profile">
-                                <h3>School Details</h3>
+                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($profile_settings_redirect); ?>">
+                                <h3>Settings</h3>
                                 <div class="cmn-form-grid">
                                     <label>School Name
-                                        <input type="text" name="cmn_school_name" required value="<?php echo esc_attr(get_the_title($user_school_id)); ?>">
+                                        <input type="text" name="cmn_school_name" required value="<?php echo esc_attr($school_name_value); ?>">
                                     </label>
                                     <label>Location
-                                        <input type="text" name="cmn_location" required value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_location', true)); ?>">
+                                        <input type="text" name="cmn_location" value="<?php echo esc_attr($school_location_value); ?>">
                                     </label>
                                     <label>Email
                                         <input type="email" name="cmn_email" required value="<?php echo esc_attr($school_email_value); ?>">
                                     </label>
                                     <label>Phone
-                                        <input type="text" name="cmn_phone" required value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_phone', true)); ?>">
+                                        <input type="text" name="cmn_phone" value="<?php echo esc_attr($school_phone_value); ?>">
                                     </label>
                                     <label>Website
                                         <input type="url" name="cmn_website" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_website', true)); ?>">
                                     </label>
                                     <label>Primary Contact
-                                        <input type="text" name="cmn_contact1" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1', true)); ?>">
+                                        <input type="text" name="cmn_contact1" value="<?php echo esc_attr($school_primary_contact_value); ?>">
                                     </label>
                                     <label>Primary Contact Role
-                                        <input type="text" name="cmn_contact_role" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact_role', true)); ?>">
+                                        <input type="text" name="cmn_contact_role" value="<?php echo esc_attr($school_contact_role_value); ?>">
                                     </label>
                                     <label>Primary Contact Email
-                                        <input type="email" name="cmn_contact1_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1_email', true)); ?>">
+                                        <input type="email" name="cmn_contact1_email" value="<?php echo esc_attr($school_primary_contact_email); ?>">
                                     </label>
-	                                    <label>Primary Contact Phone
-	                                        <input type="text" name="cmn_primary_contact_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_primary_contact_phone', true)); ?>">
-	                                    </label>
-	                                    <label>Email Greeting Name
-	                                        <input type="text" name="cmn_email_name" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_email_name', true)); ?>">
-	                                    </label>
+                                    <label>Primary Contact Phone
+                                        <input type="text" name="cmn_primary_contact_phone" value="<?php echo esc_attr($school_primary_contact_phone); ?>">
+                                    </label>
+                                    <label>Email Greeting Name
+                                        <input type="text" name="cmn_email_name" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_email_name', true)); ?>">
+                                    </label>
                                     <label>House / Number
                                         <input type="text" name="cmn_house_number" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_house_number', true)); ?>">
                                     </label>
@@ -64974,9 +66895,6 @@ final class CMN_One_Plugin {
                                     <label>Postcode
                                         <input type="text" name="cmn_postcode" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_postcode', true)); ?>">
                                     </label>
-                                </div>
-                                <h3>School Profile</h3>
-                                <div class="cmn-form-grid">
                                     <label>School type
                                         <select name="cmn_school_type">
                                             <option value="">Select</option>
@@ -65027,56 +66945,66 @@ final class CMN_One_Plugin {
                             </form>
                         </div>
                     <?php elseif ($tab === 'support') : ?>
-                        <header class="cmn-school-header">
-                            <h2>Support</h2>
-                        </header>
-                        <div class="cmn-support-user" data-support-root data-support-mode="user" data-support-role="school">
-                            <div class="cmn-support-header-row">
+                        <div class="cmn-support-user cmn-school-support-centre" data-support-root data-support-mode="user" data-support-role="school">
+                            <header class="cmn-school-header cmn-school-support-top">
                                 <div>
-                                    <h3>Need help?</h3>
-                                    <p class="cmn-muted">Email school@covermenow.co.uk or open a support ticket.</p>
+                                    <h2>Support</h2>
+                                    <p class="cmn-muted">Track tickets, release updates and support conversations in one workspace.</p>
                                 </div>
-                                <button class="cmn-primary" type="button" data-support-open>Open Support Ticket</button>
-                            </div>
-                            <?php echo $this->render_support_whats_new_panel('school'); ?>
-                            <div class="cmn-support-dashboard" data-support-dashboard>
-                                <button class="cmn-support-tile is-active" type="button" data-support-tile="all">
-                                    <span>All tickets</span>
-                                    <strong data-support-count="all">0</strong>
-                                </button>
-                                <button class="cmn-support-tile" type="button" data-support-tile="open">
-                                    <span>Open tickets</span>
-                                    <strong data-support-count="open">0</strong>
-                                </button>
-                                <button class="cmn-support-tile" type="button" data-support-tile="closed">
-                                    <span>Closed tickets</span>
-                                    <strong data-support-count="closed">0</strong>
-                                </button>
-                                <button class="cmn-support-tile" type="button" data-support-tile="needs_feedback">
-                                    <span>Needs feedback</span>
-                                    <strong data-support-count="needs_feedback">0</strong>
-                                </button>
-                                <button class="cmn-support-tile" type="button" data-support-tile="feedback_insights">
-                                    <span>Recent feedback</span>
-                                    <strong data-support-count="feedback_avg">0.0/5</strong>
-                                </button>
-                            </div>
-                            <div class="cmn-support-body">
-                                <div class="cmn-support-sidebar">
-                                    <div class="cmn-support-filters">
-                                        <button class="cmn-ghost is-active" type="button" data-support-filter="all">All</button>
-                                        <button class="cmn-ghost" type="button" data-support-filter="open">Open</button>
-                                        <button class="cmn-ghost" type="button" data-support-filter="closed">Closed</button>
-                                        <button class="cmn-ghost" type="button" data-support-filter="needs_feedback">Needs feedback</button>
+                                <button class="cmn-primary" type="button" data-support-open>Open Ticket</button>
+                            </header>
+                            <div class="cmn-support-body cmn-school-support-layout">
+                                <aside class="cmn-support-sidebar cmn-school-support-sidebar">
+                                    <div class="cmn-support-dashboard cmn-school-support-counts" data-support-dashboard>
+                                        <button class="cmn-support-tile is-active" type="button" data-support-tile="all">
+                                            <span>All tickets</span>
+                                            <strong data-support-count="all">0</strong>
+                                        </button>
+                                        <button class="cmn-support-tile" type="button" data-support-tile="open">
+                                            <span>Open</span>
+                                            <strong data-support-count="open">0</strong>
+                                        </button>
+                                        <button class="cmn-support-tile" type="button" data-support-tile="closed">
+                                            <span>Closed</span>
+                                            <strong data-support-count="closed">0</strong>
+                                        </button>
+                                        <button class="cmn-support-tile" type="button" data-support-tile="needs_feedback">
+                                            <span>Feedback due</span>
+                                            <strong data-support-count="needs_feedback">0</strong>
+                                        </button>
+                                        <button class="cmn-support-tile" type="button" data-support-tile="feedback_insights">
+                                            <span>Feedback score</span>
+                                            <strong data-support-count="feedback_avg">0.0/5</strong>
+                                        </button>
+                                    </div>
+                                    <div class="cmn-school-support-release">
+                                        <?php echo $this->render_support_whats_new_panel('school'); ?>
+                                    </div>
+                                    <div class="cmn-school-support-filter-block">
+                                        <div class="cmn-support-filters cmn-school-support-status-filters">
+                                            <button class="cmn-ghost is-active" type="button" data-support-filter="all">All</button>
+                                            <button class="cmn-ghost" type="button" data-support-filter="open">Open</button>
+                                            <button class="cmn-ghost" type="button" data-support-filter="closed">Closed</button>
+                                            <button class="cmn-ghost" type="button" data-support-filter="needs_feedback">Needs feedback</button>
+                                        </div>
+                                        <label class="cmn-school-support-priority-control">Priority
+                                            <select data-support-priority-filter>
+                                                <option value="all" selected>All priorities</option>
+                                                <option value="urgent">Urgent</option>
+                                                <option value="high">High</option>
+                                                <option value="normal">Normal</option>
+                                                <option value="low">Low</option>
+                                            </select>
+                                        </label>
                                     </div>
                                     <div class="cmn-support-list" data-support-list>
                                         <div class="cmn-muted">Loading tickets...</div>
                                     </div>
-                                </div>
-                                <div class="cmn-support-thread" data-support-thread>
+                                </aside>
+                                <section class="cmn-support-thread cmn-school-support-thread" data-support-thread>
                                     <div class="cmn-support-thread-header">
                                         <div>
-                                            <strong data-support-thread-title>My Tickets</strong>
+                                            <strong data-support-thread-title>Ticket Conversation</strong>
                                             <span class="cmn-muted" data-support-thread-ref>Select a ticket to view messages.</span>
                                             <span class="cmn-status-chip is-approved" data-support-feedback-badge hidden>Feedback submitted</span>
                                         </div>
@@ -65093,7 +67021,7 @@ final class CMN_One_Plugin {
                                         <button class="cmn-primary" type="submit">Send Reply</button>
                                     </form>
                                     <div class="cmn-support-feedback" data-support-feedback></div>
-                                </div>
+                                </section>
                             </div>
                         </div>
                         <div class="cmn-support-feedback-modal" data-support-feedback-modal hidden>
@@ -70525,8 +72453,25 @@ final class CMN_One_Plugin {
         $summary_total_gross_value = $period_has_payroll_data
             ? ('GBP ' . number_format((float) ($period_totals['total_gross'] ?? 0), 2))
             : '—';
-        $locked_state_label = $period_has_payroll_data ? 'Locked' : 'Unlocked';
-        $locked_state_chip = $period_has_payroll_data ? 'is-approved' : 'is-pending';
+        $lock_state_key = 'unlocked';
+        if ($period_locked || $run_exists) {
+            $lock_state_key = 'locked';
+        } elseif ($period_id !== '') {
+            $lock_state_key = 'awaiting_lock';
+        }
+        $lock_state_labels = [
+            'unlocked' => 'Unlocked',
+            'awaiting_lock' => 'Awaiting lock',
+            'locked' => 'Locked',
+        ];
+        $lock_state_label = (string) ($lock_state_labels[$lock_state_key] ?? 'Unlocked');
+        $lock_state_badge_class = 'cmn-staff-payroll-lock-chip is-' . $lock_state_key;
+        $header_lock_state_label = ($lock_state_key === 'locked') ? 'LOCKED' : 'UNLOCKED';
+        $payroll_period_command_label = 'Fri ' . $payroll_week_start_label . ' -> Thu ' . $payroll_week_end_label;
+        $payroll_control_message = ($lock_state_key === 'locked')
+            ? 'Period locked. Payouts can now be processed.'
+            : 'This pay period must be locked before payouts can be generated.';
+        $payroll_control_message_class = 'cmn-staff-payroll-system-note ' . ($lock_state_key === 'locked' ? 'is-locked' : 'is-unlocked');
 
         $generate_button_enabled = $can_generate_run && $period_locked && !$run_exists;
         $generate_button_label = 'Generate payout run';
@@ -70563,73 +72508,92 @@ final class CMN_One_Plugin {
 
         ob_start();
         ?>
-        <section class="cmn-staff-payroll-page">
+        <section class="cmn-staff-payroll-page cmn-staff-payroll-page--ops">
             <article class="cmn-dashboard-card cmn-staff-payroll-header-card">
-                <h2>Payroll</h2>
-                <p>Weekly candidate payouts (Fri-Thu paid Friday).</p>
-                <div class="cmn-staff-payroll-ticket-badge-wrap">
-                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($open_payroll_ticket_link); ?>">
-                        Open payroll tickets
-                        <span class="cmn-status-chip <?php echo $open_payroll_ticket_count > 0 ? 'is-warning' : 'is-approved'; ?>"><?php echo esc_html(number_format((int) $open_payroll_ticket_count)); ?></span>
+                <div class="cmn-staff-payroll-header-main">
+                    <h2>Payroll Operations</h2>
+                    <p>Weekly candidate payout processing (Fri-Thu, paid Friday).</p>
+                </div>
+                <div class="cmn-staff-payroll-header-stats">
+                    <a class="cmn-staff-payroll-stat-badge is-link" href="<?php echo esc_url($open_payroll_ticket_link); ?>">
+                        <span>Open payroll tickets</span>
+                        <strong><?php echo esc_html(number_format((int) $open_payroll_ticket_count)); ?></strong>
                     </a>
+                    <span class="cmn-staff-payroll-stat-badge <?php echo esc_attr('is-' . $lock_state_key); ?>">
+                        <span>Locked Status</span>
+                        <strong><?php echo esc_html($header_lock_state_label); ?></strong>
+                    </span>
+                    <span class="cmn-staff-payroll-stat-badge">
+                        <span>Pay Date</span>
+                        <strong><?php echo esc_html($payroll_pay_date_label); ?></strong>
+                    </span>
                 </div>
             </article>
             <?php if ($payroll_notice_message !== '') : ?>
                 <div class="<?php echo esc_attr($payroll_notice_class); ?> cmn-staff-payroll-run-notice"><?php echo esc_html($payroll_notice_message); ?></div>
             <?php endif; ?>
             <article class="cmn-dashboard-card cmn-staff-payroll-summary-card">
-                <div class="cmn-card-header">
+                <div class="cmn-card-header cmn-staff-payroll-summary-head">
                     <h3>Current Pay Period Summary</h3>
-                    <?php if ($run_exists) : ?>
-                        <span class="cmn-status-chip is-approved">Payout run generated</span>
-                    <?php elseif ($period_locked) : ?>
-                        <span class="cmn-status-chip is-pending">Locked</span>
-                    <?php else : ?>
-                        <span class="cmn-status-chip is-pending">Awaiting lock</span>
-                    <?php endif; ?>
+                    <span class="<?php echo esc_attr($lock_state_badge_class); ?>"><?php echo esc_html($lock_state_label); ?></span>
                 </div>
-                <div class="cmn-profile-meta-grid cmn-staff-payroll-summary-grid">
-                    <div class="cmn-profile-meta-item">
-                        <span class="cmn-profile-meta-label">Pay period</span>
-                        <strong class="cmn-profile-meta-value">Fri <?php echo esc_html($payroll_week_start_label); ?> -> Thu <?php echo esc_html($payroll_week_end_label); ?></strong>
+                <div class="cmn-staff-payroll-summary-command">
+                    <div class="cmn-staff-payroll-summary-column is-period">
+                        <span class="cmn-profile-meta-label">Pay Period</span>
+                        <strong class="cmn-profile-meta-value"><?php echo esc_html($payroll_period_command_label); ?></strong>
                     </div>
-                    <div class="cmn-profile-meta-item">
-                        <span class="cmn-profile-meta-label">Candidates due payment</span>
-                        <strong class="cmn-profile-meta-value"><?php echo esc_html($summary_candidates_value); ?></strong>
+                    <div class="cmn-staff-payroll-summary-column is-metrics">
+                        <div class="cmn-profile-meta-item">
+                            <span class="cmn-profile-meta-label">Candidates Due Payment</span>
+                            <strong class="cmn-profile-meta-value"><?php echo esc_html($summary_candidates_value); ?></strong>
+                        </div>
+                        <div class="cmn-profile-meta-item">
+                            <span class="cmn-profile-meta-label">Total Gross To Pay</span>
+                            <strong class="cmn-profile-meta-value"><?php echo esc_html($summary_total_gross_value); ?></strong>
+                        </div>
                     </div>
-                    <div class="cmn-profile-meta-item">
-                        <span class="cmn-profile-meta-label">Total gross to pay</span>
-                        <strong class="cmn-profile-meta-value"><?php echo esc_html($summary_total_gross_value); ?></strong>
-                    </div>
-                    <div class="cmn-profile-meta-item">
-                        <span class="cmn-profile-meta-label">Locked status</span>
-                        <strong class="cmn-profile-meta-value"><span class="cmn-status-chip <?php echo esc_attr($locked_state_chip); ?>"><?php echo esc_html($locked_state_label); ?></span></strong>
+                    <div class="cmn-staff-payroll-summary-column is-status">
+                        <div class="cmn-profile-meta-item">
+                            <span class="cmn-profile-meta-label">Lock Status</span>
+                            <strong class="cmn-profile-meta-value"><span class="<?php echo esc_attr($lock_state_badge_class); ?>"><?php echo esc_html($lock_state_label); ?></span></strong>
+                        </div>
+                        <div class="cmn-profile-meta-item">
+                            <span class="cmn-profile-meta-label">Pay Date</span>
+                            <strong class="cmn-profile-meta-value"><?php echo esc_html($payroll_pay_date_label); ?></strong>
+                        </div>
                     </div>
                 </div>
-                <p class="cmn-muted">Pay date: <?php echo esc_html($payroll_pay_date_label); ?></p>
-                <div class="cmn-staff-payroll-actions">
-                    <button class="cmn-ghost" type="button" disabled>Lock period</button>
-                    <?php if ($generate_button_enabled) : ?>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
-                            <?php wp_nonce_field('cmn_generate_payout_run', 'cmn_generate_payout_run_nonce'); ?>
-                            <input type="hidden" name="action" value="cmn_generate_payout_run">
-                            <input type="hidden" name="cmn_period_id" value="<?php echo esc_attr($period_id); ?>">
-                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_staff_payroll_tab_url()); ?>">
-                            <button class="cmn-primary" type="submit"><?php echo esc_html($generate_button_label); ?></button>
-                        </form>
-                    <?php else : ?>
-                        <button class="cmn-ghost" type="button" disabled><?php echo esc_html($generate_button_label); ?></button>
-                    <?php endif; ?>
-                    <button class="cmn-ghost" type="button" disabled>Export CSV</button>
-                    <button class="cmn-ghost" type="button" disabled>View disputes</button>
+                <div class="cmn-staff-payroll-action-block">
+                    <div class="cmn-staff-payroll-action-primary-row">
+                        <button class="cmn-primary cmn-staff-payroll-lock-btn" type="button" disabled>Lock Period</button>
+                        <?php if ($generate_button_enabled) : ?>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                <?php wp_nonce_field('cmn_generate_payout_run', 'cmn_generate_payout_run_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_generate_payout_run">
+                                <input type="hidden" name="cmn_period_id" value="<?php echo esc_attr($period_id); ?>">
+                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_staff_payroll_tab_url()); ?>">
+                                <button class="cmn-ghost cmn-staff-payroll-generate-btn" type="submit"><?php echo esc_html($generate_button_label); ?></button>
+                            </form>
+                        <?php else : ?>
+                            <button class="cmn-ghost cmn-staff-payroll-generate-btn" type="button" disabled><?php echo esc_html($generate_button_label); ?></button>
+                        <?php endif; ?>
+                    </div>
+                    <div class="cmn-staff-payroll-action-secondary-row">
+                        <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Export CSV</button>
+                        <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View Disputes</button>
+                    </div>
+                    <p class="<?php echo esc_attr($payroll_control_message_class); ?>"><?php echo esc_html($payroll_control_message); ?></p>
+                </div>
+                <div class="cmn-staff-payroll-safety-indicator">
+                    <span class="cmn-status-chip is-warning">Safety</span>
+                    <span>Manual adjustments carry into next generated run.</span>
                 </div>
             </article>
             <article class="cmn-dashboard-card cmn-staff-payroll-tickets-card">
-                <div class="cmn-card-header">
-                    <h3>Payroll Tickets</h3>
-                    <span class="cmn-status-chip is-pending"><?php echo esc_html(number_format((int) $payroll_ticket_row_count)); ?> shown</span>
+                <div class="cmn-card-header cmn-staff-payroll-tickets-head">
+                    <h3>Payroll Tickets <small>(<?php echo esc_html(number_format((int) $payroll_ticket_row_count)); ?> shown)</small></h3>
                 </div>
-                <form method="get" action="<?php echo esc_url($payroll_ticket_filter_form_action); ?>" class="cmn-form-grid cmn-staff-payroll-ticket-filters">
+                <form method="get" action="<?php echo esc_url($payroll_ticket_filter_form_action); ?>" class="cmn-form-grid cmn-staff-payroll-ticket-filters cmn-staff-payroll-ticket-filters-panel">
                     <input type="hidden" name="cmn_tab" value="staff_payroll">
                     <label>Status
                         <select name="cmn_payroll_ticket_status">
@@ -70670,7 +72634,7 @@ final class CMN_One_Plugin {
                         </select>
                     </label>
                     <div class="cmn-staff-payroll-actions cmn-staff-payroll-ticket-filter-actions">
-                        <button class="cmn-primary cmn-btn-mini" type="submit">Apply filters</button>
+                        <button class="cmn-primary cmn-btn-mini" type="submit">Apply Filters</button>
                         <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($this->get_staff_payroll_tab_url()); ?>">Reset</a>
                     </div>
                 </form>
@@ -70732,7 +72696,19 @@ final class CMN_One_Plugin {
                                 <?php endforeach; ?>
                             <?php else : ?>
                                 <tr>
-                                    <td colspan="8"><div class="cmn-empty">No payroll tickets found for this filter.</div></td>
+                                    <td colspan="8">
+                                        <div class="cmn-staff-payroll-empty-state" role="status" aria-live="polite">
+                                            <span class="cmn-staff-payroll-empty-icon" aria-hidden="true">
+                                                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                                    <path d="M4 7h16v10H4z"></path>
+                                                    <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                    <path d="M8 12h8"></path>
+                                                </svg>
+                                            </span>
+                                            <strong>No Payroll Tickets</strong>
+                                            <p>No payroll issues detected for this period.</p>
+                                        </div>
+                                    </td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -88647,6 +90623,10 @@ p{margin:0;line-height:1.5}
         if (!$this->is_staff_user($user_id) && in_array($status, ['active', 'new', 'new_open'], true)) {
             $status = 'all';
         }
+        $priority = sanitize_key((string) ($_POST['priority'] ?? 'all'));
+        if (!in_array($priority, ['all', 'low', 'normal', 'high', 'urgent'], true)) {
+            $priority = 'all';
+        }
         $ticket_id = (int) ($_POST['ticket_id'] ?? 0);
         $ticket_ref = sanitize_text_field((string) ($_POST['ticket_ref'] ?? ''));
         $debug_mode = (isset($_REQUEST['cmn_debug']) && (string) $_REQUEST['cmn_debug'] === '1' && $this->is_admin_user($user_id));
@@ -88656,6 +90636,7 @@ p{margin:0;line-height:1.5}
         $this->maybe_expire_support_feedback_requests();
         $has_created_by = in_array('created_by_user_id', $columns, true);
         $has_user_id = in_array('user_id', $columns, true);
+        $has_priority = in_array('priority', $columns, true);
         $owner_scope = $has_created_by && $has_user_id
             ? 'created_by_or_user'
             : ($has_created_by ? 'created_by' : ($has_user_id ? 'user_id' : 'none'));
@@ -88674,10 +90655,15 @@ p{margin:0;line-height:1.5}
                 $params[] = $user_id;
             }
         }
+        if ($priority !== 'all' && $has_priority) {
+            $where[] = "LOWER(COALESCE(t.priority, 'normal')) = %s";
+            $params[] = $priority;
+        }
         $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
         $limit = $this->is_staff_user() ? 200 : 50;
         $feedback_table = $this->get_support_feedback_table();
         $is_new_expr = in_array('is_new_for_admin', $columns, true) ? 't.is_new_for_admin' : '0';
+        $priority_expr = $has_priority ? "LOWER(COALESCE(t.priority, 'normal'))" : "'normal'";
         $feedback_request_status_expr = in_array('feedback_request_status', $columns, true)
             ? 't.feedback_request_status'
             : "'none' AS feedback_request_status";
@@ -88687,18 +90673,23 @@ p{margin:0;line-height:1.5}
         $feedback_request_expires_at_expr = in_array('feedback_request_expires_at', $columns, true)
             ? 't.feedback_request_expires_at'
             : "NULL AS feedback_request_expires_at";
-        $sql = "SELECT t.id, t.ticket_ref, t.subject, t.status, {$is_new_expr} AS is_new_for_admin, t.updated_at, {$feedback_request_status_expr}, {$feedback_requested_at_expr}, {$feedback_request_expires_at_expr}, (SELECT COUNT(1) FROM {$feedback_table} sf WHERE sf.ticket_id = t.id) AS feedback_count FROM {$table} t {$where_sql} ORDER BY t.updated_at DESC LIMIT {$limit}";
+        $sql = "SELECT t.id, t.ticket_ref, t.subject, t.status, {$priority_expr} AS priority, {$is_new_expr} AS is_new_for_admin, t.updated_at, {$feedback_request_status_expr}, {$feedback_requested_at_expr}, {$feedback_request_expires_at_expr}, (SELECT COUNT(1) FROM {$feedback_table} sf WHERE sf.ticket_id = t.id) AS feedback_count FROM {$table} t {$where_sql} ORDER BY t.updated_at DESC LIMIT {$limit}";
         $prepared = $params ? $wpdb->prepare($sql, $params) : $sql;
         $rows = (array) $wpdb->get_results($prepared, ARRAY_A);
         if (!empty($wpdb->last_error)) {
             error_log('CMN support list query error: ' . $wpdb->last_error);
         }
-        $tickets_all = array_map(function ($row) {
+        $normalize_ticket_priority = static function ($raw_priority) {
+            $raw_priority = sanitize_key((string) $raw_priority);
+            return in_array($raw_priority, ['low', 'normal', 'high', 'urgent'], true) ? $raw_priority : 'normal';
+        };
+        $tickets_all = array_map(function ($row) use ($normalize_ticket_priority) {
             return [
                 'id' => (int) $row['id'],
                 'ref' => $row['ticket_ref'],
                 'subject' => $row['subject'],
                 'status' => $this->normalize_support_ticket_for_view($row, $this->is_staff_user())['status'],
+                'priority' => $normalize_ticket_priority($row['priority'] ?? 'normal'),
                 'is_new_for_admin' => isset($row['is_new_for_admin']) ? (int) $row['is_new_for_admin'] : 0,
                 'feedback_count' => isset($row['feedback_count']) ? (int) $row['feedback_count'] : 0,
                 'feedback_request_status' => $this->normalize_support_feedback_request_status((string) ($row['feedback_request_status'] ?? 'none')),
@@ -88804,6 +90795,7 @@ p{margin:0;line-height:1.5}
                         'ref' => (string) ($selected_normalized['ticket_ref'] ?? ''),
                         'subject' => (string) ($selected_normalized['subject'] ?? ''),
                         'status' => (string) ($selected_normalized['status'] ?? 'open'),
+                        'priority' => $normalize_ticket_priority($selected_normalized['priority'] ?? 'normal'),
                         'is_new_for_admin' => isset($selected_normalized['is_new_for_admin']) ? (int) $selected_normalized['is_new_for_admin'] : 0,
                         'feedback_count' => $selected_feedback_count,
                         'feedback_request_status' => $this->normalize_support_feedback_request_status((string) ($selected_normalized['feedback_request_status'] ?? 'none')),
@@ -88890,6 +90882,7 @@ p{margin:0;line-height:1.5}
         $response = [
             'tickets' => $tickets,
             'filter' => $status,
+            'priority_filter' => $priority,
             'forced_filter' => $forced_filter,
             'selected_ticket_id' => $selected_ticket ? (int) $selected_ticket['id'] : 0,
             'dashboard' => [
@@ -88917,6 +90910,7 @@ p{margin:0;line-height:1.5}
                 'current_user_id' => $user_id,
                 'roles' => wp_get_current_user() ? (array) wp_get_current_user()->roles : [],
                 'status_filter' => $status,
+                'priority_filter' => $priority,
                 'owner_scope' => $owner_scope,
                 'query_sql' => $prepared,
                 'query_where' => $where,
