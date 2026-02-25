@@ -9120,30 +9120,39 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 }
 
 .cmn-staff-candidate-overview-card .cmn-card-header {
-  align-items: flex-start;
+  align-items: center;
+  margin-bottom: 2px;
 }
 
 .cmn-staff-candidate-overview-head {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .cmn-staff-candidate-overview-name {
   margin: 0;
-  font-size: 22px;
+  font-size: 21px;
   line-height: 1.2;
 }
 
 .cmn-staff-candidate-rating-link {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   text-decoration: none;
-  padding: 2px 6px;
+  min-height: 30px;
+  padding: 0 10px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(8, 11, 17, 0.88);
+}
+
+.cmn-staff-candidate-rating-value {
+  font-size: 11px;
+  color: #d8e1ee;
+  white-space: nowrap;
 }
 
 .cmn-staff-candidate-rating-stars {
@@ -9162,13 +9171,72 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   color: #d02a2a;
 }
 
+.cmn-staff-candidate-status-pill {
+  min-height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+}
+
 .cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
+  grid-auto-rows: 1fr;
+}
+
+.cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview .cmn-profile-meta-item {
+  min-height: 92px;
+  height: 100%;
+}
+
+.cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview .cmn-profile-meta-value {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmn-staff-candidate-boolean-pill,
+.cmn-staff-candidate-compliance-pill {
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.cmn-staff-candidate-boolean-pill.is-true {
+  color: #d1f2de;
+  border-color: rgba(76, 175, 118, 0.45);
+  background: rgba(35, 96, 58, 0.35);
+}
+
+.cmn-staff-candidate-boolean-pill.is-false {
+  color: #e8d5d5;
+  border-color: rgba(156, 163, 175, 0.35);
+  background: rgba(70, 75, 86, 0.35);
+}
+
+.cmn-staff-candidate-compliance-pill.is-verified {
+  color: #d7f5e4;
+  border-color: rgba(82, 184, 132, 0.5);
+  background: rgba(30, 83, 54, 0.38);
+}
+
+.cmn-staff-candidate-compliance-pill.is-pending {
+  color: #f6d8bc;
+  border-color: rgba(191, 124, 71, 0.42);
+  background: rgba(89, 54, 28, 0.42);
 }
 
 .cmn-staff-candidate-progress {
-  margin-bottom: 14px;
+  margin-bottom: 8px;
+  gap: 10px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
 .cmn-staff-candidate-profile .cmn-dashboard-card p {
@@ -9202,6 +9270,35 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   color: var(--cmn-text);
   padding: 8px 10px;
   resize: vertical;
+}
+
+@media (max-width: 1200px) {
+  .cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .cmn-staff-candidate-overview-card .cmn-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cmn-staff-candidate-overview-head {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cmn-staff-candidate-profile .cmn-doc-review-actions {

@@ -25929,7 +25929,7 @@ final class CMN_One_Plugin {
             ], $portal_url);
         };
         $candidate_status_label = ucfirst(str_replace('_', ' ', $status_value));
-        $candidate_status_chip_class = in_array($status_value, ['approved', 'active'], true) ? 'is-approved' : (in_array($status_value, ['rejected', 'declined'], true) ? 'is-declined' : 'is-pending');
+        $candidate_status_chip_class = in_array($status_value, ['approved', 'active'], true) ? 'is-verified' : (in_array($status_value, ['rejected', 'declined'], true) ? 'is-declined' : 'is-pending');
         $candidate_rating_value = (float) ($feedback_rating_payload['avg_rating'] ?? 0);
         if ($candidate_rating_value <= 0) {
             $candidate_rating_value = (float) ($feedback_summary['avg_overall'] ?? 0);
@@ -25938,7 +25938,12 @@ final class CMN_One_Plugin {
         $candidate_rating_stars = max(0, min(5, (int) round($candidate_rating_value)));
         $compliance_verified = in_array(strtolower($verification_status), ['verified', 'approved'], true);
         $compliance_status_label = $compliance_verified ? 'Verified' : 'Not verified';
-        $compliance_status_chip_class = $compliance_verified ? 'is-approved' : 'is-pending';
+        $compliance_status_chip_class = $compliance_verified ? 'is-verified' : 'is-pending';
+        $candidate_status_display = strtoupper($candidate_status_label);
+        $qts_boolean_label = $qts_status === 'yes' ? 'Yes' : 'No';
+        $qts_boolean_class = $qts_status === 'yes' ? 'is-true' : 'is-false';
+        $available_tomorrow_label = $available_tomorrow ? 'Yes' : 'No';
+        $available_tomorrow_class = $available_tomorrow ? 'is-true' : 'is-false';
 
         ob_start();
         ?>
@@ -25982,25 +25987,26 @@ final class CMN_One_Plugin {
                             <h3 class="cmn-staff-candidate-overview-name"><?php echo esc_html($profile_name); ?></h3>
                         </div>
                         <div class="cmn-staff-candidate-overview-head">
-                            <span class="cmn-status-chip <?php echo esc_attr($candidate_status_chip_class); ?>"><?php echo esc_html($candidate_status_label); ?></span>
+                            <span class="cmn-status-chip cmn-staff-candidate-status-pill <?php echo esc_attr($candidate_status_chip_class); ?>"><?php echo esc_html($candidate_status_display); ?></span>
                             <a class="cmn-staff-candidate-rating-link" href="<?php echo esc_url($build_candidate_tab_url('feedback')); ?>" title="<?php echo esc_attr(number_format($candidate_rating_value, 1)); ?>/5">
                                 <span class="cmn-staff-candidate-rating-stars" aria-hidden="true">
                                     <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
                                         <span class="cmn-staff-candidate-rating-star<?php echo $star_i <= $candidate_rating_stars ? ' is-active' : ''; ?>">★</span>
                                     <?php endfor; ?>
                                 </span>
+                                <span class="cmn-staff-candidate-rating-value"><?php echo esc_html(number_format($candidate_rating_value, 1)); ?>/5</span>
                             </a>
                         </div>
                     </div>
                     <div class="cmn-meta-grid cmn-meta-grid--staff-candidate-overview">
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Role Type</span><strong class="cmn-profile-meta-value"><?php echo esc_html($role_type !== '' ? $role_type : 'Not set'); ?></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Location</span><strong class="cmn-profile-meta-value"><?php echo esc_html($location !== '' ? $location : 'Not set'); ?></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Postcode</span><strong class="cmn-profile-meta-value"><?php echo esc_html($postcode !== '' ? $postcode : 'Not set'); ?></strong></div>
-                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Role Type</span><strong class="cmn-profile-meta-value"><?php echo esc_html($role_type !== '' ? $role_type : 'Not set'); ?></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Travel Radius</span><strong class="cmn-profile-meta-value"><?php echo esc_html($travel_radius !== '' ? $travel_radius : 'Not set'); ?></strong></div>
-                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">QTS</span><strong class="cmn-profile-meta-value"><?php echo esc_html($qts_status_label); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">QTS</span><strong class="cmn-profile-meta-value"><span class="cmn-pill cmn-staff-candidate-boolean-pill <?php echo esc_attr($qts_boolean_class); ?>"><?php echo esc_html($qts_boolean_label); ?></span></strong></div>
                         <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Next Available Date</span><strong class="cmn-profile-meta-value"><?php echo esc_html($next_available_label); ?></strong></div>
-                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Available Tomorrow</span><strong class="cmn-profile-meta-value"><?php echo esc_html($available_tomorrow ? 'Yes' : 'No'); ?></strong></div>
-                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Compliance Status</span><strong class="cmn-profile-meta-value"><span class="cmn-status-chip <?php echo esc_attr($compliance_status_chip_class); ?>"><?php echo esc_html($compliance_status_label); ?></span></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Available Tomorrow</span><strong class="cmn-profile-meta-value"><span class="cmn-pill cmn-staff-candidate-boolean-pill <?php echo esc_attr($available_tomorrow_class); ?>"><?php echo esc_html($available_tomorrow_label); ?></span></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Compliance Status</span><strong class="cmn-profile-meta-value"><span class="cmn-pill cmn-staff-candidate-compliance-pill <?php echo esc_attr($compliance_status_chip_class); ?>"><?php echo esc_html(strtoupper($compliance_status_label)); ?></span></strong></div>
                     </div>
                 </div>
             <?php elseif ($active_candidate_tab === 'feedback') : ?>
