@@ -68250,6 +68250,11 @@ final class CMN_One_Plugin {
             if ($first_name === '') {
                 $first_name = 'Candidate';
             }
+            $first_name_bits = preg_split('/\s+/', trim((string) $first_name)) ?: [];
+            $first_name = sanitize_text_field((string) ($first_name_bits[0] ?? 'Candidate'));
+            if ($first_name === '') {
+                $first_name = 'Candidate';
+            }
             $avatar_url = $this->get_user_avatar_url_or_fallback($candidate_user_id, 144);
             $availability_date = sanitize_text_field((string) ($candidate_item['availability_date'] ?? ''));
             $existing_request_id = $can_request ? $this->get_school_candidate_request_id_for_date((int) $user_school_id, $candidate_id, $availability_date) : 0;
@@ -68446,6 +68451,11 @@ final class CMN_One_Plugin {
                                 $strength_tags = array_slice((array) ($candidate_row['strength_tags'] ?? []), 0, 3);
                                 $qualification_tags = array_slice((array) ($candidate_row['qualification_tags'] ?? []), 0, 3);
                                 $first_name = sanitize_text_field((string) ($candidate_row['first_name'] ?? 'Candidate'));
+                                $first_name_bits = preg_split('/\s+/', trim((string) $first_name)) ?: [];
+                                $first_name = sanitize_text_field((string) ($first_name_bits[0] ?? 'Candidate'));
+                                if ($first_name === '') {
+                                    $first_name = 'Candidate';
+                                }
                                 $avatar_initial = strtoupper((string) substr($first_name, 0, 1));
                                 if ($avatar_initial === '') {
                                     $avatar_initial = 'C';
@@ -68764,6 +68774,11 @@ final class CMN_One_Plugin {
                                     $testing_strength_tags = array_slice((array) ($testing_candidate['strength_tags'] ?? []), 0, 3);
                                     $testing_qualification_tags = array_slice((array) ($testing_candidate['qualification_tags'] ?? []), 0, 3);
                                     $testing_first_name = sanitize_text_field((string) ($testing_candidate['first_name'] ?? 'Candidate'));
+                                    $testing_first_name_bits = preg_split('/\s+/', trim((string) $testing_first_name)) ?: [];
+                                    $testing_first_name = sanitize_text_field((string) ($testing_first_name_bits[0] ?? 'Candidate'));
+                                    if ($testing_first_name === '') {
+                                        $testing_first_name = 'Candidate';
+                                    }
                                     $testing_avatar_initial = strtoupper((string) substr($testing_first_name, 0, 1));
                                     if ($testing_avatar_initial === '') {
                                         $testing_avatar_initial = 'C';
@@ -68878,6 +68893,11 @@ final class CMN_One_Plugin {
                                 $name_bits = preg_split('/\s+/', $candidate_name) ?: [];
                                 $candidate_first_name = sanitize_text_field((string) ($name_bits[0] ?? ''));
                             }
+                            if ($candidate_first_name === '') {
+                                $candidate_first_name = 'Candidate';
+                            }
+                            $candidate_first_name_bits = preg_split('/\s+/', trim((string) $candidate_first_name)) ?: [];
+                            $candidate_first_name = sanitize_text_field((string) ($candidate_first_name_bits[0] ?? 'Candidate'));
                             if ($candidate_first_name === '') {
                                 $candidate_first_name = 'Candidate';
                             }
