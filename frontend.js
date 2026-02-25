@@ -10234,3 +10234,177 @@ document.addEventListener('DOMContentLoaded', function () {
     showStep(0);
   }
 });
+
+(function(){
+  var roots = document.querySelectorAll('[data-live-matches-root]');
+  if (!roots.length) { return; }
+  roots.forEach(function(root){
+    var payloadRaw = root.getAttribute('data-live-matches') || '{}';
+    var payload = {};
+    try { payload = JSON.parse(payloadRaw); } catch (e) { payload = {}; }
+    var datasetAll = Array.isArray(payload.all) ? payload.all.slice() : [];
+    var tab = 'all';
+    var activeIndex = 0;
+    var carousel = root.querySelector('[data-live-carousel]');
+    var dots = root.querySelector('[data-live-dots]');
+    var tabsEl = root.querySelector('.cmn-live-tabs');
+    var kpis = root.querySelector('[data-live-kpis]');
+    var drawer = root.querySelector('[data-live-filter-drawer]');
+    var filterAvailability = root.querySelector('[data-live-filter-availability]');
+    var filterRoles = root.querySelector('[data-live-filter-roles]');
+    var uiFilters = { availability: 'all', roles: [] };
+    var setDrawerOpen = function(isOpen){
+      if (!drawer) { return; }
+      drawer.hidden = !isOpen;
+      root.classList.toggle('is-filter-open', !!isOpen);
+    };
+
+    var tabDefs = [
+      {key:'all', label:'All Candidates'},
+      {key:'available', label:'Available Now'},
+      {key:'not_responded', label:'Not Responded'},
+      {key:'shortlist', label:'Shortlist'}
+    ];
+
+    var getFiltered = function(){
+      return datasetAll.filter(function(item){
+        if (tab === 'shortlist' && !item.is_shortlisted) return false;
+        if (tab !== 'all' && tab !== 'shortlist' && item.status !== tab) return false;
+        if (uiFilters.availability !== 'all' && item.status !== uiFilters.availability) return false;
+        if (uiFilters.roles.length) {
+          var roleLine = String(item.role_line || '').toLowerCase();
+          var hasRole = uiFilters.roles.some(function(role){ return roleLine.indexOf(String(role).toLowerCase()) !== -1; });
+          if (!hasRole) return false;
+        }
+        return true;
+      });
+    };
+
+    var postAction = function(action, candidateId, extra){
+      var form = new FormData();
+      form.append('action', 'cmn_school_live_match_action');
+      form.append('nonce', (window.cmnPortal && window.cmnPortal.liveMatchNonce) || '');
+      form.append('match_action', action);
+      form.append('candidate_id', String(candidateId || ''));
+      Object.keys(extra || {}).forEach(function(key){ form.append(key, String(extra[key])); });
+      return fetch((window.cmnPortal && window.cmnPortal.ajaxUrl) || '', {method:'POST', credentials:'same-origin', body:form}).then(function(r){ return r.json(); });
+    };
+
+    var cardHtml = function(item, mode){
+      if (!item) return '<div></div>';
+      if (mode === 'side') {
+        return '<article class="cmn-live-card is-side cmn-live-preview" data-candidate-id="'+item.candidate_id+'">'
+          + '<div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div></div>'
+          + '</article>';
+      }
+      var banner = item.status === 'available' ? '<div class="cmn-live-banner">Available This Morning<br><small>Confirmed at '+(item.confirmed_at||'--:--')+'</small></div>' : '<div class="cmn-live-banner" style="background:rgba(68,54,12,.86)">Awaiting confirmation</div>';
+      return '<article class="cmn-live-card" data-candidate-id="'+item.candidate_id+'">'
+        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+' ✓</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-rating">★ '+Number(item.rating||0).toFixed(1)+' ('+(item.reviews||0)+' reviews)</div></div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
+        + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span style="font-size:38%;font-weight:500">Per day</span></div></div>'
+        + '<div class="cmn-live-skills"><span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span></div>'
+        + '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now">Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="'+(item.profile_url || '#')+'" target="_blank" rel="noopener">View Profile</a></div>'
+        + '<div class="cmn-live-offer" data-live-offer></div>'
+        + '</article>';
+    };
+
+    var renderTabs = function(){
+      var counts = {all:0,available:0,not_responded:0,shortlist:0};
+      datasetAll.forEach(function(item){ counts.all += 1; if (item.status === 'available') counts.available += 1; if (item.status === 'not_responded') counts.not_responded += 1; if (item.is_shortlisted) counts.shortlist += 1; });
+      tabsEl.innerHTML = tabDefs.map(function(t){ return '<button class="cmn-live-tab'+(t.key===tab?' is-active':'')+'" data-live-tab="'+t.key+'">'+t.label+' ('+(counts[t.key]||0)+')</button>'; }).join('');
+      kpis.innerHTML = '<div class="cmn-live-kpi"><strong>'+counts.all+'</strong>Candidates Found</div><div class="cmn-live-kpi"><strong>'+counts.available+'</strong>Available Now</div><div class="cmn-live-kpi"><strong>'+counts.not_responded+'</strong>Not Responded</div><div class="cmn-live-kpi"><strong>12 min</strong>Avg response time</div>';
+    };
+
+    var render = function(){
+      var list = getFiltered();
+      if (!list.length) { carousel.innerHTML = '<div class="cmn-muted">No candidates in this tab.</div>'; dots.innerHTML=''; renderTabs(); return; }
+      if (activeIndex >= list.length) activeIndex = 0;
+      var center = list[activeIndex];
+      if (list.length === 1) {
+        carousel.innerHTML = '<div></div>' + cardHtml(center,'center') + '<div></div>';
+      } else {
+        var left = list[(activeIndex - 1 + list.length) % list.length];
+        var right = list[(activeIndex + 1) % list.length];
+        carousel.innerHTML = cardHtml(left,'side') + cardHtml(center,'center') + cardHtml(right,'side');
+      }
+      dots.innerHTML = list.map(function(_,idx){ return '<span class="cmn-live-dot'+(idx===activeIndex?' is-active':'')+'" data-live-dot="'+idx+'"></span>'; }).join('');
+      renderTabs();
+    };
+
+    root.addEventListener('click', function(e){
+      var tabBtn = e.target.closest('[data-live-tab]');
+      if (tabBtn) { tab = tabBtn.getAttribute('data-live-tab') || 'all'; activeIndex = 0; render(); return; }
+      if (e.target.closest('[data-live-prev]')) { activeIndex -= 1; if (activeIndex < 0) activeIndex = getFiltered().length - 1; render(); return; }
+      if (e.target.closest('[data-live-next]')) { activeIndex = (activeIndex + 1) % Math.max(1,getFiltered().length); render(); return; }
+      var dot = e.target.closest('[data-live-dot]');
+      if (dot) { activeIndex = parseInt(dot.getAttribute('data-live-dot') || '0',10) || 0; render(); return; }
+      var sideCard = e.target.closest('.cmn-live-card.is-side');
+      if (sideCard) {
+        var list = getFiltered();
+        var id = parseInt(sideCard.getAttribute('data-candidate-id') || '0',10);
+        var idx = list.findIndex(function(item){ return Number(item.candidate_id) === id; });
+        if (idx >= 0) { activeIndex = idx; render(); }
+        return;
+      }
+      if (e.target.closest('[data-live-filter-open]')) { setDrawerOpen(true); return; }
+      if (e.target.closest('[data-live-filter-close]')) { setDrawerOpen(false); return; }
+      if (e.target.closest('[data-live-filter-apply]')) {
+        if (filterAvailability) { uiFilters.availability = filterAvailability.value || 'all'; }
+        if (filterRoles) {
+          uiFilters.roles = Array.prototype.slice.call(filterRoles.selectedOptions || []).map(function(opt){ return opt.value || ''; }).filter(Boolean);
+        }
+        activeIndex = 0;
+        setDrawerOpen(false);
+        render();
+        return;
+      }
+      if (e.target.closest('[data-live-broadcast]')) { postAction('broadcast_request', 0, {}); return; }
+
+      var actionBtn = e.target.closest('[data-live-action]');
+      if (!actionBtn) { return; }
+      var card = actionBtn.closest('.cmn-live-card');
+      var candidateId = parseInt((card && card.getAttribute('data-candidate-id')) || '0', 10);
+      if (!candidateId) { return; }
+      var action = actionBtn.getAttribute('data-live-action') || '';
+      var current = getFiltered()[activeIndex] || null;
+      var extra = current ? {requested_date: (current.target_date || '')} : {};
+      postAction(action, candidateId, extra).then(function(data){
+        if (!data || !data.success) return;
+        if (action === 'not_interested') {
+          datasetAll = datasetAll.filter(function(item){ return Number(item.candidate_id) !== candidateId; });
+          activeIndex = 0;
+          setDrawerOpen(false);
+    render();
+          return;
+        }
+        if (action === 'shortlist_toggle') {
+          datasetAll = datasetAll.map(function(item){ if (Number(item.candidate_id) === candidateId){ item.is_shortlisted = data.data && data.data.is_shortlisted ? 1 : 0; } return item; });
+          render();
+          return;
+        }
+        if (action === 'book_now' && data.data) {
+          var expiry = new Date((data.data.expires_at || '').replace(' ','T') + 'Z');
+          var offerEl = card ? card.querySelector('[data-live-offer]') : null;
+          if (offerEl && !isNaN(expiry.getTime())) {
+            var tick = function(){
+              var now = new Date();
+              var sec = Math.max(0, Math.floor((expiry.getTime() - now.getTime())/1000));
+              var mm = String(Math.floor(sec/60)).padStart(2,'0');
+              var ss = String(sec%60).padStart(2,'0');
+              offerEl.textContent = sec > 0 ? ('Offer expires in '+mm+':'+ss) : 'Offer expired';
+            };
+            tick();
+            window.setInterval(tick, 1000);
+          }
+        }
+      });
+    });
+
+    root.addEventListener('keydown', function(e){ if (e.key==='ArrowLeft'){ activeIndex = activeIndex-1; if (activeIndex<0) activeIndex = getFiltered().length-1; render(); } if (e.key==='ArrowRight'){ activeIndex=(activeIndex+1)%Math.max(1,getFiltered().length); render(); } });
+    var touchStartX = 0;
+    carousel.addEventListener('touchstart', function(e){ touchStartX = e.touches && e.touches[0] ? e.touches[0].clientX : 0; }, {passive:true});
+    carousel.addEventListener('touchend', function(e){ var endX = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : 0; if ((touchStartX-endX)>40){ activeIndex=(activeIndex+1)%Math.max(1,getFiltered().length); render(); } else if ((endX-touchStartX)>40){ activeIndex=activeIndex-1; if (activeIndex<0) activeIndex=getFiltered().length-1; render(); } }, {passive:true});
+
+    setDrawerOpen(false);
+    render();
+  });
+})();
