@@ -61680,15 +61680,6 @@ final class CMN_One_Plugin {
         };
 
         // The school UI treats only contact details/compliance as blockers.
-        $school_postcode = '';
-        if (array_key_exists('school_postcode', $context)) {
-            $school_postcode = trim((string) $context['school_postcode']);
-        } else {
-            $school_postcode = trim((string) get_post_meta($school_id, 'cmn_postcode', true));
-        }
-        $has_school_coords = array_key_exists('school_coords', $context)
-            ? !empty($context['school_coords'])
-            : !empty($this->get_geo_coordinates_for_post($school_id));
         if (!$this->school_lead_has_contact_method($school_id)) {
             $add_issue('Missing contact method (phone or email required).');
         }
@@ -61711,27 +61702,6 @@ final class CMN_One_Plugin {
         }
         if ($explicit_compliance_required) {
             $add_issue('Compliance action required.');
-        }
-
-        $school_is_active = in_array($status_key, ['active', 'client', 'active_client', 'live'], true) || $request_status === 'approved';
-        $has_open_request = array_key_exists('has_open_request', $context)
-            ? !empty($context['has_open_request'])
-            : false;
-        $has_attempted_request = array_key_exists('has_attempted_request', $context)
-            ? !empty($context['has_attempted_request'])
-            : $has_open_request;
-        $matching_required = array_key_exists('matching_required', $context)
-            ? !empty($context['matching_required'])
-            : $this->school_requires_location_verification($school_id);
-        $show_location_issue = (
-            $school_is_active
-            && $has_attempted_request
-            && $matching_required
-            && ($school_postcode === '' || !$has_school_coords)
-        );
-
-        if ($show_location_issue) {
-            $add_issue('Location details required for active matching.');
         }
 
         return $issues;
