@@ -8628,7 +8628,9 @@ final class CMN_One_Plugin {
                     </nav>
                 </aside>
                 <main class="cmn-school-main cmn-staff-main cmn-page">
-                    <?php echo $inner_html; ?>
+                    <div class="cmn-container cmn-ui-container">
+                        <?php echo $inner_html; ?>
+                    </div>
                 </main>
             </div>
         </section>
@@ -63376,6 +63378,7 @@ final class CMN_One_Plugin {
                     </nav>
                 </aside>
                 <main class="cmn-school-main cmn-page cmn-page--school">
+                    <div class="cmn-container cmn-ui-container">
                     <?php if ($tab === 'dashboard') : ?>
                         <header class="cmn-school-header">
                             <h2>Candidates Available This and Next Morning</h2>
@@ -65030,6 +65033,7 @@ final class CMN_One_Plugin {
                             </div>
                         </div>
                     <?php endif; ?>
+                    </div>
                 </main>
             </div>
         </section>
@@ -65445,6 +65449,7 @@ final class CMN_One_Plugin {
                     </nav>
                 </aside>
                 <main class="cmn-candidate-main cmn-page cmn-page--candidate cmn-candidate-main--<?php echo esc_attr(sanitize_html_class((string) $tab)); ?>" data-candidate-tour="<?php echo $tour_dismissed ? '0' : '1'; ?>">
+                    <div class="cmn-container cmn-ui-container">
                     <?php
                     if ($candidate_id) {
                         $invite_query = new WP_Query([
@@ -66817,6 +66822,7 @@ final class CMN_One_Plugin {
                             <a class="cmn-primary" href="<?php echo esc_url($candidate_url); ?>">Register (Candidate)</a>
                         </div>
                     <?php endif; ?>
+                    </div>
                 </main>
             </div>
         </section>
