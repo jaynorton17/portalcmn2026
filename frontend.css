@@ -1995,6 +1995,10 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
   margin-bottom: 12px;
 }
 
+.cmn-support-user .cmn-support-dashboard {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .cmn-support-tile {
   border: 1px solid var(--cmn-border);
   border-radius: 12px;
@@ -2016,6 +2020,18 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
 .cmn-support-tile span {
   font-size: 12px;
   color: var(--cmn-muted);
+}
+
+.cmn-support-user .cmn-support-tile {
+  padding: 9px 10px;
+}
+
+.cmn-support-user .cmn-support-tile strong {
+  font-size: 16px;
+}
+
+.cmn-support-user .cmn-support-tile span {
+  font-size: 11px;
 }
 
 .cmn-support-tile:hover {
@@ -2145,20 +2161,98 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
   align-items: center;
 }
 
+.cmn-support-user .cmn-support-thread-header {
+  align-items: center;
+  gap: 8px;
+}
+
+.cmn-support-user .cmn-support-thread-header > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cmn-support-user .cmn-support-thread-header [data-support-thread-title] {
+  display: block;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmn-support-user .cmn-support-thread-header [data-support-thread-ref] {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cmn-support-admin-wrap {
   display: grid;
+  gap: 14px;
+}
+
+.cmn-support-admin-header .cmn-header-row {
+  align-items: flex-start;
   gap: 12px;
 }
 
-.cmn-support-admin-header .cmn-support-dashboard {
-  margin: 0;
-  min-width: min(680px, 100%);
+.cmn-support-admin-kpis {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.cmn-support-admin-queue-card {
-  padding: 14px;
+.cmn-support-admin-kpi {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.66);
+  padding: 8px 10px;
   display: grid;
-  gap: 10px;
+  gap: 4px;
+}
+
+.cmn-support-admin-kpi span {
+  font-size: 11px;
+  color: var(--cmn-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cmn-support-admin-kpi strong {
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.cmn-support-admin-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 3fr) minmax(0, 7fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.cmn-support-admin-panel {
+  min-height: 0;
+}
+
+.cmn-support-admin-panel--list {
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-rows: auto auto 1fr;
+}
+
+.cmn-support-admin-search {
+  display: block;
+}
+
+.cmn-support-admin-search input {
+  width: 100%;
+  min-height: 36px;
 }
 
 .cmn-support-admin-tabs {
@@ -2167,79 +2261,353 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
   gap: 8px;
 }
 
-.cmn-support-admin-tabs .cmn-ghost.is-active {
-  border-color: rgba(208, 42, 42, 0.58);
-  background: rgba(208, 42, 42, 0.14);
+.cmn-support-admin-tabs .cmn-ghost {
+  min-height: 34px;
+  padding-inline: 12px;
+}
+
+.cmn-support-admin-segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.cmn-support-admin-segmented .cmn-ghost {
+  border: 0;
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  justify-content: center;
+}
+
+.cmn-support-admin-segmented .cmn-ghost:last-child {
+  border-right: 0;
+}
+
+.cmn-support-admin-segmented .cmn-ghost.is-active {
+  background: rgba(208, 42, 42, 0.22);
   color: #fff;
 }
 
-.cmn-support-list-table-wrap {
-  border: 1px solid var(--cmn-border);
-  border-radius: 12px;
-  background: rgba(13, 18, 28, 0.68);
-  overflow: auto;
+.cmn-support-admin-list {
+  max-height: calc(100vh - 330px);
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding-top: 4px;
 }
 
-.cmn-support-list-table {
-  width: 100%;
-  min-width: 980px;
-  margin: 0;
+.cmn-support-admin-list .cmn-support-ticket-list {
+  gap: 0;
 }
 
-.cmn-support-list-table th,
-.cmn-support-list-table td {
-  padding: 10px 8px;
-  vertical-align: middle;
-}
-
-.cmn-support-list-table tbody tr.cmn-support-ticket {
-  display: table-row;
-  width: auto;
-  min-height: 0;
+.cmn-support-ticket--admin {
+  min-height: 78px;
   max-height: none;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
+  padding: 12px 10px 12px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   background: transparent;
-  text-align: inherit;
-  overflow: visible;
-  color: inherit;
-  cursor: pointer;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0;
+  transition: background-color 0.15s ease, border-left-color 0.15s ease;
 }
 
-.cmn-support-list-table tbody tr.cmn-support-ticket:hover {
-  background: rgba(34, 43, 61, 0.56);
+.cmn-support-ticket--admin:hover {
+  background: rgba(30, 41, 59, 0.35);
+  border-left-color: rgba(248, 113, 113, 0.35);
 }
 
-.cmn-support-list-table tbody tr.cmn-support-ticket.is-selected {
-  background: rgba(127, 29, 29, 0.24);
+.cmn-support-ticket--admin.is-selected {
+  background: rgba(127, 29, 29, 0.22);
+  border-left-color: rgba(239, 68, 68, 0.95);
+  border-bottom-color: transparent;
 }
 
-.cmn-support-row-actions {
+.cmn-support-ticket--admin .cmn-support-list-status {
+  justify-self: end;
+}
+
+.cmn-support-ticket-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-support-ticket-line1 {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.cmn-support-ticket-line1 strong {
+  font-size: 13px;
+}
+
+.cmn-support-ticket-line1 span {
+  font-size: 12px;
+  color: #d3dce9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmn-support-ticket-line2 {
+  font-size: 11px;
+  color: var(--cmn-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmn-support-list-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: rgba(15, 23, 42, 0.75);
+  color: #dbe4f3;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.cmn-support-list-status.is-open {
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #bfdbfe;
+}
+
+.cmn-support-list-status.is-closed {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #bbf7d0;
+}
+
+.cmn-support-list-status.is-feedback {
+  border-color: rgba(250, 204, 21, 0.58);
+  color: #fef08a;
+}
+
+.cmn-support-admin-panel--thread {
+  padding: 14px;
+  grid-template-rows: auto auto 1fr auto auto;
+}
+
+.cmn-support-thread-header--admin {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.cmn-support-thread-header-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cmn-support-thread-actions--admin {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  min-width: 0;
 }
 
-.cmn-support-row-actions .cmn-btn-mini {
-  min-height: 28px;
-  padding: 4px 8px;
+.cmn-support-thread-actions--admin .cmn-ghost,
+.cmn-support-thread-actions--admin .cmn-primary {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cmn-support-thread-header-top {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.cmn-support-thread-header-id {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmn-support-info-toggle {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.cmn-support-info-toggle.is-active {
+  border-color: rgba(248, 113, 113, 0.58);
+  background: rgba(208, 42, 42, 0.22);
+}
+
+.cmn-support-info-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cmn-support-thread-info {
+  display: grid;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.cmn-support-thread-info[hidden] {
+  display: none !important;
+}
+
+.cmn-support-thread-info .cmn-status-chip {
+  width: fit-content;
+}
+
+.cmn-support-thread-meta-line {
+  font-size: 11px;
+}
+
+.cmn-support-event-pill {
+  justify-self: center;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.75);
+  color: #cbd5e1;
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.cmn-support-reply--admin {
+  margin-top: 0;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 10px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0) 0%, rgba(15, 23, 42, 0.9) 24%, rgba(15, 23, 42, 0.95) 100%);
+  position: sticky;
+  bottom: 0;
+}
+
+.cmn-support-reply-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cmn-support-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.cmn-support-reply--admin .cmn-support-attach-btn input[type='file'] {
+  display: none;
+}
+
+.cmn-support-reply-actions {
+  display: inline-flex;
+  gap: 8px;
 }
 
 @media (max-width: 1024px) {
-  .cmn-support-admin-header .cmn-support-dashboard {
-    min-width: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .cmn-support-admin-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .cmn-support-row-actions {
-    justify-content: flex-start;
+  .cmn-support-admin-layout {
+    grid-template-columns: minmax(320px, 3fr) minmax(0, 7fr);
+  }
+
+  .cmn-support-thread-actions--admin {
+    max-width: 100%;
   }
 }
 
 @media (max-width: 767px) {
-  .cmn-support-admin-header .cmn-support-dashboard {
+  .cmn-support-admin-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cmn-support-admin-layout {
     grid-template-columns: 1fr;
+  }
+
+  .cmn-support-admin-list {
+    max-height: min(42vh, 360px);
+  }
+
+  .cmn-support-thread-header--admin {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .cmn-support-thread-actions--admin {
+    max-width: 100%;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    justify-content: flex-start;
+  }
+
+  .cmn-support-thread-actions--admin .cmn-ghost,
+  .cmn-support-thread-actions--admin .cmn-primary {
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .cmn-support-ticket--admin {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-support-ticket--admin .cmn-support-list-status {
+    justify-self: start;
+  }
+
+  .cmn-support-reply-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cmn-support-reply-actions {
+    width: 100%;
+  }
+
+  .cmn-support-reply-actions .cmn-ghost,
+  .cmn-support-reply-actions .cmn-primary {
+    flex: 1 1 50%;
   }
 }
 
@@ -2252,6 +2620,19 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
 .cmn-support-thread-actions {
   display: flex;
   gap: 8px;
+}
+
+.cmn-support-user .cmn-support-thread-header .cmn-support-thread-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.cmn-support-user .cmn-support-thread-header .cmn-support-thread-actions :is(.cmn-ghost, .cmn-primary, .cmn-btn-mini) {
+  min-height: 28px;
+  padding: 5px 8px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .cmn-support-payroll-context {
@@ -2370,6 +2751,21 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
   margin-top: 12px;
 }
 
+.cmn-support-feedback-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cmn-support-feedback-view-header h3 {
+  margin: 0;
+}
+
+.cmn-support-feedback--viewer {
+  margin-top: 0;
+}
+
 body.cmn-support-modal-lock {
   overflow: hidden;
 }
@@ -2388,6 +2784,16 @@ body.cmn-support-modal-lock {
   display: grid;
   gap: 4px;
   font-size: 12px;
+}
+
+.cmn-support-feedback-summary summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.cmn-support-feedback-summary summary::-webkit-details-marker {
+  display: none;
 }
 
 .cmn-support-user.is-feedback-modal-open .cmn-support-body,
@@ -3223,17 +3629,20 @@ body.cmn-booking-feedback-lock {
 }
 
 .cmn-school-support-thread .cmn-support-thread-header {
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
 }
 
 .cmn-school-support-thread .cmn-support-thread-actions {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  gap: 6px;
 }
 
 .cmn-school-support-thread .cmn-support-thread-actions :is(.cmn-ghost, .cmn-primary, .cmn-btn-mini) {
-  min-height: 34px;
+  min-height: 28px;
+  padding: 5px 8px;
+  font-size: 10px;
 }
 
 .cmn-school-support-thread .cmn-support-messages {
@@ -3278,6 +3687,13 @@ body.cmn-booking-feedback-lock {
   .cmn-support-body {
     grid-template-columns: 1fr;
   }
+  .cmn-support-user .cmn-support-dashboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cmn-support-user .cmn-support-thread-header .cmn-support-thread-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
   .cmn-support-sidebar,
   .cmn-support-thread {
     min-height: unset;
@@ -3317,6 +3733,18 @@ body.cmn-booking-feedback-lock {
 
   .cmn-school-support-counts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1200px) {
+  .cmn-support-user .cmn-support-dashboard {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .cmn-support-user .cmn-support-dashboard {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -7274,8 +7702,339 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   margin: 0;
 }
 
-.cmn-school-dashboard-candidates-table {
-  margin: 0;
+.cmn-school-candidate-deck-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-candidate-deck-meta-item {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgba(232, 239, 251, 0.92);
+  background: rgba(8, 13, 21, 0.66);
+}
+
+.cmn-school-candidate-deck-meta-item.is-confirmed {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(127, 29, 29, 0.5);
+}
+
+.cmn-school-candidate-deck-meta-item.is-pending {
+  border-color: rgba(234, 179, 8, 0.48);
+  background: rgba(52, 37, 3, 0.52);
+}
+
+.cmn-school-candidate-deck {
+  display: grid;
+  gap: 12px;
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
+.cmn-school-candidate-deck-carousel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.cmn-school-candidate-deck-carousel:focus-visible {
+  outline: 2px solid rgba(248, 113, 113, 0.64);
+  outline-offset: 4px;
+  border-radius: 18px;
+}
+
+.cmn-school-candidate-deck-viewport {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 6px 0;
+}
+
+.cmn-school-candidate-deck-stack {
+  position: relative;
+  min-height: 442px;
+  overflow: hidden;
+}
+
+.cmn-school-candidate-deck-nav {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.48);
+  background: rgba(8, 12, 19, 0.88);
+  color: #f8fafc;
+  font-size: 21px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.cmn-school-candidate-deck-nav:hover {
+  border-color: rgba(248, 113, 113, 0.62);
+  background: rgba(127, 29, 29, 0.58);
+}
+
+.cmn-school-candidate-deck-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cmn-school-candidate-card {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(860px, calc(100% - 190px));
+  display: grid;
+  grid-template-rows: auto auto auto auto;
+  gap: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: radial-gradient(circle at 18% 0%, rgba(252, 165, 165, 0.16), rgba(127, 29, 29, 0.95));
+  box-shadow: 0 22px 52px rgba(2, 6, 23, 0.55);
+  padding: 14px;
+  transition: transform 220ms ease, opacity 220ms ease, filter 220ms ease;
+  touch-action: pan-y;
+  user-select: none;
+  cursor: grab;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.cmn-school-candidate-card:active {
+  cursor: grabbing;
+}
+
+.cmn-school-candidate-card.is-pending {
+  border-color: rgba(234, 179, 8, 0.54);
+  background: linear-gradient(180deg, rgba(8, 11, 17, 0.98), rgba(5, 7, 12, 0.99));
+  box-shadow: 0 22px 52px rgba(2, 6, 23, 0.64), 0 0 0 1px rgba(234, 179, 8, 0.18) inset;
+}
+
+.cmn-school-candidate-card.is-stacked {
+  border-color: rgba(148, 163, 184, 0.34);
+  background: linear-gradient(180deg, rgba(7, 10, 15, 0.98), rgba(3, 5, 10, 0.99));
+  box-shadow:
+    0 14px 34px rgba(2, 6, 23, 0.58),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  filter: none;
+}
+
+.cmn-school-candidate-card.is-stacked.is-pending {
+  border-color: rgba(234, 179, 8, 0.5);
+  box-shadow:
+    0 14px 34px rgba(2, 6, 23, 0.58),
+    0 0 0 1px rgba(234, 179, 8, 0.18) inset;
+}
+
+.cmn-school-candidate-card.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cmn-school-candidate-card-top {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.cmn-school-candidate-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.66);
+  border: 1px solid rgba(248, 250, 252, 0.34);
+}
+
+.cmn-school-candidate-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cmn-school-candidate-avatar span {
+  font-weight: 700;
+  font-size: 18px;
+  color: #f8fafc;
+}
+
+.cmn-school-candidate-top-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.cmn-school-candidate-first-name {
+  font-size: 22px;
+  line-height: 1;
+  color: #fff1f2;
+  letter-spacing: 0.01em;
+}
+
+.cmn-school-candidate-role {
+  font-size: 13px;
+  color: rgba(254, 242, 242, 0.9);
+}
+
+.cmn-school-candidate-rating {
+  font-size: 12px;
+  color: rgba(254, 242, 242, 0.85);
+}
+
+.cmn-school-candidate-top-badges {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.cmn-school-candidate-distance,
+.cmn-school-candidate-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  font-weight: 650;
+}
+
+.cmn-school-candidate-distance {
+  background: rgba(15, 23, 42, 0.64);
+  border: 1px solid rgba(248, 250, 252, 0.24);
+  color: rgba(248, 250, 252, 0.9);
+}
+
+.cmn-school-candidate-status {
+  border: 1px solid transparent;
+}
+
+.cmn-school-candidate-status.is-confirmed {
+  border-color: rgba(248, 113, 113, 0.6);
+  background: rgba(127, 29, 29, 0.82);
+  color: #fee2e2;
+}
+
+.cmn-school-candidate-status.is-pending {
+  border-color: rgba(250, 204, 21, 0.6);
+  background: rgba(82, 58, 8, 0.84);
+  color: #fef3c7;
+}
+
+.cmn-school-candidate-card-middle {
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-school-candidate-confirmation {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cmn-school-candidate-confirmation.is-confirmed {
+  background: rgba(21, 128, 61, 0.82);
+  border: 1px solid rgba(74, 222, 128, 0.38);
+  color: #dcfce7;
+}
+
+.cmn-school-candidate-confirmation.is-pending {
+  background: rgba(82, 58, 8, 0.56);
+  border: 1px solid rgba(250, 204, 21, 0.36);
+  color: #fef9c3;
+}
+
+.cmn-school-candidate-rate {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 760;
+  color: #fff7ed;
+}
+
+.cmn-school-candidate-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmn-school-candidate-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(241, 245, 249, 0.28);
+  background: rgba(15, 23, 42, 0.66);
+  color: rgba(241, 245, 249, 0.94);
+  font-size: 11px;
+  line-height: 1;
+  padding: 6px 9px;
+}
+
+.cmn-school-candidate-tag.is-qualification {
+  border-color: rgba(250, 204, 21, 0.52);
+  color: #fef3c7;
+  background: rgba(82, 58, 8, 0.5);
+}
+
+.cmn-school-candidate-subject {
+  font-size: 12px;
+  font-weight: 620;
+  color: #fef3c7;
+}
+
+.cmn-school-candidate-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cmn-school-candidate-card-actions .cmn-btn-mini {
+  width: 100%;
+  justify-content: center;
+}
+
+.cmn-school-candidate-card .cmn-request-message {
+  min-height: 16px;
+  font-size: 11px;
+  color: rgba(252, 231, 243, 0.9);
+}
+
+.cmn-school-candidate-deck-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+}
+
+.cmn-school-candidate-deck-dot {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.55);
+  padding: 0;
+  cursor: pointer;
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.cmn-school-candidate-deck-dot.is-active {
+  background: rgba(248, 113, 113, 0.95);
+  transform: scale(1.38);
 }
 
 .cmn-school-dashboard-candidates-empty {
@@ -7310,6 +8069,37 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   flex-wrap: wrap;
   font-size: 12px;
   color: rgba(190, 202, 223, 0.82);
+}
+
+@media (max-width: 720px) {
+  .cmn-school-candidate-deck-carousel {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .cmn-school-candidate-deck-nav {
+    display: none;
+  }
+
+  .cmn-school-candidate-deck-viewport {
+    padding: 0;
+  }
+
+  .cmn-school-candidate-deck-stack {
+    min-height: 510px;
+  }
+
+  .cmn-school-candidate-card {
+    width: calc(100% - 20px);
+  }
+
+  .cmn-school-candidate-card-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-school-candidate-card-top {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cmn-school-bookings-header {

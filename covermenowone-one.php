@@ -38973,77 +38973,98 @@ final class CMN_One_Plugin {
             <div class="cmn-header-row">
                 <div>
                     <h2>Support Tickets</h2>
-                    <p>Unified queue for open, feedback-required and closed support tickets.</p>
+                    <p>Open tickets, reply fast, and close loops clearly.</p>
                 </div>
-                <div class="cmn-support-dashboard" data-support-dashboard>
-                    <button class="cmn-support-tile is-active" type="button" data-support-tile="open">
-                        <span>Open</span>
-                        <strong data-support-count="open">0</strong>
-                    </button>
-                    <button class="cmn-support-tile" type="button" data-support-tile="needs_feedback">
-                        <span>Needs Feedback</span>
-                        <strong data-support-count="needs_feedback">0</strong>
-                    </button>
-                    <button class="cmn-support-tile" type="button" data-support-tile="closed">
-                        <span>Closed</span>
-                        <strong data-support-count="closed">0</strong>
-                    </button>
-                    <button class="cmn-support-tile" type="button" data-support-tile="feedback_insights">
-                        <span>Feedback Avg</span>
-                        <strong data-support-count="feedback_avg">0.0/5</strong>
-                    </button>
-                </div>
+                <button class="cmn-ghost" type="button" data-support-open-insights>Feedback Insights</button>
             </div>
         </header>
         <div class="cmn-support-hub-wrap cmn-support-admin-wrap" data-support-root data-support-mode="admin">
-            <section class="cmn-dashboard-card cmn-support-admin-queue-card">
-                <div class="cmn-support-admin-tabs">
-                    <button class="cmn-ghost is-active" type="button" data-support-tile="open">Open</button>
-                    <button class="cmn-ghost" type="button" data-support-tile="needs_feedback">Needs Feedback</button>
-                    <button class="cmn-ghost" type="button" data-support-tile="closed">Closed</button>
+            <div class="cmn-dashboard-card cmn-support-admin-kpis" data-support-dashboard>
+                <div class="cmn-support-admin-kpi">
+                    <span>Open</span>
+                    <strong data-support-count="open">0</strong>
                 </div>
-                <div class="cmn-support-list-table-wrap">
-                    <table class="cmn-approval-table cmn-support-list-table">
-                        <thead>
-                            <tr>
-                                <th>Ticket ID</th>
-                                <th>Subject</th>
-                                <th>Requester</th>
-                                <th>Assigned Agent</th>
-                                <th>Last Updated</th>
-                                <th>SLA Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody data-support-list>
-                            <tr><td colspan="7">Loading tickets...</td></tr>
-                        </tbody>
-                    </table>
+                <div class="cmn-support-admin-kpi">
+                    <span>New</span>
+                    <strong data-support-count="new">0</strong>
                 </div>
-            </section>
-            <div class="cmn-dashboard-card cmn-support-thread" data-support-thread>
-                <div class="cmn-support-thread-header">
-                    <div>
-                        <strong data-support-thread-title>Support</strong>
-                        <div class="cmn-muted" data-support-thread-ref>Select a ticket to view the conversation.</div>
-                        <div class="cmn-status-chip is-pending" data-support-feedback-badge hidden>Feedback received</div>
+                <div class="cmn-support-admin-kpi">
+                    <span>Closed</span>
+                    <strong data-support-count="closed">0</strong>
+                </div>
+                <div class="cmn-support-admin-kpi">
+                    <span>Needs feedback</span>
+                    <strong data-support-count="needs_feedback">0</strong>
+                </div>
+                <div class="cmn-support-admin-kpi">
+                    <span>Feedback avg</span>
+                    <strong data-support-count="feedback_avg">0.0/5</strong>
+                </div>
+            </div>
+            <div class="cmn-support-admin-layout">
+                <aside class="cmn-dashboard-card cmn-support-admin-panel cmn-support-admin-panel--list">
+                    <div class="cmn-support-admin-search">
+                        <input type="search" placeholder="Search by ticket ID or email..." data-support-search>
                     </div>
-                    <div class="cmn-support-thread-actions">
-                        <button class="cmn-ghost" type="button" data-support-close-ticket disabled>Close Ticket</button>
-                        <button class="cmn-ghost" type="button" data-support-reopen-ticket disabled>Reopen</button>
-                        <button class="cmn-ghost" type="button" data-support-request-feedback disabled>Request feedback</button>
-                        <button class="cmn-ghost" type="button" data-support-save-transcript disabled>Save Transcript</button>
-                        <button class="cmn-ghost" type="button" data-support-email-transcript disabled>Send Transcript to Email</button>
+                    <div class="cmn-support-admin-tabs cmn-support-admin-segmented" role="tablist" aria-label="Ticket filters">
+                        <button class="cmn-ghost is-active" type="button" data-support-filter="open">Open</button>
+                        <button class="cmn-ghost" type="button" data-support-filter="closed">Closed</button>
+                        <button class="cmn-ghost" type="button" data-support-filter="needs_feedback">Needs feedback</button>
                     </div>
-                </div>
-                <div class="cmn-support-payroll-context" data-support-payroll-context hidden></div>
-                <div class="cmn-support-messages" data-support-messages></div>
-                <form class="cmn-support-reply" data-support-reply>
-                    <textarea name="message" rows="4" placeholder="Type your reply..." required></textarea>
-                    <input type="file" name="attachments[]" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.txt">
-                    <button class="cmn-primary" type="submit">Send Reply</button>
-                </form>
-                <div class="cmn-support-feedback" data-support-feedback></div>
+                    <div class="cmn-support-list cmn-support-admin-list" data-support-list>
+                        <div class="cmn-muted">Loading tickets...</div>
+                    </div>
+                </aside>
+                <section class="cmn-dashboard-card cmn-support-thread cmn-support-admin-panel cmn-support-admin-panel--thread" data-support-thread>
+                    <div class="cmn-support-thread-header cmn-support-thread-header--admin">
+                        <div class="cmn-support-thread-header-main">
+                            <div class="cmn-support-thread-header-top">
+                                <strong class="cmn-support-thread-header-id" data-support-thread-title>Ticket Conversation</strong>
+                                <button class="cmn-support-info-toggle" type="button" data-support-info-toggle aria-expanded="false" title="Show ticket info">i</button>
+                            </div>
+                            <div class="cmn-support-thread-info" data-support-thread-info hidden>
+                                <span class="cmn-status-chip is-muted" data-support-thread-status hidden>Open</span>
+                                <div class="cmn-muted" data-support-thread-ref>Select a ticket to view the conversation.</div>
+                                <div class="cmn-muted cmn-support-thread-channel" data-support-thread-requester hidden></div>
+                                <div class="cmn-muted cmn-support-thread-meta-line" data-support-thread-meta hidden></div>
+                                <div class="cmn-status-chip is-approved" data-support-feedback-badge hidden>Feedback received</div>
+                            </div>
+                        </div>
+                        <div class="cmn-support-thread-actions cmn-support-thread-actions--admin">
+                            <button class="cmn-primary" type="button" data-support-close-ticket disabled>Close Ticket</button>
+                            <button class="cmn-ghost" type="button" data-support-reopen-ticket disabled>Reopen</button>
+                            <button class="cmn-ghost" type="button" data-support-request-feedback disabled>Request feedback</button>
+                            <button class="cmn-ghost" type="button" data-support-open-feedback onclick="var root=this.closest('[data-support-root]');var modal=root?root.querySelector('[data-support-feedback-view-modal]'):null;if(modal){modal.hidden=false;document.body.classList.add('cmn-support-modal-lock');}">Feedback</button>
+                            <button class="cmn-ghost" type="button" data-support-save-transcript disabled>Save</button>
+                            <button class="cmn-ghost" type="button" data-support-email-transcript disabled>Email Transcript</button>
+                        </div>
+                    </div>
+                    <div class="cmn-support-payroll-context" data-support-payroll-context hidden></div>
+                    <div class="cmn-support-messages" data-support-messages></div>
+                    <form class="cmn-support-reply cmn-support-reply--admin" data-support-reply>
+                        <textarea name="message" rows="4" placeholder="Type your reply..." required></textarea>
+                        <div class="cmn-support-reply-toolbar">
+                            <label class="cmn-ghost cmn-support-attach-btn">
+                                <input type="file" name="attachments[]" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.txt">
+                                <span>Attach files</span>
+                            </label>
+                            <div class="cmn-support-reply-actions">
+                                <button class="cmn-ghost" type="button" data-support-save-draft>Save Draft</button>
+                                <button class="cmn-primary" type="submit">Send Reply</button>
+                            </div>
+                        </div>
+                    </form>
+                    <div class="cmn-support-feedback-modal cmn-support-feedback-modal--viewer" data-support-feedback-view-modal hidden>
+                        <div class="cmn-support-feedback-modal__overlay" data-support-feedback-view-close onclick="var modal=this.closest('[data-support-feedback-view-modal]');if(modal){modal.hidden=true;document.body.classList.remove('cmn-support-modal-lock');}"></div>
+                        <div class="cmn-support-feedback-modal__card" role="dialog" aria-modal="true" aria-label="Ticket feedback">
+                            <div class="cmn-support-feedback-view-header">
+                                <h3>Ticket Feedback</h3>
+                                <button class="cmn-ghost cmn-btn-mini" type="button" data-support-feedback-view-close onclick="var modal=this.closest('[data-support-feedback-view-modal]');if(modal){modal.hidden=true;document.body.classList.remove('cmn-support-modal-lock');}">Close</button>
+                            </div>
+                            <div class="cmn-support-feedback cmn-support-feedback--viewer" data-support-feedback><div class="cmn-muted">No feedback for this ticket yet.</div></div>
+                        </div>
+                    </div>
+                </section>
             </div>
             <div class="cmn-support-insights-modal" data-support-insights-modal hidden>
                 <div class="cmn-support-insights-modal__overlay" data-support-insights-close></div>
@@ -59806,6 +59827,35 @@ final class CMN_One_Plugin {
         return array_values(array_unique(array_filter($labels)));
     }
 
+    private function get_teacher_subject_specialism_options() {
+        return [
+            'Mathematics',
+            'English',
+            'Science',
+            'Biology',
+            'Chemistry',
+            'Physics',
+            'History',
+            'Geography',
+            'Religious Education',
+            'Computing',
+            'Design & Technology',
+            'Art & Design',
+            'Drama',
+            'Music',
+            'PE',
+            'MFL',
+            'Business Studies',
+            'Psychology',
+            'Sociology',
+            'Economics',
+            'SEN',
+            'Early Years',
+            'Primary',
+            'Other',
+        ];
+    }
+
     private function normalize_candidate_role_rate_map($raw_map, $role_labels = []) {
         if (is_string($raw_map)) {
             $decoded = json_decode($raw_map, true);
@@ -63739,6 +63789,14 @@ final class CMN_One_Plugin {
                 'type' => 'text',
                 'form_key' => 'cmn_roles_other',
             ],
+            'teacher_subject_specialism' => [
+                'storage' => 'post_meta',
+                'key' => 'cmn_teacher_subject_specialism',
+                'sanitize' => 'text',
+                'label' => 'Teacher Subject Specialism',
+                'type' => 'text',
+                'form_key' => 'cmn_teacher_subject_specialism',
+            ],
             'travel_radius' => [
                 'storage' => 'user_meta',
                 'key' => 'travel_radius',
@@ -64469,6 +64527,7 @@ final class CMN_One_Plugin {
             $mapping = $this->get_candidate_registration_profile_mapping_matrix();
             $displayed_keys = [
                 'cmn_email', 'cmn_phone', 'cmn_location', 'cmn_roles', 'cmn_roles_other',
+                'cmn_teacher_subject_specialism',
                 'cmn_travel_distance', 'cmn_driving_licence', 'cmn_car_owner', 'cmn_dbs_update_service',
                 'cmn_qts_status',
                 'cmn_house_number', 'cmn_address_line1', 'cmn_address_line2', 'cmn_address_line3',
@@ -66972,6 +67031,14 @@ final class CMN_One_Plugin {
                             <label class="cmn-other-field" hidden>Tell us what role
                                 <input type="text" name="cmn_roles_other" placeholder="e.g., SEN Teacher, HLTA, Exam Invigilator">
                             </label>
+                            <label>Teacher subject specialism
+                                <select name="cmn_teacher_subject_specialism">
+                                    <option value="">Select subject (teachers only)</option>
+                                    <?php foreach ($this->get_teacher_subject_specialism_options() as $subject_option) : ?>
+                                        <option value="<?php echo esc_attr((string) $subject_option); ?>"><?php echo esc_html((string) $subject_option); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
                         </div>
                         <div class="cmn-form-group">
                             <span class="cmn-form-label">Travel</span>
@@ -67321,7 +67388,118 @@ final class CMN_One_Plugin {
                 'tone' => $can_request ? 'ok' : 'info',
             ],
         ];
-        $build_dashboard_candidate_row = function ($candidate_item, $default_label = 'Available Morning', $default_response_state = 'not_responded') use ($can_request, $user_school_id) {
+        $school_geo_coords = $user_school_id > 0 ? $this->ensure_school_geo_coordinates((int) $user_school_id) : null;
+        $candidate_tag_values_from_meta = static function ($raw_value) {
+            if (is_array($raw_value)) {
+                $values = $raw_value;
+            } elseif (is_string($raw_value)) {
+                $decoded = json_decode($raw_value, true);
+                if (is_array($decoded)) {
+                    $values = $decoded;
+                } else {
+                    $values = preg_split('/[\r\n,;|]+/', $raw_value) ?: [];
+                }
+            } else {
+                $values = [];
+            }
+            $clean_values = [];
+            foreach ((array) $values as $value) {
+                if (is_array($value) || is_object($value)) {
+                    continue;
+                }
+                $clean = sanitize_text_field((string) $value);
+                if ($clean !== '') {
+                    $clean_values[] = $clean;
+                }
+            }
+            return array_values(array_unique($clean_values));
+        };
+        $resolve_candidate_strength_tags = function ($candidate_id, $role_labels = []) use ($candidate_tag_values_from_meta) {
+            $candidate_id = (int) $candidate_id;
+            $tags = [];
+            foreach (['cmn_strengths', 'cmn_skills', 'cmn_key_info', 'cmn_profile_strengths'] as $meta_key) {
+                $raw_value = get_post_meta($candidate_id, $meta_key, true);
+                foreach ($candidate_tag_values_from_meta($raw_value) as $tag) {
+                    $tags[] = $tag;
+                }
+            }
+            if (!$tags) {
+                $role_seed = strtolower(implode(' ', array_map('sanitize_text_field', (array) $role_labels)));
+                if (strpos($role_seed, 'teacher') !== false) {
+                    $tags = ['Classroom Management', 'Lesson Delivery', 'Communication'];
+                } elseif (strpos($role_seed, 'assistant') !== false || strpos($role_seed, 'sen') !== false) {
+                    $tags = ['SEN Support', 'Communication', 'Behaviour Support'];
+                } else {
+                    $tags = ['Classroom Management', 'Communication', 'SEN Support'];
+                }
+            }
+            return array_slice(array_values(array_unique(array_filter(array_map('sanitize_text_field', $tags)))), 0, 3);
+        };
+        $resolve_candidate_qualification_tags = function ($candidate_id) use ($candidate_tag_values_from_meta) {
+            $candidate_id = (int) $candidate_id;
+            $tags = [];
+            $source_lines = [];
+            foreach (['cmn_special_qualifications', 'cmn_qualifications', 'cmn_training', 'cmn_key_info', 'cmn_notes'] as $meta_key) {
+                $raw_value = get_post_meta($candidate_id, $meta_key, true);
+                foreach ($candidate_tag_values_from_meta($raw_value) as $line) {
+                    $source_lines[] = $line;
+                }
+            }
+            $blob = strtolower(implode(' ', $source_lines));
+            if (strpos($blob, 'first aid') !== false) {
+                $tags[] = 'First Aid';
+            }
+            if (strpos($blob, 'fire marshal') !== false) {
+                $tags[] = 'Fire Marshal';
+            }
+            if (strpos($blob, 'sen ') !== false || strpos($blob, 'sen-') !== false || strpos($blob, 'special educational') !== false) {
+                $tags[] = 'SEN Trained';
+            }
+            if ((string) get_post_meta($candidate_id, 'cmn_qts_status', true) === 'yes') {
+                $tags[] = 'QTS';
+            }
+            return array_slice(array_values(array_unique(array_filter(array_map('sanitize_text_field', $tags)))), 0, 3);
+        };
+        $resolve_candidate_distance = function ($candidate_id) use ($school_geo_coords, $user_school_id) {
+            $candidate_id = (int) $candidate_id;
+            if ($candidate_id < 1 || !is_array($school_geo_coords) || $user_school_id < 1) {
+                return [
+                    'distance_miles' => null,
+                    'distance_badge' => 'Distance unknown',
+                ];
+            }
+            $candidate_geo = $this->get_geo_coordinates_for_post($candidate_id);
+            if (!is_array($candidate_geo)) {
+                return [
+                    'distance_miles' => null,
+                    'distance_badge' => 'Distance unknown',
+                ];
+            }
+            $distance_miles = $this->marketing_haversine_miles(
+                (float) ($candidate_geo['lat'] ?? 0),
+                (float) ($candidate_geo['lng'] ?? 0),
+                (float) ($school_geo_coords['lat'] ?? 0),
+                (float) ($school_geo_coords['lng'] ?? 0)
+            );
+            if ($distance_miles < 0) {
+                $distance_miles = 0;
+            }
+            return [
+                'distance_miles' => $distance_miles,
+                'distance_badge' => number_format_i18n((float) $distance_miles, 1) . ' miles',
+            ];
+        };
+        $format_day_rate_label = static function ($rate_value) {
+            $rate_value = (float) $rate_value;
+            if ($rate_value <= 0) {
+                return 'Rate on request';
+            }
+            $rounded = abs($rate_value - round($rate_value)) < 0.01
+                ? number_format_i18n((int) round($rate_value), 0)
+                : number_format_i18n($rate_value, 2);
+            return '£' . $rounded . ' per day';
+        };
+        $build_dashboard_candidate_row = function ($candidate_item, $default_label = 'Available Morning', $default_response_state = 'not_responded') use ($can_request, $user_school_id, $resolve_candidate_strength_tags, $resolve_candidate_qualification_tags, $resolve_candidate_distance, $format_day_rate_label) {
             $candidate_post = $candidate_item['post'] ?? null;
             if (!($candidate_post instanceof WP_Post)) {
                 return null;
@@ -67338,6 +67516,22 @@ final class CMN_One_Plugin {
             if (!$role_labels) {
                 $role_labels = ['General Cover'];
             }
+            $candidate_name = sanitize_text_field((string) $candidate_post->post_title);
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $first_name = '';
+            if ($candidate_user_id > 0) {
+                $first_name = sanitize_text_field((string) get_user_meta($candidate_user_id, 'first_name', true));
+            }
+            if ($first_name === '' && $candidate_name !== '') {
+                $name_bits = preg_split('/\s+/', $candidate_name) ?: [];
+                $first_name = sanitize_text_field((string) ($name_bits[0] ?? ''));
+            }
+            if ($first_name === '') {
+                $first_name = 'Candidate';
+            }
+            $candidate_email = sanitize_email((string) get_post_meta($candidate_id, 'cmn_email', true));
+            $avatar_seed = $candidate_user_id > 0 ? $candidate_user_id : ($candidate_email !== '' ? $candidate_email : 'candidate-' . $candidate_id);
+            $avatar_url = (string) get_avatar_url($avatar_seed, ['size' => 144]);
             $availability_date = sanitize_text_field((string) ($candidate_item['availability_date'] ?? ''));
             $existing_request_id = $can_request ? $this->get_school_candidate_request_id_for_date((int) $user_school_id, $candidate_id, $availability_date) : 0;
             $can_request_booking = ($can_request && $availability_date !== '');
@@ -67349,18 +67543,76 @@ final class CMN_One_Plugin {
             } elseif ($existing_request_id > 0) {
                 $request_message = 'Request already sent.';
             }
+
+            $candidate_rating_payload = $this->get_candidate_average_rating_payload($candidate_user_id);
+            $avg_rating = (float) ($candidate_rating_payload['avg_rating'] ?? 0);
+            $review_count = max(0, (int) ($candidate_rating_payload['feedback_count'] ?? 0));
+            $distance_payload = $resolve_candidate_distance($candidate_id);
+            $subject = (string) ($role_labels[0] ?? 'General Cover');
+            $role_rate_entry = $this->get_candidate_role_rate_entry($candidate_id, $subject);
+            $day_rate = (float) ($role_rate_entry['school_charge_rate'] ?? 0);
+            if ($day_rate <= 0) {
+                $day_rate = (float) $this->get_candidate_rate($candidate_id, (int) $user_school_id);
+            }
+            $response_state = sanitize_key((string) ($candidate_item['response_state'] ?? $default_response_state));
+            if ($response_state === '') {
+                $response_state = $default_response_state;
+            }
+            $availability_label = sanitize_text_field((string) ($candidate_item['availability_label'] ?? $default_label));
+            $period_label = stripos($availability_label, 'tomorrow') !== false ? 'Available Tomorrow Morning' : 'Available This Morning';
+            $confirmed_at = '';
+            if ($response_state === 'confirmed_available') {
+                $created_at_raw = sanitize_text_field((string) ($candidate_item['created_at'] ?? ''));
+                $created_at_ts = $created_at_raw !== '' ? strtotime($created_at_raw) : 0;
+                if ($created_at_ts > 0) {
+                    $confirmed_at = date_i18n('H:i', $created_at_ts);
+                }
+            }
+            $confirmation_text = $response_state === 'confirmed_available'
+                ? ($period_label . ($confirmed_at !== '' ? ' - Confirmed at ' . $confirmed_at : ' - Confirmed'))
+                : ('Awaiting response for ' . strtolower(str_replace('Available ', '', $period_label)));
+
+            $teacher_subject_specialism = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_teacher_subject_specialism', true));
+            if ($teacher_subject_specialism === '') {
+                $teacher_subject_specialism = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_subject_specialism', true));
+            }
+            $is_teacher_role = false;
+            foreach ($role_labels as $role_label) {
+                if (stripos((string) $role_label, 'teacher') !== false) {
+                    $is_teacher_role = true;
+                    break;
+                }
+            }
+            if (!$is_teacher_role) {
+                $teacher_subject_specialism = '';
+            }
+
             return [
                 'candidate_id' => $candidate_id,
-                'name' => sanitize_text_field((string) $candidate_post->post_title),
-                'subject' => (string) ($role_labels[0] ?? 'General Cover'),
+                'name' => $candidate_name,
+                'first_name' => $first_name,
+                'role_text' => implode(' • ', array_slice($role_labels, 0, 2)),
+                'subject' => $subject,
+                'teacher_subject_specialism' => $teacher_subject_specialism,
+                'avatar_url' => $avatar_url,
                 'location' => sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_location', true)),
-                'availability_label' => sanitize_text_field((string) ($candidate_item['availability_label'] ?? $default_label)),
+                'availability_label' => $availability_label,
                 'availability_date' => $availability_date,
-                'response_state' => sanitize_key((string) ($candidate_item['response_state'] ?? $default_response_state)),
+                'response_state' => $response_state,
+                'status_badge_label' => $response_state === 'confirmed_available' ? 'AVAILABLE NOW' : 'NOT RESPONDED',
+                'status_badge_class' => $response_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending',
+                'confirmation_text' => $confirmation_text,
                 'profile_url' => (string) $this->get_school_candidate_profile_url($candidate_id, get_current_user_id()),
                 'can_request_booking' => $can_request_booking,
                 'existing_request_id' => $existing_request_id,
                 'request_message' => $request_message,
+                'day_rate_label' => $format_day_rate_label($day_rate),
+                'avg_rating' => $avg_rating,
+                'review_count' => $review_count,
+                'distance_miles' => $distance_payload['distance_miles'],
+                'distance_badge' => (string) ($distance_payload['distance_badge'] ?? 'Distance unknown'),
+                'strength_tags' => $resolve_candidate_strength_tags($candidate_id, $role_labels),
+                'qualification_tags' => $resolve_candidate_qualification_tags($candidate_id),
             ];
         };
 
@@ -67389,62 +67641,144 @@ final class CMN_One_Plugin {
         }
 
         $dashboard_candidate_rows = array_merge($dashboard_candidate_rows_confirmed, $dashboard_candidate_rows_other);
-        $dashboard_candidate_count_confirmed = count($dashboard_candidate_rows_confirmed);
-        $dashboard_candidate_count_other = count($dashboard_candidate_rows_other);
+        $dashboard_candidate_rows_deduped = [];
+        foreach ($dashboard_candidate_rows as $candidate_row) {
+            if (!is_array($candidate_row)) {
+                continue;
+            }
+            $candidate_id = (int) ($candidate_row['candidate_id'] ?? 0);
+            if ($candidate_id < 1) {
+                continue;
+            }
+            if (!isset($dashboard_candidate_rows_deduped[$candidate_id])) {
+                $dashboard_candidate_rows_deduped[$candidate_id] = $candidate_row;
+                continue;
+            }
+            $existing_state = sanitize_key((string) ($dashboard_candidate_rows_deduped[$candidate_id]['response_state'] ?? 'not_responded'));
+            $next_state = sanitize_key((string) ($candidate_row['response_state'] ?? 'not_responded'));
+            if ($existing_state !== 'confirmed_available' && $next_state === 'confirmed_available') {
+                $dashboard_candidate_rows_deduped[$candidate_id] = $candidate_row;
+            }
+        }
+        $dashboard_candidate_rows = array_values($dashboard_candidate_rows_deduped);
+        $dashboard_candidate_count_confirmed = 0;
+        $dashboard_candidate_count_other = 0;
+        foreach ($dashboard_candidate_rows as $candidate_row) {
+            $response_state = sanitize_key((string) ($candidate_row['response_state'] ?? 'not_responded'));
+            if ($response_state === 'confirmed_available') {
+                $dashboard_candidate_count_confirmed++;
+            } else {
+                $dashboard_candidate_count_other++;
+            }
+        }
         $dashboard_candidate_count = count($dashboard_candidate_rows);
-        $render_school_candidate_table = static function ($candidate_rows) {
+        $render_school_candidate_deck = static function ($candidate_rows, $confirmed_count, $other_count) {
             $candidate_rows = is_array($candidate_rows) ? $candidate_rows : [];
             ob_start();
             ?>
-            <div class="cmn-table-scroll">
-                <table class="cmn-approval-table cmn-school-candidates-table cmn-school-dashboard-candidates-table">
-                    <thead>
-                        <tr>
-                            <th>Candidate</th>
-                            <th>Role</th>
-                            <th>Availability</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($candidate_rows as $candidate_row) : ?>
-                            <?php
-                            $candidate_profile_url = (string) ($candidate_row['profile_url'] ?? '');
-                            $existing_request_id = (int) ($candidate_row['existing_request_id'] ?? 0);
-                            $request_enabled = !empty($candidate_row['can_request_booking']);
-                            ?>
-                            <tr>
-                                <td>
-                                    <div class="cmn-school-candidates-name">
-                                        <strong><?php echo esc_html((string) ($candidate_row['name'] ?? 'Candidate')); ?></strong>
-                                        <?php if (!empty($candidate_row['location'])) : ?>
-                                            <span><?php echo esc_html((string) $candidate_row['location']); ?></span>
+            <div class="cmn-school-candidate-deck-meta">
+                <span class="cmn-school-candidate-deck-meta-item is-confirmed">Confirmed available now: <?php echo esc_html((string) ((int) $confirmed_count)); ?></span>
+                <span class="cmn-school-candidate-deck-meta-item is-pending">Other nearby candidates: <?php echo esc_html((string) ((int) $other_count)); ?></span>
+            </div>
+            <div class="cmn-school-candidate-deck" data-school-candidate-deck>
+                <div class="cmn-school-candidate-deck-carousel" data-deck-carousel tabindex="0" aria-label="Candidates near you carousel">
+                    <button type="button" class="cmn-school-candidate-deck-nav is-prev" data-deck-prev aria-label="Previous candidate">‹</button>
+                    <div class="cmn-school-candidate-deck-viewport">
+                        <div class="cmn-school-candidate-deck-stack" data-deck-stack>
+                            <?php foreach ($candidate_rows as $card_index => $candidate_row) : ?>
+                                <?php
+                                $candidate_profile_url = (string) ($candidate_row['profile_url'] ?? '');
+                                $existing_request_id = (int) ($candidate_row['existing_request_id'] ?? 0);
+                                $request_enabled = !empty($candidate_row['can_request_booking']);
+                                $response_state = sanitize_key((string) ($candidate_row['response_state'] ?? 'not_responded'));
+                                $status_badge_class = sanitize_html_class((string) ($candidate_row['status_badge_class'] ?? 'is-pending'));
+                                $stack_badge_label = strtoupper((string) ($candidate_row['status_badge_label'] ?? 'NOT RESPONDED'));
+                                if ($stack_badge_label === '') {
+                                    $stack_badge_label = 'NOT RESPONDED';
+                                }
+                                $review_count = max(0, (int) ($candidate_row['review_count'] ?? 0));
+                                $avg_rating = (float) ($candidate_row['avg_rating'] ?? 0);
+                                $rating_line = $review_count > 0
+                                    ? ('⭐ ' . number_format($avg_rating, 1) . ' (' . number_format_i18n($review_count) . ' reviews)')
+                                    : '⭐ New profile';
+                                $strength_tags = array_slice((array) ($candidate_row['strength_tags'] ?? []), 0, 3);
+                                $qualification_tags = array_slice((array) ($candidate_row['qualification_tags'] ?? []), 0, 3);
+                                $first_name = sanitize_text_field((string) ($candidate_row['first_name'] ?? 'Candidate'));
+                                $avatar_initial = strtoupper((string) substr($first_name, 0, 1));
+                                if ($avatar_initial === '') {
+                                    $avatar_initial = 'C';
+                                }
+                                ?>
+                                <article class="cmn-school-candidate-card cmn-available-card <?php echo $response_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending'; ?>" data-deck-card data-deck-index="<?php echo esc_attr((string) $card_index); ?>" data-deck-state="<?php echo esc_attr($response_state); ?>" data-stack-label="<?php echo esc_attr($stack_badge_label); ?>">
+                                    <div class="cmn-school-candidate-card-top">
+                                        <div class="cmn-school-candidate-avatar">
+                                            <?php if (!empty($candidate_row['avatar_url'])) : ?>
+                                                <img src="<?php echo esc_url((string) $candidate_row['avatar_url']); ?>" alt="<?php echo esc_attr($first_name); ?>">
+                                            <?php else : ?>
+                                                <span><?php echo esc_html($avatar_initial); ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="cmn-school-candidate-top-copy">
+                                            <strong class="cmn-school-candidate-first-name"><?php echo esc_html($first_name); ?></strong>
+                                            <span class="cmn-school-candidate-role"><?php echo esc_html((string) ($candidate_row['role_text'] ?? 'General Cover')); ?></span>
+                                            <span class="cmn-school-candidate-rating"><?php echo esc_html($rating_line); ?></span>
+                                        </div>
+                                        <div class="cmn-school-candidate-top-badges">
+                                            <span class="cmn-school-candidate-distance"><?php echo esc_html((string) ($candidate_row['distance_badge'] ?? 'Distance unknown')); ?></span>
+                                            <span class="cmn-school-candidate-status <?php echo esc_attr($status_badge_class); ?>"><?php echo esc_html((string) ($candidate_row['status_badge_label'] ?? 'NOT RESPONDED')); ?></span>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-school-candidate-card-middle">
+                                        <div class="cmn-school-candidate-confirmation <?php echo $response_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending'; ?>">
+                                            <?php echo esc_html((string) ($candidate_row['confirmation_text'] ?? 'Awaiting response')); ?>
+                                        </div>
+                                        <div class="cmn-school-candidate-rate"><?php echo esc_html((string) ($candidate_row['day_rate_label'] ?? 'Rate on request')); ?></div>
+                                        <?php if ($strength_tags) : ?>
+                                            <div class="cmn-school-candidate-tags" data-tag-group="strengths">
+                                                <?php foreach ($strength_tags as $tag) : ?>
+                                                    <span class="cmn-school-candidate-tag"><?php echo esc_html((string) $tag); ?></span>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($candidate_row['teacher_subject_specialism'])) : ?>
+                                            <div class="cmn-school-candidate-subject"><?php echo esc_html((string) $candidate_row['teacher_subject_specialism']); ?> Teacher</div>
+                                        <?php endif; ?>
+                                        <?php if ($qualification_tags) : ?>
+                                            <div class="cmn-school-candidate-tags" data-tag-group="qualifications">
+                                                <?php foreach ($qualification_tags as $qualification_tag) : ?>
+                                                    <span class="cmn-school-candidate-tag is-qualification"><?php echo esc_html((string) $qualification_tag); ?></span>
+                                                <?php endforeach; ?>
+                                            </div>
                                         <?php endif; ?>
                                     </div>
-                                </td>
-                                <td><?php echo esc_html((string) ($candidate_row['subject'] ?? 'General Cover')); ?></td>
-                                <td><span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($candidate_row['availability_label'] ?? 'Available')); ?></span></td>
-                                <td class="cmn-school-candidates-actions-cell">
-                                    <div class="cmn-school-candidates-actions">
-                                        <?php if ($candidate_profile_url !== '') : ?>
-                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View profile</a>
-                                        <?php else : ?>
-                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View profile</button>
-                                        <?php endif; ?>
+                                    <div class="cmn-school-candidate-card-actions">
                                         <?php if ($request_enabled) : ?>
                                             <button class="cmn-primary cmn-btn-mini" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr((int) ($candidate_row['candidate_id'] ?? 0)); ?>" data-request-date="<?php echo esc_attr((string) ($candidate_row['availability_date'] ?? '')); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>>
-                                                <?php echo $existing_request_id > 0 ? 'Request sent' : 'Request booking'; ?>
+                                                <?php echo $existing_request_id > 0 ? 'Request sent' : 'Book Now'; ?>
                                             </button>
                                         <?php else : ?>
-                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Request booking</button>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Book Now</button>
                                         <?php endif; ?>
-                                        <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($candidate_row['request_message'] ?? '')); ?></span>
+                                        <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="maybe">Maybe</button>
+                                        <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="dismiss">Not Interested</button>
+                                        <?php if ($candidate_profile_url !== '') : ?>
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View Profile</a>
+                                        <?php else : ?>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View Profile</button>
+                                        <?php endif; ?>
                                     </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                                    <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($candidate_row['request_message'] ?? '')); ?></span>
+                                </article>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <button type="button" class="cmn-school-candidate-deck-nav is-next" data-deck-next aria-label="Next candidate">›</button>
+                </div>
+                <div class="cmn-school-candidate-deck-dots" data-deck-dots>
+                    <?php foreach ($candidate_rows as $dot_index => $candidate_row) : ?>
+                        <button type="button" class="cmn-school-candidate-deck-dot<?php echo $dot_index === 0 ? ' is-active' : ''; ?>" data-deck-dot data-deck-index="<?php echo esc_attr((string) $dot_index); ?>" aria-label="<?php echo esc_attr('Show candidate ' . ((int) $dot_index + 1)); ?>"></button>
+                    <?php endforeach; ?>
+                </div>
             </div>
             <?php
             return (string) ob_get_clean();
@@ -67594,41 +67928,12 @@ final class CMN_One_Plugin {
                                 <div class="cmn-card-header">
                                     <div>
                                         <h3>Candidates near you</h3>
-                                        <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> candidates shown. Confirmed candidates are prioritised first.</p>
+                                        <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> candidates shown. Confirmed candidates are prioritised first, then not responded candidates.</p>
                                     </div>
                                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Open Candidates</a>
                                 </div>
                                 <?php if ($dashboard_candidate_rows) : ?>
-                                    <div class="cmn-school-dashboard-candidate-groups">
-                                        <div class="cmn-school-dashboard-candidate-group">
-                                            <div class="cmn-card-header cmn-school-dashboard-candidate-group-header">
-                                                <h4>Confirmed available now</h4>
-                                                <span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) $dashboard_candidate_count_confirmed); ?></span>
-                                            </div>
-                                            <?php if ($dashboard_candidate_rows_confirmed) : ?>
-                                                <?php echo $render_school_candidate_table($dashboard_candidate_rows_confirmed); ?>
-                                            <?php else : ?>
-                                                <div class="cmn-school-dashboard-candidates-empty">
-                                                    <strong>No confirmed candidates yet.</strong>
-                                                    <p>Keep this view open to see real-time confirmations.</p>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="cmn-school-dashboard-candidate-group">
-                                            <div class="cmn-card-header cmn-school-dashboard-candidate-group-header">
-                                                <h4>Other nearby candidates (not yet confirmed)</h4>
-                                                <span class="cmn-pill"><?php echo esc_html((string) $dashboard_candidate_count_other); ?></span>
-                                            </div>
-                                            <?php if ($dashboard_candidate_rows_other) : ?>
-                                                <?php echo $render_school_candidate_table($dashboard_candidate_rows_other); ?>
-                                            <?php else : ?>
-                                                <div class="cmn-school-dashboard-candidates-empty">
-                                                    <strong>No nearby candidates pending response.</strong>
-                                                    <p>Try widening your search filters in Candidates.</p>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
+                                    <?php echo $render_school_candidate_deck($dashboard_candidate_rows, $dashboard_candidate_count_confirmed, $dashboard_candidate_count_other); ?>
                                 <?php else : ?>
                                     <div class="cmn-school-dashboard-candidates-empty">
                                         <strong>No confirmed candidates yet.</strong>
@@ -69349,41 +69654,12 @@ final class CMN_One_Plugin {
                             <div class="cmn-card-header">
                                 <div>
                                     <h3>Candidates available right now</h3>
-                                    <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> candidates shown. Confirmed candidates are listed first.</p>
+                                    <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> candidates shown. Confirmed candidates are listed first, then not responded candidates.</p>
                                 </div>
                                 <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Open Candidates</a>
                             </div>
                             <?php if ($dashboard_candidate_rows) : ?>
-                                <div class="cmn-school-dashboard-candidate-groups">
-                                    <div class="cmn-school-dashboard-candidate-group">
-                                        <div class="cmn-card-header cmn-school-dashboard-candidate-group-header">
-                                            <h4>Confirmed available now</h4>
-                                            <span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) $dashboard_candidate_count_confirmed); ?></span>
-                                        </div>
-                                        <?php if ($dashboard_candidate_rows_confirmed) : ?>
-                                            <?php echo $render_school_candidate_table($dashboard_candidate_rows_confirmed); ?>
-                                        <?php else : ?>
-                                            <div class="cmn-school-dashboard-candidates-empty">
-                                                <strong>No confirmed candidates yet.</strong>
-                                                <p>Confirmed candidates will appear here as they respond.</p>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="cmn-school-dashboard-candidate-group">
-                                        <div class="cmn-card-header cmn-school-dashboard-candidate-group-header">
-                                            <h4>Other nearby candidates (not yet confirmed)</h4>
-                                            <span class="cmn-pill"><?php echo esc_html((string) $dashboard_candidate_count_other); ?></span>
-                                        </div>
-                                        <?php if ($dashboard_candidate_rows_other) : ?>
-                                            <?php echo $render_school_candidate_table($dashboard_candidate_rows_other); ?>
-                                        <?php else : ?>
-                                            <div class="cmn-school-dashboard-candidates-empty">
-                                                <strong>No nearby candidates pending response.</strong>
-                                                <p>Use candidate search to broaden results.</p>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
+                                <?php echo $render_school_candidate_deck($dashboard_candidate_rows, $dashboard_candidate_count_confirmed, $dashboard_candidate_count_other); ?>
                             <?php else : ?>
                                 <div class="cmn-school-dashboard-candidates-empty">
                                     <strong>No confirmed candidates yet.</strong>
@@ -69729,9 +70005,9 @@ final class CMN_One_Plugin {
                                             <span class="cmn-status-chip is-approved" data-support-feedback-badge hidden>Feedback submitted</span>
                                         </div>
                                         <div class="cmn-support-thread-actions">
-                                            <button class="cmn-ghost" type="button" data-support-reopen-ticket disabled>Reopen Ticket</button>
-                                            <button class="cmn-ghost" type="button" data-support-save-transcript disabled>Save Transcript</button>
-                                            <button class="cmn-ghost" type="button" data-support-email-transcript disabled>Send Transcript to Email</button>
+                                            <button class="cmn-ghost" type="button" data-support-reopen-ticket disabled>Reopen</button>
+                                            <button class="cmn-ghost" type="button" data-support-save-transcript disabled>Save</button>
+                                            <button class="cmn-ghost" type="button" data-support-email-transcript disabled>Email Transcript</button>
                                         </div>
                                     </div>
                                     <div class="cmn-support-messages" data-support-messages></div>
@@ -70305,6 +70581,7 @@ final class CMN_One_Plugin {
         $no_dbs = (string) $meta('cmn_no_dbs');
         $dbs_update_service = strtolower((string) $meta('cmn_dbs_update_service'));
         $roles_other = (string) $meta('cmn_roles_other');
+        $teacher_subject_specialism = (string) $meta('cmn_teacher_subject_specialism');
         $preferred_roles = array_values(array_filter(array_map('sanitize_text_field', (array) $roles)));
         if (!$preferred_roles && $role_label !== '') {
             $preferred_roles = [$role_label];
@@ -70801,6 +71078,10 @@ final class CMN_One_Plugin {
                                             <span class="cmn-profile-definition-value" data-profile-roles-other><?php echo esc_html($roles_other !== '' ? $roles_other : 'Not set'); ?></span>
                                         </div>
                                         <div class="cmn-profile-definition-row">
+                                            <span class="cmn-profile-definition-label">Teacher subject</span>
+                                            <span class="cmn-profile-definition-value" data-profile-teacher-subject><?php echo esc_html($teacher_subject_specialism !== '' ? $teacher_subject_specialism : 'Not set'); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row">
                                             <span class="cmn-profile-definition-label">Travel radius</span>
                                             <span class="cmn-profile-definition-value" data-profile-travel><?php echo esc_html($travel_distance !== '' ? $travel_distance : 'Not set'); ?></span>
                                         </div>
@@ -70851,6 +71132,14 @@ final class CMN_One_Plugin {
                                     </fieldset>
                                     <label>Other role
                                         <input type="text" name="roles_other" value="<?php echo esc_attr($roles_other); ?>" placeholder="If Other, add details">
+                                    </label>
+                                    <label>Teacher subject specialism
+                                        <select name="teacher_subject_specialism">
+                                            <option value=""<?php selected($teacher_subject_specialism, ''); ?>>Select (teachers only)</option>
+                                            <?php foreach ($this->get_teacher_subject_specialism_options() as $subject_option) : ?>
+                                                <option value="<?php echo esc_attr((string) $subject_option); ?>"<?php selected($teacher_subject_specialism, (string) $subject_option); ?>><?php echo esc_html((string) $subject_option); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
                                     </label>
                                     <label>Travel radius
                                         <input type="text" name="travel_radius" value="<?php echo esc_attr($travel_distance); ?>" required>
@@ -71813,9 +72102,9 @@ final class CMN_One_Plugin {
                                             <span class="cmn-status-chip is-approved" data-support-feedback-badge hidden>Feedback submitted</span>
                                         </div>
                                         <div class="cmn-support-thread-actions">
-                                            <button class="cmn-ghost" type="button" data-support-reopen-ticket disabled>Reopen Ticket</button>
-                                            <button class="cmn-ghost" type="button" data-support-save-transcript disabled>Save Transcript</button>
-                                            <button class="cmn-ghost" type="button" data-support-email-transcript disabled>Send Transcript to Email</button>
+                                            <button class="cmn-ghost" type="button" data-support-reopen-ticket disabled>Reopen</button>
+                                            <button class="cmn-ghost" type="button" data-support-save-transcript disabled>Save</button>
+                                            <button class="cmn-ghost" type="button" data-support-email-transcript disabled>Email Transcript</button>
                                         </div>
                                     </div>
                                     <div class="cmn-support-messages" data-support-messages></div>
@@ -81986,6 +82275,11 @@ p{margin:0;line-height:1.5}
             update_post_meta($post_id, 'cmn_roles', $roles);
             update_post_meta($post_id, 'cmn_no_dbs', isset($_POST['cmn_no_dbs']) ? '1' : '0');
             update_post_meta($post_id, 'cmn_roles_other', sanitize_text_field($_POST['cmn_roles_other'] ?? ''));
+            $teacher_subject_specialism = sanitize_text_field((string) ($_POST['cmn_teacher_subject_specialism'] ?? ''));
+            if ($teacher_subject_specialism !== '' && !in_array($teacher_subject_specialism, $this->get_teacher_subject_specialism_options(), true)) {
+                $teacher_subject_specialism = '';
+            }
+            update_post_meta($post_id, 'cmn_teacher_subject_specialism', $teacher_subject_specialism);
             update_post_meta($post_id, 'cmn_driving_licence', sanitize_text_field($_POST['cmn_driving_licence'] ?? ''));
             update_post_meta($post_id, 'cmn_car_owner', sanitize_text_field($_POST['cmn_car_owner'] ?? ''));
             update_post_meta($post_id, 'cmn_travel_distance', sanitize_text_field($_POST['cmn_travel_distance'] ?? ''));
@@ -86351,6 +86645,11 @@ p{margin:0;line-height:1.5}
         if ((string) ($payload['no_dbs'] ?? '') !== '1') {
             $payload['no_dbs'] = '0';
         }
+        $teacher_subject_specialism = sanitize_text_field((string) ($payload['teacher_subject_specialism'] ?? ''));
+        if ($teacher_subject_specialism !== '' && !in_array($teacher_subject_specialism, $this->get_teacher_subject_specialism_options(), true)) {
+            $teacher_subject_specialism = '';
+        }
+        $payload['teacher_subject_specialism'] = $teacher_subject_specialism;
 
         $first_name = (string) ($payload['first_name'] ?? '');
         $last_name = (string) ($payload['last_name'] ?? '');
@@ -86452,6 +86751,7 @@ p{margin:0;line-height:1.5}
                 'roles' => (array) ($payload['roles'] ?? []),
                 'roles_label' => $preferred_roles_label,
                 'roles_other' => $roles_other,
+                'teacher_subject_specialism' => $teacher_subject_specialism,
                 'travel_radius' => (string) ($payload['travel_radius'] ?? ''),
                 'location' => (string) ($payload['location'] ?? ''),
                 'driving_licence' => $driving_licence,
@@ -94464,6 +94764,10 @@ p{margin:0;line-height:1.5}
         $feedback_table = $this->get_support_feedback_table();
         $is_new_expr = in_array('is_new_for_admin', $columns, true) ? 't.is_new_for_admin' : '0';
         $priority_expr = $has_priority ? "LOWER(COALESCE(t.priority, 'normal'))" : "'normal'";
+        $created_by_expr = $has_created_by ? 't.created_by_user_id' : '0 AS created_by_user_id';
+        $legacy_user_expr = $has_user_id ? 't.user_id' : '0 AS user_id';
+        $created_at_expr = in_array('created_at', $columns, true) ? 't.created_at' : "t.updated_at AS created_at";
+        $category_expr = in_array('category', $columns, true) ? 't.category' : "'' AS category";
         $feedback_request_status_expr = in_array('feedback_request_status', $columns, true)
             ? 't.feedback_request_status'
             : "'none' AS feedback_request_status";
@@ -94473,7 +94777,7 @@ p{margin:0;line-height:1.5}
         $feedback_request_expires_at_expr = in_array('feedback_request_expires_at', $columns, true)
             ? 't.feedback_request_expires_at'
             : "NULL AS feedback_request_expires_at";
-        $sql = "SELECT t.id, t.ticket_ref, t.subject, t.status, {$priority_expr} AS priority, {$is_new_expr} AS is_new_for_admin, t.updated_at, {$feedback_request_status_expr}, {$feedback_requested_at_expr}, {$feedback_request_expires_at_expr}, (SELECT COUNT(1) FROM {$feedback_table} sf WHERE sf.ticket_id = t.id) AS feedback_count FROM {$table} t {$where_sql} ORDER BY t.updated_at DESC LIMIT {$limit}";
+        $sql = "SELECT t.id, t.ticket_ref, t.subject, t.status, {$category_expr}, {$priority_expr} AS priority, {$is_new_expr} AS is_new_for_admin, {$created_by_expr}, {$legacy_user_expr}, {$created_at_expr}, t.updated_at, {$feedback_request_status_expr}, {$feedback_requested_at_expr}, {$feedback_request_expires_at_expr}, (SELECT COUNT(1) FROM {$feedback_table} sf WHERE sf.ticket_id = t.id) AS feedback_count FROM {$table} t {$where_sql} ORDER BY t.updated_at DESC LIMIT {$limit}";
         $prepared = $params ? $wpdb->prepare($sql, $params) : $sql;
         $rows = (array) $wpdb->get_results($prepared, ARRAY_A);
         if (!empty($wpdb->last_error)) {
@@ -94484,17 +94788,28 @@ p{margin:0;line-height:1.5}
             return in_array($raw_priority, ['low', 'normal', 'high', 'urgent'], true) ? $raw_priority : 'normal';
         };
         $tickets_all = array_map(function ($row) use ($normalize_ticket_priority) {
+            $owner_user_id = max(0, (int) ($row['created_by_user_id'] ?? 0));
+            if ($owner_user_id < 1) {
+                $owner_user_id = max(0, (int) ($row['user_id'] ?? 0));
+            }
             return [
                 'id' => (int) $row['id'],
                 'ref' => $row['ticket_ref'],
                 'subject' => $row['subject'],
                 'status' => $this->normalize_support_ticket_for_view($row, $this->is_staff_user())['status'],
+                'category' => isset($row['category']) ? sanitize_text_field((string) $row['category']) : '',
                 'priority' => $normalize_ticket_priority($row['priority'] ?? 'normal'),
                 'is_new_for_admin' => isset($row['is_new_for_admin']) ? (int) $row['is_new_for_admin'] : 0,
                 'feedback_count' => isset($row['feedback_count']) ? (int) $row['feedback_count'] : 0,
                 'feedback_request_status' => $this->normalize_support_feedback_request_status((string) ($row['feedback_request_status'] ?? 'none')),
                 'feedback_requested_at' => (string) ($row['feedback_requested_at'] ?? ''),
                 'feedback_request_expires_at' => (string) ($row['feedback_request_expires_at'] ?? ''),
+                'created_by_user_id' => isset($row['created_by_user_id']) ? (int) $row['created_by_user_id'] : 0,
+                'user_id' => isset($row['user_id']) ? (int) $row['user_id'] : 0,
+                'owner_user_id' => $owner_user_id,
+                'requester_name' => '',
+                'requester_email' => '',
+                'created_at' => (string) ($row['created_at'] ?? ''),
                 'linked_user_id' => 0,
                 'updated_at' => $row['updated_at'],
             ];
@@ -94521,9 +94836,62 @@ p{margin:0;line-height:1.5}
                 unset($ticket_row);
             }
         }
+        $owner_user_ids = [];
+        foreach ($tickets_all as $ticket_row) {
+            $owner_user_id = max(0, (int) ($ticket_row['owner_user_id'] ?? 0));
+            if ($owner_user_id > 0) {
+                $owner_user_ids[] = $owner_user_id;
+            }
+        }
+        $owner_user_ids = array_values(array_unique($owner_user_ids));
+        $owner_user_map = [];
+        if ($owner_user_ids) {
+            $owner_users = get_users([
+                'include' => $owner_user_ids,
+                'fields' => ['ID', 'display_name', 'user_login', 'user_email'],
+            ]);
+            if (is_array($owner_users)) {
+                foreach ($owner_users as $owner_user) {
+                    $owner_id = 0;
+                    $owner_name = '';
+                    $owner_email = '';
+                    if (is_object($owner_user)) {
+                        $owner_id = isset($owner_user->ID) ? (int) $owner_user->ID : 0;
+                        $owner_name = sanitize_text_field((string) (($owner_user->display_name ?? '') ?: ($owner_user->user_login ?? '')));
+                        $owner_email = sanitize_email((string) ($owner_user->user_email ?? ''));
+                    } elseif (is_array($owner_user)) {
+                        $owner_id = isset($owner_user['ID']) ? (int) $owner_user['ID'] : 0;
+                        $owner_name = sanitize_text_field((string) (($owner_user['display_name'] ?? '') ?: ($owner_user['user_login'] ?? '')));
+                        $owner_email = sanitize_email((string) ($owner_user['user_email'] ?? ''));
+                    }
+                    if ($owner_id < 1) {
+                        continue;
+                    }
+                    $owner_user_map[$owner_id] = [
+                        'name' => $owner_name,
+                        'email' => $owner_email,
+                    ];
+                }
+            }
+        }
+
         foreach ($tickets_all as &$ticket_row) {
             if (!isset($ticket_row['linked_user_id'])) {
                 $ticket_row['linked_user_id'] = 0;
+            }
+            $owner_user_id = max(0, (int) ($ticket_row['owner_user_id'] ?? 0));
+            if ($owner_user_id > 0 && isset($owner_user_map[$owner_user_id])) {
+                $ticket_row['requester_name'] = (string) ($owner_user_map[$owner_user_id]['name'] ?? '');
+                $ticket_row['requester_email'] = (string) ($owner_user_map[$owner_user_id]['email'] ?? '');
+            }
+            if (!empty($ticket_row['livechat_guest_name'])) {
+                $ticket_row['requester_name'] = sanitize_text_field((string) $ticket_row['livechat_guest_name']);
+            }
+            if (!empty($ticket_row['livechat_guest_email'])) {
+                $ticket_row['requester_email'] = sanitize_email((string) $ticket_row['livechat_guest_email']);
+            }
+            if ($ticket_row['requester_name'] === '') {
+                $ticket_row['requester_name'] = 'Portal user';
             }
             $ticket_row['requires_feedback'] = $this->support_ticket_requires_feedback($ticket_row) ? 1 : 0;
         }
@@ -94531,11 +94899,15 @@ p{margin:0;line-height:1.5}
         $dashboard_counts = [
             'all' => count($tickets_all),
             'open' => 0,
+            'new' => 0,
             'closed' => 0,
             'needs_feedback' => 0,
         ];
         foreach ($tickets_all as $ticket_row) {
             $ticket_status = (string) ($ticket_row['status'] ?? 'open');
+            if ($ticket_status === 'new') {
+                $dashboard_counts['new']++;
+            }
             if (in_array($ticket_status, ['new', 'open'], true)) {
                 $dashboard_counts['open']++;
             }
@@ -94595,12 +94967,19 @@ p{margin:0;line-height:1.5}
                         'ref' => (string) ($selected_normalized['ticket_ref'] ?? ''),
                         'subject' => (string) ($selected_normalized['subject'] ?? ''),
                         'status' => (string) ($selected_normalized['status'] ?? 'open'),
+                        'category' => isset($selected_normalized['category']) ? sanitize_text_field((string) $selected_normalized['category']) : '',
                         'priority' => $normalize_ticket_priority($selected_normalized['priority'] ?? 'normal'),
                         'is_new_for_admin' => isset($selected_normalized['is_new_for_admin']) ? (int) $selected_normalized['is_new_for_admin'] : 0,
                         'feedback_count' => $selected_feedback_count,
                         'feedback_request_status' => $this->normalize_support_feedback_request_status((string) ($selected_normalized['feedback_request_status'] ?? 'none')),
                         'feedback_requested_at' => (string) ($selected_normalized['feedback_requested_at'] ?? ''),
                         'feedback_request_expires_at' => (string) ($selected_normalized['feedback_request_expires_at'] ?? ''),
+                        'created_by_user_id' => isset($selected_normalized['created_by_user_id']) ? (int) $selected_normalized['created_by_user_id'] : 0,
+                        'user_id' => isset($selected_normalized['user_id']) ? (int) $selected_normalized['user_id'] : 0,
+                        'owner_user_id' => max(0, (int) $this->get_support_owner_user_id($selected_normalized)),
+                        'requester_name' => '',
+                        'requester_email' => '',
+                        'created_at' => (string) ($selected_normalized['created_at'] ?? ''),
                         'linked_user_id' => 0,
                         'requires_feedback' => 0,
                         'updated_at' => (string) ($selected_normalized['updated_at'] ?? ''),
@@ -94617,8 +94996,22 @@ p{margin:0;line-height:1.5}
                             $tickets[0]['livechat_guest_email'] = sanitize_email((string) ($selected_source['guest_email'] ?? ''));
                             $tickets[0]['livechat_guest_type'] = sanitize_key((string) ($selected_source['guest_type'] ?? 'other'));
                             $tickets[0]['linked_user_id'] = max(0, (int) ($selected_source['linked_user_id'] ?? 0));
+                            if (!empty($tickets[0]['livechat_guest_name'])) {
+                                $tickets[0]['requester_name'] = sanitize_text_field((string) $tickets[0]['livechat_guest_name']);
+                            }
+                            if (!empty($tickets[0]['livechat_guest_email'])) {
+                                $tickets[0]['requester_email'] = sanitize_email((string) $tickets[0]['livechat_guest_email']);
+                            }
                         }
                         if (isset($tickets[0]) && is_array($tickets[0])) {
+                            $owner_user_id = max(0, (int) ($tickets[0]['owner_user_id'] ?? 0));
+                            if ($tickets[0]['requester_name'] === '' && $owner_user_id > 0 && isset($owner_user_map[$owner_user_id])) {
+                                $tickets[0]['requester_name'] = (string) ($owner_user_map[$owner_user_id]['name'] ?? '');
+                                $tickets[0]['requester_email'] = (string) ($owner_user_map[$owner_user_id]['email'] ?? '');
+                            }
+                            if ($tickets[0]['requester_name'] === '') {
+                                $tickets[0]['requester_name'] = 'Portal user';
+                            }
                             $tickets[0]['requires_feedback'] = $this->support_ticket_requires_feedback($tickets[0]) ? 1 : 0;
                         }
                     }
@@ -94632,6 +95025,12 @@ p{margin:0;line-height:1.5}
             }
             if (!isset($ticket_row['linked_user_id'])) {
                 $ticket_row['linked_user_id'] = 0;
+            }
+            if (!isset($ticket_row['requester_name']) || trim((string) $ticket_row['requester_name']) === '') {
+                $ticket_row['requester_name'] = 'Portal user';
+            }
+            if (!isset($ticket_row['requester_email'])) {
+                $ticket_row['requester_email'] = '';
             }
             $ticket_row['requires_feedback'] = $this->support_ticket_requires_feedback($ticket_row) ? 1 : 0;
         }
@@ -94795,6 +95194,17 @@ p{margin:0;line-height:1.5}
         $ticket = $this->normalize_support_ticket_for_view($ticket, $this->is_staff_user());
         $livechat_meta = $this->get_livechat_thread_by_ticket_id($ticket_id);
         $livechat_guest_name = $livechat_meta ? sanitize_text_field((string) ($livechat_meta['guest_name'] ?? '')) : '';
+        $ticket_owner_user_id = (int) $this->get_support_owner_user_id($ticket);
+        $ticket['owner_user_id'] = $ticket_owner_user_id;
+        $ticket['requester_name'] = '';
+        $ticket['requester_email'] = '';
+        if ($ticket_owner_user_id > 0) {
+            $owner_user = get_user_by('id', $ticket_owner_user_id);
+            if ($owner_user) {
+                $ticket['requester_name'] = sanitize_text_field((string) ($owner_user->display_name ?: $owner_user->user_login));
+                $ticket['requester_email'] = sanitize_email((string) $owner_user->user_email);
+            }
+        }
         $messages = $this->get_support_ticket_messages($ticket_id);
         $formatted = [];
         foreach ($messages as $msg) {
@@ -94846,6 +95256,15 @@ p{margin:0;line-height:1.5}
             $ticket['livechat_guest_name'] = sanitize_text_field((string) ($livechat_meta['guest_name'] ?? ''));
             $ticket['livechat_guest_email'] = sanitize_email((string) ($livechat_meta['guest_email'] ?? ''));
             $ticket['livechat_guest_type'] = sanitize_key((string) ($livechat_meta['guest_type'] ?? 'other'));
+            if (!empty($ticket['livechat_guest_name'])) {
+                $ticket['requester_name'] = sanitize_text_field((string) $ticket['livechat_guest_name']);
+            }
+            if (!empty($ticket['livechat_guest_email'])) {
+                $ticket['requester_email'] = sanitize_email((string) $ticket['livechat_guest_email']);
+            }
+        }
+        if (empty($ticket['requester_name'])) {
+            $ticket['requester_name'] = 'Portal user';
         }
         if ($this->is_staff_user()) {
             $payroll_context = $this->build_staff_payroll_ticket_context($ticket, $payroll_query_meta);
