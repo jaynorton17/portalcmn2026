@@ -68749,7 +68749,86 @@ final class CMN_One_Plugin {
                                     </div>
                                 </div>
                                 <?php if ($testing_candidate_rows) : ?>
-                                    <?php echo $render_school_candidate_deck([$testing_candidate_rows[0]], 1, 0); ?>
+                                    <?php
+                                    $testing_candidate = (array) $testing_candidate_rows[0];
+                                    $testing_candidate_profile_url = (string) ($testing_candidate['profile_url'] ?? '');
+                                    $testing_existing_request_id = (int) ($testing_candidate['existing_request_id'] ?? 0);
+                                    $testing_request_enabled = !empty($testing_candidate['can_request_booking']);
+                                    $testing_response_state = sanitize_key((string) ($testing_candidate['response_state'] ?? 'not_responded'));
+                                    $testing_status_badge_class = sanitize_html_class((string) ($testing_candidate['status_badge_class'] ?? 'is-pending'));
+                                    $testing_review_count = max(0, (int) ($testing_candidate['review_count'] ?? 0));
+                                    $testing_avg_rating = (float) ($testing_candidate['avg_rating'] ?? 0);
+                                    $testing_rating_line = $testing_review_count > 0
+                                        ? ('⭐ ' . number_format($testing_avg_rating, 1) . ' (' . number_format_i18n($testing_review_count) . ' reviews)')
+                                        : '⭐ New profile';
+                                    $testing_strength_tags = array_slice((array) ($testing_candidate['strength_tags'] ?? []), 0, 3);
+                                    $testing_qualification_tags = array_slice((array) ($testing_candidate['qualification_tags'] ?? []), 0, 3);
+                                    $testing_first_name = sanitize_text_field((string) ($testing_candidate['first_name'] ?? 'Candidate'));
+                                    $testing_avatar_initial = strtoupper((string) substr($testing_first_name, 0, 1));
+                                    if ($testing_avatar_initial === '') {
+                                        $testing_avatar_initial = 'C';
+                                    }
+                                    ?>
+                                    <article class="cmn-school-candidate-card cmn-available-card <?php echo $testing_response_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending'; ?>">
+                                        <div class="cmn-school-candidate-card-top">
+                                            <div class="cmn-school-candidate-avatar">
+                                                <?php if (!empty($testing_candidate['avatar_url'])) : ?>
+                                                    <img src="<?php echo esc_url((string) $testing_candidate['avatar_url']); ?>" alt="<?php echo esc_attr($testing_first_name); ?>">
+                                                <?php else : ?>
+                                                    <span><?php echo esc_html($testing_avatar_initial); ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="cmn-school-candidate-top-copy">
+                                                <strong class="cmn-school-candidate-first-name"><?php echo esc_html($testing_first_name); ?></strong>
+                                                <span class="cmn-school-candidate-role"><?php echo esc_html((string) ($testing_candidate['role_text'] ?? 'General Cover')); ?></span>
+                                                <span class="cmn-school-candidate-rating"><?php echo esc_html($testing_rating_line); ?></span>
+                                            </div>
+                                            <div class="cmn-school-candidate-top-badges">
+                                                <span class="cmn-school-candidate-distance"><?php echo esc_html((string) ($testing_candidate['distance_badge'] ?? 'Distance unknown')); ?></span>
+                                                <span class="cmn-school-candidate-status <?php echo esc_attr($testing_status_badge_class); ?>"><?php echo esc_html((string) ($testing_candidate['status_badge_label'] ?? 'NOT RESPONDED')); ?></span>
+                                            </div>
+                                        </div>
+                                        <div class="cmn-school-candidate-card-middle">
+                                            <div class="cmn-school-candidate-confirmation <?php echo $testing_response_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending'; ?>">
+                                                <?php echo esc_html((string) ($testing_candidate['confirmation_text'] ?? 'Awaiting response')); ?>
+                                            </div>
+                                            <div class="cmn-school-candidate-rate"><?php echo esc_html((string) ($testing_candidate['day_rate_label'] ?? 'Rate on request')); ?></div>
+                                            <?php if ($testing_strength_tags) : ?>
+                                                <div class="cmn-school-candidate-tags" data-tag-group="strengths">
+                                                    <?php foreach ($testing_strength_tags as $testing_tag) : ?>
+                                                        <span class="cmn-school-candidate-tag"><?php echo esc_html((string) $testing_tag); ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($testing_candidate['teacher_subject_specialism'])) : ?>
+                                                <div class="cmn-school-candidate-subject"><?php echo esc_html((string) $testing_candidate['teacher_subject_specialism']); ?> Teacher</div>
+                                            <?php endif; ?>
+                                            <?php if ($testing_qualification_tags) : ?>
+                                                <div class="cmn-school-candidate-tags" data-tag-group="qualifications">
+                                                    <?php foreach ($testing_qualification_tags as $testing_qualification_tag) : ?>
+                                                        <span class="cmn-school-candidate-tag is-qualification"><?php echo esc_html((string) $testing_qualification_tag); ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="cmn-school-candidate-card-actions">
+                                            <?php if ($testing_request_enabled) : ?>
+                                                <button class="cmn-primary cmn-btn-mini" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr((int) ($testing_candidate['candidate_id'] ?? 0)); ?>" data-request-date="<?php echo esc_attr((string) ($testing_candidate['availability_date'] ?? '')); ?>"<?php echo $testing_existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>>
+                                                    <?php echo $testing_existing_request_id > 0 ? 'Request sent' : 'Book Now'; ?>
+                                                </button>
+                                            <?php else : ?>
+                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Book Now</button>
+                                            <?php endif; ?>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="maybe">Maybe</button>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="dismiss">Not Interested</button>
+                                            <?php if ($testing_candidate_profile_url !== '') : ?>
+                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($testing_candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View Profile</a>
+                                            <?php else : ?>
+                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View Profile</button>
+                                            <?php endif; ?>
+                                        </div>
+                                        <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($testing_candidate['request_message'] ?? '')); ?></span>
+                                    </article>
                                 <?php else : ?>
                                     <div class="cmn-school-dashboard-candidates-empty">
                                         <strong>No candidate has declared available tomorrow yet.</strong>
