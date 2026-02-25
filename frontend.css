@@ -14246,23 +14246,33 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-table-scroll, .cmn-booking-table
   -webkit-overflow-scrolling: touch;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table) {
+body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) {
   width: 100%;
   border-collapse: collapse;
   background: transparent;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table) th,
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table) td,
+body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) th,
+body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) td,
 body.cmn-portal-page .cmn-portal-light .cmn-booking-row {
   border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table) th {
+body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) th {
   color: #c9d2e2 !important;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) th,
+body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) td {
+  padding: 10px 10px !important;
+  vertical-align: middle;
+}
+
+body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 body.cmn-portal-page .cmn-portal-light :is(.cmn-tabs, .cmn-school-profile-tabs, .cmn-marketing-tabs, .cmn-system-health-tabs, .cmn-booking-tabs, .cmn-staff-candidate-tabs, .cmn-ui-tabs) {
