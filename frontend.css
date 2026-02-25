@@ -4934,6 +4934,18 @@ body.cmn-booking-feedback-lock {
   color: #e2e9f7;
 }
 
+.cmn-school-profile-status .cmn-pill--status.is-lead {
+  border-color: rgba(208, 42, 42, 0.46);
+  background: rgba(208, 42, 42, 0.16);
+  color: #ffd0d0;
+}
+
+.cmn-school-profile-status .cmn-pill--status.is-client {
+  border-color: rgba(96, 165, 250, 0.36);
+  background: rgba(59, 130, 246, 0.16);
+  color: #d7e8ff;
+}
+
 .cmn-school-feedback-stars {
   display: inline-flex;
   align-items: center;
@@ -5096,6 +5108,21 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.cmn-school-profile-issues-strip.cmn-school-profile-issues-strip--compact {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+}
+
+.cmn-school-profile-issues-strip.cmn-school-profile-issues-strip--compact .cmn-school-profile-issues-strip-list {
+  gap: 6px;
+}
+
+.cmn-school-profile-issues-strip.cmn-school-profile-issues-strip--compact .cmn-pill {
+  min-height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .cmn-school-profile-grid .cmn-school-tab-panel {
@@ -14144,6 +14171,31 @@ body.cmn-portal-page .cmn-portal-light .cmn-staff-main .cmn-container > .cmn-sch
   padding-top: 0 !important;
 }
 
+body.cmn-portal-page .cmn-portal-light .cmn-staff-main .cmn-schools-page {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-staff-main .cmn-schools-page .cmn-school-header {
+  margin-bottom: 4px !important;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-staff-main .cmn-schools-page .cmn-segmented {
+  margin-top: 2px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-staff-main .cmn-schools-page .cmn-school-toolbar {
+  margin: 0 0 8px !important;
+  padding: 8px 10px !important;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-staff-main .cmn-schools-page .cmn-table-scroll {
+  margin-top: 0;
+}
+
 body.cmn-portal-page .cmn-portal-light :is(
   .cmn-card,
   .cmn-dashboard-card,
@@ -14176,7 +14228,7 @@ body.cmn-portal-page .cmn-portal-light :is(
 }
 
 body.cmn-portal-page .cmn-portal-light :is(.cmn-dashboard-card, .cmn-panel-card, .cmn-card, .cmn-modal-content, .cmn-ui-card) {
-  padding: 20px !important;
+  padding: 16px !important;
 }
 
 body.cmn-portal-page .cmn-portal-light :is(

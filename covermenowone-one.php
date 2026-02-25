@@ -24073,6 +24073,7 @@ final class CMN_One_Plugin {
 
         ob_start();
         ?>
+        <section class="cmn-schools-page cmn-ui-page">
         <header class="cmn-school-header">
             <div class="cmn-header-row">
                 <div>
@@ -24616,6 +24617,7 @@ final class CMN_One_Plugin {
             </table>
             </div>
         </form>
+        </section>
         <?php
         $inner = ob_get_clean();
         return $this->render_staff_shell($active_nav, $inner);
