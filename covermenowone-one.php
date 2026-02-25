@@ -63593,9 +63593,10 @@ final class CMN_One_Plugin {
         $school_status_key = sanitize_key((string) $school_status);
         $school_is_active_status = in_array($school_status_key, ['active', 'client', 'active_client', 'live'], true);
         $has_open_request = false;
+        $active_request_statuses = ['requested', 'pending', 'candidate_contacted', 'staff_reviewing', 'negotiation', 'tentative'];
         foreach ((array) $school_requests as $school_request_row) {
-            $request_status_key = sanitize_key((string) ($school_request_row['status'] ?? 'requested'));
-            if (!in_array($request_status_key, ['declined', 'expired', 'cancelled', 'closed', 'completed', 'complete', 'rejected'], true)) {
+            $request_status_key = sanitize_key((string) ($school_request_row['status'] ?? ''));
+            if (in_array($request_status_key, $active_request_statuses, true)) {
                 $has_open_request = true;
                 break;
             }
