@@ -3998,6 +3998,1126 @@ document.addEventListener('DOMContentLoaded', function () {
   };
   initSchoolCandidateDecks();
 
+  var initSchoolLiveMatches = function () {
+    var root = document.querySelector('[data-live-matches-root]');
+    if (!root || root.getAttribute('data-live-init') === '1') {
+      return;
+    }
+    root.setAttribute('data-live-init', '1');
+
+    var initialScript = root.querySelector('[data-live-initial]');
+    var initialPayload = {};
+    try {
+      initialPayload = initialScript ? JSON.parse(initialScript.textContent || '{}') : {};
+    } catch (e) {
+      initialPayload = {};
+    }
+
+    var defaultFilters = {
+      radius: 30,
+      availability: 'all',
+      roles: [],
+      compliance: [],
+      skills: [],
+      search: ''
+    };
+    var tabs = ['all_candidates', 'available_now', 'not_responded', 'shortlist'];
+    var state = {
+      tab: tabs.indexOf(String(initialPayload.tab || 'all_candidates')) >= 0 ? String(initialPayload.tab || 'all_candidates') : 'all_candidates',
+      filters: Object.assign({}, defaultFilters, initialPayload.filters || {}),
+      counts: Object.assign({
+        all_candidates: 0,
+        available_now: 0,
+        not_responded: 0,
+        shortlist: 0
+      }, initialPayload.counts || {}),
+      candidates: Array.isArray(initialPayload.candidates) ? initialPayload.candidates.slice() : [],
+      stats: Object.assign({
+        candidates_found: 0,
+        available_now: 0,
+        not_responded: 0,
+        avg_response_minutes: 12
+      }, initialPayload.stats || {}),
+      total: Math.max(0, parseInt(initialPayload.total || 0, 10) || 0),
+      limit: Math.max(6, parseInt(initialPayload.limit || 24, 10) || 24),
+      hasMore: !!initialPayload.has_more,
+      notInterestedDays: Math.max(1, parseInt(initialPayload.not_interested_days || 14, 10) || 14),
+      activeIndexByTab: {},
+      loading: false,
+      requestInFlight: false,
+      loadMoreInFlight: false,
+      timersTick: 0
+    };
+    tabs.forEach(function (tabKey) {
+      state.activeIndexByTab[tabKey] = 0;
+    });
+
+    var storageKey = 'cmn_live_matches_state_' + String(initialPayload.school_id || '0');
+    var hasAjax = !!(window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.liveMatchesNonce);
+    var carousel = root.querySelector('[data-live-carousel]');
+    var stackEl = root.querySelector('[data-live-stack]');
+    var dotsEl = root.querySelector('[data-live-dots]');
+    var loadingEl = root.querySelector('[data-live-loading]');
+    var emptyEl = root.querySelector('[data-live-empty]');
+    var emptyRadiusEl = root.querySelector('[data-live-empty-radius]');
+    var carouselShell = root.querySelector('[data-live-carousel-shell]');
+    var errorEl = root.querySelector('[data-live-error]');
+    var prevBtn = root.querySelector('[data-live-prev]');
+    var nextBtn = root.querySelector('[data-live-next]');
+    var retryBtn = root.querySelector('[data-live-retry]');
+    var tabButtons = Array.prototype.slice.call(root.querySelectorAll('[data-live-tab]'));
+    var countEls = root.querySelectorAll('[data-live-count]');
+    var radiusLabelEl = root.querySelector('[data-live-radius-label]');
+    var filterChipsEl = root.querySelector('[data-live-filter-chips]');
+    var kpiTotal = root.querySelector('[data-live-kpi-total]');
+    var kpiAvailable = root.querySelector('[data-live-kpi-available]');
+    var kpiPending = root.querySelector('[data-live-kpi-pending]');
+    var kpiResponse = root.querySelector('[data-live-kpi-response]');
+    var openFiltersBtns = Array.prototype.slice.call(root.querySelectorAll('[data-live-open-filters]'));
+    var closeFiltersBtns = Array.prototype.slice.call(root.querySelectorAll('[data-live-close-filters]'));
+    var drawer = root.querySelector('[data-live-drawer]');
+    var applyFiltersBtn = root.querySelector('[data-live-apply-filters]');
+    var clearFiltersBtn = root.querySelector('[data-live-clear-filters]');
+    var resetFiltersBtn = root.querySelector('[data-live-reset-filters]');
+    var requestMultipleBtn = root.querySelector('[data-live-request-multiple]');
+    var broadcastBtn = root.querySelector('[data-live-broadcast]');
+    var radiusInput = root.querySelector('[data-live-filter-radius]');
+    var radiusValueEl = root.querySelector('[data-live-radius-value]');
+    var roleInputs = Array.prototype.slice.call(root.querySelectorAll('[data-live-filter-role]'));
+    var complianceInputs = Array.prototype.slice.call(root.querySelectorAll('[data-live-filter-compliance]'));
+    var skillInputs = Array.prototype.slice.call(root.querySelectorAll('[data-live-filter-skill]'));
+    var availabilityInputs = Array.prototype.slice.call(root.querySelectorAll('[data-live-filter-availability]'));
+    var searchInput = root.querySelector('[data-live-filter-search]');
+    var timerInterval = null;
+
+    var sanitizeArray = function (value) {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+      return value.map(function (item) {
+        return String(item || '').trim().toLowerCase();
+      }).filter(Boolean).filter(function (item, idx, arr) {
+        return arr.indexOf(item) === idx;
+      });
+    };
+    var sanitizeFilters = function (value) {
+      var raw = value && typeof value === 'object' ? value : {};
+      var radius = parseInt(raw.radius || 30, 10);
+      if (!radius || radius < 5) {
+        radius = 5;
+      } else if (radius > 30) {
+        radius = 30;
+      }
+      var availability = String(raw.availability || 'all').trim().toLowerCase();
+      if (['all', 'now', 'morning', 'afternoon', 'tomorrow'].indexOf(availability) === -1) {
+        availability = 'all';
+      }
+      return {
+        radius: radius,
+        availability: availability,
+        roles: sanitizeArray(raw.roles).filter(function (item) {
+          return ['qts', 'cover_supervisor', 'hlta', 'ta'].indexOf(item) >= 0;
+        }),
+        compliance: sanitizeArray(raw.compliance).filter(function (item) {
+          return ['dbs_verified', 'id_verified', 'qts_verified'].indexOf(item) >= 0;
+        }),
+        skills: sanitizeArray(raw.skills).filter(function (item) {
+          return ['classroom_management', 'communication', 'first_aid'].indexOf(item) >= 0;
+        }),
+        search: String(raw.search || '').trim()
+      };
+    };
+    state.filters = sanitizeFilters(state.filters);
+    var initialTab = tabs.indexOf(String(initialPayload.tab || 'all_candidates')) >= 0 ? String(initialPayload.tab || 'all_candidates') : 'all_candidates';
+    var initialFilters = sanitizeFilters(initialPayload.filters || {});
+
+    var getActiveIndex = function () {
+      var idx = parseInt(state.activeIndexByTab[state.tab] || 0, 10);
+      if (!isFinite(idx) || idx < 0) {
+        idx = 0;
+      }
+      if (idx >= state.candidates.length) {
+        idx = Math.max(0, state.candidates.length - 1);
+      }
+      state.activeIndexByTab[state.tab] = idx;
+      return idx;
+    };
+    var setActiveIndex = function (idx) {
+      var next = parseInt(idx || 0, 10);
+      if (!isFinite(next) || next < 0) {
+        next = 0;
+      }
+      if (next >= state.candidates.length) {
+        next = Math.max(0, state.candidates.length - 1);
+      }
+      state.activeIndexByTab[state.tab] = next;
+    };
+
+    var buildRouteStateParams = function () {
+      var params = new URLSearchParams(window.location.search || '');
+      params.set('cmn_live_tab', state.tab);
+      params.set('cmn_live_radius', String(state.filters.radius || 30));
+      params.set('cmn_live_availability', String(state.filters.availability || 'all'));
+      params.set('cmn_live_idx', String(getActiveIndex()));
+      if (state.filters.roles.length) {
+        params.set('cmn_live_roles', state.filters.roles.join(','));
+      } else {
+        params.delete('cmn_live_roles');
+      }
+      if (state.filters.compliance.length) {
+        params.set('cmn_live_compliance', state.filters.compliance.join(','));
+      } else {
+        params.delete('cmn_live_compliance');
+      }
+      if (state.filters.skills.length) {
+        params.set('cmn_live_skills', state.filters.skills.join(','));
+      } else {
+        params.delete('cmn_live_skills');
+      }
+      if (state.filters.search) {
+        params.set('cmn_live_search', state.filters.search);
+      } else {
+        params.delete('cmn_live_search');
+      }
+      return params;
+    };
+
+    var syncRouteState = function () {
+      if (!window.history || !window.history.replaceState) {
+        return;
+      }
+      try {
+        var url = new URL(window.location.href);
+        url.search = buildRouteStateParams().toString();
+        window.history.replaceState(window.history.state, '', url.toString());
+      } catch (e) {
+        // Ignore URL state sync issues.
+      }
+    };
+
+    var parseRouteState = function () {
+      var parsed = {
+        hasExplicit: false,
+        tab: '',
+        filters: null,
+        activeIndex: null
+      };
+      try {
+        var params = new URLSearchParams(window.location.search || '');
+        parsed.hasExplicit = params.has('cmn_live_tab')
+          || params.has('cmn_live_radius')
+          || params.has('cmn_live_availability')
+          || params.has('cmn_live_roles')
+          || params.has('cmn_live_compliance')
+          || params.has('cmn_live_skills')
+          || params.has('cmn_live_search')
+          || params.has('cmn_live_idx');
+        if (!parsed.hasExplicit) {
+          return parsed;
+        }
+        var tab = String(params.get('cmn_live_tab') || '').trim();
+        if (tabs.indexOf(tab) >= 0) {
+          parsed.tab = tab;
+        }
+        parsed.filters = sanitizeFilters({
+          radius: params.get('cmn_live_radius') || state.filters.radius,
+          availability: params.get('cmn_live_availability') || state.filters.availability,
+          roles: String(params.get('cmn_live_roles') || '').split(','),
+          compliance: String(params.get('cmn_live_compliance') || '').split(','),
+          skills: String(params.get('cmn_live_skills') || '').split(','),
+          search: String(params.get('cmn_live_search') || '')
+        });
+        var idx = parseInt(params.get('cmn_live_idx') || '', 10);
+        if (isFinite(idx) && idx >= 0) {
+          parsed.activeIndex = idx;
+        }
+      } catch (e) {
+        parsed.hasExplicit = false;
+      }
+      return parsed;
+    };
+
+    var saveState = function () {
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify({
+          tab: state.tab,
+          filters: state.filters,
+          activeIndexByTab: state.activeIndexByTab,
+          ts: Date.now()
+        }));
+      } catch (e) {
+        // Ignore storage errors.
+      }
+    };
+    var restoreState = function () {
+      var routeState = parseRouteState();
+      if (routeState.hasExplicit) {
+        if (routeState.tab && tabs.indexOf(routeState.tab) >= 0) {
+          state.tab = routeState.tab;
+        }
+        if (routeState.filters) {
+          state.filters = sanitizeFilters(routeState.filters);
+        }
+        if (routeState.activeIndex !== null) {
+          state.activeIndexByTab[state.tab] = routeState.activeIndex;
+        }
+        return;
+      }
+      // Default entry should always open the operational view on All Candidates
+      // to avoid stale session tab/filter state hiding not-responded matches.
+      state.tab = 'all_candidates';
+      state.filters = sanitizeFilters(defaultFilters);
+      tabs.forEach(function (tabKey) {
+        state.activeIndexByTab[tabKey] = 0;
+      });
+    };
+    restoreState();
+    var initialCandidates = Array.isArray(initialPayload.candidates) ? initialPayload.candidates : [];
+    var shouldFetchInitial = !!hasAjax && (
+      !Array.isArray(initialPayload.candidates)
+      || initialCandidates.length === 0
+      || String(state.tab) !== String(initialTab)
+      || JSON.stringify(state.filters || {}) !== JSON.stringify(initialFilters || {})
+    );
+
+    var cardStatusLabel = function (candidate) {
+      return String(candidate && candidate.status_label ? candidate.status_label : 'NOT RESPONDED');
+    };
+    var cardStatusClass = function (candidate) {
+      return String(candidate && candidate.status_class ? candidate.status_class : 'is-not-responded');
+    };
+    var buildCandidateCard = function (candidate, idx) {
+      var name = String(candidate.name || 'Candidate');
+      var roleLine = String(candidate.role_line || 'Cover Supervisor • HLTA');
+      var ratingValue = String(candidate.rating_value || '0.0');
+      var reviewCount = parseInt(candidate.review_count || 0, 10);
+      var reviewLabel = reviewCount > 0 ? ('(' + reviewCount + ')') : '(0)';
+      var distance = String(candidate.distance_label || 'Distance unknown');
+      var statusLabel = cardStatusLabel(candidate);
+      var statusClass = cardStatusClass(candidate);
+      var availabilityLabel = String(candidate.availability_label || 'Awaiting response');
+      var confirmedAt = String(candidate.confirmed_at || '').trim();
+      var availabilityText = confirmedAt ? (availabilityLabel + ' • Confirmed at ' + confirmedAt) : availabilityLabel;
+      var rateLabel = String(candidate.day_rate_label || 'Rate on request');
+      var avatarUrl = String(candidate.avatar_url || (window.cmnPortal && window.cmnPortal.avatarFallbackUrl ? window.cmnPortal.avatarFallbackUrl : ''));
+      var requestEnabled = !!candidate.request_enabled;
+      var requestId = parseInt(candidate.existing_request_id || 0, 10);
+      var requestStatus = String(candidate.request_status || '').toLowerCase();
+      var hasOpenOffer = requestId > 0 && (requestStatus === '' || requestStatus === 'requested' || requestStatus === 'pending');
+      var offerExpiresAt = String(candidate.request_expires_at || '').trim();
+      var shortlistActive = !!candidate.is_shortlisted;
+      var profileUrl = String(candidate.profile_url || '#');
+      var skills = Array.isArray(candidate.skills) ? candidate.skills.slice(0, 3) : ['Classroom Management', 'Communication', 'First Aid'];
+      var statusAria = statusLabel === 'AVAILABLE NOW' ? 'Candidate available now' : 'Candidate not responded yet';
+      var offerTimerHtml = hasOpenOffer && offerExpiresAt
+        ? '<div class="cmn-live-offer-timer" data-live-offer-expires="' + offerExpiresAt.replace(/"/g, '&quot;') + '" role="status" aria-live="polite" aria-label="Offer expires in --:--">Offer expires in --:--</div>'
+        : '<div class="cmn-live-offer-timer is-hidden" aria-hidden="true"></div>';
+      return '' +
+        '<article class="cmn-live-match-card" data-live-card data-live-index="' + idx + '" data-candidate-id="' + String(candidate.candidate_id || candidate.id || 0) + '">' +
+          '<div class="cmn-live-match-card__head">' +
+            '<div class="cmn-live-match-card__avatar"><img src="' + avatarUrl.replace(/"/g, '&quot;') + '" alt="' + name.replace(/"/g, '&quot;') + '"></div>' +
+            '<div class="cmn-live-match-card__identity">' +
+              '<h3>' + name + ' <span class="cmn-live-verified" aria-label="Verified">✓</span></h3>' +
+              '<p class="cmn-live-role-line">' + roleLine + '</p>' +
+              '<p class="cmn-live-rating">★ ' + ratingValue + ' <span>' + reviewLabel + '</span></p>' +
+            '</div>' +
+            '<div class="cmn-live-match-card__meta">' +
+              '<span class="cmn-live-status ' + statusClass + '" aria-label="' + statusAria + '">' + statusLabel + '</span>' +
+              '<span class="cmn-live-distance">Distance: ' + distance + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="cmn-live-availability-strip ' + (statusLabel === 'AVAILABLE NOW' ? 'is-live' : 'is-pending') + '">' + availabilityText + '</div>' +
+          '<div class="cmn-live-rate-row">' + rateLabel + ' <span aria-hidden="true">▾</span></div>' +
+          '<div class="cmn-live-skill-row">' +
+            skills.map(function (skill) {
+              return '<span class="cmn-live-skill-chip">' + String(skill) + '</span>';
+            }).join('') +
+          '</div>' +
+          offerTimerHtml +
+          '<div class="cmn-live-match-card__actions">' +
+            '<button type="button" class="cmn-primary cmn-btn-mini" data-live-book-now' + (requestEnabled && !hasOpenOffer ? '' : ' disabled') + '>' + (hasOpenOffer ? 'Offer sent' : 'Book Now') + '</button>' +
+            '<button type="button" class="cmn-ghost cmn-btn-mini' + (shortlistActive ? ' is-active' : '') + '" data-live-shortlist>' + (shortlistActive ? 'Shortlisted' : 'Shortlist') + '</button>' +
+            '<a class="cmn-ghost cmn-btn-mini" href="' + profileUrl.replace(/"/g, '&quot;') + '" data-live-view-profile>View Profile</a>' +
+            '<button type="button" class="cmn-live-not-interested cmn-btn-mini" data-live-not-interested>Not Interested</button>' +
+          '</div>' +
+          '<div class="cmn-live-side-cta" aria-hidden="true">View Candidate</div>' +
+          '<div class="cmn-live-card-message" data-live-card-msg></div>' +
+        '</article>';
+    };
+
+    var setError = function (message, tone) {
+      if (!errorEl) {
+        return;
+      }
+      var msg = String(message || '').trim();
+      if (!msg) {
+        errorEl.hidden = true;
+        errorEl.classList.remove('is-success');
+        return;
+      }
+      errorEl.hidden = false;
+      errorEl.classList.toggle('is-success', String(tone || '') === 'success');
+      var label = errorEl.querySelector('span');
+      if (label) {
+        label.textContent = msg;
+      } else {
+        errorEl.textContent = msg;
+      }
+    };
+    var setLoading = function (isLoading) {
+      state.loading = !!isLoading;
+      if (loadingEl) {
+        loadingEl.hidden = !state.loading;
+      }
+      if (prevBtn) {
+        prevBtn.disabled = state.loading || state.candidates.length < 2;
+      }
+      if (nextBtn) {
+        nextBtn.disabled = state.loading || state.candidates.length < 2;
+      }
+    };
+    var syncKpis = function () {
+      if (kpiTotal) {
+        kpiTotal.textContent = String(state.stats.candidates_found || state.counts.all_candidates || 0);
+      }
+      if (kpiAvailable) {
+        kpiAvailable.textContent = String(state.stats.available_now || state.counts.available_now || 0);
+      }
+      if (kpiPending) {
+        kpiPending.textContent = String(state.stats.not_responded || state.counts.not_responded || 0);
+      }
+      if (kpiResponse) {
+        kpiResponse.textContent = String(state.stats.avg_response_minutes || 12) + ' min';
+      }
+    };
+    var syncCounts = function () {
+      countEls.forEach(function (el) {
+        var key = String(el.getAttribute('data-live-count') || '').trim();
+        if (!key) {
+          return;
+        }
+        el.textContent = String(state.counts[key] || 0);
+      });
+      tabButtons.forEach(function (btn) {
+        var key = String(btn.getAttribute('data-live-tab') || '').trim();
+        btn.classList.toggle('is-active', key === state.tab);
+        btn.setAttribute('aria-selected', key === state.tab ? 'true' : 'false');
+      });
+      if (radiusLabelEl) {
+        radiusLabelEl.textContent = String(state.filters.radius || 30);
+      }
+      if (emptyRadiusEl) {
+        emptyRadiusEl.textContent = String(state.filters.radius || 30);
+      }
+      syncKpis();
+    };
+    var syncFilterControls = function () {
+      if (radiusInput) {
+        radiusInput.value = String(state.filters.radius || 30);
+      }
+      if (radiusValueEl) {
+        radiusValueEl.textContent = String(state.filters.radius || 30);
+      }
+      roleInputs.forEach(function (input) {
+        input.checked = state.filters.roles.indexOf(String(input.value || '').trim()) >= 0;
+      });
+      complianceInputs.forEach(function (input) {
+        input.checked = state.filters.compliance.indexOf(String(input.value || '').trim()) >= 0;
+      });
+      skillInputs.forEach(function (input) {
+        input.checked = state.filters.skills.indexOf(String(input.value || '').trim()) >= 0;
+      });
+      availabilityInputs.forEach(function (input) {
+        input.checked = String(input.value || '') === String(state.filters.availability || 'all');
+      });
+      if (searchInput) {
+        searchInput.value = String(state.filters.search || '');
+      }
+    };
+    var renderFilterChips = function () {
+      if (!filterChipsEl) {
+        return;
+      }
+      var chips = [];
+      chips.push('Radius: ' + String(state.filters.radius || 30) + ' miles');
+      if (state.filters.availability && state.filters.availability !== 'all') {
+        chips.push('Availability: ' + state.filters.availability.replace('_', ' '));
+      }
+      state.filters.roles.forEach(function (role) {
+        chips.push(role.replace('_', ' '));
+      });
+      state.filters.compliance.forEach(function (item) {
+        chips.push(item.replace('_', ' '));
+      });
+      state.filters.skills.forEach(function (item) {
+        chips.push(item.replace('_', ' '));
+      });
+      if (state.filters.search) {
+        chips.push('Search: ' + state.filters.search);
+      }
+      filterChipsEl.innerHTML = chips.map(function (chip) {
+        return '<span class="cmn-live-filter-chip">' + chip + '</span>';
+      }).join('');
+    };
+    var getRelative = function (index, activeIndex, total) {
+      if (total < 2) {
+        return 0;
+      }
+      var relative = index - activeIndex;
+      if (relative > total / 2) {
+        relative -= total;
+      } else if (relative < -(total / 2)) {
+        relative += total;
+      }
+      return relative;
+    };
+    var renderDots = function () {
+      if (!dotsEl) {
+        return;
+      }
+      if (!state.candidates.length) {
+        dotsEl.innerHTML = '';
+        return;
+      }
+      var activeIndex = getActiveIndex();
+      dotsEl.innerHTML = state.candidates.map(function (_candidate, idx) {
+        var active = idx === activeIndex ? ' is-active' : '';
+        return '<button type="button" class="cmn-school-candidate-deck-dot' + active + '" data-live-dot data-live-index="' + idx + '" aria-label="Candidate ' + (idx + 1) + '"></button>';
+      }).join('');
+    };
+    var prefetchAdjacentAvatars = function () {
+      if (!state.candidates.length) {
+        return;
+      }
+      var activeIndex = getActiveIndex();
+      var ids = [activeIndex - 1, activeIndex + 1];
+      ids.forEach(function (idx) {
+        var wrapped = idx;
+        if (wrapped < 0) {
+          wrapped = state.candidates.length - 1;
+        } else if (wrapped >= state.candidates.length) {
+          wrapped = 0;
+        }
+        var candidate = state.candidates[wrapped];
+        if (!candidate || !candidate.avatar_url) {
+          return;
+        }
+        var img = new Image();
+        img.src = String(candidate.avatar_url);
+      });
+    };
+    var renderStackTransforms = function () {
+      if (!stackEl) {
+        return;
+      }
+      var cards = Array.prototype.slice.call(stackEl.querySelectorAll('[data-live-card]'));
+      var activeIndex = getActiveIndex();
+      var total = cards.length;
+      var compact = window.matchMedia('(max-width: 840px)').matches;
+      var width = Math.max(320, stackEl.clientWidth || 320);
+      var offset = Math.max(220, Math.min(540, Math.round(width * 0.45)));
+      cards.forEach(function (card, idx) {
+        var relative = getRelative(idx, activeIndex, total);
+        var isActive = relative === 0;
+        var isPrev = relative === -1;
+        var isNext = relative === 1;
+        var visible = compact ? isActive : (isActive || isPrev || isNext);
+        card.classList.toggle('is-active', isActive);
+        card.classList.toggle('is-prev', isPrev);
+        card.classList.toggle('is-next', isNext);
+        card.classList.toggle('is-hidden', !visible);
+        if (!visible) {
+          card.style.opacity = '0';
+          card.style.pointerEvents = 'none';
+          card.style.transform = 'translate3d(calc(-50% + ' + (relative < 0 ? -1 : 1) * (offset + 180) + 'px), 30px, 0) scale(0.84)';
+          card.style.zIndex = '1';
+          return;
+        }
+        if (isActive) {
+          card.style.opacity = '1';
+          card.style.pointerEvents = 'auto';
+          card.style.transform = 'translate3d(-50%, 0, 0) scale(1)';
+          card.style.zIndex = '30';
+          return;
+        }
+        card.style.opacity = '0.8';
+        card.style.pointerEvents = 'auto';
+        card.style.transform = 'translate3d(calc(-50% + ' + (relative < 0 ? -offset : offset) + 'px), 16px, 0) scale(0.9)';
+        card.style.zIndex = '12';
+      });
+      renderDots();
+      prefetchAdjacentAvatars();
+      saveState();
+    };
+    var renderCards = function () {
+      if (!stackEl) {
+        return;
+      }
+      if (!state.candidates.length) {
+        stackEl.innerHTML = '';
+        if (emptyEl) {
+          emptyEl.hidden = false;
+        }
+        if (carouselShell) {
+          carouselShell.hidden = true;
+        }
+        if (dotsEl) {
+          dotsEl.innerHTML = '';
+        }
+        return;
+      }
+      if (emptyEl) {
+        emptyEl.hidden = true;
+      }
+      if (carouselShell) {
+        carouselShell.hidden = false;
+      }
+      stackEl.innerHTML = state.candidates.map(buildCandidateCard).join('');
+      renderStackTransforms();
+      refreshOfferTimers();
+    };
+    var moveTo = function (idx) {
+      if (!state.candidates.length) {
+        return;
+      }
+      setActiveIndex(idx);
+      renderStackTransforms();
+      if (state.hasMore && getActiveIndex() >= Math.max(0, state.candidates.length - 3)) {
+        loadMoreFeed();
+      }
+    };
+    var moveNext = function () {
+      moveTo(getActiveIndex() + 1);
+    };
+    var movePrev = function () {
+      moveTo(getActiveIndex() - 1);
+    };
+    var readFiltersFromDrawer = function () {
+      var next = sanitizeFilters({
+        radius: radiusInput ? parseInt(radiusInput.value || state.filters.radius || 30, 10) : state.filters.radius,
+        availability: (availabilityInputs.find(function (input) { return input.checked; }) || {}).value || 'all',
+        roles: roleInputs.filter(function (input) { return input.checked; }).map(function (input) { return input.value; }),
+        compliance: complianceInputs.filter(function (input) { return input.checked; }).map(function (input) { return input.value; }),
+        skills: skillInputs.filter(function (input) { return input.checked; }).map(function (input) { return input.value; }),
+        search: searchInput ? searchInput.value : state.filters.search
+      });
+      return next;
+    };
+    var setDrawerOpen = function (open) {
+      if (!drawer) {
+        return;
+      }
+      drawer.hidden = !open;
+      drawer.classList.toggle('is-open', !!open);
+      if (open && radiusInput) {
+        radiusInput.focus();
+      }
+    };
+    var updateFromPayload = function (payload, options) {
+      var opts = options || {};
+      state.tab = tabs.indexOf(String(payload.tab || state.tab)) >= 0 ? String(payload.tab || state.tab) : state.tab;
+      state.filters = sanitizeFilters(payload.filters || state.filters);
+      state.counts = Object.assign(state.counts, payload.counts || {});
+      state.stats = Object.assign(state.stats, payload.stats || {});
+      var incoming = Array.isArray(payload.candidates) ? payload.candidates.slice() : [];
+      if (opts.append && state.candidates.length) {
+        var seen = {};
+        state.candidates.forEach(function (candidate) {
+          seen[String(candidate && (candidate.candidate_id || candidate.id || ''))] = true;
+        });
+        incoming.forEach(function (candidate) {
+          var candidateKey = String(candidate && (candidate.candidate_id || candidate.id || ''));
+          if (!candidateKey || seen[candidateKey]) {
+            return;
+          }
+          seen[candidateKey] = true;
+          state.candidates.push(candidate);
+        });
+      } else {
+        state.candidates = incoming;
+      }
+      state.total = Math.max(0, parseInt(payload.total || state.total || state.candidates.length, 10) || 0);
+      state.limit = Math.max(6, parseInt(payload.limit || state.limit || 24, 10) || 24);
+      state.hasMore = !!payload.has_more;
+      state.notInterestedDays = Math.max(1, parseInt(payload.not_interested_days || state.notInterestedDays || 14, 10) || 14);
+      if (opts.resetIndex) {
+        state.activeIndexByTab[state.tab] = 0;
+      } else {
+        setActiveIndex(state.activeIndexByTab[state.tab] || 0);
+      }
+      syncCounts();
+      syncFilterControls();
+      renderFilterChips();
+      renderCards();
+      saveState();
+    };
+    var postJson = function (action, payload) {
+      var formData = new FormData();
+      formData.append('action', action);
+      formData.append('nonce', window.cmnPortal.liveMatchesNonce || '');
+      Object.keys(payload || {}).forEach(function (key) {
+        var value = payload[key];
+        if (Array.isArray(value) || (value && typeof value === 'object')) {
+          formData.append(key, JSON.stringify(value));
+        } else if (value !== undefined && value !== null) {
+          formData.append(key, String(value));
+        }
+      });
+      return fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData
+      }).then(function (response) {
+        return response.json();
+      });
+    };
+    var fetchFeed = function (options) {
+      var opts = options || {};
+      if (!hasAjax || state.requestInFlight || state.loadMoreInFlight) {
+        return Promise.resolve(false);
+      }
+      state.requestInFlight = true;
+      setLoading(true);
+      setError('');
+      return postJson('cmn_school_live_matches_feed', {
+        tab: state.tab,
+        filters: state.filters,
+        limit: state.limit || 24,
+        offset: 0
+      }).then(function (data) {
+        if (!data || !data.success || !data.data) {
+          throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to load matches.');
+        }
+        updateFromPayload(data.data, { resetIndex: !!opts.resetIndex });
+        return true;
+      }).catch(function (error) {
+        setError(error && error.message ? error.message : 'Unable to refresh live matches.');
+        return false;
+      }).finally(function () {
+        state.requestInFlight = false;
+        setLoading(false);
+      });
+    };
+    var loadMoreFeed = function () {
+      if (!hasAjax || state.requestInFlight || state.loadMoreInFlight || !state.hasMore) {
+        return Promise.resolve(false);
+      }
+      var requestedTab = state.tab;
+      var requestedFilters = JSON.stringify(state.filters || {});
+      var requestedOffset = state.candidates.length;
+      state.loadMoreInFlight = true;
+      return postJson('cmn_school_live_matches_feed', {
+        tab: requestedTab,
+        filters: state.filters,
+        limit: state.limit || 24,
+        offset: requestedOffset
+      }).then(function (data) {
+        if (!data || !data.success || !data.data) {
+          throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to load more matches.');
+        }
+        if (requestedTab !== state.tab || requestedFilters !== JSON.stringify(state.filters || {})) {
+          return false;
+        }
+        updateFromPayload(data.data, { append: true, resetIndex: false });
+        return true;
+      }).catch(function () {
+        return false;
+      }).finally(function () {
+        state.loadMoreInFlight = false;
+      });
+    };
+    var updateCardMessage = function (card, text, tone) {
+      if (!card) {
+        return;
+      }
+      var msg = card.querySelector('[data-live-card-msg]');
+      if (!msg) {
+        return;
+      }
+      msg.textContent = String(text || '');
+      msg.classList.remove('is-success', 'is-error');
+      if (!text) {
+        return;
+      }
+      msg.classList.add(tone === 'success' ? 'is-success' : 'is-error');
+    };
+    var secondsUntil = function (isoText) {
+      var raw = String(isoText || '').trim();
+      if (!raw) {
+        return -1;
+      }
+      var ts = Date.parse(raw.replace(' ', 'T'));
+      if (!isFinite(ts)) {
+        return -1;
+      }
+      return Math.floor((ts - Date.now()) / 1000);
+    };
+    var refreshOfferTimers = function () {
+      if (!stackEl) {
+        return;
+      }
+      var timerEls = stackEl.querySelectorAll('[data-live-offer-expires]');
+      timerEls.forEach(function (timerEl) {
+        var seconds = secondsUntil(timerEl.getAttribute('data-live-offer-expires') || '');
+        if (!isFinite(seconds) || seconds < 0) {
+          timerEl.textContent = 'Offer expired';
+          timerEl.setAttribute('aria-label', 'Offer expired');
+          timerEl.classList.add('is-expired');
+          return;
+        }
+        var mins = Math.floor(seconds / 60);
+        var secs = seconds % 60;
+        var timerLabel = 'Offer expires in ' + String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+        timerEl.textContent = timerLabel;
+        timerEl.setAttribute('aria-label', timerLabel);
+        timerEl.classList.remove('is-expired');
+      });
+    };
+    var startTimerTick = function () {
+      if (timerInterval) {
+        window.clearInterval(timerInterval);
+      }
+      timerInterval = window.setInterval(refreshOfferTimers, 1000);
+    };
+
+    tabButtons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var tabKey = String(btn.getAttribute('data-live-tab') || '').trim();
+        if (tabs.indexOf(tabKey) === -1 || tabKey === state.tab) {
+          return;
+        }
+        var previousTab = state.tab;
+        state.tab = tabKey;
+        state.activeIndexByTab[tabKey] = state.activeIndexByTab[tabKey] || 0;
+        fetchFeed({ resetIndex: false }).then(function (ok) {
+          if (ok) {
+            return;
+          }
+          state.tab = previousTab;
+          syncCounts();
+          renderCards();
+          saveState();
+        });
+      });
+    });
+    if (prevBtn) {
+      prevBtn.addEventListener('click', movePrev);
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', moveNext);
+    }
+    if (carousel) {
+      carousel.addEventListener('keydown', function (event) {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          movePrev();
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          moveNext();
+        }
+      });
+      var swipe = {
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        deltaX: 0,
+        active: false
+      };
+      carousel.addEventListener('pointerdown', function (event) {
+        if (event.target && event.target.closest && event.target.closest('button, a, input, select, textarea')) {
+          return;
+        }
+        swipe.pointerId = event.pointerId;
+        swipe.startX = event.clientX;
+        swipe.startY = event.clientY;
+        swipe.deltaX = 0;
+        swipe.active = true;
+      });
+      carousel.addEventListener('pointermove', function (event) {
+        if (!swipe.active || swipe.pointerId !== event.pointerId) {
+          return;
+        }
+        swipe.deltaX = event.clientX - swipe.startX;
+      });
+      var finishSwipe = function (event) {
+        if (!swipe.active || swipe.pointerId !== event.pointerId) {
+          return;
+        }
+        var deltaX = swipe.deltaX;
+        var deltaY = event.clientY - swipe.startY;
+        swipe.active = false;
+        swipe.pointerId = null;
+        swipe.deltaX = 0;
+        if (Math.abs(deltaY) > Math.abs(deltaX)) {
+          return;
+        }
+        if (deltaX <= -70) {
+          moveNext();
+        } else if (deltaX >= 70) {
+          movePrev();
+        }
+      };
+      carousel.addEventListener('pointerup', finishSwipe);
+      carousel.addEventListener('pointercancel', finishSwipe);
+    }
+    if (retryBtn) {
+      retryBtn.addEventListener('click', function () {
+        fetchFeed({ resetIndex: false });
+      });
+    }
+    openFiltersBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setDrawerOpen(true);
+      });
+    });
+    closeFiltersBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setDrawerOpen(false);
+      });
+    });
+    if (applyFiltersBtn) {
+      applyFiltersBtn.addEventListener('click', function () {
+        var previousFilters = sanitizeFilters(state.filters);
+        var previousIndex = state.activeIndexByTab[state.tab] || 0;
+        state.filters = readFiltersFromDrawer();
+        state.activeIndexByTab[state.tab] = 0;
+        setDrawerOpen(false);
+        fetchFeed({ resetIndex: true }).then(function (ok) {
+          if (ok) {
+            return;
+          }
+          state.filters = previousFilters;
+          state.activeIndexByTab[state.tab] = previousIndex;
+          syncCounts();
+          syncFilterControls();
+          renderFilterChips();
+          renderCards();
+          saveState();
+        });
+      });
+    }
+    if (clearFiltersBtn) {
+      clearFiltersBtn.addEventListener('click', function () {
+        var previousFilters = sanitizeFilters(state.filters);
+        var previousIndex = state.activeIndexByTab[state.tab] || 0;
+        state.filters = Object.assign({}, defaultFilters);
+        syncFilterControls();
+        state.activeIndexByTab[state.tab] = 0;
+        fetchFeed({ resetIndex: true }).then(function (ok) {
+          if (ok) {
+            return;
+          }
+          state.filters = previousFilters;
+          state.activeIndexByTab[state.tab] = previousIndex;
+          syncCounts();
+          syncFilterControls();
+          renderFilterChips();
+          renderCards();
+          saveState();
+        });
+      });
+    }
+    if (resetFiltersBtn) {
+      resetFiltersBtn.addEventListener('click', function () {
+        var previousFilters = sanitizeFilters(state.filters);
+        var previousIndex = state.activeIndexByTab[state.tab] || 0;
+        state.filters = Object.assign({}, defaultFilters);
+        syncFilterControls();
+        state.activeIndexByTab[state.tab] = 0;
+        fetchFeed({ resetIndex: true }).then(function (ok) {
+          if (ok) {
+            return;
+          }
+          state.filters = previousFilters;
+          state.activeIndexByTab[state.tab] = previousIndex;
+          syncCounts();
+          syncFilterControls();
+          renderFilterChips();
+          renderCards();
+          saveState();
+        });
+      });
+    }
+    if (radiusInput && radiusValueEl) {
+      radiusInput.addEventListener('input', function () {
+        radiusValueEl.textContent = String(radiusInput.value || '30');
+      });
+    }
+
+    var triggerBroadcast = function () {
+      if (!hasAjax || state.requestInFlight) {
+        return;
+      }
+      var ids = state.candidates.map(function (candidate) {
+        return parseInt(candidate.candidate_id || candidate.id || 0, 10);
+      }).filter(function (id) {
+        return id > 0;
+      });
+      postJson('cmn_school_live_matches_broadcast_request', {
+        tab: state.tab,
+        filters: state.filters,
+        candidate_ids: ids
+      }).then(function (data) {
+        if (!data || !data.success) {
+          throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to log broadcast request.');
+        }
+        setError((data.data && data.data.message) ? data.data.message : 'Broadcast request logged.', 'success');
+      }).catch(function (error) {
+        setError(error && error.message ? error.message : 'Unable to log broadcast request.');
+      });
+    };
+    if (requestMultipleBtn) {
+      requestMultipleBtn.addEventListener('click', triggerBroadcast);
+    }
+    if (broadcastBtn) {
+      broadcastBtn.addEventListener('click', triggerBroadcast);
+    }
+
+    root.addEventListener('click', function (event) {
+      var dot = event.target.closest('[data-live-dot]');
+      if (dot) {
+        var dotIdx = parseInt(dot.getAttribute('data-live-index') || '0', 10);
+        moveTo(dotIdx);
+        return;
+      }
+      var card = event.target.closest('[data-live-card]');
+      if (card && !event.target.closest('button, a')) {
+        var cardIdx = parseInt(card.getAttribute('data-live-index') || '0', 10);
+        if (cardIdx !== getActiveIndex()) {
+          moveTo(cardIdx);
+        }
+        return;
+      }
+
+      var shortlistBtn = event.target.closest('[data-live-shortlist]');
+      if (shortlistBtn) {
+        var shortlistCard = shortlistBtn.closest('[data-live-card]');
+        var shortlistId = parseInt(shortlistCard ? shortlistCard.getAttribute('data-candidate-id') : '0', 10);
+        if (!shortlistId || !hasAjax) {
+          return;
+        }
+        shortlistBtn.disabled = true;
+        postJson('cmn_school_live_matches_shortlist_toggle', {
+          candidate_id: shortlistId,
+          tab: state.tab,
+          filters: state.filters
+        }).then(function (data) {
+          if (!data || !data.success) {
+            throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to update shortlist.');
+          }
+          fetchFeed({ resetIndex: false });
+        }).catch(function (error) {
+          updateCardMessage(shortlistCard, error && error.message ? error.message : 'Unable to update shortlist.', 'error');
+        }).finally(function () {
+          shortlistBtn.disabled = false;
+        });
+        return;
+      }
+
+      var notInterestedBtn = event.target.closest('[data-live-not-interested]');
+      if (notInterestedBtn) {
+        var dismissCard = notInterestedBtn.closest('[data-live-card]');
+        var dismissId = parseInt(dismissCard ? dismissCard.getAttribute('data-candidate-id') : '0', 10);
+        if (!dismissId || !hasAjax) {
+          return;
+        }
+        if (!window.confirm('Hide this candidate from live matches for a while?')) {
+          return;
+        }
+        var optionalReason = window.prompt('Optional reason for audit log (leave blank to skip):', '');
+        if (optionalReason === null) {
+          optionalReason = '';
+        }
+        notInterestedBtn.disabled = true;
+        postJson('cmn_school_live_matches_not_interested', {
+          candidate_id: dismissId,
+          tab: state.tab,
+          filters: state.filters,
+          duration_days: state.notInterestedDays || 14,
+          reason: String(optionalReason || '')
+        }).then(function (data) {
+          if (!data || !data.success) {
+            throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to hide candidate.');
+          }
+          fetchFeed({ resetIndex: true });
+        }).catch(function (error) {
+          updateCardMessage(dismissCard, error && error.message ? error.message : 'Unable to hide candidate.', 'error');
+        }).finally(function () {
+          notInterestedBtn.disabled = false;
+        });
+        return;
+      }
+
+      var bookNowBtn = event.target.closest('[data-live-book-now]');
+      if (bookNowBtn) {
+        var bookCard = bookNowBtn.closest('[data-live-card]');
+        var bookId = parseInt(bookCard ? bookCard.getAttribute('data-candidate-id') : '0', 10);
+        if (!bookId || !hasAjax || bookNowBtn.disabled) {
+          return;
+        }
+        var activeCandidate = state.candidates.find(function (candidate) {
+          return parseInt(candidate.candidate_id || candidate.id || 0, 10) === bookId;
+        });
+        if (!activeCandidate || !activeCandidate.availability_date) {
+          updateCardMessage(bookCard, 'Availability date missing for this candidate.', 'error');
+          return;
+        }
+        bookNowBtn.disabled = true;
+        updateCardMessage(bookCard, 'Sending offer...', 'success');
+        var requestData = new FormData();
+        requestData.append('action', 'cmn_request_candidate');
+        requestData.append('nonce', window.cmnPortal.requestCandidateNonce || '');
+        requestData.append('candidate_id', String(bookId));
+        requestData.append('requested_date', String(activeCandidate.availability_date || ''));
+        requestData.append('live_tab', state.tab);
+        requestData.append('live_filters', JSON.stringify(state.filters || {}));
+        fetch(window.cmnPortal.ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: requestData
+        }).then(function (response) {
+          return response.json();
+        }).then(function (data) {
+          if (!data || !data.success) {
+            throw new Error((data && data.data && data.data.message) ? data.data.message : 'Unable to create offer.');
+          }
+          updateCardMessage(bookCard, (data.data && data.data.message) ? data.data.message : 'Offer sent.', 'success');
+          fetchFeed({ resetIndex: false });
+        }).catch(function (error) {
+          updateCardMessage(bookCard, error && error.message ? error.message : 'Unable to create offer.', 'error');
+          bookNowBtn.disabled = false;
+        });
+        return;
+      }
+
+      var profileLink = event.target.closest('[data-live-view-profile]');
+      if (profileLink) {
+        saveState();
+        try {
+          var profileUrl = new URL(profileLink.href, window.location.origin);
+          var liveParams = buildRouteStateParams();
+          liveParams.forEach(function (value, key) {
+            profileUrl.searchParams.set(key, value);
+          });
+          profileLink.href = profileUrl.toString();
+        } catch (e) {
+          // Ignore URL rewrite errors.
+        }
+      }
+    });
+
+    window.addEventListener('resize', renderStackTransforms);
+    syncCounts();
+    syncFilterControls();
+    renderFilterChips();
+    renderCards();
+    startTimerTick();
+    if (shouldFetchInitial) {
+      fetchFeed({ resetIndex: false });
+    }
+  };
+  initSchoolLiveMatches();
+
   var requestButtons = document.querySelectorAll('[data-request-candidate]');
   if (requestButtons.length && window.cmnPortal && window.cmnPortal.ajaxUrl) {
     requestButtons.forEach(function (btn) {
