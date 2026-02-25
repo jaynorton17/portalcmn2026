@@ -14104,6 +14104,20 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-staff-main, .cmn-school-main, .c
   align-content: start;
 }
 
+body.cmn-portal-page .cmn-portal-light .cmn-staff-main.cmn-staff-main--schools-list {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  min-height: 0 !important;
+  align-content: start;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-staff-main.cmn-staff-main--schools-list .cmn-container {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  min-height: 0;
+  align-content: start;
+}
+
 body.cmn-portal-page .cmn-portal-light :is(.cmn-page-header, .cmn-school-header, .cmn-candidate-header, .cmn-staff-header) {
   display: flex;
   align-items: center;

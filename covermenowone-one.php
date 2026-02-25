@@ -8390,6 +8390,11 @@ final class CMN_One_Plugin {
 
         $active = $active === 'compliance-review' ? 'compliance_review' : $active;
         $is_dashboard_active = ($active === 'dashboard' || $current_view === '' || $current_view === 'dashboard');
+        $is_schools_list_surface = in_array($active, ['schools_leads', 'schools_needs_attention', 'active_clients', 'all_schools', 'rejected_archived'], true);
+        $staff_main_classes = ['cmn-school-main', 'cmn-staff-main', 'cmn-page'];
+        if ($is_schools_list_surface) {
+            $staff_main_classes[] = 'cmn-staff-main--schools-list';
+        }
         $is_staff_nav_item_active = function ($item) use ($active, $current_view, $current_marketing_tab, $current_email_centre_tab) {
             if (!is_array($item) || !empty($item['heading'])) {
                 return false;
@@ -8627,7 +8632,7 @@ final class CMN_One_Plugin {
                         <?php endforeach; ?>
                     </nav>
                 </aside>
-                <main class="cmn-school-main cmn-staff-main cmn-page">
+                <main class="<?php echo esc_attr(implode(' ', $staff_main_classes)); ?>">
                     <div class="cmn-container cmn-ui-container">
                         <?php echo $inner_html; ?>
                     </div>
