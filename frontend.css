@@ -8773,6 +8773,35 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   overflow: auto;
 }
 
+.cmn-audit-header {
+  margin-bottom: 0;
+}
+
+.cmn-audit-card {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-audit-filters {
+  margin-bottom: 0;
+}
+
+.cmn-audit-pagination {
+  justify-content: flex-end;
+}
+
+.cmn-audit-detail-pre {
+  margin: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(9, 14, 25, 0.68);
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 1200px) {
   .cmn-candidate-rewards-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

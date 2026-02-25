@@ -29363,60 +29363,354 @@ final class CMN_One_Plugin {
         if (!$this->is_admin_user()) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>Audit Log is available to admins only.</p></div></section>';
         }
+        global $wpdb;
+        $table = $this->get_audit_log_table();
+        $scope = sanitize_key((string) ($_GET['cmn_log_scope'] ?? ''));
+        if (!in_array($scope, ['', 'system'], true)) {
+            $scope = '';
+        }
+        $user_filter = max(0, (int) ($_GET['cmn_audit_user'] ?? 0));
+        $action_filter = sanitize_key((string) ($_GET['cmn_audit_action'] ?? ''));
+        $date_from = sanitize_text_field((string) ($_GET['cmn_audit_from'] ?? ''));
+        $date_to = sanitize_text_field((string) ($_GET['cmn_audit_to'] ?? ''));
+        if ($date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+            $date_from = '';
+        }
+        if ($date_to !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+            $date_to = '';
+        }
+        $page = max(1, (int) ($_GET['cmn_audit_page'] ?? 1));
+        $per_page = 60;
 
-        $rows = $this->get_audit_rows(300);
+        $where = ['1=1'];
+        $params = [];
+        if ($scope === 'system') {
+            $where[] = "(reference_type = %s OR action_type LIKE %s OR action_type LIKE %s OR action_type LIKE %s OR action_type LIKE %s)";
+            $params[] = 'system';
+            $params[] = '%error%';
+            $params[] = '%fail%';
+            $params[] = '%critical%';
+            $params[] = '%exception%';
+        }
+        if ($user_filter > 0) {
+            $where[] = 'user_id = %d';
+            $params[] = $user_filter;
+        }
+        if ($action_filter !== '') {
+            $where[] = 'action_type = %s';
+            $params[] = $action_filter;
+        }
+        if ($date_from !== '') {
+            $where[] = 'DATE(created_at) >= %s';
+            $params[] = $date_from;
+        }
+        if ($date_to !== '') {
+            $where[] = 'DATE(created_at) <= %s';
+            $params[] = $date_to;
+        }
+        $where_sql = implode(' AND ', $where);
+
+        $count_sql = "SELECT COUNT(*) FROM {$table} WHERE {$where_sql}";
+        $total_rows = (int) ($params ? $wpdb->get_var($wpdb->prepare($count_sql, $params)) : $wpdb->get_var($count_sql));
+        $total_pages = max(1, (int) ceil($total_rows / $per_page));
+        $page = min($page, $total_pages);
+        $offset = max(0, ($page - 1) * $per_page);
+
+        $rows_sql = "SELECT * FROM {$table} WHERE {$where_sql} ORDER BY id DESC LIMIT %d OFFSET %d";
+        $rows_params = array_merge($params, [$per_page, $offset]);
+        $rows = (array) $wpdb->get_results($wpdb->prepare($rows_sql, $rows_params), ARRAY_A);
+
+        $scope_where = ['1=1'];
+        $scope_params = [];
+        if ($scope === 'system') {
+            $scope_where[] = "(reference_type = %s OR action_type LIKE %s OR action_type LIKE %s OR action_type LIKE %s OR action_type LIKE %s)";
+            $scope_params[] = 'system';
+            $scope_params[] = '%error%';
+            $scope_params[] = '%fail%';
+            $scope_params[] = '%critical%';
+            $scope_params[] = '%exception%';
+        }
+        $scope_where_sql = implode(' AND ', $scope_where);
+        $action_options_sql = "SELECT DISTINCT action_type FROM {$table} WHERE {$scope_where_sql} ORDER BY action_type ASC LIMIT 300";
+        $action_options = (array) ($scope_params ? $wpdb->get_col($wpdb->prepare($action_options_sql, $scope_params)) : $wpdb->get_col($action_options_sql));
+
+        $user_ids_sql = "SELECT DISTINCT user_id FROM {$table} WHERE {$scope_where_sql} AND user_id IS NOT NULL ORDER BY user_id DESC LIMIT 300";
+        $user_ids = array_values(array_filter(array_map('intval', (array) ($scope_params ? $wpdb->get_col($wpdb->prepare($user_ids_sql, $scope_params)) : $wpdb->get_col($user_ids_sql)))));
+        $user_options = [];
+        foreach ($user_ids as $candidate_user_id) {
+            $user = get_user_by('id', $candidate_user_id);
+            if (!$user) {
+                continue;
+            }
+            $user_options[] = [
+                'id' => $candidate_user_id,
+                'label' => ($user->display_name ?: $user->user_login) . ' (#' . $candidate_user_id . ')',
+            ];
+        }
+
+        $build_base_url = function ($extra = []) use ($scope, $user_filter, $action_filter, $date_from, $date_to) {
+            $args = ['view' => 'audit'];
+            if ($scope !== '') {
+                $args['cmn_log_scope'] = $scope;
+            }
+            if ($user_filter > 0) {
+                $args['cmn_audit_user'] = $user_filter;
+            }
+            if ($action_filter !== '') {
+                $args['cmn_audit_action'] = $action_filter;
+            }
+            if ($date_from !== '') {
+                $args['cmn_audit_from'] = $date_from;
+            }
+            if ($date_to !== '') {
+                $args['cmn_audit_to'] = $date_to;
+            }
+            foreach ((array) $extra as $key => $value) {
+                $args[$key] = $value;
+            }
+            return add_query_arg($args, $this->get_portal_base_url());
+        };
+
+        if ((int) ($_GET['cmn_audit_export'] ?? 0) === 1) {
+            $export_sql = "SELECT * FROM {$table} WHERE {$where_sql} ORDER BY id DESC LIMIT 5000";
+            $export_rows = (array) ($params ? $wpdb->get_results($wpdb->prepare($export_sql, $params), ARRAY_A) : $wpdb->get_results($export_sql, ARRAY_A));
+            nocache_headers();
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=cmn-' . ($scope === 'system' ? 'error-logs' : 'audit-log') . '-' . gmdate('Ymd-His') . '.csv');
+            $out = fopen('php://output', 'w');
+            if ($scope === 'system') {
+                fputcsv($out, ['timestamp', 'severity', 'component', 'message', 'details']);
+            } else {
+                fputcsv($out, ['timestamp', 'user_id', 'action', 'reference_type', 'reference_id', 'ip_address', 'details']);
+            }
+            foreach ($export_rows as $row) {
+                $details_json = (string) ($row['details_json'] ?? '');
+                $details = '';
+                $decoded = json_decode($details_json, true);
+                if (is_array($decoded)) {
+                    $details = wp_json_encode($decoded);
+                } else {
+                    $details = $details_json;
+                }
+                if ($scope === 'system') {
+                    $action_text = sanitize_key((string) ($row['action_type'] ?? ''));
+                    $severity = 'error';
+                    if (strpos($action_text, 'critical') !== false) {
+                        $severity = 'critical';
+                    } elseif (strpos($action_text, 'warning') !== false || strpos($action_text, 'warn') !== false) {
+                        $severity = 'warning';
+                    } elseif (strpos($action_text, 'info') !== false) {
+                        $severity = 'info';
+                    }
+                    fputcsv($out, [
+                        (string) ($row['created_at'] ?? ''),
+                        $severity,
+                        (string) ($row['reference_type'] ?? ''),
+                        (string) ($decoded['message'] ?? ($row['action_type'] ?? '')),
+                        $details,
+                    ]);
+                } else {
+                    fputcsv($out, [
+                        (string) ($row['created_at'] ?? ''),
+                        (int) ($row['user_id'] ?? 0),
+                        (string) ($row['action_type'] ?? ''),
+                        (string) ($row['reference_type'] ?? ''),
+                        (string) ($row['reference_id'] ?? ''),
+                        (string) ($row['ip_address'] ?? ''),
+                        $details,
+                    ]);
+                }
+            }
+            fclose($out);
+            exit;
+        }
+
+        $title = $scope === 'system' ? 'Error Logs' : 'Audit Log';
+        $subtitle = $scope === 'system'
+            ? 'Platform-level errors, failures, and operational exceptions.'
+            : 'System actions across bookings, support, candidates, automation, and account changes.';
+        $export_url = $build_base_url(['cmn_audit_export' => 1, 'cmn_audit_page' => false]);
+        $reset_url = add_query_arg(array_filter([
+            'view' => 'audit',
+            'cmn_log_scope' => $scope !== '' ? $scope : false,
+        ]), $this->get_portal_base_url());
+        $prev_url = $page > 1 ? $build_base_url(['cmn_audit_page' => $page - 1]) : '';
+        $next_url = $page < $total_pages ? $build_base_url(['cmn_audit_page' => $page + 1]) : '';
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Audit Log</h2>
-            <p>System actions across bookings, support, candidates, CV conversion, and account changes.</p>
+        <header class="cmn-school-header cmn-audit-header">
+            <div class="cmn-header-row">
+                <div>
+                    <h2><?php echo esc_html($title); ?></h2>
+                    <p><?php echo esc_html($subtitle); ?></p>
+                </div>
+                <div class="cmn-header-actions">
+                    <a class="cmn-ghost" href="<?php echo esc_url($export_url); ?>">Export CSV</a>
+                </div>
+            </div>
         </header>
-        <table class="cmn-approval-table">
-            <thead>
-                <tr>
-                    <th>When</th>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Reference</th>
-                    <th>IP</th>
-                    <th>Details</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php if ($rows) : ?>
-                <?php foreach ($rows as $row) : ?>
-                    <?php
-                    $user_id = (int) ($row['user_id'] ?? 0);
-                    $user = $user_id ? get_user_by('id', $user_id) : null;
-                    $user_label = $user ? ($user->display_name ?: $user->user_login) : 'System';
-                    $ref_type = (string) ($row['reference_type'] ?? '');
-                    $ref_id = (string) ($row['reference_id'] ?? '');
-                    $ref_label = trim($ref_type . ($ref_id !== '' ? (' #' . $ref_id) : ''));
-                    $details = '';
-                    if (!empty($row['details_json'])) {
-                        $decoded = json_decode((string) $row['details_json'], true);
-                        if (is_array($decoded)) {
-                            $details = wp_json_encode($decoded);
-                        } else {
-                            $details = (string) $row['details_json'];
-                        }
-                    }
-                    ?>
-                    <tr>
-                        <td><?php echo esc_html(!empty($row['created_at']) ? date_i18n('M j, Y g:ia', strtotime((string) $row['created_at'])) : ''); ?></td>
-                        <td><?php echo esc_html($user_label); ?></td>
-                        <td><span class="cmn-status-chip"><?php echo esc_html((string) ($row['action_type'] ?? '')); ?></span></td>
-                        <td><?php echo esc_html($ref_label !== '' ? $ref_label : '-'); ?></td>
-                        <td><?php echo esc_html((string) ($row['ip_address'] ?? '')); ?></td>
-                        <td><span class="cmn-muted"><?php echo esc_html($details !== '' ? $details : '-'); ?></span></td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php else : ?>
-                <tr><td colspan="6">No audit events found.</td></tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
+        <section class="cmn-dashboard-card cmn-audit-card">
+            <form method="get" class="cmn-form cmn-audit-filters">
+                <input type="hidden" name="view" value="audit">
+                <?php if ($scope !== '') : ?>
+                    <input type="hidden" name="cmn_log_scope" value="<?php echo esc_attr($scope); ?>">
+                <?php endif; ?>
+                <div class="cmn-form-grid">
+                    <label>User
+                        <select name="cmn_audit_user">
+                            <option value="0">All users</option>
+                            <?php foreach ($user_options as $user_option) : ?>
+                                <option value="<?php echo esc_attr((string) ((int) ($user_option['id'] ?? 0))); ?>"<?php selected($user_filter, (int) ($user_option['id'] ?? 0)); ?>><?php echo esc_html((string) ($user_option['label'] ?? '')); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>Action
+                        <select name="cmn_audit_action">
+                            <option value="">All actions</option>
+                            <?php foreach ($action_options as $action_option) : ?>
+                                <?php $action_key = sanitize_key((string) $action_option); ?>
+                                <option value="<?php echo esc_attr($action_key); ?>"<?php selected($action_filter, $action_key); ?>><?php echo esc_html($action_key); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>From
+                        <input type="date" name="cmn_audit_from" value="<?php echo esc_attr($date_from); ?>">
+                    </label>
+                    <label>To
+                        <input type="date" name="cmn_audit_to" value="<?php echo esc_attr($date_to); ?>">
+                    </label>
+                </div>
+                <div class="cmn-form-actions">
+                    <button class="cmn-primary" type="submit">Apply Filters</button>
+                    <a class="cmn-ghost" href="<?php echo esc_url($reset_url); ?>">Reset</a>
+                </div>
+            </form>
+            <div class="cmn-table-scroll">
+                <table class="cmn-approval-table cmn-audit-table">
+                    <thead>
+                        <?php if ($scope === 'system') : ?>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Severity</th>
+                                <th>Component</th>
+                                <th>Message</th>
+                                <th>Actions</th>
+                            </tr>
+                        <?php else : ?>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>Entity</th>
+                                <th>IP</th>
+                                <th>Details</th>
+                                <th>Actions</th>
+                            </tr>
+                        <?php endif; ?>
+                    </thead>
+                    <tbody>
+                    <?php if ($rows) : ?>
+                        <?php foreach ($rows as $row) : ?>
+                            <?php
+                            $row_user_id = (int) ($row['user_id'] ?? 0);
+                            $row_user = $row_user_id ? get_user_by('id', $row_user_id) : null;
+                            $row_user_label = $row_user ? ($row_user->display_name ?: $row_user->user_login) : 'System';
+                            $row_ref_type = sanitize_key((string) ($row['reference_type'] ?? ''));
+                            $row_ref_id = sanitize_text_field((string) ($row['reference_id'] ?? ''));
+                            $row_details_json = (string) ($row['details_json'] ?? '');
+                            $row_details_decoded = json_decode($row_details_json, true);
+                            $row_details = is_array($row_details_decoded) ? wp_json_encode($row_details_decoded) : $row_details_json;
+                            $row_action_type = sanitize_key((string) ($row['action_type'] ?? ''));
+                            if ($scope === 'system') {
+                                $severity = 'error';
+                                if (strpos($row_action_type, 'critical') !== false) {
+                                    $severity = 'critical';
+                                } elseif (strpos($row_action_type, 'warning') !== false || strpos($row_action_type, 'warn') !== false) {
+                                    $severity = 'warning';
+                                } elseif (strpos($row_action_type, 'info') !== false) {
+                                    $severity = 'info';
+                                }
+                                $message = is_array($row_details_decoded) ? sanitize_text_field((string) ($row_details_decoded['message'] ?? '')) : '';
+                                if ($message === '') {
+                                    $message = str_replace('_', ' ', $row_action_type);
+                                }
+                            }
+                            ?>
+                            <?php if ($scope === 'system') : ?>
+                                <tr>
+                                    <td><?php echo esc_html(!empty($row['created_at']) ? date_i18n('M j, Y g:ia', strtotime((string) $row['created_at'])) : ''); ?></td>
+                                    <td><span class="cmn-status-chip"><?php echo esc_html(ucfirst($severity)); ?></span></td>
+                                    <td><?php echo esc_html($row_ref_type !== '' ? $row_ref_type : 'system'); ?></td>
+                                    <td><?php echo esc_html($message); ?></td>
+                                    <td><button class="cmn-ghost cmn-btn-mini" type="button" data-audit-detail-btn data-audit-detail="<?php echo esc_attr($row_details !== '' ? $row_details : '-'); ?>">View</button></td>
+                                </tr>
+                            <?php else : ?>
+                                <tr>
+                                    <td><?php echo esc_html(!empty($row['created_at']) ? date_i18n('M j, Y g:ia', strtotime((string) $row['created_at'])) : ''); ?></td>
+                                    <td><?php echo esc_html($row_user_label); ?></td>
+                                    <td><span class="cmn-status-chip"><?php echo esc_html($row_action_type !== '' ? $row_action_type : 'n/a'); ?></span></td>
+                                    <td><?php echo esc_html(trim($row_ref_type . ($row_ref_id !== '' ? (' #' . $row_ref_id) : '')) ?: '-'); ?></td>
+                                    <td><?php echo esc_html((string) ($row['ip_address'] ?? '')); ?></td>
+                                    <td><span class="cmn-muted"><?php echo esc_html($row_details !== '' ? wp_trim_words($row_details, 14, '...') : '-'); ?></span></td>
+                                    <td><button class="cmn-ghost cmn-btn-mini" type="button" data-audit-detail-btn data-audit-detail="<?php echo esc_attr($row_details !== '' ? $row_details : '-'); ?>">View</button></td>
+                                </tr>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    <?php else : ?>
+                        <tr><td colspan="<?php echo esc_attr($scope === 'system' ? '5' : '7'); ?>">No log entries found for this filter.</td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+            <div class="cmn-form-actions cmn-audit-pagination">
+                <?php if ($prev_url !== '') : ?>
+                    <a class="cmn-ghost" href="<?php echo esc_url($prev_url); ?>">Previous</a>
+                <?php endif; ?>
+                <span class="cmn-muted">Page <?php echo esc_html((string) $page); ?> of <?php echo esc_html((string) $total_pages); ?> (<?php echo esc_html((string) $total_rows); ?> total)</span>
+                <?php if ($next_url !== '') : ?>
+                    <a class="cmn-ghost" href="<?php echo esc_url($next_url); ?>">Next</a>
+                <?php endif; ?>
+            </div>
+        </section>
+        <div class="cmn-modal" data-audit-detail-modal>
+            <div class="cmn-modal-content">
+                <div class="cmn-modal-header">
+                    <h3>Log Details</h3>
+                    <button class="cmn-ghost cmn-btn-mini" type="button" data-audit-detail-close>Close</button>
+                </div>
+                <pre class="cmn-audit-detail-pre" data-audit-detail-content>-</pre>
+            </div>
+        </div>
+        <script>
+        (function () {
+            var modal = document.querySelector('[data-audit-detail-modal]');
+            var content = modal ? modal.querySelector('[data-audit-detail-content]') : null;
+            if (!modal || !content) {
+                return;
+            }
+            var openModal = function (text) {
+                content.textContent = text || '-';
+                modal.classList.add('is-open');
+            };
+            var closeModal = function () {
+                modal.classList.remove('is-open');
+            };
+            document.querySelectorAll('[data-audit-detail-btn]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    openModal(btn.getAttribute('data-audit-detail') || '-');
+                });
+            });
+            modal.querySelectorAll('[data-audit-detail-close]').forEach(function (btn) {
+                btn.addEventListener('click', closeModal);
+            });
+            modal.addEventListener('click', function (event) {
+                if (event.target === modal) {
+                    closeModal();
+                }
+            });
+        })();
+        </script>
         <?php
         $inner = ob_get_clean();
         return $this->render_staff_shell('audit', $inner);
