@@ -9350,6 +9350,149 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   font-size: 13px;
 }
 
+.cmn-candidate-settings-role-rates-card,
+.cmn-candidate-settings-snapshot-card {
+  padding: 14px 16px !important;
+  gap: 10px;
+}
+
+.cmn-candidate-settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cmn-candidate-settings-head h3 {
+  margin: 0;
+}
+
+.cmn-candidate-settings-head p {
+  margin: 2px 0 0;
+}
+
+.cmn-candidate-settings-rate-badge {
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.cmn-candidate-settings-role-rates-card .cmn-role-rate-table {
+  margin: 6px 0 8px;
+}
+
+.cmn-candidate-settings-role-rates-card .cmn-role-rate-table th,
+.cmn-candidate-settings-role-rates-card .cmn-role-rate-table td {
+  padding: 9px 10px !important;
+}
+
+.cmn-candidate-settings-empty-state {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-candidate-settings-empty-state h4,
+.cmn-candidate-settings-empty-state p {
+  margin: 0;
+}
+
+.cmn-candidate-settings-empty-state h4 {
+  font-size: 14px;
+  color: #eef4ff;
+}
+
+.cmn-candidate-settings-snapshot-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cmn-candidate-settings-snapshot-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+  color: #dbe5f5;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.cmn-candidate-settings-snapshot-section {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cmn-candidate-settings-snapshot-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #ecf2ff;
+  letter-spacing: 0.01em;
+}
+
+.cmn-candidate-settings-snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cmn-candidate-settings-snapshot-item {
+  display: grid;
+  gap: 4px;
+  min-height: 74px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cmn-candidate-settings-not-set {
+  color: rgba(233, 238, 247, 0.62) !important;
+  font-weight: 500;
+}
+
+.cmn-candidate-settings-bool-pill {
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cmn-candidate-settings-bool-pill.is-yes {
+  color: #d6f3e3;
+  border: 1px solid rgba(77, 175, 119, 0.45);
+  background: rgba(36, 97, 58, 0.34);
+}
+
+.cmn-candidate-settings-bool-pill.is-no {
+  color: #ecd9d9;
+  border: 1px solid rgba(154, 163, 177, 0.38);
+  background: rgba(68, 74, 84, 0.36);
+}
+
+@media (max-width: 1180px) {
+  .cmn-candidate-settings-snapshot-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .cmn-candidate-settings-snapshot-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .cmn-staff-candidate-profile .cmn-dashboard-card p {
   margin: 0 0 8px;
 }

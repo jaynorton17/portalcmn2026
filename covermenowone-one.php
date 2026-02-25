@@ -26246,10 +26246,21 @@ final class CMN_One_Plugin {
                     </div>
                 </div>
             <?php elseif ($active_candidate_tab === 'settings') : ?>
-                <div class="cmn-dashboard-card cmn-dashboard-card-wide">
-                    <div class="cmn-card-header">
-                        <h3>Role Rates (Staff Only)</h3>
-                        <span class="cmn-status-chip">School charge vs candidate pay</span>
+                <?php
+                $snapshot_groups = [
+                    'Address' => ['House Number', 'Address Line 1', 'Address Line 2', 'Address Line 3', 'Town / City', 'County', 'Postcode'],
+                    'Eligibility' => ['Roles (registration)', 'Role Other', 'Travel Distance', 'Driving Licence', 'Car Owner', 'QTS', 'DBS Update Service', 'No DBS selected'],
+                    'Availability' => ['Availability Days'],
+                    'Admin status' => ['Email Verified', 'Admin Verification Status', 'Notes'],
+                ];
+                ?>
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide cmn-candidate-settings-role-rates-card">
+                    <div class="cmn-candidate-settings-head">
+                        <div>
+                            <h3>Role Rates (Staff Only)</h3>
+                            <p class="cmn-muted">Set school charge and candidate pay per role.</p>
+                        </div>
+                        <span class="cmn-ghost cmn-btn-mini cmn-candidate-settings-rate-badge">School charge vs candidate pay</span>
                     </div>
                     <?php if (!empty($candidate_role_labels)) : ?>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-role-rate-form">
@@ -26274,21 +26285,66 @@ final class CMN_One_Plugin {
                             <button class="cmn-primary" type="submit">Save role rates</button>
                         </form>
                     <?php else : ?>
-                        <p class="cmn-muted">No candidate roles found yet. Add roles in candidate profile/registration to set per-role pricing.</p>
+                        <section class="cmn-candidate-settings-empty-state" role="status" aria-live="polite">
+                            <h4>No role pricing set yet</h4>
+                            <p>Add roles in registration to enable per-role pricing.</p>
+                        </section>
                     <?php endif; ?>
                 </div>
-                <div class="cmn-dashboard-card cmn-dashboard-card-wide">
-                    <div class="cmn-card-header">
-                        <h3>Full Registration Snapshot</h3>
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide cmn-candidate-settings-snapshot-card">
+                    <div class="cmn-candidate-settings-head">
+                        <div>
+                            <h3>Full Registration Snapshot</h3>
+                            <p class="cmn-muted">Grouped for quick scanning.</p>
+                        </div>
                     </div>
-                    <div class="cmn-profile-meta-grid">
-                        <?php foreach ($profile_snapshot as $label => $value) : ?>
-                            <div class="cmn-profile-meta-item">
-                                <span class="cmn-profile-meta-label"><?php echo esc_html($label); ?></span>
-                                <strong class="cmn-profile-meta-value"><?php echo esc_html($value !== '' ? $value : 'Not set'); ?></strong>
-                            </div>
+                    <nav class="cmn-candidate-settings-snapshot-nav" aria-label="Registration snapshot sections">
+                        <?php foreach (array_keys($snapshot_groups) as $snapshot_group_label) : ?>
+                            <?php $snapshot_group_anchor = 'cmn-snapshot-' . sanitize_title($snapshot_group_label); ?>
+                            <a href="#<?php echo esc_attr($snapshot_group_anchor); ?>"><?php echo esc_html($snapshot_group_label); ?></a>
                         <?php endforeach; ?>
-                    </div>
+                    </nav>
+                    <?php foreach ($snapshot_groups as $group_label => $group_fields) : ?>
+                        <?php
+                        $group_anchor = 'cmn-snapshot-' . sanitize_title($group_label);
+                        $group_has_fields = false;
+                        foreach ($group_fields as $group_field_check) {
+                            if (array_key_exists($group_field_check, $profile_snapshot)) {
+                                $group_has_fields = true;
+                                break;
+                            }
+                        }
+                        if (!$group_has_fields) {
+                            continue;
+                        }
+                        ?>
+                        <section class="cmn-candidate-settings-snapshot-section" id="<?php echo esc_attr($group_anchor); ?>">
+                            <h4 class="cmn-candidate-settings-snapshot-title"><?php echo esc_html($group_label); ?></h4>
+                            <div class="cmn-candidate-settings-snapshot-grid">
+                                <?php foreach ($group_fields as $field_label) : ?>
+                                    <?php if (!array_key_exists($field_label, $profile_snapshot)) { continue; } ?>
+                                    <?php
+                                    $field_raw_value = trim((string) ($profile_snapshot[$field_label] ?? ''));
+                                    $field_normalized_value = strtolower($field_raw_value);
+                                    $field_is_not_set = ($field_raw_value === '' || $field_normalized_value === 'not set' || $field_raw_value === '-');
+                                    $field_is_boolean = in_array($field_normalized_value, ['yes', 'no'], true);
+                                    ?>
+                                    <article class="cmn-candidate-settings-snapshot-item">
+                                        <span class="cmn-profile-meta-label"><?php echo esc_html($field_label); ?></span>
+                                        <?php if ($field_is_boolean) : ?>
+                                            <strong class="cmn-profile-meta-value">
+                                                <span class="cmn-pill cmn-candidate-settings-bool-pill <?php echo $field_normalized_value === 'yes' ? 'is-yes' : 'is-no'; ?>"><?php echo esc_html(ucfirst($field_normalized_value)); ?></span>
+                                            </strong>
+                                        <?php elseif ($field_is_not_set) : ?>
+                                            <strong class="cmn-profile-meta-value cmn-candidate-settings-not-set">Not set</strong>
+                                        <?php else : ?>
+                                            <strong class="cmn-profile-meta-value"><?php echo esc_html($field_raw_value); ?></strong>
+                                        <?php endif; ?>
+                                    </article>
+                                <?php endforeach; ?>
+                            </div>
+                        </section>
+                    <?php endforeach; ?>
                 </div>
             <?php endif; ?>
         </div>
