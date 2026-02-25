@@ -23622,6 +23622,11 @@ final class CMN_One_Plugin {
 
                 $school_post_id = $resolved_by_pid ?: $resolved_by_school_id;
                 $resolved_school_post_id = (int) $school_post_id;
+                $this->log_school_view_stage_timing('resolve_school', $resolve_started_at, [
+                    'requested_pid' => $requested_pid,
+                    'resolved_post_id' => $resolved_school_post_id,
+                    'resolved_via' => $resolved_by_pid > 0 ? 'pid' : ($resolved_by_school_id > 0 ? 'school_id' : 'none'),
+                ]);
                 if (!$school_post_id) {
                     $render_stage = 'resolve_failed';
                     return $this->render_staff_shell('all_schools', $this->build_school_not_resolved_card(
@@ -23632,6 +23637,7 @@ final class CMN_One_Plugin {
                 }
 
                 $render_stage = 'permission_check';
+                $meta_stage_started_at = microtime(true);
                 $permission_granted = $this->user_can_access_school($school_post_id, $current_user_id);
                 $school_record = get_post($school_post_id);
                 $school_meta_snapshot = [
@@ -23648,6 +23654,11 @@ final class CMN_One_Plugin {
                 ];
                 $missing_fields = $this->get_school_profile_missing_fields($school_post_id);
                 $fallback_profile_html = (string) $this->build_school_view_fallback_profile($school_post_id, $missing_fields);
+                $this->log_school_view_stage_timing('load_school_meta', $meta_stage_started_at, [
+                    'resolved_school_post_id' => (int) $school_post_id,
+                    'permission_granted' => $permission_granted ? 1 : 0,
+                    'missing_fields_count' => count($missing_fields),
+                ]);
                 $this->log_school_view_event($req_id, 'meta_presence_check', [
                     'resolved_school_post_id' => (int) $school_post_id,
                     'school_record_found' => $school_record instanceof WP_Post ? 1 : 0,
@@ -23677,6 +23688,7 @@ final class CMN_One_Plugin {
                 $active_profile_nav = ($bucket_for_profile === 'sales' || $status_for_profile === 'lead' || $status_for_profile === 'needs_attention') ? 'schools_leads' : 'all_schools';
 
                 $render_stage = 'render_start';
+                $render_stage_started_at = microtime(true);
                 $this->log_school_view_event($req_id, 'render_start', [
                     'resolved_school_post_id' => (int) $school_post_id,
                     'template' => 'render_frontend_school_profile',
@@ -23705,6 +23717,10 @@ final class CMN_One_Plugin {
                         ));
                     }
                     $render_stage = 'render_shell';
+                    $this->log_school_view_stage_timing('render', $render_stage_started_at, [
+                        'resolved_school_post_id' => (int) $school_post_id,
+                        'phase' => 'profile_markup',
+                    ]);
                     $this->log_school_view_event($req_id, 'render_shell', [
                         'resolved_school_post_id' => (int) $school_post_id,
                         'template' => 'render_frontend_school_profile',
@@ -39871,6 +39887,7 @@ final class CMN_One_Plugin {
             $domain_valid = ($school_domain !== '' && $this->is_school_registration_domain($school_domain));
             $critical_meta_missing = (!$domain_valid || ($school_postcode === '' && !$school_coords));
             $show_profile_incomplete_card = (!$is_lead_profile && $critical_meta_missing);
+            $contacts_stage_started_at = microtime(true);
             if (!$critical_meta_missing) {
                 try {
                     $contacts = $this->get_school_contacts_by_domain($school_domain);
@@ -39894,6 +39911,13 @@ final class CMN_One_Plugin {
                     ]);
                 }
             }
+            $this->log_school_view_stage_timing('load_contacts', $contacts_stage_started_at, [
+                'school_post_id' => (int) $school_id,
+                'critical_meta_missing' => $critical_meta_missing ? 1 : 0,
+                'contacts_count' => count((array) $contacts),
+                'open_tasks_count' => count((array) $open_tasks),
+                'activities_count' => count((array) $activities),
+            ]);
             $feedback_summary = $this->get_feedback_summary_for_entity('school', (int) $school_id);
             $convert_msg = isset($_GET['cmn_convert_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_convert_msg'])) : '';
             $request_msg = isset($_GET['cmn_school_request_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_request_msg'])) : '';
@@ -39927,8 +39951,16 @@ final class CMN_One_Plugin {
                 'critical_meta_missing' => $critical_meta_missing,
             ]);
             $show_profile_issues = !empty($profile_issues);
+            $bookings_stage_started_at = microtime(true);
             $booking_counts = $this->get_school_profile_booking_counts($school_id);
             $recent_bookings = $this->get_school_profile_recent_bookings($school_id, 8);
+            $this->log_school_view_stage_timing('load_bookings', $bookings_stage_started_at, [
+                'school_post_id' => (int) $school_id,
+                'active_count' => (int) ($booking_counts['active'] ?? 0),
+                'completed_count' => (int) ($booking_counts['completed'] ?? 0),
+                'cancelled_count' => (int) ($booking_counts['cancelled'] ?? 0),
+                'recent_count' => count((array) $recent_bookings),
+            ]);
             $activity_quick_counts = [
                 'open_tasks' => (int) count($open_tasks),
                 'timeline' => (int) count($activities),
@@ -40230,7 +40262,7 @@ final class CMN_One_Plugin {
         <?php endif; ?>
         <?php if ($show_profile_incomplete_card) : ?>
             <section class="cmn-panel-card cmn-school-profile-incomplete">
-                <h3>School profile incomplete</h3>
+                <h3>Incomplete school profile</h3>
                 <p class="cmn-muted">Core profile data is missing (domain/postcode/location). Key sections still load in safe mode. Use Quick Edit or Settings to complete the profile.</p>
             </section>
         <?php endif; ?>
@@ -40262,7 +40294,7 @@ final class CMN_One_Plugin {
 	                    </form>
 	                </div>
 	            <?php endif; ?>
-            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-details">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-panel-card-wide" id="cmn-school-details">
                 <?php if ($watchdog('panel_details')) { return ob_get_clean(); } ?>
                 <div class="cmn-school-profile-panel-head">
                     <h3>Details</h3>
@@ -40304,31 +40336,6 @@ final class CMN_One_Plugin {
                     </div>
                 </div>
             </div>
-	            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-overview-ops">
-	                <?php if ($watchdog('panel_ops_snapshot')) { return ob_get_clean(); } ?>
-	                <h3>Operational Snapshot</h3>
-	                <div class="cmn-meta-grid cmn-meta-grid--school-ops">
-	                    <div><strong>Outstanding tasks:</strong> <?php echo esc_html((string) ((int) $activity_quick_counts['open_tasks'])); ?></div>
-	                    <div>
-	                        <strong>Last call note:</strong> <?php echo esc_html($last_call_excerpt); ?>
-	                        <?php if ($last_call_time !== '') : ?>
-	                            <div class="cmn-muted"><?php echo esc_html($last_call_time); ?></div>
-	                        <?php endif; ?>
-	                    </div>
-	                    <div>
-	                        <strong>Last email sent:</strong> <?php echo esc_html($last_email_excerpt); ?>
-	                        <?php if ($last_email_time !== '') : ?>
-	                            <div class="cmn-muted"><?php echo esc_html($last_email_time); ?></div>
-	                        <?php endif; ?>
-	                    </div>
-	                    <div>
-	                        <strong>Latest note:</strong> <?php echo esc_html($last_note_excerpt); ?>
-	                        <?php if ($last_note_time !== '') : ?>
-	                            <div class="cmn-muted"><?php echo esc_html($last_note_time); ?></div>
-	                        <?php endif; ?>
-	                    </div>
-	                </div>
-	            </div>
 	            <?php if ($has_application_context) : ?>
 	                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
                     <h3>Application Timeline</h3>
@@ -40810,6 +40817,10 @@ final class CMN_One_Plugin {
                 'missing_fields_count' => count($missing_profile_fields),
                 'render_duration_ms' => (int) round((microtime(true) - $render_started_at) * 1000),
             ]);
+            $this->log_school_view_stage_timing('render', $render_started_at, [
+                'school_post_id' => (int) $school_id,
+                'phase' => 'profile_panels',
+            ]);
             error_log('[CMN_SCHOOL_VIEW] ' . wp_json_encode([
                 'stage' => 'render_success',
                 'school_post_id' => (int) $school_id,
@@ -40823,7 +40834,7 @@ final class CMN_One_Plugin {
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]));
-            return '<div class="cmn-panel-card"><h3>School profile could not be loaded</h3><p>Please check the profile data and try again.</p></div>';
+            return '<div class="cmn-panel-card"><h3>Could not load school profile</h3><p>Profile rendering failed, so a safe fallback is shown instead.</p></div>';
         }
     }
 
@@ -77893,6 +77904,29 @@ p{margin:0;line-height:1.5}
         error_log('[CMN_SCHOOL_VIEW] ' . wp_json_encode($payload));
     }
 
+    private function log_school_view_stage_timing($stage, $started_at, $context = []) {
+        $stage = sanitize_key((string) $stage);
+        if ($stage === '') {
+            return;
+        }
+        $started_at = (float) $started_at;
+        $elapsed_ms = $started_at > 0 ? (int) round((microtime(true) - $started_at) * 1000) : 0;
+        $parts = ['stage=' . $stage, 'elapsed=' . $elapsed_ms . 'ms'];
+        foreach ((array) $context as $key => $value) {
+            $key = sanitize_key((string) $key);
+            if ($key === '') {
+                continue;
+            }
+            if (is_array($value)) {
+                $value = implode(',', array_map('strval', $value));
+            } elseif (is_bool($value)) {
+                $value = $value ? '1' : '0';
+            }
+            $parts[] = $key . '=' . preg_replace('/\s+/', '_', trim((string) $value));
+        }
+        error_log('[CMN_SCHOOL_VIEW] ' . implode(' ', $parts));
+    }
+
     private function log_school_view_crash($req_id, $reference_code, $context = []) {
         $payload = [
             'req_id' => (string) $req_id,
@@ -77939,7 +77973,7 @@ p{margin:0;line-height:1.5}
         }
         $lines = [
             '<div class="cmn-panel-card">',
-            '<h3>School profile could not render</h3>',
+            '<h3>Could not load school profile</h3>',
             '<p>' . esc_html($reason_short) . '</p>',
             $school_name !== '' ? ('<p><strong>School:</strong> ' . esc_html($school_name) . '</p>') : '',
             $status_display !== '' ? ('<p><strong>Status:</strong> ' . esc_html(ucfirst($status_display)) . '</p>') : '',
