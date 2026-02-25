@@ -156,6 +156,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var activityFilter = profileRoot.querySelector('[data-school-activity-filter]');
     var activityRows = Array.prototype.slice.call(profileRoot.querySelectorAll('[data-school-activity-item]'));
     var logActivityButtons = Array.prototype.slice.call(document.querySelectorAll('[data-school-log-activity]'));
+    var feedbackOpenButtons = Array.prototype.slice.call(document.querySelectorAll('[data-school-feedback-open]'));
+    var feedbackPanel = profileRoot.querySelector('[data-school-feedback-panel]');
     var initialUrl = null;
     try {
       initialUrl = new URL(window.location.href);
@@ -272,6 +274,19 @@ document.addEventListener('DOMContentLoaded', function () {
           window.history.replaceState({}, '', url.toString());
         }
         focusActivityForm();
+      });
+    });
+
+    feedbackOpenButtons.forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        applyTabState('overview', true);
+        if (!feedbackPanel || typeof feedbackPanel.scrollIntoView !== 'function') {
+          return;
+        }
+        window.setTimeout(function () {
+          feedbackPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 24);
       });
     });
 

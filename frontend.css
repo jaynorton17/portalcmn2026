@@ -4909,6 +4909,15 @@ body.cmn-booking-feedback-lock {
   min-height: 34px;
 }
 
+.cmn-school-profile-status-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .cmn-school-last-activity-pill {
   border-color: rgba(208, 42, 42, 0.35);
 }
@@ -4918,6 +4927,53 @@ body.cmn-booking-feedback-lock {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.cmn-pill.cmn-pill--school-id {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #e2e9f7;
+}
+
+.cmn-school-feedback-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 11, 17, 0.9);
+  color: #d4dde9;
+  cursor: pointer;
+}
+
+.cmn-school-feedback-stars:focus-visible {
+  outline: none;
+  border-color: rgba(208, 42, 42, 0.6);
+  box-shadow: 0 0 0 2px rgba(208, 42, 42, 0.2);
+}
+
+.cmn-school-feedback-stars-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  letter-spacing: 0;
+}
+
+.cmn-school-feedback-star {
+  color: rgba(255, 255, 255, 0.24);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.cmn-school-feedback-star.is-active {
+  color: #d02a2a;
+}
+
+.cmn-school-feedback-stars-label {
+  font-size: 12px;
+  color: #c7d0df;
+  white-space: nowrap;
 }
 
 .cmn-school-profile-tabs {
@@ -5069,6 +5125,48 @@ body.cmn-booking-feedback-lock {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 
+.cmn-school-details-summary {
+  display: grid;
+  gap: 2px;
+}
+
+.cmn-school-details-name {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+  color: #edf2fb;
+}
+
+.cmn-school-profile-grid .cmn-meta-grid--school-details-compact {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.cmn-school-detail-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cmn-school-detail-label {
+  font-size: 12px;
+  color: rgba(233, 238, 247, 0.68);
+}
+
+.cmn-school-detail-value {
+  font-size: 14px;
+  color: #ecf2ff;
+  line-height: 1.35;
+}
+
+.cmn-school-profile-grid .cmn-meta-grid--school-extra-fields {
+  margin-top: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 .cmn-school-profile-grid .cmn-meta-grid--school-app-compact {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
@@ -5187,6 +5285,17 @@ body.cmn-booking-feedback-lock {
 
   .cmn-school-profile-status {
     width: 100%;
+  }
+
+  .cmn-school-profile-status-wrap {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .cmn-school-feedback-stars {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .cmn-school-profile-header-actions {
@@ -7946,6 +8055,10 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   gap: 6px;
   flex-wrap: nowrap;
   white-space: nowrap;
+}
+
+.cmn-schools-pill-row .cmn-pill {
+  flex: 0 0 auto;
 }
 
 .cmn-pill.cmn-pill--status {
