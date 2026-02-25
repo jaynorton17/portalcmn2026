@@ -14101,6 +14101,10 @@ body.cmn-portal-page .cmn-portal-light :is(
   .cmn-profile-progress,
   .cmn-profile-global-editbar,
   .cmn-table-wrap,
+  .cmn-staff-table-wrap,
+  .cmn-marketing-table-wrap,
+  .cmn-partner-tier-table-wrap,
+  .cmn-system-health-table-wrap,
   .cmn-booking-table,
   .cmn-ui-card
 ) {
@@ -14158,7 +14162,7 @@ body.cmn-portal-page .cmn-portal-light .cmn-toolbar-row {
   justify-content: space-between;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-btn, .cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary) {
+body.cmn-portal-page .cmn-portal-light :is(.cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary) {
   min-height: 42px;
   border-radius: var(--cmn-radius-sm) !important;
   border: 1px solid rgba(160, 25, 25, 0.78) !important;
@@ -14169,8 +14173,8 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-btn, .cmn-primary, .cmn-btn-prim
   transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-btn, .cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary):hover,
-body.cmn-portal-page .cmn-portal-light :is(.cmn-btn, .cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary):focus-visible {
+body.cmn-portal-page .cmn-portal-light :is(.cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary):hover,
+body.cmn-portal-page .cmn-portal-light :is(.cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary):focus-visible {
   background: #e13a3a !important;
   transform: translateY(-1px);
   box-shadow: 0 12px 24px rgba(208, 42, 42, 0.44) !important;
@@ -14183,7 +14187,7 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-primary[disabled], .cmn-btn-prim
   opacity: 1 !important;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-btn-secondary, .cmn-ghost, .cmn-btn-ghost, button.cmn-ghost, a.cmn-ghost) {
+body.cmn-portal-page .cmn-portal-light :is(.cmn-btn, .cmn-btn-secondary, .cmn-ghost, .cmn-btn-ghost, button.cmn-ghost, a.cmn-ghost) {
   min-height: 40px;
   border-radius: var(--cmn-radius-sm) !important;
   border: 1px solid rgba(255, 255, 255, 0.11) !important;
@@ -14246,32 +14250,165 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-table-scroll, .cmn-booking-table
   -webkit-overflow-scrolling: touch;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) {
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-table,
+  .cmn-approval-table,
+  .cmn-role-rate-table,
+  .cmn-candidates-table,
+  .cmn-request-table,
+  .cmn-cv-converter-table,
+  .cmn-marketing-table,
+  .cmn-system-health-table,
+  .cmn-system-health-history-table,
+  .cmn-system-health-fixlog-table,
+  .cmn-staff-payroll-table,
+  .cmn-staff-payroll-adjustment-table,
+  .cmn-staff-payroll-ticket-table,
+  .cmn-staff-payroll-disputes-table,
+  .cmn-import-preview-table,
+  .cmn-partner-tier-table,
+  .widefat.cmn-table,
+  .cmn-ui-table
+) {
   width: 100%;
   border-collapse: collapse;
   background: transparent;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) th,
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) td,
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-table,
+  .cmn-approval-table,
+  .cmn-role-rate-table,
+  .cmn-candidates-table,
+  .cmn-request-table,
+  .cmn-cv-converter-table,
+  .cmn-marketing-table,
+  .cmn-system-health-table,
+  .cmn-system-health-history-table,
+  .cmn-system-health-fixlog-table,
+  .cmn-staff-payroll-table,
+  .cmn-staff-payroll-adjustment-table,
+  .cmn-staff-payroll-ticket-table,
+  .cmn-staff-payroll-disputes-table,
+  .cmn-import-preview-table,
+  .cmn-partner-tier-table,
+  .widefat.cmn-table,
+  .cmn-ui-table
+) th,
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-table,
+  .cmn-approval-table,
+  .cmn-role-rate-table,
+  .cmn-candidates-table,
+  .cmn-request-table,
+  .cmn-cv-converter-table,
+  .cmn-marketing-table,
+  .cmn-system-health-table,
+  .cmn-system-health-history-table,
+  .cmn-system-health-fixlog-table,
+  .cmn-staff-payroll-table,
+  .cmn-staff-payroll-adjustment-table,
+  .cmn-staff-payroll-ticket-table,
+  .cmn-staff-payroll-disputes-table,
+  .cmn-import-preview-table,
+  .cmn-partner-tier-table,
+  .widefat.cmn-table,
+  .cmn-ui-table
+) td,
 body.cmn-portal-page .cmn-portal-light .cmn-booking-row {
   border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) th {
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-table,
+  .cmn-approval-table,
+  .cmn-role-rate-table,
+  .cmn-candidates-table,
+  .cmn-request-table,
+  .cmn-cv-converter-table,
+  .cmn-marketing-table,
+  .cmn-system-health-table,
+  .cmn-system-health-history-table,
+  .cmn-system-health-fixlog-table,
+  .cmn-staff-payroll-table,
+  .cmn-staff-payroll-adjustment-table,
+  .cmn-staff-payroll-ticket-table,
+  .cmn-staff-payroll-disputes-table,
+  .cmn-import-preview-table,
+  .cmn-partner-tier-table,
+  .widefat.cmn-table,
+  .cmn-ui-table
+) th {
   color: #c9d2e2 !important;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) th,
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) td {
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-table,
+  .cmn-approval-table,
+  .cmn-role-rate-table,
+  .cmn-candidates-table,
+  .cmn-request-table,
+  .cmn-cv-converter-table,
+  .cmn-marketing-table,
+  .cmn-system-health-table,
+  .cmn-system-health-history-table,
+  .cmn-system-health-fixlog-table,
+  .cmn-staff-payroll-table,
+  .cmn-staff-payroll-adjustment-table,
+  .cmn-staff-payroll-ticket-table,
+  .cmn-staff-payroll-disputes-table,
+  .cmn-import-preview-table,
+  .cmn-partner-tier-table,
+  .widefat.cmn-table,
+  .cmn-ui-table
+) th,
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-table,
+  .cmn-approval-table,
+  .cmn-role-rate-table,
+  .cmn-candidates-table,
+  .cmn-request-table,
+  .cmn-cv-converter-table,
+  .cmn-marketing-table,
+  .cmn-system-health-table,
+  .cmn-system-health-history-table,
+  .cmn-system-health-fixlog-table,
+  .cmn-staff-payroll-table,
+  .cmn-staff-payroll-adjustment-table,
+  .cmn-staff-payroll-ticket-table,
+  .cmn-staff-payroll-disputes-table,
+  .cmn-import-preview-table,
+  .cmn-partner-tier-table,
+  .widefat.cmn-table,
+  .cmn-ui-table
+) td {
   padding: 10px 10px !important;
   vertical-align: middle;
 }
 
-body.cmn-portal-page .cmn-portal-light :is(.cmn-table, .cmn-approval-table, .cmn-role-rate-table, .widefat.cmn-table, .cmn-ui-table) tbody tr:hover td {
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-table,
+  .cmn-approval-table,
+  .cmn-role-rate-table,
+  .cmn-candidates-table,
+  .cmn-request-table,
+  .cmn-cv-converter-table,
+  .cmn-marketing-table,
+  .cmn-system-health-table,
+  .cmn-system-health-history-table,
+  .cmn-system-health-fixlog-table,
+  .cmn-staff-payroll-table,
+  .cmn-staff-payroll-adjustment-table,
+  .cmn-staff-payroll-ticket-table,
+  .cmn-staff-payroll-disputes-table,
+  .cmn-import-preview-table,
+  .cmn-partner-tier-table,
+  .widefat.cmn-table,
+  .cmn-ui-table
+) tbody tr:hover td {
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -14289,9 +14426,9 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-tabs, .cmn-school-profile-tabs, 
 }
 
 body.cmn-portal-page .cmn-portal-light :is(.cmn-tab, .cmn-school-profile-tab, .cmn-booking-tab, .cmn-staff-candidate-tabs .cmn-ghost, .cmn-marketing-tabs .cmn-ghost, .cmn-system-health-tabs .cmn-ghost, .cmn-ui-tab) {
-  border-radius: 10px !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  background: rgba(255, 255, 255, 0.05) !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  background: rgba(9, 14, 22, 0.88) !important;
   color: #dbe4f4 !important;
   text-decoration: none;
   min-height: 34px;
@@ -14302,10 +14439,10 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-tab, .cmn-school-profile-tab, .c
 }
 
 body.cmn-portal-page .cmn-portal-light :is(.cmn-tab.is-active, .cmn-school-profile-tab.is-active, .cmn-booking-tab.is-active, .cmn-staff-candidate-tabs .cmn-ghost.is-active, .cmn-marketing-tabs .cmn-ghost.is-active, .cmn-system-health-tabs .cmn-ghost.is-active, .cmn-ui-tab.is-active) {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: rgba(13, 20, 31, 0.94) !important;
   color: #fff !important;
-  border-color: rgba(208, 42, 42, 0.5) !important;
-  box-shadow: inset 0 -2px 0 rgba(208, 42, 42, 0.9);
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow: inset 0 -2px 0 rgba(208, 42, 42, 0.95);
 }
 
 body.cmn-portal-page .cmn-staff-nav .cmn-edit-control {

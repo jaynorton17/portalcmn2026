@@ -40205,14 +40205,15 @@ final class CMN_One_Plugin {
                     <span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_pill_label); ?></span>
                 </div>
                 <a class="cmn-school-feedback-stars<?php echo !$feedback_has_entries ? ' is-empty' : ''; ?>" href="<?php echo esc_url($feedback_jump_url); ?>" data-school-feedback-jump aria-label="Open school feedback details" title="<?php echo esc_attr($feedback_has_entries ? ($feedback_summary_label . ' (' . $feedback_count . ' total)') : 'No feedback submitted yet'); ?>">
-                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
-                        <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
-                            <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>">★</span>
-                        <?php endfor; ?>
-                    </span>
-                    <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
-                </a>
-            </div>
+	                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
+	                        <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
+	                            <?php $star_active = ($star_i <= $feedback_stars_filled); ?>
+	                            <span class="cmn-school-feedback-star<?php echo $star_active ? ' is-active' : ''; ?>"><?php echo $star_active ? '★' : '☆'; ?></span>
+	                        <?php endfor; ?>
+	                    </span>
+	                    <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
+	                </a>
+	            </div>
         </header>
         <?php if ($watchdog('after_header')) { return ob_get_clean(); } ?>
         <nav class="cmn-school-profile-tabs" aria-label="School profile sections" data-school-profile-tabs>
@@ -60217,23 +60218,21 @@ final class CMN_One_Plugin {
             ];
         }
 
-        return [
-            'school_name' => ['label' => 'School name', 'type' => 'text', 'required' => true],
-            'location' => ['label' => 'Location', 'type' => 'text', 'required' => false],
-            'email' => ['label' => 'Email', 'type' => 'email', 'required' => true],
-            'phone' => ['label' => 'Phone', 'type' => 'text', 'required' => false],
-            'website' => ['label' => 'Website', 'type' => 'url', 'required' => false],
-            'contact1' => ['label' => 'Primary contact', 'type' => 'text', 'required' => false],
-            'contact_role' => ['label' => 'Primary contact role', 'type' => 'text', 'required' => false],
-            'contact1_email' => ['label' => 'Primary contact email', 'type' => 'email', 'required' => false],
-            'primary_contact_phone' => ['label' => 'Primary contact phone', 'type' => 'text', 'required' => false],
-            'cover_manager' => ['label' => 'Cover Manager', 'type' => 'text', 'required' => false],
-            'cover_manager_email' => ['label' => 'Cover Manager Email', 'type' => 'email', 'required' => false],
-            'email_name' => ['label' => 'Email greeting name', 'type' => 'text', 'required' => false],
-            'house_number' => ['label' => 'House / Number', 'type' => 'text', 'required' => false],
-            'address_line1' => ['label' => 'Address line 1', 'type' => 'text', 'required' => false],
-            'address_line2' => ['label' => 'Address line 2', 'type' => 'text', 'required' => false],
-            'address_line3' => ['label' => 'Address line 3', 'type' => 'text', 'required' => false],
+	        return [
+	            'school_name' => ['label' => 'School name', 'type' => 'text', 'required' => true],
+	            'location' => ['label' => 'Location', 'type' => 'text', 'required' => false],
+	            'email' => ['label' => 'Email', 'type' => 'email', 'required' => true],
+	            'phone' => ['label' => 'Phone', 'type' => 'text', 'required' => false],
+	            'website' => ['label' => 'Website', 'type' => 'url', 'required' => false],
+	            'contact1' => ['label' => 'Primary contact', 'type' => 'text', 'required' => false],
+	            'contact_role' => ['label' => 'Primary contact role', 'type' => 'text', 'required' => false],
+	            'contact1_email' => ['label' => 'Primary contact email', 'type' => 'email', 'required' => false],
+	            'primary_contact_phone' => ['label' => 'Primary contact phone', 'type' => 'text', 'required' => false],
+	            'email_name' => ['label' => 'Email greeting name', 'type' => 'text', 'required' => false],
+	            'house_number' => ['label' => 'House / Number', 'type' => 'text', 'required' => false],
+	            'address_line1' => ['label' => 'Address line 1', 'type' => 'text', 'required' => false],
+	            'address_line2' => ['label' => 'Address line 2', 'type' => 'text', 'required' => false],
+	            'address_line3' => ['label' => 'Address line 3', 'type' => 'text', 'required' => false],
             'town' => ['label' => 'Town / City', 'type' => 'text', 'required' => false],
             'county' => ['label' => 'County', 'type' => 'text', 'required' => false],
             'postcode' => ['label' => 'Postcode', 'type' => 'text', 'required' => false],
@@ -64554,18 +64553,12 @@ final class CMN_One_Plugin {
                                     <label>Primary Contact Email
                                         <input type="email" name="cmn_contact1_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1_email', true)); ?>">
                                     </label>
-                                    <label>Primary Contact Phone
-                                        <input type="text" name="cmn_primary_contact_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_primary_contact_phone', true)); ?>">
-                                    </label>
-                                    <label>Cover Manager Name
-                                        <input type="text" name="cmn_cover_manager" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager', true)); ?>">
-                                    </label>
-                                    <label>Cover Manager Email
-                                        <input type="email" name="cmn_cover_manager_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager_email', true)); ?>">
-                                    </label>
-                                    <label>Email Greeting Name
-                                        <input type="text" name="cmn_email_name" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_email_name', true)); ?>">
-                                    </label>
+	                                    <label>Primary Contact Phone
+	                                        <input type="text" name="cmn_primary_contact_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_primary_contact_phone', true)); ?>">
+	                                    </label>
+	                                    <label>Email Greeting Name
+	                                        <input type="text" name="cmn_email_name" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_email_name', true)); ?>">
+	                                    </label>
                                     <label>House / Number
                                         <input type="text" name="cmn_house_number" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_house_number', true)); ?>">
                                     </label>
