@@ -60334,7 +60334,11 @@ final class CMN_One_Plugin {
         global $wpdb;
         $table = $this->get_candidate_availability_table();
         $exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$table} WHERE candidate_id = %d AND available_date = %s",
+            "SELECT id
+             FROM {$table}
+             WHERE candidate_id = %d
+               AND available_date = %s
+               AND (available_type = 'morning' OR available_type = '')",
             $candidate_id,
             $date
         ));
@@ -61666,7 +61670,6 @@ final class CMN_One_Plugin {
         $request_status = sanitize_key((string) $request_status);
         $context = is_array($context) ? $context : [];
 
-        $is_lead_profile = $this->is_school_lead_like_status($status_key, $pipeline_stage_key, $request_status);
         $issues = [];
         $add_issue = function ($label) use (&$issues) {
             $label = trim((string) $label);
@@ -61676,9 +61679,7 @@ final class CMN_One_Plugin {
             $issues[] = $label;
         };
 
-        $missing_profile_fields = isset($context['missing_profile_fields']) && is_array($context['missing_profile_fields'])
-            ? array_values(array_filter(array_map('sanitize_text_field', (array) $context['missing_profile_fields'])))
-            : $this->get_school_profile_missing_fields($school_id);
+        // The school UI treats only contact details/compliance as blockers.
         $school_postcode = '';
         if (array_key_exists('school_postcode', $context)) {
             $school_postcode = trim((string) $context['school_postcode']);
@@ -61688,64 +61689,49 @@ final class CMN_One_Plugin {
         $has_school_coords = array_key_exists('school_coords', $context)
             ? !empty($context['school_coords'])
             : !empty($this->get_geo_coordinates_for_post($school_id));
-        $requires_location_verification = $this->school_requires_location_verification($school_id);
-
-        if ($is_lead_profile) {
-            if (!$this->school_lead_has_contact_method($school_id)) {
-                $add_issue('Missing contact method (phone or email required).');
-            }
-            if ($requires_location_verification) {
-                if ($school_postcode === '') {
-                    $add_issue('Postcode missing');
-                }
-                if (!$has_school_coords) {
-                    $add_issue('Location not verified');
-                }
-            }
-            return $issues;
+        if (!$this->school_lead_has_contact_method($school_id)) {
+            $add_issue('Missing contact method (phone or email required).');
         }
 
-        $is_client_profile = in_array($status_key, ['client', 'active', 'active_client', 'live'], true) || $request_status === 'approved';
-        $enforce_location_checks = ($is_client_profile || $requires_location_verification);
-
-        if ($missing_profile_fields) {
-            $missing_field_preview = array_slice($missing_profile_fields, 0, 3);
-            $missing_label = 'Missing fields: ' . implode(', ', $missing_field_preview);
-            if (count($missing_profile_fields) > 3) {
-                $missing_label .= ' +' . (count($missing_profile_fields) - 3) . ' more';
-            }
-            $add_issue($missing_label);
-        }
-
-        $domain_valid = array_key_exists('domain_valid', $context)
-            ? !empty($context['domain_valid'])
+        $explicit_compliance_required = array_key_exists('explicit_compliance_required', $context)
+            ? !empty($context['explicit_compliance_required'])
             : false;
-        if (!array_key_exists('domain_valid', $context)) {
-            $school_email = (string) get_post_meta($school_id, 'cmn_email', true);
-            $school_domain = $this->get_email_domain($school_email);
-            if ($school_domain === '') {
-                $school_domain = (string) get_post_meta($school_id, 'cmn_school_email_domain', true);
+        if (!$explicit_compliance_required) {
+            $compliance_meta_candidates = [
+                'cmn_school_compliance_required',
+                'cmn_compliance_required',
+            ];
+            foreach ($compliance_meta_candidates as $meta_key) {
+                $raw = strtolower(trim((string) get_post_meta($school_id, $meta_key, true)));
+                if (in_array($raw, ['1', 'true', 'yes', 'on', 'required', 'action_required'], true)) {
+                    $explicit_compliance_required = true;
+                    break;
+                }
             }
-            $domain_valid = ($school_domain !== '' && $this->is_school_registration_domain($school_domain));
+        }
+        if ($explicit_compliance_required) {
+            $add_issue('Compliance action required.');
         }
 
-        if ($enforce_location_checks) {
-            if ($school_postcode === '') {
-                $add_issue('Postcode missing');
-            }
-            if (!$has_school_coords) {
-                $add_issue('Location not verified');
-            }
-        }
-        if (($is_client_profile || $requires_location_verification) && !$domain_valid) {
-            $add_issue('School domain missing');
-        }
+        $school_is_active = in_array($status_key, ['active', 'client', 'active_client', 'live'], true) || $request_status === 'approved';
+        $has_open_request = array_key_exists('has_open_request', $context)
+            ? !empty($context['has_open_request'])
+            : false;
+        $has_attempted_request = array_key_exists('has_attempted_request', $context)
+            ? !empty($context['has_attempted_request'])
+            : $has_open_request;
+        $matching_required = array_key_exists('matching_required', $context)
+            ? !empty($context['matching_required'])
+            : $this->school_requires_location_verification($school_id);
+        $show_location_issue = (
+            $school_is_active
+            && $has_attempted_request
+            && $matching_required
+            && ($school_postcode === '' || !$has_school_coords)
+        );
 
-        $critical_meta_missing = array_key_exists('critical_meta_missing', $context)
-            ? !empty($context['critical_meta_missing'])
-            : (!$domain_valid || ($school_postcode === '' && !$has_school_coords));
-        if (($is_client_profile || $requires_location_verification) && $critical_meta_missing && !$issues) {
-            $add_issue('Profile data incomplete');
+        if ($show_location_issue) {
+            $add_issue('Location details required for active matching.');
         }
 
         return $issues;
@@ -64671,6 +64657,13 @@ final class CMN_One_Plugin {
         $priority_notice = isset($_GET['cmn_priority_notice']) ? sanitize_text_field(wp_unslash($_GET['cmn_priority_notice'])) : '';
         $priority_notice_type = sanitize_key((string) ($_GET['cmn_priority_notice_type'] ?? ''));
         $can_request = !$is_preview && $user_school_id && $school_status === 'client';
+        $school_status_key = sanitize_key((string) $school_status);
+        $school_status_label = $school_status_key !== '' ? ucfirst(str_replace('_', ' ', $school_status_key)) : 'Pending review';
+        $school_is_active_status = in_array($school_status_key, ['active', 'client', 'active_client', 'live'], true);
+        if (!$school_is_active_status && $user_school_id > 0) {
+            $school_is_active_status = ((string) $this->get_school_access_request_status($user_school_id)) === 'approved';
+        }
+        $active_request_statuses = ['requested', 'pending', 'accepted', 'approved', 'booked', 'confirmed', 'in_progress'];
         $today_ymd = current_time('Y-m-d');
         $open_cover_requests_count = 0;
         $active_bookings_count = 0;
@@ -64755,18 +64748,11 @@ final class CMN_One_Plugin {
                 $credits_balance = max(0, (int) ($partner_snapshot['lifetime_credits'] ?? 0));
             }
         }
-        $location_verified = trim((string) $school_postcode) !== '' && !empty($school_coords);
-        $school_status_label = $school_status_key !== '' ? ucfirst(str_replace('_', ' ', $school_status_key)) : 'Pending review';
         $dashboard_status_badges = [
             [
                 'label' => 'School status',
                 'value' => $school_is_active_status ? 'Live' : $school_status_label,
                 'tone' => $school_is_active_status ? 'ok' : 'warn',
-            ],
-            [
-                'label' => 'Location',
-                'value' => $location_verified ? 'Verified' : 'Verification needed',
-                'tone' => $location_verified ? 'ok' : 'warn',
             ],
             [
                 'label' => 'Request access',
@@ -64775,25 +64761,18 @@ final class CMN_One_Plugin {
             ],
         ];
         $dashboard_announcements = [];
-        if ($show_location_warning) {
-            $dashboard_announcements[] = [
-                'tone' => 'warn',
-                'title' => 'Location check required',
-                'message' => 'Add a valid postcode to improve matching accuracy for open requests.',
-            ];
-        }
-        if (!$can_request) {
-            $dashboard_announcements[] = [
-                'tone' => 'info',
-                'title' => 'Requesting is restricted',
-                'message' => 'Cover requests unlock once your school reaches client status.',
-            ];
-        }
         if ($open_cover_requests_count > 0) {
             $dashboard_announcements[] = [
                 'tone' => 'ok',
                 'title' => 'Open requests in progress',
                 'message' => sprintf('%d request(s) are currently active in the queue.', $open_cover_requests_count),
+            ];
+        }
+        if ($open_cover_requests_count < 1 && $active_bookings_count < 1) {
+            $dashboard_announcements[] = [
+                'tone' => 'info',
+                'title' => 'No bookings yet',
+                'message' => 'No active bookings or open requests yet. Create your first booking from the Bookings tab.',
             ];
         }
         if ($credits_balance > 0) {
@@ -67156,109 +67135,315 @@ final class CMN_One_Plugin {
                         <?php if ($ready_response_notice) : ?>
                             <div class="cmn-register-success"><?php echo esc_html($ready_response_notice); ?></div>
                         <?php endif; ?>
-                        <div class="cmn-dashboard-card">
-                            <h3>Colour Scheme</h3>
-                            <p class="cmn-muted">Choose how the portal looks for your account.</p>
-                            <div data-theme-settings>
-                                <label>Theme
-                                    <select name="cmn_theme_scheme" data-theme-select>
-                                        <?php foreach ($this->get_theme_scheme_choices() as $key => $label) : ?>
-                                            <option value="<?php echo esc_attr($key); ?>"><?php echo esc_html($label); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </label>
-                                <div class="cmn-settings-actions">
-                                    <button class="cmn-primary" type="button" data-theme-save>Save scheme</button>
-                                    <span class="cmn-muted" data-theme-message></span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="cmn-dashboard-card" data-ready-response-root>
-                            <h3>Ready Responses</h3>
-                            <p class="cmn-muted">Create saved templates that can auto-post in booking chat when a candidate accepts.</p>
-                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-ready-response-form" data-ready-response-form>
-                                <?php wp_nonce_field('cmn_ready_response_manage', 'cmn_ready_response_nonce'); ?>
-                                <input type="hidden" name="action" value="cmn_ready_response_save">
-                                <input type="hidden" name="cmn_ready_response_id" value="" data-ready-response-id>
-                                <label>Template title
-                                    <input type="text" name="cmn_ready_response_title" required data-ready-response-title>
-                                </label>
-                                <label>Message template
-                                    <textarea name="cmn_ready_response_template" rows="8" required data-ready-response-template placeholder="Hi {candidate_name}, please arrive at {start_time} and report to {contact_name} at reception."></textarea>
-                                </label>
-                                <label class="cmn-inline-check">
-                                    <input type="checkbox" name="cmn_ready_response_is_default" value="1" data-ready-response-default>
-                                    Set as default template
-                                </label>
-                                <div class="cmn-settings-actions">
-                                    <button class="cmn-primary" type="submit" data-ready-response-submit>Save template</button>
-                                    <button class="cmn-ghost" type="button" data-ready-response-reset>Clear</button>
-                                </div>
-                                <div class="cmn-ready-response-preview-wrap">
-                                    <button class="cmn-ghost cmn-btn-mini" type="button" data-ready-response-preview>Preview sample output</button>
-                                    <pre class="cmn-ready-response-preview" data-ready-response-preview-output hidden></pre>
-                                </div>
-                            </form>
-                            <div class="cmn-ready-response-list">
-                                <?php if ($school_ready_responses) : ?>
-                                    <?php foreach ($school_ready_responses as $ready_response) : ?>
-                                        <?php
-                                        $rr_id = (int) ($ready_response['id'] ?? 0);
-                                        $rr_title = (string) ($ready_response['title'] ?? 'Template');
-                                        $rr_template = (string) ($ready_response['message_template'] ?? '');
-                                        $rr_default = (int) ($ready_response['is_default'] ?? 0) === 1;
-                                        ?>
-                                        <div class="cmn-ready-response-item">
-                                            <div class="cmn-ready-response-item__main">
-                                                <strong><?php echo esc_html($rr_title); ?></strong>
-                                                <?php if ($rr_default) : ?><span class="cmn-status-chip is-approved">Default</span><?php endif; ?>
-                                                <p class="cmn-muted"><?php echo esc_html(wp_trim_words($rr_template, 18, '...')); ?></p>
-                                            </div>
-                                            <div class="cmn-ready-response-item__actions">
-                                                <button
-                                                    class="cmn-ghost cmn-btn-mini"
-                                                    type="button"
-                                                    data-ready-response-edit
-                                                    data-ready-response-id="<?php echo esc_attr($rr_id); ?>"
-                                                    data-ready-response-title="<?php echo esc_attr($rr_title); ?>"
-                                                    data-ready-response-template="<?php echo esc_attr(base64_encode($rr_template)); ?>"
-                                                    data-ready-response-default="<?php echo $rr_default ? '1' : '0'; ?>"
-                                                >Edit</button>
-                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Delete this template?');">
-                                                    <?php wp_nonce_field('cmn_ready_response_delete', 'cmn_ready_response_delete_nonce'); ?>
-                                                    <input type="hidden" name="action" value="cmn_ready_response_delete">
-                                                    <input type="hidden" name="cmn_ready_response_id" value="<?php echo esc_attr($rr_id); ?>">
-                                                    <button class="cmn-ghost cmn-btn-mini" type="submit">Delete</button>
-                                                </form>
-                                            </div>
+                        <?php
+                        $school_settings_tabs = [
+                            'profile' => 'Profile',
+                            'notification_centre' => 'Notification Centre',
+                            'users' => 'Users',
+                            'billing' => 'Billing',
+                            'integrations' => 'Integrations',
+                            'security' => 'Security',
+                        ];
+                        $active_school_settings_tab = isset($_GET['cmn_school_settings_tab']) ? sanitize_key((string) wp_unslash($_GET['cmn_school_settings_tab'])) : 'profile';
+                        if (!isset($school_settings_tabs[$active_school_settings_tab])) {
+                            $active_school_settings_tab = 'profile';
+                        }
+                        $school_settings_tab_url = static function ($tab_key) use ($portal_url) {
+                            return add_query_arg([
+                                'school' => 'settings',
+                                'cmn_tab' => false,
+                                'cmn_school_settings_tab' => sanitize_key((string) $tab_key),
+                            ], $portal_url);
+                        };
+                        $settings_school_name = (string) get_the_title($user_school_id);
+                        $settings_school_email = (string) get_post_meta($user_school_id, 'cmn_email', true);
+                        $settings_school_phone = (string) get_post_meta($user_school_id, 'cmn_phone', true);
+                        $settings_cover_manager = (string) get_post_meta($user_school_id, 'cmn_cover_manager', true);
+                        $settings_primary_contact = (string) get_post_meta($user_school_id, 'cmn_contact1', true);
+                        $settings_contact_role = (string) get_post_meta($user_school_id, 'cmn_contact_role', true);
+                        $settings_contact_email = (string) get_post_meta($user_school_id, 'cmn_contact1_email', true);
+                        $settings_contact_phone = (string) get_post_meta($user_school_id, 'cmn_primary_contact_phone', true);
+                        $settings_finance_email = (string) get_post_meta($user_school_id, 'cmn_finance_email', true);
+                        $settings_billing_reference = (string) get_post_meta($user_school_id, 'cmn_billing_reference', true);
+                        $settings_purchase_order_required = sanitize_key((string) get_post_meta($user_school_id, 'cmn_purchase_order_required', true));
+                        if (!in_array($settings_purchase_order_required, ['yes', 'no'], true)) {
+                            $settings_purchase_order_required = 'no';
+                        }
+                        $settings_invoice_frequency = sanitize_key((string) get_post_meta($user_school_id, 'cmn_invoice_frequency', true));
+                        if (!in_array($settings_invoice_frequency, ['weekly', 'monthly'], true)) {
+                            $settings_invoice_frequency = 'monthly';
+                        }
+                        $settings_api_environment = sanitize_key((string) get_post_meta($user_school_id, 'cmn_api_environment', true));
+                        if (!in_array($settings_api_environment, ['sandbox', 'live'], true)) {
+                            $settings_api_environment = 'sandbox';
+                        }
+                        $settings_require_mfa = sanitize_key((string) get_post_meta($user_school_id, 'cmn_require_mfa', true));
+                        if (!in_array($settings_require_mfa, ['yes', 'no'], true)) {
+                            $settings_require_mfa = 'no';
+                        }
+                        $settings_session_timeout = sanitize_key((string) get_post_meta($user_school_id, 'cmn_session_timeout', true));
+                        if (!in_array($settings_session_timeout, ['30', '60', '120'], true)) {
+                            $settings_session_timeout = '60';
+                        }
+                        ?>
+                        <div class="cmn-dashboard-card cmn-school-settings-shell" data-school-settings-shell data-school-active-settings-tab="<?php echo esc_attr($active_school_settings_tab); ?>">
+                            <nav class="cmn-school-settings-tabs" role="tablist" aria-label="School settings tabs">
+                                <?php foreach ($school_settings_tabs as $settings_tab_key => $settings_tab_label) : ?>
+                                    <?php $is_settings_tab_active = $active_school_settings_tab === $settings_tab_key; ?>
+                                    <a
+                                        class="cmn-school-settings-tab<?php echo $is_settings_tab_active ? ' is-active' : ''; ?>"
+                                        href="<?php echo esc_url($school_settings_tab_url($settings_tab_key)); ?>"
+                                        data-school-settings-tab="<?php echo esc_attr($settings_tab_key); ?>"
+                                        role="tab"
+                                        aria-selected="<?php echo $is_settings_tab_active ? 'true' : 'false'; ?>"
+                                    ><?php echo esc_html($settings_tab_label); ?></a>
+                                <?php endforeach; ?>
+                            </nav>
+                            <div class="cmn-school-settings-panels">
+                                <section class="cmn-school-settings-panel<?php echo $active_school_settings_tab === 'profile' ? ' is-active' : ''; ?>"<?php echo $active_school_settings_tab === 'profile' ? '' : ' hidden'; ?>>
+                                    <div class="cmn-school-settings-section" data-theme-settings>
+                                        <h3>Profile</h3>
+                                        <div class="cmn-school-settings-grid">
+                                            <label>School Name
+                                                <input type="text" value="<?php echo esc_attr($settings_school_name !== '' ? $settings_school_name : 'Not set'); ?>" readonly>
+                                            </label>
+                                            <label>School Email
+                                                <input type="email" value="<?php echo esc_attr($settings_school_email); ?>" readonly>
+                                            </label>
+                                            <label>Phone
+                                                <input type="text" value="<?php echo esc_attr($settings_school_phone); ?>" readonly>
+                                            </label>
+                                            <label>Cover Manager
+                                                <input type="text" value="<?php echo esc_attr($settings_cover_manager); ?>" readonly>
+                                            </label>
+                                            <label>Theme
+                                                <select name="cmn_theme_scheme" data-theme-select>
+                                                    <?php foreach ($this->get_theme_scheme_choices() as $key => $label) : ?>
+                                                        <option value="<?php echo esc_attr($key); ?>"><?php echo esc_html($label); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </label>
+                                            <label>Support Route
+                                                <input type="text" value="School support desk" readonly>
+                                            </label>
                                         </div>
-                                    <?php endforeach; ?>
-                                <?php else : ?>
-                                    <div class="cmn-empty">No templates saved yet.</div>
-                                <?php endif; ?>
-                            </div>
-                            <div class="cmn-muted">
-                                Available smart tags: <code>{candidate_name}</code>, <code>{school_name}</code>, <code>{booking_date}</code>, <code>{start_time}</code>, <code>{end_time}</code>, <code>{location_name}</code>, <code>{location_address}</code>, <code>{reception_instructions}</code>, <code>{parking_info}</code>, <code>{teacher_name}</code>, <code>{contact_name}</code>, <code>{contact_phone}</code>, <code>{notes}</code>.
-                            </div>
-                        </div>
-                        <div class="cmn-dashboard-card" data-notification-preferences>
-                            <h3>Notifications</h3>
-                            <p class="cmn-muted">Manage portal + email delivery and quiet hours.</p>
-                            <div class="cmn-settings-grid">
-                                <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_portal_enabled"> Portal notifications</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_email_enabled"> Email notifications</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_quiet_hours_enabled"> Enable quiet hours</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_allow_urgent_quiet"> Allow urgent alerts during quiet hours</label>
-                                <label>Quiet hours start
-                                    <input type="time" data-notify-time="cmn_notify_quiet_start" step="300">
-                                </label>
-                                <label>Quiet hours end
-                                    <input type="time" data-notify-time="cmn_notify_quiet_end" step="300">
-                                </label>
-                            </div>
-                            <div class="cmn-settings-actions">
-                                <button class="cmn-primary" type="button" data-notify-settings-save>Save notification preferences</button>
-                                <span class="cmn-muted" data-notify-settings-message></span>
+                                        <div class="cmn-settings-actions">
+                                            <button class="cmn-primary" type="button" data-theme-save>Save Profile</button>
+                                            <span class="cmn-muted" data-theme-message></span>
+                                        </div>
+                                    </div>
+                                </section>
+                                <section class="cmn-school-settings-panel<?php echo $active_school_settings_tab === 'notification_centre' ? ' is-active' : ''; ?>"<?php echo $active_school_settings_tab === 'notification_centre' ? '' : ' hidden'; ?>>
+                                    <div class="cmn-school-settings-section" data-notification-preferences>
+                                        <h3>Notification Centre</h3>
+                                        <div class="cmn-school-settings-grid cmn-settings-grid">
+                                            <label class="cmn-school-settings-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_portal_enabled"> Portal notifications</label>
+                                            <label class="cmn-school-settings-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_email_enabled"> Email notifications</label>
+                                            <label class="cmn-school-settings-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_quiet_hours_enabled"> Enable quiet hours</label>
+                                            <label class="cmn-school-settings-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_allow_urgent_quiet"> Allow urgent alerts during quiet hours</label>
+                                            <label>Quiet hours start
+                                                <input type="time" data-notify-time="cmn_notify_quiet_start" step="300">
+                                            </label>
+                                            <label>Quiet hours end
+                                                <input type="time" data-notify-time="cmn_notify_quiet_end" step="300">
+                                            </label>
+                                        </div>
+                                        <div class="cmn-settings-actions">
+                                            <button class="cmn-primary" type="button" data-notify-settings-save>Save Notifications</button>
+                                            <span class="cmn-muted" data-notify-settings-message></span>
+                                        </div>
+                                    </div>
+                                </section>
+                                <section class="cmn-school-settings-panel<?php echo $active_school_settings_tab === 'users' ? ' is-active' : ''; ?>"<?php echo $active_school_settings_tab === 'users' ? '' : ' hidden'; ?>>
+                                    <div class="cmn-school-settings-section">
+                                        <h3>Users</h3>
+                                        <div class="cmn-school-settings-grid">
+                                            <label>Primary Contact
+                                                <input type="text" value="<?php echo esc_attr($settings_primary_contact); ?>" readonly>
+                                            </label>
+                                            <label>Contact Role
+                                                <input type="text" value="<?php echo esc_attr($settings_contact_role); ?>" readonly>
+                                            </label>
+                                            <label>Contact Email
+                                                <input type="email" value="<?php echo esc_attr($settings_contact_email); ?>" readonly>
+                                            </label>
+                                            <label>Contact Phone
+                                                <input type="text" value="<?php echo esc_attr($settings_contact_phone); ?>" readonly>
+                                            </label>
+                                            <label>Cover Manager
+                                                <input type="text" value="<?php echo esc_attr($settings_cover_manager); ?>" readonly>
+                                            </label>
+                                            <label>Escalation Email
+                                                <input type="email" value="<?php echo esc_attr($settings_finance_email); ?>" readonly>
+                                            </label>
+                                        </div>
+                                        <div class="cmn-settings-actions">
+                                            <button class="cmn-primary" type="button">Save Users</button>
+                                            <span class="cmn-muted">User access updates are managed by the operations team.</span>
+                                        </div>
+                                    </div>
+                                </section>
+                                <section class="cmn-school-settings-panel<?php echo $active_school_settings_tab === 'billing' ? ' is-active' : ''; ?>"<?php echo $active_school_settings_tab === 'billing' ? '' : ' hidden'; ?>>
+                                    <div class="cmn-school-settings-section">
+                                        <h3>Billing</h3>
+                                        <div class="cmn-school-settings-grid">
+                                            <label>Billing Contact Email
+                                                <input type="email" value="<?php echo esc_attr($settings_finance_email); ?>" readonly>
+                                            </label>
+                                            <label>Billing Reference
+                                                <input type="text" value="<?php echo esc_attr($settings_billing_reference); ?>" readonly>
+                                            </label>
+                                            <label>Invoice Frequency
+                                                <select disabled>
+                                                    <option value="weekly"<?php selected($settings_invoice_frequency, 'weekly'); ?>>Weekly</option>
+                                                    <option value="monthly"<?php selected($settings_invoice_frequency, 'monthly'); ?>>Monthly</option>
+                                                </select>
+                                            </label>
+                                            <label>Purchase Order Required
+                                                <select disabled>
+                                                    <option value="yes"<?php selected($settings_purchase_order_required, 'yes'); ?>>Yes</option>
+                                                    <option value="no"<?php selected($settings_purchase_order_required, 'no'); ?>>No</option>
+                                                </select>
+                                            </label>
+                                            <label>Billing Address
+                                                <input type="text" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_address_line1', true)); ?>" readonly>
+                                            </label>
+                                            <label>Postcode
+                                                <input type="text" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_postcode', true)); ?>" readonly>
+                                            </label>
+                                        </div>
+                                        <div class="cmn-settings-actions">
+                                            <button class="cmn-primary" type="button">Save Billing</button>
+                                            <span class="cmn-muted">Billing updates are controlled in finance operations.</span>
+                                        </div>
+                                    </div>
+                                </section>
+                                <section class="cmn-school-settings-panel<?php echo $active_school_settings_tab === 'integrations' ? ' is-active' : ''; ?>"<?php echo $active_school_settings_tab === 'integrations' ? '' : ' hidden'; ?>>
+                                    <div class="cmn-school-settings-section">
+                                        <h3>Integrations</h3>
+                                        <div class="cmn-school-settings-grid">
+                                            <label>API Environment
+                                                <select disabled>
+                                                    <option value="sandbox"<?php selected($settings_api_environment, 'sandbox'); ?>>Sandbox</option>
+                                                    <option value="live"<?php selected($settings_api_environment, 'live'); ?>>Live</option>
+                                                </select>
+                                            </label>
+                                            <label>Webhook Endpoint
+                                                <input type="url" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_webhook_endpoint', true)); ?>" readonly>
+                                            </label>
+                                            <label>Sync Status
+                                                <input type="text" value="Connected" readonly>
+                                            </label>
+                                            <label>Last Sync
+                                                <input type="text" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_last_sync_at', true)); ?>" readonly>
+                                            </label>
+                                        </div>
+                                        <div class="cmn-settings-actions">
+                                            <button class="cmn-primary" type="button">Save Integrations</button>
+                                            <span class="cmn-muted">Integration credentials are provisioned by support.</span>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-school-settings-section" data-ready-response-root>
+                                        <h3>Ready Responses</h3>
+                                        <p class="cmn-muted">Create saved templates that can auto-post in booking chat when a candidate accepts.</p>
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-ready-response-form cmn-school-settings-form-grid" data-ready-response-form>
+                                            <?php wp_nonce_field('cmn_ready_response_manage', 'cmn_ready_response_nonce'); ?>
+                                            <input type="hidden" name="action" value="cmn_ready_response_save">
+                                            <input type="hidden" name="cmn_ready_response_id" value="" data-ready-response-id>
+                                            <label>Template title
+                                                <input type="text" name="cmn_ready_response_title" required data-ready-response-title>
+                                            </label>
+                                            <label>Default template
+                                                <span class="cmn-school-settings-inline-check"><input type="checkbox" name="cmn_ready_response_is_default" value="1" data-ready-response-default> Set as default template</span>
+                                            </label>
+                                            <label class="cmn-school-settings-span-2">Message template
+                                                <textarea name="cmn_ready_response_template" rows="8" required data-ready-response-template placeholder="Hi {candidate_name}, please arrive at {start_time} and report to {contact_name} at reception."></textarea>
+                                            </label>
+                                            <div class="cmn-settings-actions cmn-school-settings-span-2">
+                                                <button class="cmn-primary" type="submit" data-ready-response-submit>Save template</button>
+                                                <button class="cmn-ghost" type="button" data-ready-response-reset>Clear</button>
+                                            </div>
+                                            <div class="cmn-ready-response-preview-wrap cmn-school-settings-span-2">
+                                                <button class="cmn-ghost cmn-btn-mini" type="button" data-ready-response-preview>Preview sample output</button>
+                                                <pre class="cmn-ready-response-preview" data-ready-response-preview-output hidden></pre>
+                                            </div>
+                                        </form>
+                                        <div class="cmn-ready-response-list">
+                                            <?php if ($school_ready_responses) : ?>
+                                                <?php foreach ($school_ready_responses as $ready_response) : ?>
+                                                    <?php
+                                                    $rr_id = (int) ($ready_response['id'] ?? 0);
+                                                    $rr_title = (string) ($ready_response['title'] ?? 'Template');
+                                                    $rr_template = (string) ($ready_response['message_template'] ?? '');
+                                                    $rr_default = (int) ($ready_response['is_default'] ?? 0) === 1;
+                                                    ?>
+                                                    <div class="cmn-ready-response-item">
+                                                        <div class="cmn-ready-response-item__main">
+                                                            <strong><?php echo esc_html($rr_title); ?></strong>
+                                                            <?php if ($rr_default) : ?><span class="cmn-status-chip is-approved">Default</span><?php endif; ?>
+                                                            <p class="cmn-muted"><?php echo esc_html(wp_trim_words($rr_template, 18, '...')); ?></p>
+                                                        </div>
+                                                        <div class="cmn-ready-response-item__actions">
+                                                            <button
+                                                                class="cmn-ghost cmn-btn-mini"
+                                                                type="button"
+                                                                data-ready-response-edit
+                                                                data-ready-response-id="<?php echo esc_attr($rr_id); ?>"
+                                                                data-ready-response-title="<?php echo esc_attr($rr_title); ?>"
+                                                                data-ready-response-template="<?php echo esc_attr(base64_encode($rr_template)); ?>"
+                                                                data-ready-response-default="<?php echo $rr_default ? '1' : '0'; ?>"
+                                                            >Edit</button>
+                                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Delete this template?');">
+                                                                <?php wp_nonce_field('cmn_ready_response_delete', 'cmn_ready_response_delete_nonce'); ?>
+                                                                <input type="hidden" name="action" value="cmn_ready_response_delete">
+                                                                <input type="hidden" name="cmn_ready_response_id" value="<?php echo esc_attr($rr_id); ?>">
+                                                                <button class="cmn-ghost cmn-btn-mini" type="submit">Delete</button>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            <?php else : ?>
+                                                <div class="cmn-empty">No templates saved yet.</div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="cmn-muted">
+                                            Available smart tags: <code>{candidate_name}</code>, <code>{school_name}</code>, <code>{booking_date}</code>, <code>{start_time}</code>, <code>{end_time}</code>, <code>{location_name}</code>, <code>{location_address}</code>, <code>{reception_instructions}</code>, <code>{parking_info}</code>, <code>{teacher_name}</code>, <code>{contact_name}</code>, <code>{contact_phone}</code>, <code>{notes}</code>.
+                                        </div>
+                                    </div>
+                                </section>
+                                <section class="cmn-school-settings-panel<?php echo $active_school_settings_tab === 'security' ? ' is-active' : ''; ?>"<?php echo $active_school_settings_tab === 'security' ? '' : ' hidden'; ?>>
+                                    <div class="cmn-school-settings-section">
+                                        <h3>Security</h3>
+                                        <div class="cmn-school-settings-grid">
+                                            <label>Require MFA
+                                                <select disabled>
+                                                    <option value="yes"<?php selected($settings_require_mfa, 'yes'); ?>>Yes</option>
+                                                    <option value="no"<?php selected($settings_require_mfa, 'no'); ?>>No</option>
+                                                </select>
+                                            </label>
+                                            <label>Session Timeout (minutes)
+                                                <select disabled>
+                                                    <option value="30"<?php selected($settings_session_timeout, '30'); ?>>30</option>
+                                                    <option value="60"<?php selected($settings_session_timeout, '60'); ?>>60</option>
+                                                    <option value="120"<?php selected($settings_session_timeout, '120'); ?>>120</option>
+                                                </select>
+                                            </label>
+                                            <label>Trusted Domain
+                                                <input type="text" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_school_email_domain', true)); ?>" readonly>
+                                            </label>
+                                            <label>Password Policy
+                                                <input type="text" value="Managed by CoverMeNow ONE" readonly>
+                                            </label>
+                                            <label class="cmn-school-settings-span-2">Audit Note
+                                                <textarea rows="4" placeholder="Add security notes for your operations team..." readonly></textarea>
+                                            </label>
+                                        </div>
+                                        <div class="cmn-settings-actions">
+                                            <button class="cmn-primary" type="button">Save Security</button>
+                                            <span class="cmn-muted">Security controls are managed centrally for all school accounts.</span>
+                                        </div>
+                                    </div>
+                                </section>
                             </div>
                         </div>
                     <?php else : ?>
@@ -73274,7 +73459,7 @@ final class CMN_One_Plugin {
         $items = $this->get_available_candidates($school_id);
         $request_date = $this->get_tomorrow_date();
         if (empty($items)) {
-            return '<div class="cmn-list-item"><span>No candidates marked available yet.</span></div>';
+            return '<div class="cmn-list-item"><span>Availability updates will appear here once candidates confirm.</span></div>';
         }
         $out = '';
         foreach ($items as $item) {
@@ -73292,7 +73477,7 @@ final class CMN_One_Plugin {
         $items = $this->get_available_candidates();
         $request_date = $this->get_tomorrow_date();
         if (empty($items)) {
-            return '<div class="cmn-wall-card"><p>No candidates marked available yet.</p></div>';
+            return '<div class="cmn-wall-card"><p>Availability updates will appear here once candidates confirm.</p></div>';
         }
         $out = '';
         foreach ($items as $item) {
@@ -73312,12 +73497,14 @@ final class CMN_One_Plugin {
         if (!$date || !$table) {
             return [];
         }
+        $assigned_count = 0;
         $params = [$date, 'morning'];
         $where = "ca.available_date = %s AND ca.available_type = %s";
         if ($school_id) {
             $assigned = $this->get_assigned_candidates($school_id);
             if ($assigned) {
                 $assigned = array_map('intval', $assigned);
+                $assigned_count = count($assigned);
                 $placeholders = implode(',', array_fill(0, count($assigned), '%d'));
                 $where .= " AND ca.candidate_id IN ({$placeholders})";
                 $params = array_merge($params, $assigned);
@@ -73331,7 +73518,18 @@ final class CMN_One_Plugin {
         } else {
             $sql = "SELECT ca.candidate_id, ca.created_at FROM {$table} ca WHERE {$where} ORDER BY ca.created_at DESC{$limit_sql}";
         }
-        return $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        $this->log_availability_debug('school_dashboard_available_candidates_query', [
+            'school_id' => (int) $school_id,
+            'target_date' => (string) $date,
+            'target_slot' => 'morning',
+            'limit' => (int) $limit,
+            'assigned_filter_count' => (int) $assigned_count,
+            'calendar_exclusion_enabled' => $calendar_table ? 1 : 0,
+            'query_arg_count' => count($params),
+            'result_count' => is_array($rows) ? count($rows) : 0,
+        ]);
+        return $rows;
     }
 
     private function get_available_candidates($school_id = 0) {
@@ -73367,6 +73565,12 @@ final class CMN_One_Plugin {
         } else {
             $tomorrow = $this->get_tomorrow_date();
         }
+        $this->log_availability_debug('school_dashboard_availability_window', [
+            'school_id' => (int) $school_id,
+            'target_today_slot' => $today !== '' ? ($today . ' morning') : '',
+            'target_tomorrow_slot' => $tomorrow !== '' ? ($tomorrow . ' morning') : '',
+            'limit' => (int) $limit,
+        ]);
 
         $today_rows = $today ? $this->get_available_candidates_with_times($today, $school_id, $limit) : [];
         $tomorrow_rows = $tomorrow ? $this->get_available_candidates_with_times($tomorrow, $school_id, $limit) : [];
@@ -73404,15 +73608,45 @@ final class CMN_One_Plugin {
             }
         }
 
+        $this->log_availability_debug('school_dashboard_availability_results', [
+            'school_id' => (int) $school_id,
+            'today_row_count' => count((array) $today_rows),
+            'tomorrow_row_count' => count((array) $tomorrow_rows),
+            'final_candidate_count' => count((array) $out),
+            'role_filter' => 'none',
+            'role_filter_excluded_count' => 0,
+        ]);
         return $out;
     }
     private function get_available_candidates_with_times($date, $school_id = 0, $limit = 6) {
         $rows = $this->get_available_candidate_rows($date, 0, $limit);
         if (!$rows) {
+            $this->log_availability_debug('school_dashboard_availability_filter_stages', [
+                'school_id' => (int) $school_id,
+                'target_date' => (string) $date,
+                'input_row_count' => 0,
+                'loaded_posts_count' => 0,
+                'excluded_missing_posts' => 0,
+                'excluded_location_filter' => 0,
+                'role_filter' => 'none',
+                'role_filter_excluded_count' => 0,
+                'output_row_count' => 0,
+            ]);
             return [];
         }
         $ids = array_map('intval', array_column($rows, 'candidate_id'));
         if (!$ids) {
+            $this->log_availability_debug('school_dashboard_availability_filter_stages', [
+                'school_id' => (int) $school_id,
+                'target_date' => (string) $date,
+                'input_row_count' => count((array) $rows),
+                'loaded_posts_count' => 0,
+                'excluded_missing_posts' => count((array) $rows),
+                'excluded_location_filter' => 0,
+                'role_filter' => 'none',
+                'role_filter_excluded_count' => 0,
+                'output_row_count' => 0,
+            ]);
             return [];
         }
         $posts = get_posts([
@@ -73426,12 +73660,16 @@ final class CMN_One_Plugin {
             $indexed[$post->ID] = $post;
         }
         $output = [];
+        $excluded_missing_posts = 0;
+        $excluded_location_filter = 0;
         foreach ($rows as $row) {
             $candidate_id = (int) $row['candidate_id'];
             if (!isset($indexed[$candidate_id])) {
+                $excluded_missing_posts++;
                 continue;
             }
             if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
+                $excluded_location_filter++;
                 continue;
             }
             $output[] = [
@@ -73439,6 +73677,17 @@ final class CMN_One_Plugin {
                 'created_at' => $row['created_at'],
             ];
         }
+        $this->log_availability_debug('school_dashboard_availability_filter_stages', [
+            'school_id' => (int) $school_id,
+            'target_date' => (string) $date,
+            'input_row_count' => count((array) $rows),
+            'loaded_posts_count' => count((array) $indexed),
+            'excluded_missing_posts' => (int) $excluded_missing_posts,
+            'excluded_location_filter' => (int) $excluded_location_filter,
+            'role_filter' => 'none',
+            'role_filter_excluded_count' => 0,
+            'output_row_count' => count((array) $output),
+        ]);
         return $output;
     }
 
@@ -73510,6 +73759,16 @@ final class CMN_One_Plugin {
         $candidate_id = (int) $candidate_id;
         $school_id = (int) $school_id;
         if ($candidate_id < 1 || $school_id < 1) {
+            return true;
+        }
+        $school_postcode = trim((string) get_post_meta($school_id, 'cmn_postcode', true));
+        if ($school_postcode === '') {
+            // Missing school postcode should not zero the availability feed.
+            $this->log_availability_debug('school_dashboard_skip_distance_filter', [
+                'school_id' => (int) $school_id,
+                'candidate_id' => (int) $candidate_id,
+                'reason' => 'school_postcode_missing',
+            ]);
             return true;
         }
 
@@ -73834,7 +74093,7 @@ final class CMN_One_Plugin {
 
         $warnings = [];
         if (!$school_coords) {
-            $warnings[] = 'Precise distance unavailable — add postcode to improve matching.';
+            $warnings[] = 'Precise distance data is unavailable.';
         }
 
         $travel_radius_values = array_values(array_filter(array_map(static function ($value) {
@@ -80179,6 +80438,66 @@ p{margin:0;line-height:1.5}
         @file_put_contents($log_file, '[' . gmdate('Y-m-d H:i:s') . ' UTC] ' . $line . PHP_EOL, FILE_APPEND | LOCK_EX);
     }
 
+    private function is_availability_debug_enabled() {
+        if (defined('CMN_DEBUG_AVAILABILITY')) {
+            $raw_value = CMN_DEBUG_AVAILABILITY;
+            if (is_bool($raw_value)) {
+                return $raw_value;
+            }
+            $normalized = strtolower(trim((string) $raw_value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+        }
+
+        $env_value = getenv('CMN_DEBUG_AVAILABILITY');
+        $normalized_env = strtolower(trim((string) $env_value));
+        if (in_array($normalized_env, ['1', 'true', 'yes', 'on'], true)) {
+            return true;
+        }
+
+        if (!is_user_logged_in()) {
+            return false;
+        }
+        $current_user_id = (int) get_current_user_id();
+        if ($current_user_id < 1 || !$this->is_staff_user($current_user_id)) {
+            return false;
+        }
+
+        $toggle_raw = '';
+        if (isset($_REQUEST['cmn_availability_debug'])) {
+            $toggle_raw = (string) wp_unslash($_REQUEST['cmn_availability_debug']);
+        } elseif (isset($_REQUEST['cmn_debug_availability'])) {
+            $toggle_raw = (string) wp_unslash($_REQUEST['cmn_debug_availability']);
+        }
+        $toggle_raw = strtolower(trim((string) $toggle_raw));
+        return in_array($toggle_raw, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private function log_availability_debug($event, $context = []) {
+        if (!$this->is_availability_debug_enabled()) {
+            return;
+        }
+        $event_key = sanitize_key((string) $event);
+        if ($event_key === '') {
+            $event_key = 'event';
+        }
+        $timezone = wp_timezone();
+        $wp_now = function_exists('cmn_now')
+            ? cmn_now()->setTimezone($timezone)
+            : new DateTimeImmutable('now', $timezone);
+        $payload = [
+            'event' => $event_key,
+            'timestamp_wp' => $wp_now->format('Y-m-d H:i:s T'),
+            'timestamp_utc' => gmdate('Y-m-d H:i:s') . ' UTC',
+            'wp_timezone' => $timezone->getName(),
+            'user_id' => (int) get_current_user_id(),
+            'role' => $this->get_current_user_role(),
+            'context' => is_array($context) ? $context : [],
+        ];
+        error_log('[CMN_AVAILABILITY_DEBUG] ' . wp_json_encode($payload));
+    }
+
     private function is_school_debug_enabled() {
         if (defined('CMN_DEBUG_SCHOOLS')) {
             $raw_value = CMN_DEBUG_SCHOOLS;
@@ -81272,24 +81591,74 @@ p{margin:0;line-height:1.5}
             $candidate_id = $candidate[0]->ID;
             $value = isset($_POST['cmn_available_tomorrow']) ? sanitize_text_field($_POST['cmn_available_tomorrow']) : '0';
             $value = $value === '1' ? '1' : '0';
-            update_post_meta($candidate_id, 'cmn_available_tomorrow', $value);
-
             $tz = wp_timezone();
             $now = new DateTime('now', $tz);
-            $hour = (int) $now->format('G');
-            $window_open = ($hour >= 19 || $hour < 8);
+            $availability_window = $this->get_candidate_availability_window($now);
+            $window_open = !empty($availability_window['is_open']);
+            $target_date = (string) ($availability_window['target_date'] ?? '');
+            if ($target_date === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
+                $target_date = $now->format('Y-m-d');
+            }
+            $period_label = $this->get_availability_period_label($target_date, $now);
+            $this->log_availability_debug('candidate_confirm_availability_form_attempt', [
+                'action' => 'cmn_toggle_availability',
+                'candidate_id' => (int) $candidate_id,
+                'session_user_id' => (int) get_current_user_id(),
+                'target_date' => (string) $target_date,
+                'target_slot' => 'morning',
+                'period_label' => (string) $period_label,
+                'window_open' => $window_open ? 1 : 0,
+                'window_open_at' => (string) ($availability_window['window_open_at'] ?? ''),
+                'window_close_at' => (string) ($availability_window['window_close_at'] ?? ''),
+                'intended_available' => $value === '1' ? 1 : 0,
+            ]);
             if (!$window_open) {
                 wp_redirect(add_query_arg('cmn_error', 'window', wp_get_referer() ?: home_url()));
                 exit;
             }
-            $target_date = $hour >= 19 ? (clone $now)->modify('+1 day')->format('Y-m-d') : $now->format('Y-m-d');
-            update_post_meta($candidate_id, 'cmn_available_date', $value === '1' ? $target_date : '');
+            global $wpdb;
+            $table = $this->get_candidate_availability_table();
 
             if ($value === '1') {
+                $written = $wpdb->replace($table, [
+                    'candidate_id' => $candidate_id,
+                    'available_date' => $target_date,
+                    'available_type' => 'morning',
+                    'created_at' => current_time('mysql'),
+                ], ['%d', '%s', '%s', '%s']);
+                $this->log_availability_debug('candidate_confirm_availability_form_write', [
+                    'action' => 'cmn_toggle_availability',
+                    'candidate_id' => (int) $candidate_id,
+                    'session_user_id' => (int) get_current_user_id(),
+                    'target_date' => (string) $target_date,
+                    'target_slot' => 'morning',
+                    'write_target' => (string) $table,
+                    'write_result' => ($written === false ? 'failed' : 'saved'),
+                ]);
+                if ($written === false) {
+                    wp_redirect(add_query_arg('cmn_error', 'save', wp_get_referer() ?: home_url()));
+                    exit;
+                }
                 $admin_email = get_option('admin_email');
                 $subject = 'Candidate Available Tomorrow';
-                $message = "Candidate {$candidate[0]->post_title} has marked available tomorrow.\n\nReview in the CRM.";
+                $message = "Candidate {$candidate[0]->post_title} has marked available for {$period_label}.\n\nReview in the CRM.";
                 wp_mail($admin_email, $subject, $message);
+            } else {
+                $deleted = $wpdb->delete($table, [
+                    'candidate_id' => $candidate_id,
+                    'available_date' => $target_date,
+                    'available_type' => 'morning',
+                ], ['%d', '%s', '%s']);
+                $this->log_availability_debug('candidate_confirm_availability_form_write', [
+                    'action' => 'cmn_toggle_availability',
+                    'candidate_id' => (int) $candidate_id,
+                    'session_user_id' => (int) get_current_user_id(),
+                    'target_date' => (string) $target_date,
+                    'target_slot' => 'morning',
+                    'write_target' => (string) $table,
+                    'write_result' => ($deleted === false ? 'failed' : 'deleted'),
+                    'rows_affected' => ($deleted === false ? 0 : (int) $deleted),
+                ]);
             }
         }
 
@@ -81377,6 +81746,20 @@ p{margin:0;line-height:1.5}
         }
         $already_marked = $this->has_candidate_availability($candidate_id, $target_date);
         $period_label = $this->get_availability_period_label($target_date, $now);
+        $table = $this->get_candidate_availability_table();
+        $this->log_availability_debug('candidate_confirm_availability_ajax_attempt', [
+            'action' => 'cmn_mark_available',
+            'candidate_id' => (int) $candidate_id,
+            'session_user_id' => (int) get_current_user_id(),
+            'target_date' => (string) $target_date,
+            'target_slot' => 'morning',
+            'period_label' => (string) $period_label,
+            'already_marked' => $already_marked ? 1 : 0,
+            'window_open' => $allowed ? 1 : 0,
+            'window_open_at' => (string) ($availability_window['window_open_at'] ?? ''),
+            'window_close_at' => (string) ($availability_window['window_close_at'] ?? ''),
+            'write_target' => (string) $table,
+        ]);
         if (!$allowed) {
             $closed_message = !empty($availability_window['closed_message']) ? (string) $availability_window['closed_message'] : 'You can confirm availability from 7:00pm on the previous day until 7:30am.';
             wp_send_json_error([
@@ -81398,12 +81781,21 @@ p{margin:0;line-height:1.5}
             ], 400);
         }
         global $wpdb;
-        $table = $this->get_candidate_availability_table();
         if ($already_marked) {
-            $wpdb->delete($table, [
+            $deleted = $wpdb->delete($table, [
                 'candidate_id' => $candidate_id,
                 'available_date' => $target_date,
-            ], ['%d', '%s']);
+                'available_type' => 'morning',
+            ], ['%d', '%s', '%s']);
+            $this->log_availability_debug('candidate_confirm_availability_ajax_write', [
+                'action' => 'cmn_mark_available',
+                'candidate_id' => (int) $candidate_id,
+                'session_user_id' => (int) get_current_user_id(),
+                'target_date' => (string) $target_date,
+                'target_slot' => 'morning',
+                'write_result' => ($deleted === false ? 'failed' : 'deleted'),
+                'rows_affected' => ($deleted === false ? 0 : (int) $deleted),
+            ]);
             wp_send_json_success([
                 'message' => 'You\'re now marked as unavailable for ' . $period_label . '.',
                 'available' => false,
@@ -81420,6 +81812,14 @@ p{margin:0;line-height:1.5}
             'created_at' => current_time('mysql'),
         ], ['%d', '%s', '%s', '%s']);
 
+        $this->log_availability_debug('candidate_confirm_availability_ajax_write', [
+            'action' => 'cmn_mark_available',
+            'candidate_id' => (int) $candidate_id,
+            'session_user_id' => (int) get_current_user_id(),
+            'target_date' => (string) $target_date,
+            'target_slot' => 'morning',
+            'write_result' => ($inserted ? 'saved' : 'failed'),
+        ]);
         if (!$inserted) {
             wp_send_json_error(['message' => 'Unable to save availability.'], 500);
         }
@@ -81457,10 +81857,20 @@ p{margin:0;line-height:1.5}
 
         global $wpdb;
         $table = $this->get_candidate_availability_table();
-        $wpdb->delete($table, [
+        $deleted = $wpdb->delete($table, [
             'candidate_id' => $candidate_id,
             'available_date' => $target_date,
-        ], ['%d', '%s']);
+            'available_type' => 'morning',
+        ], ['%d', '%s', '%s']);
+        $this->log_availability_debug('candidate_confirm_availability_ajax_write', [
+            'action' => 'cmn_mark_unavailable_morning',
+            'candidate_id' => (int) $candidate_id,
+            'session_user_id' => (int) get_current_user_id(),
+            'target_date' => (string) $target_date,
+            'target_slot' => 'morning',
+            'write_result' => ($deleted === false ? 'failed' : 'deleted'),
+            'rows_affected' => ($deleted === false ? 0 : (int) $deleted),
+        ]);
 
         wp_send_json_success([
             'message' => 'Marked unavailable.',

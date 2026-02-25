@@ -3863,6 +3863,127 @@ body.cmn-booking-feedback-lock {
   flex-wrap: wrap;
 }
 
+.cmn-school-settings-shell {
+  margin-top: 2px;
+  padding: 14px 14px 16px;
+  display: grid;
+  gap: 12px;
+  background: linear-gradient(175deg, rgba(11, 15, 22, 0.96), rgba(9, 13, 20, 0.94));
+}
+
+.cmn-school-settings-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.cmn-school-settings-tab {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+  color: rgba(226, 232, 240, 0.9);
+  text-decoration: none;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.cmn-school-settings-tab:hover {
+  border-color: rgba(248, 113, 113, 0.48);
+  color: #fee2e2;
+}
+
+.cmn-school-settings-tab.is-active {
+  border-color: rgba(248, 113, 113, 0.7);
+  background: rgba(127, 29, 29, 0.26);
+  color: #fff1f2;
+}
+
+.cmn-school-settings-panels {
+  display: grid;
+}
+
+.cmn-school-settings-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-school-settings-panel[hidden] {
+  display: none !important;
+}
+
+.cmn-school-settings-section {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(12, 18, 28, 0.7);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-school-settings-section h3 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.cmn-school-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cmn-school-settings-grid label,
+.cmn-school-settings-form-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(214, 226, 241, 0.9);
+}
+
+.cmn-school-settings-grid :is(input, select, textarea),
+.cmn-school-settings-form-grid :is(input, select, textarea) {
+  width: 100%;
+}
+
+.cmn-school-settings-grid :is(input[readonly], select:disabled, textarea[readonly]) {
+  opacity: 0.9;
+  cursor: not-allowed;
+}
+
+.cmn-school-settings-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(214, 226, 241, 0.9);
+}
+
+.cmn-school-settings-inline-check input[type='checkbox'] {
+  margin: 0;
+}
+
+.cmn-school-settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.cmn-school-settings-span-2 {
+  grid-column: 1 / -1;
+}
+
+.cmn-school-settings-form-grid .cmn-settings-actions {
+  margin-top: 0;
+}
+
 .cmn-settings-danger-zone {
   margin-top: 18px;
   padding-top: 16px;
@@ -12547,6 +12668,15 @@ body.cmn-theme-light .cmn-ghost {
 @media (max-width: 760px) {
   .cmn-settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cmn-school-settings-grid,
+  .cmn-school-settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-school-settings-shell {
+    padding: 12px;
   }
 
   .cmn-awaiting-review-item {
