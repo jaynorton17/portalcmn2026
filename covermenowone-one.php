@@ -24678,7 +24678,7 @@ final class CMN_One_Plugin {
                 <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates']), home_url('/portal'))); ?>">Clear pending-doc filter</a>
             <?php endif; ?>
         </form>
-        <table class="cmn-approval-table">
+        <table class="cmn-approval-table cmn-candidates-table">
             <thead>
                 <tr>
                     <th>Candidate</th>
@@ -24730,19 +24730,20 @@ final class CMN_One_Plugin {
                         }
                     }
                     ?>
-                    <tr>
+                    <tr class="cmn-candidates-row">
                         <td><?php the_title(); ?></td>
                         <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_location', true)); ?></td>
                         <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_email', true)); ?></td>
-                        <td>
+                        <td class="cmn-candidate-docs-cell">
                             <span class="cmn-muted"><?php echo esc_html($doc_uploaded_count); ?>/3 uploaded</span><br>
                             <span class="cmn-muted">A: <?php echo esc_html($doc_approved_count); ?> - P: <?php echo esc_html($doc_pending_count); ?> - R: <?php echo esc_html($doc_rejected_count); ?></span>
                         </td>
                         <td><?php echo esc_html(str_replace('_', ' ', ucfirst($status_value))); ?></td>
-                        <td>
-                            <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), home_url('/portal'))); ?>">View profile</a>
-                            <br>
-                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), home_url('/portal')) . '#candidate-documents'); ?>">View docs</a>
+                        <td class="cmn-candidate-profile-cell">
+                            <div class="cmn-candidate-row-actions">
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), home_url('/portal'))); ?>">View profile</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), home_url('/portal')) . '#candidate-documents'); ?>">View docs</a>
+                            </div>
                         </td>
                         <?php if ($this->can_manage_staff_users()) : ?>
                             <td>

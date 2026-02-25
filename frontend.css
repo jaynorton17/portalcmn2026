@@ -8772,6 +8772,40 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   font-weight: 500;
 }
 
+.cmn-candidates-table th,
+.cmn-candidates-table td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  line-height: 1.3;
+  vertical-align: middle;
+}
+
+.cmn-candidates-table .cmn-candidate-docs-cell .cmn-muted {
+  font-size: 11px;
+}
+
+.cmn-candidates-table .cmn-candidate-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cmn-candidates-table .cmn-candidate-row-actions .cmn-ghost {
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+@media (max-width: 980px) {
+  .cmn-candidates-table .cmn-candidate-row-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
+
 .cmn-cv-converter-table .cmn-table-meta {
   margin-top: 4px;
   font-size: 11px;
