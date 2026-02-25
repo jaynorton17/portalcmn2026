@@ -3258,8 +3258,11 @@ document.addEventListener('DOMContentLoaded', function () {
       var availabilityDotLabel = document.querySelector('[data-availability-dot-label]');
       var unavailableButton = document.querySelector('[data-availability-unavailable-button]');
       var availabilityImpact = document.querySelector('[data-availability-impact]');
+      var availabilitySocial = document.querySelector('[data-availability-social]');
       var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
       var availabilityPeriodLabel = availabilityButton.getAttribute('data-availability-period-label') || 'tomorrow morning';
+      var confirmActionLabel = 'Confirm availability for ' + availabilityPeriodLabel;
+      var changeActionLabel = 'Change to not available';
       var countdownEl = document.querySelector('[data-availability-countdown]');
       var openAtRaw = availabilityButton.getAttribute('data-availability-open-at') || '';
       var closeAtRaw = availabilityButton.getAttribute('data-availability-close-at') || '';
@@ -3279,6 +3282,16 @@ document.addEventListener('DOMContentLoaded', function () {
       var unlockAtTs = unlockAtRaw ? Date.parse(unlockAtRaw) : NaN;
       var availabilityUnlockTimer = null;
       var availabilityPrimaryButtonLabel = (availabilityButton.textContent || '').trim();
+      var availabilityConfirmedCount = NaN;
+      if (availabilitySocial) {
+        var availabilityConfirmedMatch = (availabilitySocial.textContent || '').match(/(\d+)/);
+        if (availabilityConfirmedMatch && availabilityConfirmedMatch[1]) {
+          availabilityConfirmedCount = parseInt(availabilityConfirmedMatch[1], 10);
+        }
+      }
+      if (Number.isNaN(availabilityConfirmedCount)) {
+        availabilityConfirmedCount = 0;
+      }
       var availabilityLabelSwapTimer = null;
       var availabilityLabelSwapState = false;
       availabilityButton.style.pointerEvents = 'auto';
@@ -3314,6 +3327,39 @@ document.addEventListener('DOMContentLoaded', function () {
       var setAvailabilityButtonLabel = function (text) {
         availabilityPrimaryButtonLabel = (text || '').trim();
         availabilityButton.textContent = availabilityPrimaryButtonLabel;
+      };
+      var getConfirmedCountFromPayload = function (payload) {
+        if (!payload || typeof payload.confirmed_count === 'undefined') {
+          return NaN;
+        }
+        var parsedCount = parseInt(payload.confirmed_count, 10);
+        return Number.isNaN(parsedCount) ? NaN : Math.max(0, parsedCount);
+      };
+      var renderAvailabilityConfirmedCount = function () {
+        if (!availabilitySocial) {
+          return;
+        }
+        availabilitySocial.textContent = '🔥 ' + availabilityConfirmedCount + ' candidates have already confirmed';
+      };
+      var setAvailabilityActionVisibility = function (isAvailable) {
+        if (isAvailable) {
+          availabilityButton.setAttribute('hidden', 'hidden');
+          availabilityButton.setAttribute('aria-hidden', 'true');
+        } else {
+          availabilityButton.removeAttribute('hidden');
+          availabilityButton.removeAttribute('aria-hidden');
+        }
+        if (!unavailableButton) {
+          return;
+        }
+        unavailableButton.textContent = changeActionLabel;
+        if (isAvailable) {
+          unavailableButton.removeAttribute('hidden');
+          unavailableButton.removeAttribute('aria-hidden');
+        } else {
+          unavailableButton.setAttribute('hidden', 'hidden');
+          unavailableButton.setAttribute('aria-hidden', 'true');
+        }
       };
       var renderAvailabilityCountdown = function () {
         if (!countdownEl || Number.isNaN(openAtTs) || Number.isNaN(closeAtTs)) {
@@ -3388,9 +3434,12 @@ document.addEventListener('DOMContentLoaded', function () {
         availabilityDotLabel.textContent = text;
       };
 
-      var setAvailabilityVisualState = function (isAvailable) {
+      var setAvailabilityVisualState = function (isAvailable, options) {
+        options = options || {};
+        var wasAvailable = availabilityButton.getAttribute('data-available') === '1';
         availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
-        setAvailabilityButtonLabel(isAvailable ? ('Confirmed for ' + availabilityPeriodLabel) : ('Confirm availability for ' + availabilityPeriodLabel));
+        setAvailabilityButtonLabel(confirmActionLabel);
+        setAvailabilityActionVisibility(isAvailable);
         if (availabilityCard) {
           availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
           if (!isAvailable) {
@@ -3398,10 +3447,29 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         }
         setStatusDot(isAvailable ? 'is-confirmed' : 'is-neutral', isAvailable ? 'Confirmed' : 'Not confirmed yet');
+        if (availabilityMessage) {
+          availabilityMessage.textContent = isAvailable ? 'Availability confirmed' : 'Not confirmed yet';
+        }
         if (availabilityImpact) {
           availabilityImpact.textContent = isAvailable ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.';
         }
+        if (typeof options.confirmedCount === 'number' && !Number.isNaN(options.confirmedCount)) {
+          availabilityConfirmedCount = Math.max(0, options.confirmedCount);
+        } else if (wasAvailable !== isAvailable) {
+          availabilityConfirmedCount = Math.max(0, availabilityConfirmedCount + (isAvailable ? 1 : -1));
+        }
+        renderAvailabilityConfirmedCount();
       };
+      setAvailabilityButtonLabel(confirmActionLabel);
+      if (unavailableButton) {
+        unavailableButton.textContent = changeActionLabel;
+      }
+      if (availabilityCard && availabilityCard.classList.contains('is-blocked')) {
+        setAvailabilityActionVisibility(false);
+        renderAvailabilityConfirmedCount();
+      } else {
+        setAvailabilityVisualState(availabilityButton.getAttribute('data-available') === '1', { confirmedCount: availabilityConfirmedCount });
+      }
       if (unavailableButton) {
         unavailableButton.addEventListener('click', function () {
           unavailableButton.disabled = true;
@@ -3417,18 +3485,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (data) {
               unavailableButton.disabled = false;
               if (data && data.success) {
-                setAvailabilityVisualState(false);
-                if (availabilityCard) {
-                  availabilityCard.classList.add('is-blocked');
-                }
-                setStatusDot('is-blocked', "I'm not available");
-                if (availabilityImpact) { availabilityImpact.textContent = 'You are hidden from manager searches.'; }
-                if (availabilityMessage) {
-                  availabilityMessage.textContent = (data.data && data.data.status_text) ? data.data.status_text : "I'm not available";
-                }
-                if (data.data && typeof data.data.button_text === 'string') {
-                  setAvailabilityButtonLabel(data.data.button_text);
-                }
+                setAvailabilityVisualState(false, { confirmedCount: getConfirmedCountFromPayload(data.data) });
                 syncAvailabilityButtonLabel();
               } else if (availabilityMessage) {
                 availabilityMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to update availability.';
@@ -3464,20 +3521,10 @@ document.addEventListener('DOMContentLoaded', function () {
           })
           .then(function (data) {
             if (data && data.success) {
-              if (availabilityMessage) {
-                var successMsg = data.data && data.data.message ? data.data.message : 'Availability updated.';
-                availabilityMessage.textContent = successMsg;
-              }
-              if (data.data && typeof data.data.status_text === 'string' && availabilityMessage) {
-                availabilityMessage.textContent = data.data.status_text;
-              }
               if (data.data && typeof data.data.available !== 'undefined') {
-                setAvailabilityVisualState(!!data.data.available);
+                setAvailabilityVisualState(!!data.data.available, { confirmedCount: getConfirmedCountFromPayload(data.data) });
               } else {
-                setAvailabilityVisualState(true);
-              }
-              if (data.data && typeof data.data.button_text === 'string') {
-                setAvailabilityButtonLabel(data.data.button_text);
+                setAvailabilityVisualState(true, { confirmedCount: getConfirmedCountFromPayload(data.data) });
               }
               if (data.data && typeof data.data.button_enabled !== 'undefined') {
                 availabilityButton.disabled = !data.data.button_enabled;
@@ -3499,9 +3546,6 @@ document.addEventListener('DOMContentLoaded', function () {
               }
               if (data && data.data && typeof data.data.button_enabled !== 'undefined') {
                 availabilityButton.disabled = !data.data.button_enabled;
-              }
-              if (data && data.data && typeof data.data.button_text === 'string') {
-                setAvailabilityButtonLabel(data.data.button_text);
               }
               if (availabilityHelper && data && data.data && data.data.message) {
                 availabilityHelper.textContent = data.data.message;
