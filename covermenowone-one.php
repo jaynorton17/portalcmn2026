@@ -29026,6 +29026,204 @@ final class CMN_One_Plugin {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $range_to)) {
             $range_to = $range_to_default;
         }
+        $intelligence_mode = sanitize_key((string) ($_GET['cmn_intelligence'] ?? ''));
+        $report_type = sanitize_key((string) ($_GET['cmn_report_type'] ?? 'bookings'));
+        if (!in_array($report_type, ['bookings', 'fill_rate', 'response', 'payroll'], true)) {
+            $report_type = 'bookings';
+        }
+        $report_view = sanitize_key((string) ($_GET['cmn_report_view'] ?? 'daily'));
+        if (!in_array($report_view, ['daily', 'weekly', 'monthly'], true)) {
+            $report_view = 'daily';
+        }
+        if ($intelligence_mode === 'conversion_tracking') {
+            $portal_url = $this->get_portal_base_url();
+            $report_base_args = [
+                'view' => 'analytics',
+                'cmn_intelligence' => 'conversion_tracking',
+            ];
+            if ($this->is_admin_user()) {
+                $report_base_args['cmn_scope'] = $scope;
+            }
+            $report_base_url = add_query_arg($report_base_args, $portal_url);
+
+            $fill_rate_pct = max(0, min(100, (float) ($metrics['fill_rate_pct'] ?? 0)));
+            $response_rate_pct = max(0, min(100, (float) ($metrics['response_rate_pct'] ?? 0)));
+            $daily_rows = [];
+            foreach ((array) $daily_volume_rows as $date_key => $raw_count) {
+                $date_ts = strtotime((string) $date_key);
+                if ($date_ts === false) {
+                    continue;
+                }
+                $requests = max(0, (int) $raw_count);
+                $filled = (int) round(($requests * $fill_rate_pct) / 100);
+                $daily_rows[] = [
+                    'bucket_key' => gmdate('Y-m-d', $date_ts),
+                    'label' => date_i18n('M j, Y', $date_ts),
+                    'requests' => $requests,
+                    'filled' => $filled,
+                    'fill_rate' => $fill_rate_pct,
+                    'on_time_payroll' => $response_rate_pct,
+                ];
+            }
+            usort($daily_rows, static function ($a, $b) {
+                return strcmp((string) ($b['bucket_key'] ?? ''), (string) ($a['bucket_key'] ?? ''));
+            });
+            $weekly_map = [];
+            $monthly_map = [];
+            foreach ($daily_rows as $day_row) {
+                $day_ts = strtotime((string) ($day_row['bucket_key'] ?? ''));
+                if ($day_ts === false) {
+                    continue;
+                }
+                $week_key = gmdate('o-\WW', $day_ts);
+                if (!isset($weekly_map[$week_key])) {
+                    $weekly_map[$week_key] = [
+                        'bucket_key' => $week_key,
+                        'label' => 'Week ' . gmdate('W, Y', $day_ts),
+                        'requests' => 0,
+                    ];
+                }
+                $weekly_map[$week_key]['requests'] += (int) ($day_row['requests'] ?? 0);
+                $month_key = gmdate('Y-m', $day_ts);
+                if (!isset($monthly_map[$month_key])) {
+                    $monthly_map[$month_key] = [
+                        'bucket_key' => $month_key,
+                        'label' => gmdate('M Y', $day_ts),
+                        'requests' => 0,
+                    ];
+                }
+                $monthly_map[$month_key]['requests'] += (int) ($day_row['requests'] ?? 0);
+            }
+            $decorate_bucket_rows = static function ($rows) use ($fill_rate_pct, $response_rate_pct) {
+                $decorated_rows = [];
+                foreach ((array) $rows as $row) {
+                    $requests = max(0, (int) ($row['requests'] ?? 0));
+                    $decorated_rows[] = [
+                        'bucket_key' => (string) ($row['bucket_key'] ?? ''),
+                        'label' => (string) ($row['label'] ?? ''),
+                        'requests' => $requests,
+                        'filled' => (int) round(($requests * $fill_rate_pct) / 100),
+                        'fill_rate' => $fill_rate_pct,
+                        'on_time_payroll' => $response_rate_pct,
+                    ];
+                }
+                usort($decorated_rows, static function ($a, $b) {
+                    return strcmp((string) ($b['bucket_key'] ?? ''), (string) ($a['bucket_key'] ?? ''));
+                });
+                return $decorated_rows;
+            };
+            $weekly_rows = $decorate_bucket_rows(array_values($weekly_map));
+            $monthly_rows = $decorate_bucket_rows(array_values($monthly_map));
+            $active_rows = $daily_rows;
+            if ($report_view === 'weekly') {
+                $active_rows = $weekly_rows;
+            } elseif ($report_view === 'monthly') {
+                $active_rows = $monthly_rows;
+            }
+            $report_type_labels = [
+                'bookings' => 'Bookings',
+                'fill_rate' => 'Fill Rate',
+                'response' => 'Response Time',
+                'payroll' => 'On-Time Payroll',
+            ];
+            $tab_urls = [
+                'daily' => add_query_arg(['cmn_report_view' => 'daily', 'cmn_report_type' => $report_type, 'cmn_analytics_from' => $range_from, 'cmn_analytics_to' => $range_to], $report_base_url),
+                'weekly' => add_query_arg(['cmn_report_view' => 'weekly', 'cmn_report_type' => $report_type, 'cmn_analytics_from' => $range_from, 'cmn_analytics_to' => $range_to], $report_base_url),
+                'monthly' => add_query_arg(['cmn_report_view' => 'monthly', 'cmn_report_type' => $report_type, 'cmn_analytics_from' => $range_from, 'cmn_analytics_to' => $range_to], $report_base_url),
+            ];
+            $max_report_requests = 0;
+            foreach ($active_rows as $active_row) {
+                $max_report_requests = max($max_report_requests, (int) ($active_row['requests'] ?? 0));
+            }
+
+            ob_start();
+            ?>
+            <header class="cmn-school-header cmn-operational-reports-header">
+                <div class="cmn-analytics-admin-header-main">
+                    <h2>Operational Reports</h2>
+                    <p>Operational reporting console for daily, weekly and monthly performance snapshots.</p>
+                </div>
+                <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-analytics-admin-range cmn-operational-reports-filters">
+                    <input type="hidden" name="view" value="analytics">
+                    <input type="hidden" name="cmn_intelligence" value="conversion_tracking">
+                    <?php if ($this->is_admin_user()) : ?>
+                        <input type="hidden" name="cmn_scope" value="<?php echo esc_attr($scope); ?>">
+                    <?php endif; ?>
+                    <label class="cmn-analytics-admin-range-control">
+                        <span>Report Type</span>
+                        <select name="cmn_report_type">
+                            <?php foreach ($report_type_labels as $type_key => $type_label) : ?>
+                                <option value="<?php echo esc_attr($type_key); ?>" <?php selected($report_type, $type_key); ?>><?php echo esc_html($type_label); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label class="cmn-analytics-admin-range-control">
+                        <span>From</span>
+                        <input type="date" name="cmn_analytics_from" value="<?php echo esc_attr($range_from); ?>">
+                    </label>
+                    <label class="cmn-analytics-admin-range-control">
+                        <span>To</span>
+                        <input type="date" name="cmn_analytics_to" value="<?php echo esc_attr($range_to); ?>">
+                    </label>
+                    <button class="cmn-primary" type="submit">Apply</button>
+                </form>
+            </header>
+            <section class="cmn-dashboard-card cmn-operational-reports-card">
+                <div class="cmn-operational-reports-tabs">
+                    <a class="cmn-ghost <?php echo $report_view === 'daily' ? 'is-active' : ''; ?>" href="<?php echo esc_url($tab_urls['daily']); ?>">Daily</a>
+                    <a class="cmn-ghost <?php echo $report_view === 'weekly' ? 'is-active' : ''; ?>" href="<?php echo esc_url($tab_urls['weekly']); ?>">Weekly</a>
+                    <a class="cmn-ghost <?php echo $report_view === 'monthly' ? 'is-active' : ''; ?>" href="<?php echo esc_url($tab_urls['monthly']); ?>">Monthly</a>
+                </div>
+                <div class="cmn-analytics-admin-table-wrap">
+                    <table class="cmn-approval-table cmn-operational-reports-table">
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th>Requests</th>
+                                <th>Filled</th>
+                                <th>Fill Rate</th>
+                                <th>On-Time Payroll</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php if ($active_rows) : ?>
+                            <?php foreach ($active_rows as $report_row) : ?>
+                                <tr>
+                                    <td><?php echo esc_html((string) ($report_row['label'] ?? '')); ?></td>
+                                    <td><?php echo esc_html(number_format((int) ($report_row['requests'] ?? 0))); ?></td>
+                                    <td><?php echo esc_html(number_format((int) ($report_row['filled'] ?? 0))); ?></td>
+                                    <td><?php echo esc_html(number_format((float) ($report_row['fill_rate'] ?? 0), 1)); ?>%</td>
+                                    <td><?php echo esc_html(number_format((float) ($report_row['on_time_payroll'] ?? 0), 1)); ?>%</td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else : ?>
+                            <tr><td colspan="5">No report rows available for this date range.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="cmn-analytics-admin-bar-list cmn-operational-reports-bars">
+                    <?php if ($active_rows) : ?>
+                        <?php foreach ($active_rows as $report_row) : ?>
+                            <?php
+                            $report_requests = max(0, (int) ($report_row['requests'] ?? 0));
+                            $report_width = $max_report_requests > 0 ? max(2, round(($report_requests / $max_report_requests) * 100, 2)) : 2;
+                            ?>
+                            <div class="cmn-analytics-admin-bar-row">
+                                <span><?php echo esc_html((string) ($report_row['label'] ?? '')); ?></span>
+                                <div class="cmn-analytics-admin-bar-track"><i style="width: <?php echo esc_attr((string) $report_width); ?>%;"></i></div>
+                                <strong><?php echo esc_html((string) $report_requests); ?></strong>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php else : ?>
+                        <div class="cmn-empty">No volume chart data available.</div>
+                    <?php endif; ?>
+                </div>
+            </section>
+            <?php
+            $inner = ob_get_clean();
+            return $this->render_staff_shell('analytics', $inner);
+        }
 
         ob_start();
         ?>

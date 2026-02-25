@@ -9021,6 +9021,46 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   color: rgba(196, 207, 224, 0.82);
 }
 
+.cmn-operational-reports-header {
+  margin-bottom: 12px;
+}
+
+.cmn-operational-reports-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(160px, 1fr)) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.cmn-operational-reports-card {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-operational-reports-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-operational-reports-tabs .cmn-ghost.is-active {
+  border-color: rgba(208, 42, 42, 0.58);
+  background: rgba(208, 42, 42, 0.14);
+  color: #fff;
+}
+
+.cmn-operational-reports-table th,
+.cmn-operational-reports-table td {
+  white-space: nowrap;
+}
+
+.cmn-operational-reports-bars .cmn-analytics-admin-bar-row > span {
+  max-width: 170px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
 .cmn-automation-console {
   display: grid;
   gap: 12px;
@@ -9188,6 +9228,10 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .cmn-operational-reports-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .cmn-automation-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -9236,6 +9280,10 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
 
   .cmn-analytics-admin-range {
     width: 100%;
+  }
+
+  .cmn-operational-reports-filters {
+    grid-template-columns: 1fr;
   }
 
   .cmn-analytics-admin-metrics {
