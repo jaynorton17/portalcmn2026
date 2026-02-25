@@ -40081,6 +40081,7 @@ final class CMN_One_Plugin {
             $feedback_has_entries = $feedback_count > 0;
             $feedback_count_label = '(' . number_format_i18n($feedback_count) . ')';
             $feedback_link_title = $feedback_has_entries ? 'View feedback' : 'No feedback submitted yet';
+            $feedback_entries = $this->get_school_feedback_entries_for_school((int) $school_id, 12);
             $latest_call_activity = null;
             $latest_email_activity = null;
             $latest_note_activity = null;
@@ -40135,6 +40136,9 @@ final class CMN_One_Plugin {
             $last_call_time = $format_activity_time($latest_call_activity);
             $last_email_time = $format_activity_time($latest_email_activity);
             $last_note_time = $format_activity_time($latest_note_activity);
+            $last_call_glance = $last_call_time !== '' ? $last_call_excerpt . ' (' . $last_call_time . ')' : $last_call_excerpt;
+            $last_email_glance = $last_email_time !== '' ? $last_email_excerpt . ' (' . $last_email_time . ')' : $last_email_excerpt;
+            $last_note_glance = $last_note_time !== '' ? $last_note_excerpt . ' (' . $last_note_time . ')' : $last_note_excerpt;
             $issues_preview = array_slice(array_values($profile_issues), 0, 3);
             $booking_groups = [
                 'upcoming' => [],
@@ -40165,6 +40169,7 @@ final class CMN_One_Plugin {
                 (int) ($booking_counts['cancelled'] ?? 0),
                 count($booking_groups['cancelled'])
             );
+            $booking_glance_summary = 'A:' . (int) $booking_active_count . ' C:' . (int) $booking_completed_count . ' X:' . (int) $booking_cancelled_count;
 
             error_log('[CMN_SCHOOL_VIEW] ' . wp_json_encode([
                 'stage' => 'panels_start',
@@ -40318,17 +40323,36 @@ final class CMN_One_Plugin {
 	                                <input type="<?php echo esc_attr((string) ($visible_config['type'] ?? 'text')); ?>" name="<?php echo esc_attr($input_name); ?>" value="<?php echo esc_attr($input_value); ?>"<?php echo !empty($visible_config['required']) ? ' required' : ''; ?>>
 	                            </label>
 	                        <?php endforeach; ?>
-	                        <div class="cmn-school-quick-edit-actions">
-	                            <button class="cmn-primary" type="submit">Save quick edit</button>
-	                        </div>
-	                    </form>
-	                </div>
-	            <?php endif; ?>
-            <?php if ($has_application_context) : ?>
-                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
-                    <h3>Application Timeline</h3>
-                    <?php if ($critical_meta_missing) : ?>
-                        <p class="cmn-muted">Timeline hidden until domain + postcode are saved.</p>
+		                        <div class="cmn-school-quick-edit-actions">
+		                            <button class="cmn-primary" type="submit">Save quick edit</button>
+		                        </div>
+		                    </form>
+		                </div>
+		            <?php endif; ?>
+                    <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-overview-glance-card">
+                        <h3>At a glance</h3>
+                        <div class="cmn-school-overview-glance-strip">
+                            <span class="cmn-pill">Open tasks: <?php echo esc_html((string) $activity_quick_counts['open_tasks']); ?></span>
+                            <span class="cmn-pill" title="<?php echo esc_attr($last_call_glance); ?>">Last call: <?php echo esc_html($last_call_excerpt); ?></span>
+                            <span class="cmn-pill" title="<?php echo esc_attr($last_email_glance); ?>">Last email: <?php echo esc_html($last_email_excerpt); ?></span>
+                            <span class="cmn-pill" title="<?php echo esc_attr($last_note_glance); ?>">Last note: <?php echo esc_html($last_note_excerpt); ?></span>
+                            <span class="cmn-pill">Bookings <?php echo esc_html($booking_glance_summary); ?></span>
+                            <a class="cmn-school-overview-feedback-pill<?php echo !$feedback_has_entries ? ' is-empty' : ''; ?>" href="<?php echo esc_url($feedback_jump_url); ?>" data-school-feedback-jump title="<?php echo esc_attr($feedback_link_title); ?>">
+                                <span class="cmn-school-feedback-stars-row" aria-hidden="true">
+                                    <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
+                                        <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>">★</span>
+                                    <?php endfor; ?>
+                                </span>
+                                <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
+                                <span class="cmn-school-feedback-stars-count"><?php echo esc_html($feedback_count_label); ?></span>
+                            </a>
+                        </div>
+                    </div>
+	            <?php if ($has_application_context) : ?>
+	                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--settings cmn-school-tab-panel--application">
+	                    <h3>Application Timeline</h3>
+	                    <?php if ($critical_meta_missing) : ?>
+	                        <p class="cmn-muted">Timeline hidden until domain + postcode are saved.</p>
                     <?php elseif ($request_timeline) : ?>
                         <ul class="cmn-activity-list">
                             <?php foreach ($request_timeline as $timeline_item) : ?>
@@ -40361,14 +40385,14 @@ final class CMN_One_Plugin {
                                 <div><strong>Requested at:</strong> <?php echo esc_html(date_i18n('M j, Y g:ia', strtotime($application_requested_at))); ?></div>
                             <?php endif; ?>
                         </div>
-                    <?php endif; ?>
-                </div>
-            <?php endif; ?>
-            <?php if ($has_application_request) : ?>
-                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
-                    <?php if ($watchdog('panel_review')) { return ob_get_clean(); } ?>
-                    <h3>Application Review</h3>
-                    <p class="cmn-muted">Current account manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></p>
+	                    <?php endif; ?>
+	                </div>
+	            <?php endif; ?>
+	            <?php if ($has_application_request) : ?>
+	                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--settings cmn-school-tab-panel--application">
+	                    <?php if ($watchdog('panel_review')) { return ob_get_clean(); } ?>
+	                    <h3>Application Review</h3>
+	                    <p class="cmn-muted">Current account manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></p>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-status-form cmn-school-request-form cmn-school-request-form--compact" data-school-request-form="1" data-school-name="<?php echo esc_attr((string) $school->post_title); ?>">
                         <?php wp_nonce_field('cmn_process_school_request_' . $school_id, 'cmn_process_school_request_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_process_school_request">
@@ -40637,13 +40661,53 @@ final class CMN_One_Plugin {
                     </span>
                     <span class="cmn-muted"><?php echo esc_html((string) $feedback_count); ?> feedback entr<?php echo $feedback_count === 1 ? 'y' : 'ies'; ?></span>
                 </div>
-                <div class="cmn-meta-grid cmn-meta-grid--school-feedback-summary">
-                    <div><strong>Overall rating:</strong> <?php echo esc_html(number_format($feedback_rating_for_stars, 1)); ?>/5</div>
-                    <div><strong>Reliability:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 1)); ?>/5</div>
-                    <div><strong>Trend:</strong> <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></div>
-                    <div><strong>Total feedback:</strong> <?php echo esc_html((string) $feedback_count); ?></div>
-                </div>
-            </div>
+	                <div class="cmn-meta-grid cmn-meta-grid--school-feedback-summary">
+	                    <div><strong>Overall rating:</strong> <?php echo esc_html(number_format($feedback_rating_for_stars, 1)); ?>/5</div>
+	                    <div><strong>Reliability:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 1)); ?>/5</div>
+	                    <div><strong>Trend:</strong> <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></div>
+	                    <div><strong>Total feedback:</strong> <?php echo esc_html((string) $feedback_count); ?></div>
+	                </div>
+                    <?php if ($feedback_entries) : ?>
+                        <ul class="cmn-activity-list cmn-school-feedback-entry-list">
+                            <?php foreach ($feedback_entries as $feedback_entry) : ?>
+                                <?php
+                                $entry_rating = max(0, min(5, (int) ($feedback_entry['rating_overall'] ?? 0)));
+                                $entry_comments = trim((string) ($feedback_entry['comments'] ?? ''));
+                                $entry_created_at = trim((string) ($feedback_entry['created_at'] ?? ''));
+                                $entry_created_ts = $entry_created_at !== '' ? strtotime($entry_created_at) : false;
+                                $entry_created_label = $entry_created_ts ? date_i18n('M j, Y g:ia', $entry_created_ts) : ($entry_created_at !== '' ? $entry_created_at : 'Date not available');
+                                $entry_from_role = sanitize_key((string) ($feedback_entry['from_role'] ?? ''));
+                                $entry_from_label = $entry_from_role === 'candidate' ? 'From candidate' : ($entry_from_role === 'school' ? 'From school' : 'Feedback');
+                                $entry_booking_id = (int) ($feedback_entry['booking_id'] ?? 0);
+                                ?>
+                                <li>
+                                    <div class="cmn-school-feedback-entry-head">
+                                        <span class="cmn-school-feedback-stars-row" aria-hidden="true">
+                                            <?php for ($entry_star = 1; $entry_star <= 5; $entry_star++) : ?>
+                                                <span class="cmn-school-feedback-star<?php echo $entry_star <= $entry_rating ? ' is-active' : ''; ?>">★</span>
+                                            <?php endfor; ?>
+                                        </span>
+                                        <strong><?php echo esc_html(number_format((float) $entry_rating, 1)); ?>/5</strong>
+                                        <span class="cmn-muted"><?php echo esc_html($entry_created_label); ?></span>
+                                    </div>
+                                    <div class="cmn-school-feedback-entry-meta">
+                                        <span class="cmn-pill"><?php echo esc_html($entry_from_label); ?></span>
+                                        <?php if ($entry_booking_id > 0) : ?>
+                                            <span class="cmn-muted">Booking #<?php echo esc_html((string) $entry_booking_id); ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php if ($entry_comments !== '') : ?>
+                                        <div class="cmn-activity-content"><?php echo esc_html(wp_trim_words($entry_comments, 28, '...')); ?></div>
+                                    <?php else : ?>
+                                        <div class="cmn-muted">No additional comments.</div>
+                                    <?php endif; ?>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php else : ?>
+                        <p class="cmn-muted">No feedback yet.</p>
+                    <?php endif; ?>
+	            </div>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--bookings">
                 <h3>Bookings</h3>
                 <div class="cmn-school-profile-summary-strip">
@@ -58959,6 +59023,29 @@ final class CMN_One_Plugin {
             'trend_label' => $trend_label,
             'risk' => (array) ($score['risk'] ?? []),
         ];
+    }
+
+    private function get_school_feedback_entries_for_school($school_id, $limit = 25) {
+        global $wpdb;
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [];
+        }
+        $table = $this->get_feedback_table();
+        if (!self::table_exists($table)) {
+            return [];
+        }
+        $limit = max(1, min(100, (int) $limit));
+        return (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT booking_id, from_role, rating_overall, rating_reliability, rating_response_time, comments, created_at
+             FROM {$table}
+             WHERE to_role = %s AND to_entity_id = %d
+             ORDER BY created_at DESC, id DESC
+             LIMIT %d",
+            'school',
+            $school_id,
+            $limit
+        ), ARRAY_A);
     }
 
     private function maybe_notify_low_booking_feedback($booking_id, $viewer_role, $stars_overall, $rater_user_id) {
