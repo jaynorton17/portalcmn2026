@@ -752,6 +752,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_add_school', [$this, 'handle_add_school_portal']);
         add_action('admin_post_cmn_add_staff', [$this, 'handle_add_staff_portal']);
         add_action('admin_post_cmn_assign_account_manager', [$this, 'handle_assign_account_manager']);
+        add_action('admin_post_cmn_update_school_cover_manager', [$this, 'handle_update_school_cover_manager']);
         add_action('admin_post_cmn_school_rebook_candidate', [$this, 'handle_school_rebook_candidate']);
         add_action('admin_post_cmn_priority_allocation_send', [$this, 'handle_priority_allocation_send']);
         add_action('admin_post_cmn_priority_interest_register', [$this, 'handle_priority_interest_register']);
@@ -23866,6 +23867,306 @@ final class CMN_One_Plugin {
         return $this->render_staff_shell('dashboard', $inner);
     }
 
+    private function render_staff_compact_school_console_list($config = []) {
+        $query = (isset($config['query']) && $config['query'] instanceof WP_Query) ? $config['query'] : new WP_Query([
+            'post_type' => 'cmn_school',
+            'post__in' => [0],
+        ]);
+        $portal_url = isset($config['portal_url']) ? (string) $config['portal_url'] : $this->get_portal_base_url();
+        $status = sanitize_key((string) ($config['status'] ?? ''));
+        $search = sanitize_text_field((string) ($config['search'] ?? ''));
+        $bucket = sanitize_key((string) ($config['bucket'] ?? ''));
+        $manager_id = (int) ($config['manager_id'] ?? 0);
+        $location_filter = sanitize_text_field((string) ($config['location_filter'] ?? ''));
+        $cover_manager_filter = sanitize_text_field((string) ($config['cover_manager_filter'] ?? ''));
+        $tier_filter = sanitize_key((string) ($config['tier_filter'] ?? ''));
+        $redirect_url = esc_url_raw((string) ($config['redirect_url'] ?? $portal_url));
+        $import_message = sanitize_text_field((string) ($config['import_message'] ?? ''));
+        $import_note = sanitize_text_field((string) ($config['import_note'] ?? ''));
+        $manager_users = isset($config['manager_users']) && is_array($config['manager_users']) ? $config['manager_users'] : [];
+        $variant = sanitize_key((string) ($config['variant'] ?? 'leads'));
+        $is_clients_view = ($variant === 'clients');
+
+        $title = $is_clients_view ? 'Schools' : 'School Leads';
+        $subtitle = $is_clients_view
+            ? 'Client schools with operational contact, coverage status, and agreement access.'
+            : 'Lead pipeline with direct contact quality and ownership controls.';
+        $view_for_filters = $is_clients_view ? 'schools' : 'leads';
+        $add_label = $is_clients_view ? 'Add School' : 'Add Lead';
+
+        $clear_args = ['view' => $view_for_filters];
+        if ($is_clients_view) {
+            $clear_args['cmn_status'] = 'client';
+        }
+        if ($bucket !== '') {
+            $clear_args['cmn_bucket'] = $bucket;
+        }
+        $clear_url = add_query_arg($clear_args, $portal_url);
+        $add_args = [
+            'view' => 'schools',
+            'cmn_panel' => 'add',
+            'cmn_status' => $is_clients_view ? 'client' : 'lead',
+        ];
+        if ($bucket !== '') {
+            $add_args['cmn_bucket'] = $bucket;
+        }
+        $add_url = add_query_arg($add_args, $portal_url);
+
+        $status_options = $is_clients_view
+            ? [
+                '' => 'All statuses',
+                'client' => 'Client',
+                'rejected' => 'Rejected',
+                'archived' => 'Archived',
+            ]
+            : [
+                '' => 'All statuses',
+                'lead' => 'Lead',
+                'needs_attention' => 'Needs Attention',
+                'client' => 'Client',
+            ];
+
+        $tier_options = [
+            '' => 'All tiers',
+            'standard' => 'Standard',
+            'bronze' => 'Bronze',
+            'silver' => 'Silver',
+            'gold' => 'Gold',
+            'elite' => 'Elite',
+        ];
+
+        ob_start();
+        ?>
+        <section class="cmn-schools-console-page cmn-ui-page<?php echo $is_clients_view ? ' is-clients' : ' is-leads'; ?>">
+            <header class="cmn-school-header cmn-schools-console-header">
+                <div class="cmn-header-row">
+                    <div>
+                        <h2><?php echo esc_html($title); ?></h2>
+                        <p><?php echo esc_html($subtitle); ?></p>
+                    </div>
+                    <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($add_url); ?>"><?php echo esc_html($add_label); ?></a>
+                </div>
+            </header>
+
+            <?php if ($import_message !== '') : ?>
+                <div class="cmn-panel-card">
+                    <strong><?php echo esc_html($import_note !== '' ? $import_note : $import_message); ?></strong>
+                </div>
+            <?php endif; ?>
+
+            <form method="get" class="cmn-filters cmn-schools-console-filters">
+                <input type="hidden" name="view" value="<?php echo esc_attr($view_for_filters); ?>">
+                <?php if ($bucket !== '') : ?>
+                    <input type="hidden" name="cmn_bucket" value="<?php echo esc_attr($bucket); ?>">
+                <?php endif; ?>
+                <label>
+                    <span>Search</span>
+                    <input type="search" name="q" placeholder="Search school, contact, email or phone" value="<?php echo esc_attr($search); ?>">
+                </label>
+                <label>
+                    <span>Status</span>
+                    <select name="cmn_status">
+                        <?php foreach ($status_options as $status_key => $status_label) : ?>
+                            <option value="<?php echo esc_attr($status_key); ?>"<?php selected($status, $status_key); ?>><?php echo esc_html($status_label); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <?php if ($is_clients_view) : ?>
+                    <label>
+                        <span>Region</span>
+                        <input type="text" name="cmn_location" value="<?php echo esc_attr($location_filter); ?>" placeholder="e.g. London">
+                    </label>
+                    <label>
+                        <span>Tier</span>
+                        <select name="cmn_tier">
+                            <?php foreach ($tier_options as $tier_key => $tier_label) : ?>
+                                <option value="<?php echo esc_attr($tier_key); ?>"<?php selected($tier_filter, $tier_key); ?>><?php echo esc_html($tier_label); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                <?php else : ?>
+                    <label>
+                        <span>Cover Manager</span>
+                        <input type="text" name="cmn_cover_manager" value="<?php echo esc_attr($cover_manager_filter); ?>" placeholder="Filter by cover manager">
+                    </label>
+                    <label>
+                        <span>Account Manager</span>
+                        <select name="cmn_manager">
+                            <option value="0">All account managers</option>
+                            <?php foreach ($manager_users as $manager_user) : ?>
+                                <?php
+                                if (!($manager_user instanceof WP_User)) {
+                                    continue;
+                                }
+                                ?>
+                                <option value="<?php echo esc_attr((string) $manager_user->ID); ?>"<?php selected($manager_id, (int) $manager_user->ID); ?>>
+                                    <?php echo esc_html((string) $manager_user->display_name); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                <?php endif; ?>
+                <div class="cmn-schools-console-filter-actions">
+                    <button class="cmn-primary cmn-btn-mini" type="submit">Apply</button>
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($clear_url); ?>">Clear</a>
+                </div>
+            </form>
+
+            <div class="cmn-table-scroll cmn-schools-console-table-wrap">
+                <table class="cmn-approval-table cmn-schools-console-table">
+                    <thead>
+                        <tr>
+                            <th>School Name</th>
+                            <?php if ($is_clients_view) : ?><th>Location</th><?php endif; ?>
+                            <th>Cover Manager</th>
+                            <th>Phone</th>
+                            <th>Email</th>
+                            <th>Last Contacted</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    $rendered_count = 0;
+                    foreach ((array) $query->posts as $school_post_obj) :
+                        $school_post_id = (int) ($school_post_obj instanceof WP_Post ? $school_post_obj->ID : $school_post_obj);
+                        if ($school_post_id < 1 || get_post_type($school_post_id) !== 'cmn_school') {
+                            continue;
+                        }
+
+                        $partner_row = $this->get_school_partner_record($school_post_id);
+                        $tier_key = $this->normalize_school_partner_lifetime_tier((string) ($partner_row['tier'] ?? 'standard'));
+                        if ($is_clients_view && $tier_filter !== '' && $tier_key !== $tier_filter) {
+                            continue;
+                        }
+
+                        $school_name = (string) get_the_title($school_post_id);
+                        $school_code = (string) get_post_meta($school_post_id, 'cmn_school_id', true);
+                        $location_value = (string) get_post_meta($school_post_id, 'cmn_location', true);
+                        $status_value = sanitize_key((string) get_post_meta($school_post_id, 'cmn_status', true));
+                        if ($status_value === '') {
+                            $status_value = 'lead';
+                        }
+                        $status_label = ucwords(str_replace('_', ' ', $status_value));
+                        $status_chip_class = 'is-pending';
+                        if ($status_value === 'client') {
+                            $status_chip_class = 'is-verified';
+                        } elseif (in_array($status_value, ['rejected', 'archived'], true)) {
+                            $status_chip_class = 'is-declined';
+                        }
+
+                        $contact_summary = $this->get_school_primary_contact_summary($school_post_id);
+                        $school_phone = trim((string) ($contact_summary['phone'] ?? ''));
+                        if ($school_phone === '') {
+                            $school_phone = trim((string) get_post_meta($school_post_id, 'cmn_phone', true));
+                        }
+                        $school_email = sanitize_email((string) ($contact_summary['email'] ?? ''));
+                        if ($school_email === '') {
+                            $school_email = sanitize_email((string) get_post_meta($school_post_id, 'cmn_email', true));
+                        }
+                        $cover_manager_name = trim((string) get_post_meta($school_post_id, 'cmn_cover_manager', true));
+                        if ($cover_manager_name === '') {
+                            $cover_manager_name = trim((string) get_post_meta($school_post_id, 'cmn_cover_manager_name', true));
+                        }
+                        $cover_manager_email = sanitize_email((string) get_post_meta($school_post_id, 'cmn_cover_manager_email', true));
+                        $contact_warning = ($school_phone === '' && $school_email === '');
+                        $last_activity_summary = $this->get_school_last_activity_summary($school_post_id);
+                        $last_contacted = (string) ($last_activity_summary['label'] ?? '');
+                        $last_contacted_detail = (string) ($last_activity_summary['detail'] ?? '');
+                        if ($last_contacted === '') {
+                            $last_contacted = 'No recent activity';
+                        }
+
+                        $view_args = array_filter([
+                            'view' => 'schools',
+                            'school_id' => $school_code ?: null,
+                            'pid' => $school_post_id,
+                            'cmn_status' => $status ?: null,
+                            'cmn_bucket' => $bucket ?: null,
+                            'cmn_manager' => $manager_id ?: null,
+                            'cmn_location' => $location_filter ?: null,
+                            'cmn_cover_manager' => $cover_manager_filter ?: null,
+                            'cmn_tier' => $tier_filter ?: null,
+                            'q' => $search ?: null,
+                        ]);
+                        $view_url = add_query_arg($view_args, $portal_url);
+                        $agreements_url = add_query_arg(array_filter([
+                            'view' => 'schools',
+                            'school_id' => $school_code ?: null,
+                            'pid' => $school_post_id,
+                            'cmn_school_tab' => 'commercial',
+                        ]), $portal_url);
+                        $rendered_count++;
+                        ?>
+                        <tr>
+                            <td>
+                                <strong><?php echo esc_html($school_name !== '' ? $school_name : ('School #' . $school_post_id)); ?></strong>
+                                <?php if ($school_code !== '') : ?>
+                                    <div class="cmn-table-meta">ID: <?php echo esc_html($school_code); ?></div>
+                                <?php endif; ?>
+                            </td>
+                            <?php if ($is_clients_view) : ?>
+                                <td><?php echo esc_html($location_value !== '' ? $location_value : 'Not set'); ?></td>
+                            <?php endif; ?>
+                            <td class="cmn-schools-console-manager-cell">
+                                <strong><?php echo esc_html($cover_manager_name !== '' ? $cover_manager_name : 'Not set'); ?></strong>
+                                <?php if ($cover_manager_email !== '') : ?>
+                                    <div class="cmn-table-meta"><?php echo esc_html($cover_manager_email); ?></div>
+                                <?php endif; ?>
+                                <details class="cmn-schools-console-manager-editor">
+                                    <summary>Edit</summary>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                        <?php wp_nonce_field('cmn_update_school_cover_manager_' . $school_post_id, 'cmn_update_school_cover_manager_nonce'); ?>
+                                        <input type="hidden" name="action" value="cmn_update_school_cover_manager">
+                                        <input type="hidden" name="cmn_school_id" value="<?php echo esc_attr((string) $school_post_id); ?>">
+                                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
+                                        <input type="text" name="cmn_cover_manager" value="<?php echo esc_attr($cover_manager_name); ?>" placeholder="Cover manager">
+                                        <input type="email" name="cmn_cover_manager_email" value="<?php echo esc_attr($cover_manager_email); ?>" placeholder="manager@school.org">
+                                        <button class="cmn-ghost cmn-btn-mini" type="submit">Save</button>
+                                    </form>
+                                </details>
+                            </td>
+                            <td>
+                                <?php echo esc_html($school_phone !== '' ? $school_phone : 'Not set'); ?>
+                                <?php if ($contact_warning) : ?>
+                                    <div class="cmn-table-meta"><span class="cmn-pill cmn-pill--pending">Missing phone &amp; email</span></div>
+                                <?php endif; ?>
+                            </td>
+                            <td><?php echo esc_html($school_email !== '' ? $school_email : 'Not set'); ?></td>
+                            <td>
+                                <strong><?php echo esc_html($last_contacted); ?></strong>
+                                <?php if ($last_contacted_detail !== '') : ?>
+                                    <div class="cmn-table-meta"><?php echo esc_html($last_contacted_detail); ?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <span class="cmn-status-chip <?php echo esc_attr($status_chip_class); ?>"><?php echo esc_html($status_label); ?></span>
+                                <?php if ($is_clients_view) : ?>
+                                    <div class="cmn-table-meta">Tier: <?php echo esc_html($this->get_school_partner_dashboard_tier_label($tier_key)); ?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td class="cmn-schools-console-actions">
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($view_url); ?>">View profile</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($agreements_url); ?>">Manage agreements</a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if ($rendered_count < 1) : ?>
+                        <tr>
+                            <td colspan="<?php echo $is_clients_view ? '8' : '7'; ?>">
+                                <div class="cmn-empty">No schools found for the selected filters.</div>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <?php
+        return (string) ob_get_clean();
+    }
+
     public function render_staff_schools_shortcode() {
         if (!is_user_logged_in()) {
             return $this->render_login_shortcode();
@@ -24128,6 +24429,11 @@ final class CMN_One_Plugin {
         $stage = isset($_GET['cmn_stage']) ? sanitize_text_field($_GET['cmn_stage']) : '';
         $manager_id = isset($_GET['cmn_manager']) ? intval($_GET['cmn_manager']) : 0;
         $location_filter = isset($_GET['cmn_location']) ? sanitize_text_field($_GET['cmn_location']) : '';
+        $cover_manager_filter = isset($_GET['cmn_cover_manager']) ? sanitize_text_field((string) $_GET['cmn_cover_manager']) : '';
+        $tier_filter = isset($_GET['cmn_tier']) ? sanitize_key((string) $_GET['cmn_tier']) : '';
+        if (!in_array($tier_filter, ['', 'standard', 'bronze', 'silver', 'gold', 'elite'], true)) {
+            $tier_filter = '';
+        }
         $lead_group_filter = isset($_GET['cmn_lead_group']) ? $this->sanitize_lead_group_slug((string) $_GET['cmn_lead_group']) : '';
         $last_activity_filter = isset($_GET['cmn_last_activity']) ? sanitize_key((string) $_GET['cmn_last_activity']) : '';
         if (!in_array($last_activity_filter, ['', 'inactive_30'], true)) {
@@ -24241,6 +24547,21 @@ final class CMN_One_Plugin {
             }
             $meta_query[] = $manager_query;
         }
+        if ($cover_manager_filter !== '') {
+            $meta_query[] = [
+                'relation' => 'OR',
+                [
+                    'key' => 'cmn_cover_manager',
+                    'value' => $cover_manager_filter,
+                    'compare' => 'LIKE',
+                ],
+                [
+                    'key' => 'cmn_cover_manager_name',
+                    'value' => $cover_manager_filter,
+                    'compare' => 'LIKE',
+                ],
+            ];
+        }
         if ($lead_group_filter !== '') {
             $meta_query[] = [
                 'key' => 'cmn_lead_groups_csv',
@@ -24340,6 +24661,8 @@ final class CMN_One_Plugin {
             'cmn_stage' => $stage ?: null,
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
+            'cmn_cover_manager' => $cover_manager_filter ?: null,
+            'cmn_tier' => $tier_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
             'cmn_last_activity' => $last_activity_filter ?: null,
             'q' => $search ?: null,
@@ -24367,6 +24690,12 @@ final class CMN_One_Plugin {
         if ($location_filter !== '') {
             $filter_count++;
         }
+        if ($cover_manager_filter !== '') {
+            $filter_count++;
+        }
+        if ($tier_filter !== '') {
+            $filter_count++;
+        }
         if ($lead_group_filter !== '') {
             $filter_count++;
         }
@@ -24381,6 +24710,8 @@ final class CMN_One_Plugin {
             'cmn_stage' => $stage ?: null,
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
+            'cmn_cover_manager' => $cover_manager_filter ?: null,
+            'cmn_tier' => $tier_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
             'cmn_last_activity' => $last_activity_filter ?: null,
             'q' => $search ?: null,
@@ -24393,6 +24724,8 @@ final class CMN_One_Plugin {
             'cmn_stage' => $stage ?: null,
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
+            'cmn_cover_manager' => $cover_manager_filter ?: null,
+            'cmn_tier' => $tier_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
             'cmn_last_activity' => $last_activity_filter ?: null,
             'q' => $search ?: null,
@@ -24426,6 +24759,31 @@ final class CMN_One_Plugin {
         $schools_bulk_form_classes = 'cmn-bulk-form' . ($is_all_schools_view ? ' cmn-bulk-form--all' : '');
         $schools_table_classes = 'cmn-approval-table cmn-schools-table' . ($is_all_schools_view ? ' cmn-schools-table--all' : '');
         $schools_heading = $is_all_schools_view ? 'All Schools' : 'Schools CRM';
+        $compact_variant = '';
+        if ($view === 'leads' || $bucket === 'sales') {
+            $compact_variant = 'leads';
+        } elseif ($view === 'clients' || $bucket === 'clients' || $status === 'client') {
+            $compact_variant = 'clients';
+        }
+        if ($compact_variant !== '') {
+            $compact_inner = $this->render_staff_compact_school_console_list([
+                'query' => $query,
+                'portal_url' => $portal_url,
+                'status' => $status,
+                'search' => $search,
+                'bucket' => $bucket,
+                'manager_id' => $manager_id,
+                'location_filter' => $location_filter,
+                'cover_manager_filter' => $cover_manager_filter,
+                'tier_filter' => $tier_filter,
+                'redirect_url' => $redirect_url,
+                'import_message' => $import_message,
+                'import_note' => $import_note,
+                'manager_users' => $manager_users,
+                'variant' => $compact_variant,
+            ]);
+            return $this->render_staff_shell($active_nav, $compact_inner);
+        }
 
         ob_start();
         ?>
@@ -95538,6 +95896,58 @@ p{margin:0;line-height:1.5}
             $school_code = get_post_meta($school_id, 'cmn_school_id', true);
             wp_redirect(add_query_arg(['view' => 'schools', 'school_id' => $school_code], $portal_url));
         }
+        exit;
+    }
+
+    public function handle_update_school_cover_manager() {
+        if (!is_user_logged_in() || !$this->is_staff_user()) {
+            wp_die('Unauthorized');
+        }
+        $school_id = isset($_POST['cmn_school_id']) ? (int) $_POST['cmn_school_id'] : 0;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            wp_die('Invalid school.');
+        }
+        $nonce = isset($_POST['cmn_update_school_cover_manager_nonce']) ? (string) $_POST['cmn_update_school_cover_manager_nonce'] : '';
+        if (!wp_verify_nonce($nonce, 'cmn_update_school_cover_manager_' . $school_id)) {
+            wp_die('Invalid request.');
+        }
+        $current_user_id = (int) get_current_user_id();
+        if (!$this->user_can_access_school($school_id, $current_user_id)) {
+            wp_die('Unauthorized');
+        }
+
+        $cover_manager_name = sanitize_text_field((string) ($_POST['cmn_cover_manager'] ?? ''));
+        $cover_manager_email = sanitize_email((string) ($_POST['cmn_cover_manager_email'] ?? ''));
+
+        if ($cover_manager_name === '') {
+            delete_post_meta($school_id, 'cmn_cover_manager');
+            delete_post_meta($school_id, 'cmn_cover_manager_name');
+            update_post_meta($school_id, 'cmn_cover_manager_first_name', '');
+            update_post_meta($school_id, 'cmn_cover_manager_last_name', '');
+        } else {
+            update_post_meta($school_id, 'cmn_cover_manager', $cover_manager_name);
+            update_post_meta($school_id, 'cmn_cover_manager_name', $cover_manager_name);
+            $this->store_cover_manager_split($school_id, $cover_manager_name);
+        }
+
+        if ($cover_manager_email !== '') {
+            update_post_meta($school_id, 'cmn_cover_manager_email', $cover_manager_email);
+        } else {
+            delete_post_meta($school_id, 'cmn_cover_manager_email');
+        }
+
+        $this->add_audit_log('school_cover_manager_updated', 'school', (string) $school_id, [
+            'cover_manager' => $cover_manager_name,
+            'cover_manager_email' => $cover_manager_email,
+            'updated_by' => $current_user_id,
+        ]);
+
+        $redirect = isset($_POST['cmn_redirect']) ? esc_url_raw((string) wp_unslash($_POST['cmn_redirect'])) : '';
+        if ($redirect === '') {
+            $redirect = wp_get_referer() ?: add_query_arg(['view' => 'schools'], $this->get_portal_base_url());
+        }
+        $redirect = add_query_arg(['cmn_import_msg' => rawurlencode('Cover manager updated.')], $redirect);
+        wp_safe_redirect($redirect);
         exit;
     }
 

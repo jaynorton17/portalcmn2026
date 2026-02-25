@@ -11852,6 +11852,101 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   border: 1px solid rgba(208, 142, 42, 0.5);
 }
 
+.cmn-schools-console-page {
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-schools-console-header p {
+  margin: 4px 0 0;
+  color: rgba(203, 213, 225, 0.84);
+}
+
+.cmn-schools-console-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) repeat(3, minmax(160px, 0.75fr)) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(12, 18, 30, 0.74);
+}
+
+.cmn-schools-console-filters label {
+  display: grid;
+  gap: 6px;
+}
+
+.cmn-schools-console-filters label > span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(191, 201, 217, 0.74);
+  font-weight: 640;
+}
+
+.cmn-schools-console-filter-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cmn-schools-console-table-wrap {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(10, 15, 24, 0.68);
+}
+
+.cmn-schools-console-table {
+  min-width: 1080px;
+}
+
+.cmn-schools-console-table th,
+.cmn-schools-console-table td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  vertical-align: top;
+}
+
+.cmn-schools-console-table th {
+  color: rgba(226, 232, 240, 0.94);
+}
+
+.cmn-schools-console-manager-cell {
+  min-width: 220px;
+}
+
+.cmn-schools-console-manager-editor {
+  margin-top: 6px;
+}
+
+.cmn-schools-console-manager-editor > summary {
+  cursor: pointer;
+  color: rgba(248, 250, 252, 0.84);
+  font-size: 11px;
+  user-select: none;
+}
+
+.cmn-schools-console-manager-editor form {
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+}
+
+.cmn-schools-console-manager-editor form :is(input[type="text"], input[type="email"]) {
+  min-height: 32px;
+}
+
+.cmn-schools-console-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 180px;
+}
+
 @media (max-width: 900px) {
   .cmn-school-toolbar {
     padding: 9px;
@@ -11911,10 +12006,23 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   .cmn-bulk-actions button {
     width: 100%;
   }
+
+  .cmn-schools-console-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cmn-schools-console-filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 520px) {
   .cmn-school-toolbar .cmn-toolbar-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-schools-console-filters {
     grid-template-columns: 1fr;
   }
 }
