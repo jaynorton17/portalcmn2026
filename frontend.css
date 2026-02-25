@@ -14418,6 +14418,27 @@ body.cmn-portal-page .cmn-portal-light :is(
   background: rgba(255, 255, 255, 0.03);
 }
 
+body.cmn-portal-page .cmn-portal-light .cmn-candidates-table th,
+body.cmn-portal-page .cmn-portal-light .cmn-candidates-table td {
+  padding: 6px 8px !important;
+  line-height: 1.25;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-candidates-table .cmn-candidate-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-candidates-table .cmn-candidate-row-actions .cmn-ghost,
+body.cmn-portal-page .cmn-portal-light .cmn-candidates-table .cmn-candidate-row-actions .cmn-btn-mini {
+  min-height: 26px !important;
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+  line-height: 1.1 !important;
+}
+
 body.cmn-portal-page .cmn-portal-light :is(.cmn-tabs, .cmn-school-profile-tabs, .cmn-marketing-tabs, .cmn-system-health-tabs, .cmn-booking-tabs, .cmn-staff-candidate-tabs, .cmn-ui-tabs) {
   display: flex;
   align-items: center;
