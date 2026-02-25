@@ -25944,6 +25944,11 @@ final class CMN_One_Plugin {
         $qts_boolean_class = $qts_status === 'yes' ? 'is-true' : 'is-false';
         $available_tomorrow_label = $available_tomorrow ? 'Yes' : 'No';
         $available_tomorrow_class = $available_tomorrow ? 'is-true' : 'is-false';
+        $candidate_feedback_count = (int) ($feedback_summary['feedback_count'] ?? 0);
+        $candidate_feedback_empty = $candidate_feedback_count < 1;
+        $candidate_feedback_avg_label = number_format((float) ($feedback_summary['avg_overall'] ?? 0), 1) . ' / 5';
+        $candidate_feedback_reliability_label = number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 1) . ' / 5';
+        $candidate_feedback_trend_url = $build_candidate_tab_url('feedback') . '#cmn-candidate-feedback-categories';
 
         ob_start();
         ?>
@@ -26010,26 +26015,51 @@ final class CMN_One_Plugin {
                     </div>
                 </div>
             <?php elseif ($active_candidate_tab === 'feedback') : ?>
-                <div class="cmn-dashboard-card">
+                <div class="cmn-dashboard-card cmn-staff-candidate-feedback-summary-card">
                     <div class="cmn-card-header">
                         <h3>Feedback Summary</h3>
-                        <span class="cmn-status-chip">Trend <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></span>
+                        <?php if ($candidate_feedback_empty) : ?>
+                            <span class="cmn-ghost cmn-btn-mini cmn-candidate-feedback-trend-btn is-disabled" aria-disabled="true">View trend</span>
+                        <?php else : ?>
+                            <a class="cmn-ghost cmn-btn-mini cmn-candidate-feedback-trend-btn" href="<?php echo esc_url($candidate_feedback_trend_url); ?>">View trend</a>
+                        <?php endif; ?>
                     </div>
-                    <p>Average rating: <?php echo esc_html(number_format((float) ($feedback_summary['avg_overall'] ?? 0), 2)); ?>/5</p>
-                    <p>Reliability rating: <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 2)); ?>/5</p>
-                    <p>Total feedback count: <?php echo esc_html((string) ((int) ($feedback_summary['feedback_count'] ?? 0))); ?></p>
+                    <div class="cmn-candidate-feedback-summary-rows">
+                        <div class="cmn-candidate-feedback-summary-row">
+                            <span>Average rating</span>
+                            <span class="cmn-pill cmn-candidate-feedback-rating-pill"><?php echo esc_html($candidate_feedback_avg_label); ?></span>
+                        </div>
+                        <div class="cmn-candidate-feedback-summary-row">
+                            <span>Reliability rating</span>
+                            <span class="cmn-pill cmn-candidate-feedback-rating-pill"><?php echo esc_html($candidate_feedback_reliability_label); ?></span>
+                        </div>
+                        <div class="cmn-candidate-feedback-summary-row">
+                            <span>Total feedback count</span>
+                            <strong><?php echo esc_html((string) $candidate_feedback_count); ?></strong>
+                        </div>
+                    </div>
+                    <?php if ($candidate_feedback_empty) : ?>
+                        <section class="cmn-candidate-feedback-empty-state" role="status" aria-live="polite">
+                            <h4>No feedback yet</h4>
+                            <p>Ratings will appear after completed bookings receive school feedback.</p>
+                        </section>
+                    <?php endif; ?>
                 </div>
-                <div class="cmn-dashboard-card cmn-dashboard-card-wide">
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide cmn-staff-candidate-feedback-detail-card" id="cmn-candidate-feedback-categories">
                     <div class="cmn-card-header">
                         <h3>School Feedback (All Entries)</h3>
-                        <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($feedback_rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
+                        <span class="cmn-pill cmn-candidate-feedback-rating-pill"><?php echo esc_html(number_format((float) ($feedback_rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
                     </div>
                     <p class="cmn-muted"><?php echo esc_html((string) ((int) ($feedback_rating_payload['feedback_count'] ?? 0))); ?> total review(s).</p>
-                    <ul class="cmn-status-list">
+                    <ul class="cmn-candidate-feedback-categories">
                         <?php foreach ((array) $feedback_breakdown_rows as $breakdown_row) : ?>
+                            <?php
+                            $breakdown_average = (float) ($breakdown_row['average'] ?? 0);
+                            $breakdown_value = $candidate_feedback_empty ? '—' : number_format($breakdown_average, 1) . '/5';
+                            ?>
                             <li>
-                                <span><?php echo esc_html((string) ($breakdown_row['label'] ?? 'Module')); ?></span>
-                                <strong><?php echo esc_html(number_format((float) ($breakdown_row['average'] ?? 0), 1)); ?>/5</strong>
+                                <span class="cmn-candidate-feedback-category-label"><?php echo esc_html((string) ($breakdown_row['label'] ?? 'Module')); ?></span>
+                                <span class="cmn-pill cmn-candidate-feedback-rating-pill<?php echo $candidate_feedback_empty ? ' is-empty' : ''; ?>"><?php echo esc_html($breakdown_value); ?></span>
                             </li>
                         <?php endforeach; ?>
                     </ul>

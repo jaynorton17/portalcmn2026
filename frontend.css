@@ -9239,6 +9239,117 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   padding-bottom: 2px;
 }
 
+.cmn-staff-candidate-feedback-summary-card,
+.cmn-staff-candidate-feedback-detail-card {
+  padding: 14px 16px !important;
+  gap: 8px;
+}
+
+.cmn-staff-candidate-feedback-summary-card .cmn-card-header,
+.cmn-staff-candidate-feedback-detail-card .cmn-card-header {
+  margin-bottom: 2px;
+}
+
+.cmn-candidate-feedback-trend-btn {
+  min-height: 30px !important;
+  padding: 0 10px !important;
+}
+
+.cmn-candidate-feedback-trend-btn.is-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.cmn-candidate-feedback-summary-rows {
+  display: grid;
+  gap: 6px;
+}
+
+.cmn-candidate-feedback-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 2px 0;
+}
+
+.cmn-candidate-feedback-rating-pill {
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+}
+
+.cmn-candidate-feedback-rating-pill.is-empty {
+  color: rgba(233, 238, 247, 0.68);
+}
+
+.cmn-candidate-feedback-empty-state {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-candidate-feedback-empty-state::before {
+  content: "☆";
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #d2d9e6;
+}
+
+.cmn-candidate-feedback-empty-state h4,
+.cmn-candidate-feedback-empty-state p {
+  margin: 0;
+}
+
+.cmn-candidate-feedback-empty-state h4 {
+  font-size: 14px;
+  color: #edf3ff;
+}
+
+.cmn-candidate-feedback-empty-state p {
+  font-size: 12px;
+  color: rgba(233, 238, 247, 0.76);
+}
+
+.cmn-candidate-feedback-categories {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.cmn-candidate-feedback-categories li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cmn-candidate-feedback-categories li:last-child {
+  border-bottom: 0;
+}
+
+.cmn-candidate-feedback-category-label {
+  color: #e6edf9;
+  font-size: 13px;
+}
+
 .cmn-staff-candidate-profile .cmn-dashboard-card p {
   margin: 0 0 8px;
 }
