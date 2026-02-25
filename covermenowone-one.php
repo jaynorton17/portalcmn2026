@@ -8390,7 +8390,11 @@ final class CMN_One_Plugin {
 
         $active = $active === 'compliance-review' ? 'compliance_review' : $active;
         $is_dashboard_active = ($active === 'dashboard' || $current_view === '' || $current_view === 'dashboard');
-        $is_schools_list_surface = in_array($active, ['schools_leads', 'schools_needs_attention', 'active_clients', 'all_schools', 'rejected_archived'], true);
+        $school_id_query = isset($_GET['school_id']) ? sanitize_text_field(wp_unslash((string) $_GET['school_id'])) : '';
+        $school_pid_query = isset($_GET['pid']) ? (int) $_GET['pid'] : 0;
+        $is_school_profile_view = ($current_view === 'schools' && ($school_id_query !== '' || $school_pid_query > 0));
+        $is_schools_list_view = in_array($current_view, ['schools', 'leads', 'clients'], true) && !$is_school_profile_view;
+        $is_schools_list_surface = $is_schools_list_view || in_array($active, ['schools_leads', 'schools_needs_attention', 'active_clients', 'all_schools', 'rejected_archived'], true);
         $staff_main_classes = ['cmn-school-main', 'cmn-staff-main', 'cmn-page'];
         if ($is_schools_list_surface) {
             $staff_main_classes[] = 'cmn-staff-main--schools-list';
