@@ -25851,13 +25851,37 @@ final class CMN_One_Plugin {
             'Notes' => (string) get_post_meta($candidate_id, 'cmn_notes', true),
         ];
 
+        $allowed_candidate_tabs = ['overview', 'feedback', 'documents', 'compliance', 'activity', 'settings'];
+        $active_candidate_tab = isset($_GET['cmn_candidate_tab']) ? sanitize_key((string) wp_unslash($_GET['cmn_candidate_tab'])) : 'overview';
+        if (!in_array($active_candidate_tab, $allowed_candidate_tabs, true)) {
+            $active_candidate_tab = 'overview';
+        }
+        $build_candidate_tab_url = function ($tab_key) use ($portal_url, $current_view, $candidate_id) {
+            return add_query_arg([
+                'view' => $current_view,
+                'candidate_id' => $candidate_id,
+                'cmn_candidate_tab' => $tab_key,
+            ], $portal_url);
+        };
+        $candidate_status_label = ucfirst(str_replace('_', ' ', $status_value));
+        $candidate_status_chip_class = in_array($status_value, ['approved', 'active'], true) ? 'is-approved' : (in_array($status_value, ['rejected', 'declined'], true) ? 'is-declined' : 'is-pending');
+        $candidate_rating_value = (float) ($feedback_rating_payload['avg_rating'] ?? 0);
+        if ($candidate_rating_value <= 0) {
+            $candidate_rating_value = (float) ($feedback_summary['avg_overall'] ?? 0);
+        }
+        $candidate_rating_value = max(0.0, min(5.0, $candidate_rating_value));
+        $candidate_rating_stars = max(0, min(5, (int) round($candidate_rating_value)));
+        $compliance_verified = in_array(strtolower($verification_status), ['verified', 'approved'], true);
+        $compliance_status_label = $compliance_verified ? 'Verified' : 'Not verified';
+        $compliance_status_chip_class = $compliance_verified ? 'is-approved' : 'is-pending';
+
         ob_start();
         ?>
         <header class="cmn-school-header">
             <div class="cmn-header-row">
                 <div>
                     <h2>Candidate Profile</h2>
-                    <p>Full profile and compliance documents for staff review.</p>
+                    <p>Operational profile summary and tabbed detail views.</p>
                 </div>
                 <a class="cmn-ghost" href="<?php echo esc_url($back_url); ?>">Back to candidates</a>
             </div>
@@ -25877,287 +25901,295 @@ final class CMN_One_Plugin {
             <strong><?php echo esc_html($completion_percent); ?>% Complete</strong>
         </div>
 
+        <nav class="cmn-tabs cmn-staff-candidate-tabs" aria-label="Candidate profile sections">
+            <?php foreach (['overview' => 'Overview', 'feedback' => 'Feedback', 'documents' => 'Documents', 'compliance' => 'Compliance', 'activity' => 'Activity', 'settings' => 'Settings'] as $tab_key => $tab_label) : ?>
+                <a class="cmn-tab<?php echo $active_candidate_tab === $tab_key ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_candidate_tab_url($tab_key)); ?>">
+                    <?php echo esc_html($tab_label); ?>
+                </a>
+            <?php endforeach; ?>
+        </nav>
+
         <div class="cmn-profile-grid cmn-staff-candidate-profile">
-            <div class="cmn-dashboard-card">
-                <div class="cmn-card-header">
-                    <h3>Personal Details</h3>
-                    <span class="cmn-status-chip is-approved"><?php echo esc_html(ucfirst(str_replace('_', ' ', $status_value))); ?></span>
-                </div>
-                <?php if ($feedback_risk_tag === 'urgent') : ?>
-                    <p><span class="cmn-status-chip is-declined">Feedback Risk</span></p>
-                <?php endif; ?>
-                <p><strong><?php echo esc_html($profile_name); ?></strong></p>
-                <p><?php echo esc_html($profile_email ?: 'Email not set'); ?></p>
-                <p><?php echo esc_html($profile_phone ?: 'Phone not set'); ?></p>
-                <p>Location: <?php echo esc_html($location ?: 'Not set'); ?></p>
-                <p>Postcode: <?php echo esc_html($postcode ?: 'Not set'); ?></p>
-            </div>
-
-            <div class="cmn-dashboard-card">
-                <div class="cmn-card-header">
-                    <h3>Role & Preferences</h3>
-                    <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>"><?php echo esc_html($doc_summary['badge_label']); ?></span>
-                </div>
-                <p>Role Type: <?php echo esc_html($role_type ?: 'Not set'); ?></p>
-                <p>Travel Radius: <?php echo esc_html($travel_radius ?: 'Not set'); ?></p>
-                <p>QTS: <?php echo esc_html($qts_status_label); ?></p>
-                <p>Available tomorrow: <?php echo esc_html($available_tomorrow ? 'Yes' : 'No'); ?></p>
-                <p>Next available date: <?php echo esc_html($next_available_label); ?></p>
-                <p>Planner summary: <?php echo esc_html($available_count); ?> available / <?php echo esc_html($unavailable_count); ?> unavailable</p>
-            </div>
-            <div class="cmn-dashboard-card cmn-dashboard-card-wide">
-                <div class="cmn-card-header">
-                    <h3>Role Rates (Staff Only)</h3>
-                    <span class="cmn-status-chip">School charge vs candidate pay</span>
-                </div>
-                <?php if (!empty($candidate_role_labels)) : ?>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-role-rate-form">
-                        <?php wp_nonce_field('cmn_staff_save_candidate_role_rates', 'cmn_staff_save_candidate_role_rates_nonce'); ?>
-                        <input type="hidden" name="action" value="cmn_staff_save_candidate_role_rates">
-                        <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                        <table class="cmn-role-rate-table">
-                            <thead><tr><th>Role</th><th>School charge (GBP)</th><th>Candidate day rate (GBP)</th></tr></thead>
-                            <tbody>
-                                <?php foreach ($candidate_role_labels as $role_label_row) : ?>
-                                    <?php $role_key_row = sanitize_title((string) $role_label_row); ?>
-                                    <?php $role_rate_row = $candidate_role_rate_map[$role_key_row] ?? ['school_charge_rate' => 0, 'candidate_pay_rate' => 0]; ?>
-                                    <tr>
-                                        <td><?php echo esc_html((string) $role_label_row); ?></td>
-                                        <td><input type="number" min="0" step="0.01" name="cmn_role_rates[<?php echo esc_attr($role_key_row); ?>][school_charge_rate]" value="<?php echo esc_attr((float) ($role_rate_row['school_charge_rate'] ?? 0) > 0 ? number_format((float) $role_rate_row['school_charge_rate'], 2, '.', '') : ''); ?>"></td>
-                                        <td><input type="number" min="0" step="0.01" name="cmn_role_rates[<?php echo esc_attr($role_key_row); ?>][candidate_pay_rate]" value="<?php echo esc_attr((float) ($role_rate_row['candidate_pay_rate'] ?? 0) > 0 ? number_format((float) $role_rate_row['candidate_pay_rate'], 2, '.', '') : ''); ?>"></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                        <p class="cmn-muted">Candidate can never see school charge. Schools only see school charge. Staff/admin can see both.</p>
-                        <button class="cmn-primary" type="submit">Save role rates</button>
-                    </form>
-                <?php else : ?>
-                    <p class="cmn-muted">No candidate roles found yet. Add roles in candidate profile/registration to set per-role pricing.</p>
-                <?php endif; ?>
-            </div>
-
-            <div class="cmn-dashboard-card">
-                <div class="cmn-card-header">
-                    <h3>Feedback Summary</h3>
-
-                    <span class="cmn-status-chip">Trend <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></span>
-                </div>
-                <p>Average rating: <?php echo esc_html(number_format((float) ($feedback_summary['avg_overall'] ?? 0), 2)); ?>/5</p>
-                <p>Reliability rating: <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 2)); ?>/5</p>
-                <p>Total feedback count: <?php echo esc_html((string) ((int) ($feedback_summary['feedback_count'] ?? 0))); ?></p>
-            </div>
-
-            <div class="cmn-dashboard-card cmn-dashboard-card-wide">
-                <div class="cmn-card-header">
-                    <h3>School Feedback (All Entries)</h3>
-                    <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($feedback_rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
-                </div>
-                <p class="cmn-muted"><?php echo esc_html((string) ((int) ($feedback_rating_payload['feedback_count'] ?? 0))); ?> total review(s).</p>
-                <ul class="cmn-status-list">
-                    <?php foreach ((array) $feedback_breakdown_rows as $breakdown_row) : ?>
-                        <li>
-                            <span><?php echo esc_html((string) ($breakdown_row['label'] ?? 'Module')); ?></span>
-                            <strong><?php echo esc_html(number_format((float) ($breakdown_row['average'] ?? 0), 1)); ?>/5</strong>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-                <?php if ($feedback_entry_rows) : ?>
-                    <div class="cmn-list">
-                        <?php foreach ($feedback_entry_rows as $entry_row) : ?>
-                            <?php
-                            $entry_booking_date_display = '';
-                            if (!empty($entry_row['booking_date'])) {
-                                $entry_booking_date_display = date_i18n('D j M Y', strtotime((string) $entry_row['booking_date']));
-                            }
-                            ?>
-                            <div class="cmn-list-item">
-                                <div class="cmn-card-header">
-                                    <strong><?php echo esc_html((string) ($entry_row['school_name'] ?? 'School')); ?></strong>
-                                    <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($entry_row['average_rating'] ?? 0), 1)); ?>/5</span>
-                                </div>
-                                <p class="cmn-muted">
-                                    Booking <?php echo esc_html((int) ($entry_row['booking_id'] ?? 0) > 0 ? ('#' . (int) ($entry_row['booking_id'] ?? 0)) : '—'); ?>
-                                    <?php if ($entry_booking_date_display !== '') : ?>
-                                        • <?php echo esc_html($entry_booking_date_display); ?>
-                                    <?php endif; ?>
-                                </p>
-                                <ul class="cmn-status-list">
-                                    <?php foreach ((array) ($entry_row['module_scores'] ?? []) as $module_row) : ?>
-                                        <li>
-                                            <span><?php echo esc_html((string) ($module_row['label'] ?? 'Module')); ?></span>
-                                            <strong><?php echo esc_html((string) ((int) ($module_row['score'] ?? 0))); ?>/5</strong>
-                                        </li>
-                                    <?php endforeach; ?>
-                                </ul>
-                                <?php if (!empty($entry_row['comments'])) : ?>
-                                    <p class="cmn-muted"><?php echo esc_html((string) $entry_row['comments']); ?></p>
-                                <?php endif; ?>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else : ?>
-                    <div class="cmn-empty">No school feedback entries yet.</div>
-                <?php endif; ?>
-            </div>
-
-            <div class="cmn-dashboard-card cmn-dashboard-card-wide">
-                <div class="cmn-card-header">
-                    <h3>Full Registration Snapshot</h3>
-                </div>
-                <div class="cmn-profile-meta-grid">
-                    <?php foreach ($profile_snapshot as $label => $value) : ?>
-                        <div class="cmn-profile-meta-item">
-                            <span class="cmn-profile-meta-label"><?php echo esc_html($label); ?></span>
-                            <strong class="cmn-profile-meta-value"><?php echo esc_html($value !== '' ? $value : 'Not set'); ?></strong>
+            <?php if ($active_candidate_tab === 'overview') : ?>
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide cmn-staff-candidate-overview-card">
+                    <div class="cmn-card-header">
+                        <div>
+                            <h3 class="cmn-staff-candidate-overview-name"><?php echo esc_html($profile_name); ?></h3>
                         </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-
-            <div class="cmn-dashboard-card cmn-compliance-status">
-                <div class="cmn-card-header">
-                    <h3>Compliance Status</h3>
-                    <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>"><?php echo esc_html($doc_summary['badge_label']); ?></span>
-                </div>
-                <div class="cmn-compliance-progress">
-                    <div class="cmn-compliance-progress-head">
-                        <span>Compliance Score</span>
-                        <strong><?php echo esc_html((string) ((int) ($compliance_status_payload['score'] ?? 0))); ?>%</strong>
+                        <div class="cmn-staff-candidate-overview-head">
+                            <span class="cmn-status-chip <?php echo esc_attr($candidate_status_chip_class); ?>"><?php echo esc_html($candidate_status_label); ?></span>
+                            <a class="cmn-staff-candidate-rating-link" href="<?php echo esc_url($build_candidate_tab_url('feedback')); ?>" title="<?php echo esc_attr(number_format($candidate_rating_value, 1)); ?>/5">
+                                <span class="cmn-staff-candidate-rating-stars" aria-hidden="true">
+                                    <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
+                                        <span class="cmn-staff-candidate-rating-star<?php echo $star_i <= $candidate_rating_stars ? ' is-active' : ''; ?>">★</span>
+                                    <?php endfor; ?>
+                                </span>
+                            </a>
+                        </div>
                     </div>
-                    <div class="cmn-progress-bar cmn-compliance-progress-bar">
-                        <span style="width: <?php echo esc_attr((int) ($compliance_status_payload['score'] ?? 0)); ?>%;"></span>
+                    <div class="cmn-meta-grid cmn-meta-grid--staff-candidate-overview">
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Location</span><strong class="cmn-profile-meta-value"><?php echo esc_html($location !== '' ? $location : 'Not set'); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Postcode</span><strong class="cmn-profile-meta-value"><?php echo esc_html($postcode !== '' ? $postcode : 'Not set'); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Role Type</span><strong class="cmn-profile-meta-value"><?php echo esc_html($role_type !== '' ? $role_type : 'Not set'); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Travel Radius</span><strong class="cmn-profile-meta-value"><?php echo esc_html($travel_radius !== '' ? $travel_radius : 'Not set'); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">QTS</span><strong class="cmn-profile-meta-value"><?php echo esc_html($qts_status_label); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Next Available Date</span><strong class="cmn-profile-meta-value"><?php echo esc_html($next_available_label); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Available Tomorrow</span><strong class="cmn-profile-meta-value"><?php echo esc_html($available_tomorrow ? 'Yes' : 'No'); ?></strong></div>
+                        <div class="cmn-profile-meta-item"><span class="cmn-profile-meta-label">Compliance Status</span><strong class="cmn-profile-meta-value"><span class="cmn-status-chip <?php echo esc_attr($compliance_status_chip_class); ?>"><?php echo esc_html($compliance_status_label); ?></span></strong></div>
                     </div>
                 </div>
-                <p>
-                    <span class="cmn-status-chip <?php echo esc_attr((string) ($compliance_status_payload['risk_badge_class'] ?? 'is-pending')); ?>">
-                        Risk: <?php echo esc_html((string) ($compliance_status_payload['risk_level'] ?? 'Medium')); ?>
-                    </span>
-                </p>
-                <ul class="cmn-status-list">
-                    <li class="<?php echo ($docs['dbs']['status']['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>">DBS <?php echo esc_html($docs['dbs']['status']['status_label'] ?? 'Not Uploaded'); ?></li>
-                    <li class="<?php echo ($docs['id']['status']['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>">ID <?php echo esc_html($docs['id']['status']['status_label'] ?? 'Not Uploaded'); ?></li>
-                    <li class="<?php echo ($docs['cv']['status']['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>">CV <?php echo esc_html($docs['cv']['status']['status_label'] ?? 'Not Uploaded'); ?></li>
-                </ul>
-                <details>
-                    <summary>Why this score?</summary>
+            <?php elseif ($active_candidate_tab === 'feedback') : ?>
+                <div class="cmn-dashboard-card">
+                    <div class="cmn-card-header">
+                        <h3>Feedback Summary</h3>
+                        <span class="cmn-status-chip">Trend <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></span>
+                    </div>
+                    <p>Average rating: <?php echo esc_html(number_format((float) ($feedback_summary['avg_overall'] ?? 0), 2)); ?>/5</p>
+                    <p>Reliability rating: <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 2)); ?>/5</p>
+                    <p>Total feedback count: <?php echo esc_html((string) ((int) ($feedback_summary['feedback_count'] ?? 0))); ?></p>
+                </div>
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide">
+                    <div class="cmn-card-header">
+                        <h3>School Feedback (All Entries)</h3>
+                        <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($feedback_rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
+                    </div>
+                    <p class="cmn-muted"><?php echo esc_html((string) ((int) ($feedback_rating_payload['feedback_count'] ?? 0))); ?> total review(s).</p>
                     <ul class="cmn-status-list">
-                        <?php foreach ((array) ($compliance_status_payload['breakdown'] ?? []) as $score_item) : ?>
+                        <?php foreach ((array) $feedback_breakdown_rows as $breakdown_row) : ?>
                             <li>
-                                <?php echo esc_html((string) ($score_item['label'] ?? 'Item')); ?>:
-                                <?php echo esc_html((string) ($score_item['value'] ?? '')); ?>
-                                (<?php echo esc_html((string) ((int) ($score_item['points'] ?? 0))); ?>/<?php echo esc_html((string) ((int) ($score_item['max_points'] ?? 0))); ?>)
+                                <span><?php echo esc_html((string) ($breakdown_row['label'] ?? 'Module')); ?></span>
+                                <strong><?php echo esc_html(number_format((float) ($breakdown_row['average'] ?? 0), 1)); ?>/5</strong>
                             </li>
                         <?php endforeach; ?>
                     </ul>
-                </details>
-            </div>
-
-            <div class="cmn-dashboard-card cmn-doc-upload-card cmn-dashboard-card-wide" id="candidate-documents">
-                <div class="cmn-card-header">
-                    <h3>Uploaded Documents</h3>
-                </div>
-                <div class="cmn-doc-actions">
-                    <?php foreach ($docs as $doc_type => $doc) : ?>
-                        <?php
-                        $doc_status = $doc['status'];
-                        $is_uploaded = !empty($doc_status['uploaded']);
-                        ?>
-                        <div class="cmn-doc-card cmn-doc-tile">
-                            <div class="cmn-doc-card-head">
-                                <strong><?php echo esc_html($doc['label']); ?></strong>
-                                <span class="cmn-status-chip <?php echo esc_attr($doc_status['badge_class'] ?? ($is_uploaded ? 'is-pending' : 'is-declined')); ?>"><?php echo esc_html($doc_status['status_label'] ?? ($is_uploaded ? 'Pending Review' : 'Not Uploaded')); ?></span>
-                            </div>
-                            <div class="cmn-doc-card-meta">
-                                <div class="cmn-doc-line"><?php echo esc_html($is_uploaded ? ($doc_status['filename'] ?: 'Uploaded file') : 'Not uploaded'); ?></div>
-                                <div class="cmn-doc-subline">
-                                    <span><?php echo esc_html($doc_status['uploaded_at_label'] ?: '-'); ?></span>
-                                    <span><?php echo esc_html($doc_status['filesize_label'] ?: '-'); ?></span>
-                                </div>
-                                <?php if (!empty($doc_status['review_reason']) && ($doc_status['doc_status'] ?? '') === 'rejected') : ?>
-                                    <div class="cmn-doc-subline"><span>Reason: <?php echo esc_html($doc_status['review_reason']); ?></span></div>
-                                <?php endif; ?>
-                            </div>
-                            <div class="cmn-doc-buttons">
-                                <?php $doc_visibility = $this->get_candidate_doc_visibility($candidate_id, (string) $doc_type); ?>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form">
-                                    <?php wp_nonce_field('cmn_staff_set_candidate_doc_visibility', 'cmn_staff_set_candidate_doc_visibility_nonce'); ?>
-                                    <input type="hidden" name="action" value="cmn_staff_set_candidate_doc_visibility">
-                                    <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                                    <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
-                                    <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
-                                    <label style="display:block;font-size:12px;margin-bottom:6px;">Visibility</label>
-                                    <select name="visibility">
-                                        <option value="staff"<?php selected($doc_visibility, 'staff'); ?>>Staff only</option>
-                                        <option value="all"<?php selected($doc_visibility, 'all'); ?>>Visible to all</option>
-                                    </select>
-                                    <div class="cmn-doc-review-actions" style="margin-top:8px;">
-                                        <button class="cmn-ghost" type="submit">Save visibility</button>
+                    <?php if ($feedback_entry_rows) : ?>
+                        <div class="cmn-list">
+                            <?php foreach ($feedback_entry_rows as $entry_row) : ?>
+                                <?php
+                                $entry_booking_date_display = '';
+                                if (!empty($entry_row['booking_date'])) {
+                                    $entry_booking_date_display = date_i18n('D j M Y', strtotime((string) $entry_row['booking_date']));
+                                }
+                                ?>
+                                <div class="cmn-list-item">
+                                    <div class="cmn-card-header">
+                                        <strong><?php echo esc_html((string) ($entry_row['school_name'] ?? 'School')); ?></strong>
+                                        <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($entry_row['average_rating'] ?? 0), 1)); ?>/5</span>
                                     </div>
-                                </form>
-                                <?php if ($is_uploaded && !empty($doc['download_url'])) : ?>
-                                    <a class="cmn-ghost cmn-doc-link" href="<?php echo esc_url($doc['download_url']); ?>" target="_blank" rel="noopener noreferrer">View / Download</a>
-                                    <?php if (in_array((string) $doc_type, ['cv', 'cv_formatted'], true)) : ?>
-                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form" onsubmit="return confirm('Delete this CV document?');">
-                                            <?php wp_nonce_field('cmn_staff_delete_candidate_doc', 'cmn_staff_delete_candidate_doc_nonce'); ?>
-                                            <input type="hidden" name="action" value="cmn_staff_delete_candidate_doc">
-                                            <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                                            <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
-                                            <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
-                                            <button class="cmn-ghost" type="submit">Delete</button>
-                                        </form>
+                                    <p class="cmn-muted">
+                                        Booking <?php echo esc_html((int) ($entry_row['booking_id'] ?? 0) > 0 ? ('#' . (int) ($entry_row['booking_id'] ?? 0)) : '—'); ?>
+                                        <?php if ($entry_booking_date_display !== '') : ?>
+                                            • <?php echo esc_html($entry_booking_date_display); ?>
+                                        <?php endif; ?>
+                                    </p>
+                                    <ul class="cmn-status-list">
+                                        <?php foreach ((array) ($entry_row['module_scores'] ?? []) as $module_row) : ?>
+                                            <li>
+                                                <span><?php echo esc_html((string) ($module_row['label'] ?? 'Module')); ?></span>
+                                                <strong><?php echo esc_html((string) ((int) ($module_row['score'] ?? 0))); ?>/5</strong>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                    <?php if (!empty($entry_row['comments'])) : ?>
+                                        <p class="cmn-muted"><?php echo esc_html((string) $entry_row['comments']); ?></p>
                                     <?php endif; ?>
-                                    <?php if (($doc_status['doc_status'] ?? '') !== 'approved') : ?>
-                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form">
-                                            <?php wp_nonce_field('cmn_staff_review_candidate_doc', 'cmn_staff_review_candidate_doc_nonce'); ?>
-                                            <input type="hidden" name="action" value="cmn_staff_review_candidate_doc">
-                                            <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                                            <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
-                                            <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
-                                            <textarea name="review_reason" rows="2" placeholder="Reason (only used for rejection)"></textarea>
-                                            <div class="cmn-doc-review-actions">
-                                                <button class="cmn-primary" type="submit" name="review_action" value="approved">Approve</button>
-                                                <button class="cmn-ghost" type="submit" name="review_action" value="rejected">Reject</button>
-                                            </div>
-                                        </form>
-                                    <?php endif; ?>
-                                <?php else : ?>
-                                    <span class="cmn-muted">No file uploaded</span>
-                                <?php endif; ?>
-                            </div>
+                                </div>
+                            <?php endforeach; ?>
                         </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-
-            <div class="cmn-dashboard-card cmn-dashboard-card-wide">
-                <div class="cmn-card-header">
-                    <h3>Internal Candidate Notes</h3>
-                    <span class="cmn-muted">Staff/Admin only</span>
-                </div>
-                <form class="cmn-doc-review-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                    <?php wp_nonce_field('cmn_add_candidate_internal_note', 'cmn_add_candidate_internal_note_nonce'); ?>
-                    <input type="hidden" name="action" value="cmn_add_candidate_internal_note">
-                    <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                    <textarea name="note" rows="3" placeholder="Add private note for internal team..." required></textarea>
-                    <div class="cmn-doc-review-actions">
-                        <button class="cmn-primary" type="submit">Add Note</button>
-                    </div>
-                </form>
-                <div class="cmn-list">
-                    <?php if (!$internal_notes) : ?>
-                        <div class="cmn-empty">No internal notes yet.</div>
                     <?php else : ?>
-                        <?php foreach ($internal_notes as $note_item) : ?>
-                            <div class="cmn-list-item">
-                                <strong><?php echo esc_html((string) ($note_item['author_name'] ?? 'Staff')); ?></strong>
-                                <span class="cmn-muted"><?php echo esc_html((string) ($note_item['created_at_label'] ?? '')); ?></span>
-                                <div><?php echo esc_html((string) ($note_item['note'] ?? '')); ?></div>
-                            </div>
-                        <?php endforeach; ?>
+                        <div class="cmn-empty">No school feedback entries yet.</div>
                     <?php endif; ?>
                 </div>
-            </div>
+            <?php elseif ($active_candidate_tab === 'documents') : ?>
+                <div class="cmn-dashboard-card cmn-doc-upload-card cmn-dashboard-card-wide" id="candidate-documents">
+                    <div class="cmn-card-header">
+                        <h3>Uploaded Documents</h3>
+                    </div>
+                    <div class="cmn-doc-actions">
+                        <?php foreach ($docs as $doc_type => $doc) : ?>
+                            <?php
+                            $doc_status = $doc['status'];
+                            $is_uploaded = !empty($doc_status['uploaded']);
+                            ?>
+                            <div class="cmn-doc-card cmn-doc-tile">
+                                <div class="cmn-doc-card-head">
+                                    <strong><?php echo esc_html($doc['label']); ?></strong>
+                                    <span class="cmn-status-chip <?php echo esc_attr($doc_status['badge_class'] ?? ($is_uploaded ? 'is-pending' : 'is-declined')); ?>"><?php echo esc_html($doc_status['status_label'] ?? ($is_uploaded ? 'Pending Review' : 'Not Uploaded')); ?></span>
+                                </div>
+                                <div class="cmn-doc-card-meta">
+                                    <div class="cmn-doc-line"><?php echo esc_html($is_uploaded ? ($doc_status['filename'] ?: 'Uploaded file') : 'Not uploaded'); ?></div>
+                                    <div class="cmn-doc-subline">
+                                        <span><?php echo esc_html($doc_status['uploaded_at_label'] ?: '-'); ?></span>
+                                        <span><?php echo esc_html($doc_status['filesize_label'] ?: '-'); ?></span>
+                                    </div>
+                                    <?php if (!empty($doc_status['review_reason']) && ($doc_status['doc_status'] ?? '') === 'rejected') : ?>
+                                        <div class="cmn-doc-subline"><span>Reason: <?php echo esc_html($doc_status['review_reason']); ?></span></div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="cmn-doc-buttons">
+                                    <?php $doc_visibility = $this->get_candidate_doc_visibility($candidate_id, (string) $doc_type); ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form">
+                                        <?php wp_nonce_field('cmn_staff_set_candidate_doc_visibility', 'cmn_staff_set_candidate_doc_visibility_nonce'); ?>
+                                        <input type="hidden" name="action" value="cmn_staff_set_candidate_doc_visibility">
+                                        <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
+                                        <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
+                                        <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
+                                        <label style="display:block;font-size:12px;margin-bottom:6px;">Visibility</label>
+                                        <select name="visibility">
+                                            <option value="staff"<?php selected($doc_visibility, 'staff'); ?>>Staff only</option>
+                                            <option value="all"<?php selected($doc_visibility, 'all'); ?>>Visible to all</option>
+                                        </select>
+                                        <div class="cmn-doc-review-actions" style="margin-top:8px;">
+                                            <button class="cmn-ghost" type="submit">Save visibility</button>
+                                        </div>
+                                    </form>
+                                    <?php if ($is_uploaded && !empty($doc['download_url'])) : ?>
+                                        <a class="cmn-ghost cmn-doc-link" href="<?php echo esc_url($doc['download_url']); ?>" target="_blank" rel="noopener noreferrer">View / Download</a>
+                                        <?php if (in_array((string) $doc_type, ['cv', 'cv_formatted'], true)) : ?>
+                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form" onsubmit="return confirm('Delete this CV document?');">
+                                                <?php wp_nonce_field('cmn_staff_delete_candidate_doc', 'cmn_staff_delete_candidate_doc_nonce'); ?>
+                                                <input type="hidden" name="action" value="cmn_staff_delete_candidate_doc">
+                                                <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
+                                                <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
+                                                <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
+                                                <button class="cmn-ghost" type="submit">Delete</button>
+                                            </form>
+                                        <?php endif; ?>
+                                        <?php if (($doc_status['doc_status'] ?? '') !== 'approved') : ?>
+                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-doc-review-form">
+                                                <?php wp_nonce_field('cmn_staff_review_candidate_doc', 'cmn_staff_review_candidate_doc_nonce'); ?>
+                                                <input type="hidden" name="action" value="cmn_staff_review_candidate_doc">
+                                                <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
+                                                <input type="hidden" name="return_view" value="<?php echo esc_attr($return_view); ?>">
+                                                <input type="hidden" name="doc_type" value="<?php echo esc_attr($doc_type); ?>">
+                                                <textarea name="review_reason" rows="2" placeholder="Reason (only used for rejection)"></textarea>
+                                                <div class="cmn-doc-review-actions">
+                                                    <button class="cmn-primary" type="submit" name="review_action" value="approved">Approve</button>
+                                                    <button class="cmn-ghost" type="submit" name="review_action" value="rejected">Reject</button>
+                                                </div>
+                                            </form>
+                                        <?php endif; ?>
+                                    <?php else : ?>
+                                        <span class="cmn-muted">No file uploaded</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php elseif ($active_candidate_tab === 'compliance') : ?>
+                <div class="cmn-dashboard-card cmn-compliance-status">
+                    <div class="cmn-card-header">
+                        <h3>Compliance Status</h3>
+                        <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>"><?php echo esc_html($doc_summary['badge_label']); ?></span>
+                    </div>
+                    <div class="cmn-compliance-progress">
+                        <div class="cmn-compliance-progress-head">
+                            <span>Compliance Score</span>
+                            <strong><?php echo esc_html((string) ((int) ($compliance_status_payload['score'] ?? 0))); ?>%</strong>
+                        </div>
+                        <div class="cmn-progress-bar cmn-compliance-progress-bar">
+                            <span style="width: <?php echo esc_attr((int) ($compliance_status_payload['score'] ?? 0)); ?>%;"></span>
+                        </div>
+                    </div>
+                    <p>
+                        <span class="cmn-status-chip <?php echo esc_attr((string) ($compliance_status_payload['risk_badge_class'] ?? 'is-pending')); ?>">
+                            Risk: <?php echo esc_html((string) ($compliance_status_payload['risk_level'] ?? 'Medium')); ?>
+                        </span>
+                    </p>
+                    <ul class="cmn-status-list">
+                        <li class="<?php echo ($docs['dbs']['status']['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>">DBS <?php echo esc_html($docs['dbs']['status']['status_label'] ?? 'Not Uploaded'); ?></li>
+                        <li class="<?php echo ($docs['id']['status']['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>">ID <?php echo esc_html($docs['id']['status']['status_label'] ?? 'Not Uploaded'); ?></li>
+                        <li class="<?php echo ($docs['cv']['status']['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>">CV <?php echo esc_html($docs['cv']['status']['status_label'] ?? 'Not Uploaded'); ?></li>
+                    </ul>
+                    <details>
+                        <summary>Why this score?</summary>
+                        <ul class="cmn-status-list">
+                            <?php foreach ((array) ($compliance_status_payload['breakdown'] ?? []) as $score_item) : ?>
+                                <li>
+                                    <?php echo esc_html((string) ($score_item['label'] ?? 'Item')); ?>:
+                                    <?php echo esc_html((string) ($score_item['value'] ?? '')); ?>
+                                    (<?php echo esc_html((string) ((int) ($score_item['points'] ?? 0))); ?>/<?php echo esc_html((string) ((int) ($score_item['max_points'] ?? 0))); ?>)
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </details>
+                </div>
+            <?php elseif ($active_candidate_tab === 'activity') : ?>
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide">
+                    <div class="cmn-card-header">
+                        <h3>Internal Candidate Notes</h3>
+                        <span class="cmn-muted">Staff/Admin only</span>
+                    </div>
+                    <form class="cmn-doc-review-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php wp_nonce_field('cmn_add_candidate_internal_note', 'cmn_add_candidate_internal_note_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_add_candidate_internal_note">
+                        <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
+                        <textarea name="note" rows="3" placeholder="Add private note for internal team..." required></textarea>
+                        <div class="cmn-doc-review-actions">
+                            <button class="cmn-primary" type="submit">Add Note</button>
+                        </div>
+                    </form>
+                    <div class="cmn-list">
+                        <?php if (!$internal_notes) : ?>
+                            <div class="cmn-empty">No internal notes yet.</div>
+                        <?php else : ?>
+                            <?php foreach ($internal_notes as $note_item) : ?>
+                                <div class="cmn-list-item">
+                                    <strong><?php echo esc_html((string) ($note_item['author_name'] ?? 'Staff')); ?></strong>
+                                    <span class="cmn-muted"><?php echo esc_html((string) ($note_item['created_at_label'] ?? '')); ?></span>
+                                    <div><?php echo esc_html((string) ($note_item['note'] ?? '')); ?></div>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php elseif ($active_candidate_tab === 'settings') : ?>
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide">
+                    <div class="cmn-card-header">
+                        <h3>Role Rates (Staff Only)</h3>
+                        <span class="cmn-status-chip">School charge vs candidate pay</span>
+                    </div>
+                    <?php if (!empty($candidate_role_labels)) : ?>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-role-rate-form">
+                            <?php wp_nonce_field('cmn_staff_save_candidate_role_rates', 'cmn_staff_save_candidate_role_rates_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_staff_save_candidate_role_rates">
+                            <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
+                            <table class="cmn-role-rate-table">
+                                <thead><tr><th>Role</th><th>School charge (GBP)</th><th>Candidate day rate (GBP)</th></tr></thead>
+                                <tbody>
+                                    <?php foreach ($candidate_role_labels as $role_label_row) : ?>
+                                        <?php $role_key_row = sanitize_title((string) $role_label_row); ?>
+                                        <?php $role_rate_row = $candidate_role_rate_map[$role_key_row] ?? ['school_charge_rate' => 0, 'candidate_pay_rate' => 0]; ?>
+                                        <tr>
+                                            <td><?php echo esc_html((string) $role_label_row); ?></td>
+                                            <td><input type="number" min="0" step="0.01" name="cmn_role_rates[<?php echo esc_attr($role_key_row); ?>][school_charge_rate]" value="<?php echo esc_attr((float) ($role_rate_row['school_charge_rate'] ?? 0) > 0 ? number_format((float) $role_rate_row['school_charge_rate'], 2, '.', '') : ''); ?>"></td>
+                                            <td><input type="number" min="0" step="0.01" name="cmn_role_rates[<?php echo esc_attr($role_key_row); ?>][candidate_pay_rate]" value="<?php echo esc_attr((float) ($role_rate_row['candidate_pay_rate'] ?? 0) > 0 ? number_format((float) $role_rate_row['candidate_pay_rate'], 2, '.', '') : ''); ?>"></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                            <p class="cmn-muted">Candidate can never see school charge. Schools only see school charge. Staff/admin can see both.</p>
+                            <button class="cmn-primary" type="submit">Save role rates</button>
+                        </form>
+                    <?php else : ?>
+                        <p class="cmn-muted">No candidate roles found yet. Add roles in candidate profile/registration to set per-role pricing.</p>
+                    <?php endif; ?>
+                </div>
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide">
+                    <div class="cmn-card-header">
+                        <h3>Full Registration Snapshot</h3>
+                    </div>
+                    <div class="cmn-profile-meta-grid">
+                        <?php foreach ($profile_snapshot as $label => $value) : ?>
+                            <div class="cmn-profile-meta-item">
+                                <span class="cmn-profile-meta-label"><?php echo esc_html($label); ?></span>
+                                <strong class="cmn-profile-meta-value"><?php echo esc_html($value !== '' ? $value : 'Not set'); ?></strong>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();
@@ -39757,7 +39789,8 @@ final class CMN_One_Plugin {
             $status_raw = trim((string) $meta('cmn_status'));
             $status_display = $status_raw !== '' ? $status_raw : 'pending';
             $status_key = sanitize_key($status_display);
-            $is_lead_profile = in_array($status_key, ['lead', 'needs_attention'], true);
+            $pipeline_stage_raw = sanitize_key((string) $meta('cmn_pipeline_stage'));
+            $is_lead_profile = false;
 
             error_log('[CMN_SCHOOL_VIEW] ' . wp_json_encode([
                 'stage' => 'meta_loaded',
@@ -39810,6 +39843,7 @@ final class CMN_One_Plugin {
                 || $request_note !== ''
                 || $latest_school_reply !== ''
             );
+            $is_lead_profile = $this->is_school_lead_like_status($status_key, $pipeline_stage_raw, $request_status);
             $assigned_manager_id = (int) $meta('cmn_account_manager_user');
             if ($assigned_manager_id < 1) {
                 $assigned_manager_id = (int) $meta('cmn_account_manager_user_id');
@@ -39880,9 +39914,16 @@ final class CMN_One_Plugin {
                 return add_query_arg(array_merge($tab_base_query, ['cmn_school_tab' => $tab_key]), $portal_url);
             };
             $profile_issues = [];
+            $lead_requires_location_verification = $is_lead_profile && $this->school_requires_location_verification($school_id);
             if ($is_lead_profile) {
                 if (!$this->school_lead_has_contact_method($school_id)) {
-                    $profile_issues[] = 'Missing contact method (add email or phone)';
+                    $profile_issues[] = 'Missing contact details';
+                }
+                if ($lead_requires_location_verification && $school_postcode === '') {
+                    $profile_issues[] = 'Postcode missing';
+                }
+                if ($lead_requires_location_verification && !$school_coords) {
+                    $profile_issues[] = 'Location not verified';
                 }
             } else {
                 if ($missing_profile_fields) {
@@ -39986,7 +40027,6 @@ final class CMN_One_Plugin {
             if ($details_manager_or_contact === '' && $assigned_manager_name !== '') {
                 $details_manager_or_contact = $assigned_manager_name;
             }
-            $pipeline_stage_raw = sanitize_key((string) $meta('cmn_pipeline_stage'));
             $pipeline_stage_label = $pipeline_stage_raw !== '' ? ucwords(str_replace('_', ' ', $pipeline_stage_raw)) : 'Not set';
             $feedback_avg_overall = (float) ($feedback_summary['avg_overall'] ?? 0);
             $feedback_count = (int) ($feedback_summary['feedback_count'] ?? 0);
@@ -60227,6 +60267,50 @@ final class CMN_One_Plugin {
             $value = sanitize_text_field($value);
         }
         return trim((string) $value);
+    }
+
+    private function is_school_lead_like_status($status_key, $pipeline_stage_key = '', $request_status = '') {
+        $status_key = sanitize_key((string) $status_key);
+        $pipeline_stage_key = sanitize_key((string) $pipeline_stage_key);
+        $request_status = sanitize_key((string) $request_status);
+
+        if (in_array($status_key, ['lead', 'new_lead', 'application', 'needs_attention'], true)) {
+            return true;
+        }
+        if ($status_key === '' && in_array($pipeline_stage_key, ['new_lead'], true)) {
+            return true;
+        }
+        if ($status_key === 'pending' && in_array($request_status, ['pending', 'more_info_needed'], true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function school_requires_location_verification($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return false;
+        }
+
+        $raw_flags = [
+            get_post_meta($school_id, 'cmn_requires_location_verification', true),
+            get_post_meta($school_id, 'requires_location_verification', true),
+        ];
+        foreach ($raw_flags as $raw_flag) {
+            $value = strtolower(trim((string) $raw_flag));
+            if ($value === '') {
+                continue;
+            }
+            if (in_array($value, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($value, ['0', 'false', 'no', 'off'], true)) {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private function school_lead_has_contact_method($school_id) {

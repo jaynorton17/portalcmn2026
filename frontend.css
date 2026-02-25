@@ -8942,6 +8942,58 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   align-items: stretch;
 }
 
+.cmn-staff-candidate-tabs {
+  margin: 0 0 12px;
+}
+
+.cmn-staff-candidate-overview-card .cmn-card-header {
+  align-items: flex-start;
+}
+
+.cmn-staff-candidate-overview-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-staff-candidate-overview-name {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.cmn-staff-candidate-rating-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 11, 17, 0.88);
+}
+
+.cmn-staff-candidate-rating-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.cmn-staff-candidate-rating-star {
+  font-size: 13px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.24);
+}
+
+.cmn-staff-candidate-rating-star.is-active {
+  color: #d02a2a;
+}
+
+.cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
 .cmn-staff-candidate-progress {
   margin-bottom: 14px;
 }
