@@ -4287,14 +4287,24 @@ document.addEventListener('DOMContentLoaded', function () {
       return String(candidate && candidate.status_class ? candidate.status_class : 'is-not-responded');
     };
     var buildCandidateCard = function (candidate, idx) {
-      var name = String(candidate.name || 'Candidate');
+      var fullName = String(candidate.name || 'Candidate').trim();
+      var firstName = String(candidate.first_name || '').trim();
+      if (!firstName) {
+        firstName = fullName.split(/\s+/).filter(Boolean)[0] || 'Candidate';
+      }
       var roleLine = String(candidate.role_line || 'Cover Supervisor • HLTA');
       var ratingValue = String(candidate.rating_value || '0.0');
+      var ratingFloat = parseFloat(candidate.rating_float || ratingValue || '0');
+      if (!isFinite(ratingFloat) || ratingFloat < 0) {
+        ratingFloat = 0;
+      }
       var reviewCount = parseInt(candidate.review_count || 0, 10);
       var reviewLabel = reviewCount > 0 ? ('(' + reviewCount + ')') : '(0)';
+      var roundedStars = Math.max(0, Math.min(5, Math.round(ratingFloat)));
       var distance = String(candidate.distance_label || 'Distance unknown');
       var statusLabel = cardStatusLabel(candidate);
       var statusClass = cardStatusClass(candidate);
+      var stateCardClass = statusLabel === 'AVAILABLE NOW' ? 'is-available-state' : 'is-not-responded-state';
       var availabilityLabel = String(candidate.availability_label || 'Awaiting response');
       var confirmedAt = String(candidate.confirmed_at || '').trim();
       var availabilityText = confirmedAt ? (availabilityLabel + ' • Confirmed at ' + confirmedAt) : availabilityLabel;
@@ -4309,17 +4319,20 @@ document.addEventListener('DOMContentLoaded', function () {
       var profileUrl = String(candidate.profile_url || '#');
       var skills = Array.isArray(candidate.skills) ? candidate.skills.slice(0, 3) : ['Classroom Management', 'Communication', 'First Aid'];
       var statusAria = statusLabel === 'AVAILABLE NOW' ? 'Candidate available now' : 'Candidate not responded yet';
+      var starsHtml = '<span class="cmn-live-stars" aria-hidden="true">' + [0, 1, 2, 3, 4].map(function (starIndex) {
+        return '<span class="' + (starIndex < roundedStars ? 'is-on' : 'is-off') + '">★</span>';
+      }).join('') + '</span>';
       var offerTimerHtml = hasOpenOffer && offerExpiresAt
         ? '<div class="cmn-live-offer-timer" data-live-offer-expires="' + offerExpiresAt.replace(/"/g, '&quot;') + '" role="status" aria-live="polite" aria-label="Offer expires in --:--">Offer expires in --:--</div>'
         : '<div class="cmn-live-offer-timer is-hidden" aria-hidden="true"></div>';
       return '' +
-        '<article class="cmn-live-match-card" data-live-card data-live-index="' + idx + '" data-candidate-id="' + String(candidate.candidate_id || candidate.id || 0) + '">' +
+        '<article class="cmn-live-match-card ' + stateCardClass + '" data-live-card data-live-index="' + idx + '" data-candidate-id="' + String(candidate.candidate_id || candidate.id || 0) + '" data-live-state="' + String(statusLabel).toLowerCase().replace(/\s+/g, '_') + '">' +
           '<div class="cmn-live-match-card__head">' +
-            '<div class="cmn-live-match-card__avatar"><img src="' + avatarUrl.replace(/"/g, '&quot;') + '" alt="' + name.replace(/"/g, '&quot;') + '"></div>' +
+            '<div class="cmn-live-match-card__avatar"><img src="' + avatarUrl.replace(/"/g, '&quot;') + '" alt="' + fullName.replace(/"/g, '&quot;') + '"></div>' +
             '<div class="cmn-live-match-card__identity">' +
-              '<h3>' + name + ' <span class="cmn-live-verified" aria-label="Verified">✓</span></h3>' +
+              '<h3>' + firstName + ' <span class="cmn-live-verified" aria-label="Verified">✓</span></h3>' +
               '<p class="cmn-live-role-line">' + roleLine + '</p>' +
-              '<p class="cmn-live-rating">★ ' + ratingValue + ' <span>' + reviewLabel + '</span></p>' +
+              '<p class="cmn-live-rating">' + starsHtml + ' <strong>' + ratingValue + '</strong> <span>' + reviewLabel + '</span></p>' +
             '</div>' +
             '<div class="cmn-live-match-card__meta">' +
               '<span class="cmn-live-status ' + statusClass + '" aria-label="' + statusAria + '">' + statusLabel + '</span>' +
@@ -4336,11 +4349,11 @@ document.addEventListener('DOMContentLoaded', function () {
           offerTimerHtml +
           '<div class="cmn-live-match-card__actions">' +
             '<button type="button" class="cmn-primary cmn-btn-mini" data-live-book-now' + (requestEnabled && !hasOpenOffer ? '' : ' disabled') + '>' + (hasOpenOffer ? 'Offer sent' : 'Book Now') + '</button>' +
-            '<button type="button" class="cmn-ghost cmn-btn-mini' + (shortlistActive ? ' is-active' : '') + '" data-live-shortlist>' + (shortlistActive ? 'Shortlisted' : 'Shortlist') + '</button>' +
-            '<a class="cmn-ghost cmn-btn-mini" href="' + profileUrl.replace(/"/g, '&quot;') + '" data-live-view-profile>View Profile</a>' +
+            '<button type="button" class="cmn-ghost cmn-btn-mini' + (shortlistActive ? ' is-active' : '') + '" data-live-shortlist><span class="cmn-live-btn-icon" aria-hidden="true">✋</span>' + (shortlistActive ? 'Shortlisted' : 'Shortlist') + '</button>' +
             '<button type="button" class="cmn-live-not-interested cmn-btn-mini" data-live-not-interested>Not Interested</button>' +
+            '<a class="cmn-ghost cmn-btn-mini cmn-live-view-profile" href="' + profileUrl.replace(/"/g, '&quot;') + '" data-live-view-profile>View Profile</a>' +
           '</div>' +
-          '<div class="cmn-live-side-cta" aria-hidden="true">View Candidate</div>' +
+          '<div class="cmn-live-side-cta" aria-hidden="true">View Profile</div>' +
           '<div class="cmn-live-card-message" data-live-card-msg></div>' +
         '</article>';
     };

@@ -40161,6 +40161,7 @@ final class CMN_One_Plugin {
                 </button>
                 <a class="cmn-ghost cmn-btn-mini cmn-button-link" href="<?php echo esc_url(add_query_arg(['view' => 'staff'], $portal_url)); ?>">Back to Staff</a>
             </div>
+            <p class="cmn-muted">Profiles with a photo are 34% more likely to receive an enquiry.</p>
         </section>
         <section class="cmn-dashboard-card cmn-staff-profile-tabs-card">
             <div class="cmn-staff-profile-tabs" role="tablist" aria-label="Staff profile tabs">
@@ -68748,12 +68749,25 @@ final class CMN_One_Plugin {
                             if ($candidate_name === '') {
                                 $candidate_name = 'Candidate';
                             }
+                            $candidate_first_name = sanitize_text_field((string) ($candidate_row['first_name'] ?? ''));
+                            if ($candidate_first_name === '') {
+                                $name_bits = preg_split('/\s+/', $candidate_name) ?: [];
+                                $candidate_first_name = sanitize_text_field((string) ($name_bits[0] ?? ''));
+                            }
+                            if ($candidate_first_name === '') {
+                                $candidate_first_name = 'Candidate';
+                            }
                             $avatar_url = esc_url((string) ($candidate_row['avatar_url'] ?? ''));
                             $role_line = sanitize_text_field((string) ($candidate_row['role_line'] ?? 'Cover Supervisor • HLTA'));
                             if ($role_line === '') {
                                 $role_line = 'Cover Supervisor • HLTA';
                             }
                             $rating_value = sanitize_text_field((string) ($candidate_row['rating_value'] ?? '0.0'));
+                            $rating_float = (float) ($candidate_row['rating_float'] ?? $rating_value);
+                            if ($rating_float < 0) {
+                                $rating_float = 0;
+                            }
+                            $rating_stars = max(0, min(5, (int) round($rating_float)));
                             $review_count = max(0, (int) ($candidate_row['review_count'] ?? 0));
                             $distance_label = sanitize_text_field((string) ($candidate_row['distance_label'] ?? 'Distance unknown'));
                             $status_label = sanitize_text_field((string) ($candidate_row['status_label'] ?? 'NOT RESPONDED'));
@@ -68761,6 +68775,7 @@ final class CMN_One_Plugin {
                             if (!in_array($status_class, ['is-available', 'is-not-responded'], true)) {
                                 $status_class = 'is-not-responded';
                             }
+                            $state_card_class = strtoupper($status_label) === 'AVAILABLE NOW' ? 'is-available-state' : 'is-not-responded-state';
                             $availability_label = sanitize_text_field((string) ($candidate_row['availability_label'] ?? 'Awaiting response'));
                             $confirmed_at = sanitize_text_field((string) ($candidate_row['confirmed_at'] ?? ''));
                             $availability_text = $confirmed_at !== '' ? ($availability_label . ' • Confirmed at ' . $confirmed_at) : $availability_label;
@@ -68780,7 +68795,7 @@ final class CMN_One_Plugin {
                             $status_aria = strtoupper($status_label) === 'AVAILABLE NOW'
                                 ? 'Candidate available now'
                                 : 'Candidate not responded yet';
-                            $card_classes = 'cmn-live-match-card';
+                            $card_classes = 'cmn-live-match-card ' . $state_card_class;
                             if ($card_index === 0) {
                                 $card_classes .= ' is-active';
                             } else {
@@ -68792,9 +68807,17 @@ final class CMN_One_Plugin {
                                 <div class="cmn-live-match-card__head">
                                     <div class="cmn-live-match-card__avatar"><img src="<?php echo esc_url($avatar_url); ?>" alt="<?php echo esc_attr($candidate_name); ?>"></div>
                                     <div class="cmn-live-match-card__identity">
-                                        <h3><?php echo esc_html($candidate_name); ?> <span class="cmn-live-verified" aria-label="Verified">✓</span></h3>
+                                        <h3><?php echo esc_html($candidate_first_name); ?> <span class="cmn-live-verified" aria-label="Verified">✓</span></h3>
                                         <p class="cmn-live-role-line"><?php echo esc_html($role_line); ?></p>
-                                        <p class="cmn-live-rating">★ <?php echo esc_html($rating_value); ?> <span>(<?php echo esc_html((string) $review_count); ?>)</span></p>
+                                        <p class="cmn-live-rating">
+                                            <span class="cmn-live-stars" aria-hidden="true">
+                                                <?php for ($star_index = 0; $star_index < 5; $star_index++) : ?>
+                                                    <span class="<?php echo $star_index < $rating_stars ? 'is-on' : 'is-off'; ?>">★</span>
+                                                <?php endfor; ?>
+                                            </span>
+                                            <strong><?php echo esc_html($rating_value); ?></strong>
+                                            <span>(<?php echo esc_html((string) $review_count); ?>)</span>
+                                        </p>
                                     </div>
                                     <div class="cmn-live-match-card__meta">
                                         <span class="cmn-live-status <?php echo esc_attr($status_class); ?>" aria-label="<?php echo esc_attr($status_aria); ?>"><?php echo esc_html($status_label); ?></span>
@@ -68815,11 +68838,11 @@ final class CMN_One_Plugin {
                                 <?php endif; ?>
                                 <div class="cmn-live-match-card__actions">
                                     <button type="button" class="cmn-primary cmn-btn-mini" data-live-book-now<?php echo ($request_enabled && !$has_open_offer) ? '' : ' disabled'; ?>><?php echo $has_open_offer ? 'Offer sent' : 'Book Now'; ?></button>
-                                    <button type="button" class="cmn-ghost cmn-btn-mini<?php echo $shortlisted ? ' is-active' : ''; ?>" data-live-shortlist><?php echo $shortlisted ? 'Shortlisted' : 'Shortlist'; ?></button>
-                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url); ?>" data-live-view-profile>View Profile</a>
+                                    <button type="button" class="cmn-ghost cmn-btn-mini<?php echo $shortlisted ? ' is-active' : ''; ?>" data-live-shortlist><span class="cmn-live-btn-icon" aria-hidden="true">✋</span><?php echo $shortlisted ? 'Shortlisted' : 'Shortlist'; ?></button>
                                     <button type="button" class="cmn-live-not-interested cmn-btn-mini" data-live-not-interested>Not Interested</button>
+                                    <a class="cmn-ghost cmn-btn-mini cmn-live-view-profile" href="<?php echo esc_url($profile_url); ?>" data-live-view-profile>View Profile</a>
                                 </div>
-                                <div class="cmn-live-side-cta" aria-hidden="true">View Candidate</div>
+                                <div class="cmn-live-side-cta" aria-hidden="true">View Profile</div>
                                 <div class="cmn-live-card-message" data-live-card-msg></div>
                             </article>
                             <?php
@@ -70987,6 +71010,7 @@ final class CMN_One_Plugin {
                                 <section class="cmn-school-settings-panel<?php echo $active_school_settings_tab === 'profile' ? ' is-active' : ''; ?>"<?php echo $active_school_settings_tab === 'profile' ? '' : ' hidden'; ?>>
                                     <div class="cmn-school-settings-section" data-theme-settings>
                                         <h3>Profile</h3>
+                                        <p class="cmn-muted">Profiles with a photo are 34% more likely to receive an enquiry.</p>
                                         <div class="cmn-school-settings-grid">
                                             <label>School Name
                                                 <input type="text" value="<?php echo esc_attr($settings_school_name !== '' ? $settings_school_name : 'Not set'); ?>" readonly>
@@ -72354,6 +72378,7 @@ final class CMN_One_Plugin {
                             <div class="cmn-candidate-settings-panels">
                                 <section class="cmn-candidate-settings-panel<?php echo $candidate_settings_tab === 'appearance' ? ' is-active' : ''; ?>" data-candidate-settings-panel="appearance"<?php echo $candidate_settings_tab === 'appearance' ? '' : ' hidden'; ?>>
                                     <h3>Appearance</h3>
+                                    <p class="cmn-muted">Profiles with a photo are 34% more likely to receive an enquiry.</p>
                                     <p class="cmn-muted">Choose your portal colour scheme.</p>
                                     <div class="cmn-settings-grid">
                                         <label>Theme
