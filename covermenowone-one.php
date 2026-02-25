@@ -65872,6 +65872,7 @@ final class CMN_One_Plugin {
                 break;
             }
         }
+        $dashboard_candidate_count = count($dashboard_candidate_rows);
         $nav_items = [
             [
                 'key' => 'dashboard',
@@ -66017,7 +66018,7 @@ final class CMN_One_Plugin {
                                 <div class="cmn-card-header">
                                     <div>
                                         <h3>Available / Confirmed Candidates</h3>
-                                        <p class="cmn-muted">Candidates who have confirmed availability appear here first.</p>
+                                        <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> confirmed candidates. Candidates who have confirmed availability appear here first.</p>
                                     </div>
                                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Open Candidates</a>
                                 </div>
@@ -66076,12 +66077,9 @@ final class CMN_One_Plugin {
                                     <div class="cmn-school-dashboard-candidates-empty">
                                         <strong>No confirmed candidates yet.</strong>
                                         <p>When candidates confirm availability, they will appear here automatically.</p>
-                                    </div>
-                                <?php endif; ?>
-                                <?php if ($dashboard_postcode_missing) : ?>
-                                    <div class="cmn-school-dashboard-match-hint">
-                                        <span>Add postcode to improve matching quality and distance ordering.</span>
-                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_settings_url); ?>">Add postcode</a>
+                                        <div class="cmn-settings-actions">
+                                            <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Broadcast request</a>
+                                        </div>
                                     </div>
                                 <?php endif; ?>
                             </article>
@@ -67791,6 +67789,82 @@ final class CMN_One_Plugin {
                             <div class="cmn-register-success"><?php echo esc_html($school_profile_notice); ?></div>
                         <?php endif; ?>
 
+                        <article class="cmn-dashboard-card cmn-school-dashboard-panel cmn-school-dashboard-priority-candidates cmn-school-profile-priority-candidates">
+                            <div class="cmn-card-header">
+                                <div>
+                                    <h3>Available / Confirmed Candidates Right Now</h3>
+                                    <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> candidates confirmed for morning cover.</p>
+                                </div>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Open Candidates</a>
+                            </div>
+                            <?php if ($dashboard_candidate_rows) : ?>
+                                <div class="cmn-table-scroll">
+                                    <table class="cmn-approval-table cmn-school-candidates-table cmn-school-dashboard-candidates-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Candidate</th>
+                                                <th>Role</th>
+                                                <th>Availability</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($dashboard_candidate_rows as $candidate_row) : ?>
+                                                <?php
+                                                $candidate_profile_url = (string) ($candidate_row['profile_url'] ?? '');
+                                                $existing_request_id = (int) ($candidate_row['existing_request_id'] ?? 0);
+                                                $request_enabled = !empty($candidate_row['can_request_booking']);
+                                                ?>
+                                                <tr>
+                                                    <td>
+                                                        <div class="cmn-school-candidates-name">
+                                                            <strong><?php echo esc_html((string) ($candidate_row['name'] ?? 'Candidate')); ?></strong>
+                                                            <?php if (!empty($candidate_row['location'])) : ?>
+                                                                <span><?php echo esc_html((string) $candidate_row['location']); ?></span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </td>
+                                                    <td><?php echo esc_html((string) ($candidate_row['subject'] ?? 'General Cover')); ?></td>
+                                                    <td><span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($candidate_row['availability_label'] ?? 'Available')); ?></span></td>
+                                                    <td class="cmn-school-candidates-actions-cell">
+                                                        <div class="cmn-school-candidates-actions">
+                                                            <?php if ($candidate_profile_url !== '') : ?>
+                                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View profile</a>
+                                                            <?php else : ?>
+                                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View profile</button>
+                                                            <?php endif; ?>
+                                                            <?php if ($request_enabled) : ?>
+                                                                <button class="cmn-primary cmn-btn-mini" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr((int) ($candidate_row['candidate_id'] ?? 0)); ?>" data-request-date="<?php echo esc_attr((string) ($candidate_row['availability_date'] ?? '')); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>>
+                                                                    <?php echo $existing_request_id > 0 ? 'Request sent' : 'Request booking'; ?>
+                                                                </button>
+                                                            <?php else : ?>
+                                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Request booking</button>
+                                                            <?php endif; ?>
+                                                            <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($candidate_row['request_message'] ?? '')); ?></span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php else : ?>
+                                <div class="cmn-school-dashboard-candidates-empty">
+                                    <strong>No confirmed candidates yet.</strong>
+                                    <p>Use candidate search to broadcast your request as soon as possible.</p>
+                                    <div class="cmn-settings-actions">
+                                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Broadcast request</a>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                            <?php if ($dashboard_postcode_missing) : ?>
+                                <div class="cmn-school-dashboard-match-hint">
+                                    <span>Add postcode to improve matching.</span>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_school_profile_tab_url('settings')); ?>">Add postcode</a>
+                                </div>
+                            <?php endif; ?>
+                        </article>
+
                         <nav class="cmn-school-profile-tabs" aria-label="School profile sections" data-school-profile-tabs>
                             <?php foreach ($school_profile_tabs as $tab_key => $tab_label) : ?>
                                 <a class="cmn-school-profile-tab<?php echo $active_school_profile_tab === $tab_key ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_school_profile_tab_url($tab_key)); ?>" data-school-profile-tab="<?php echo esc_attr($tab_key); ?>">
@@ -69079,18 +69153,42 @@ final class CMN_One_Plugin {
                     ?>
                     <?php if ($tab === 'profile') : ?>
                         <?php
-                        $profile_section_tab = sanitize_key((string) ($_GET['profile_section'] ?? 'contact'));
-                        if (!in_array($profile_section_tab, ['contact', 'payment', 'compliance'], true)) {
-                            $profile_section_tab = 'contact';
+                        $profile_section_tab = sanitize_key((string) ($_GET['profile_section'] ?? 'overview'));
+                        $legacy_profile_section_map = [
+                            'contact' => 'overview',
+                            'payment' => 'payments',
+                        ];
+                        if (isset($legacy_profile_section_map[$profile_section_tab])) {
+                            $profile_section_tab = (string) $legacy_profile_section_map[$profile_section_tab];
                         }
+                        $candidate_profile_tabs = [
+                            'overview' => 'Overview',
+                            'address' => 'Address',
+                            'roles' => 'Roles & Preferences',
+                            'documents' => 'Documents',
+                            'payments' => 'Payments',
+                            'compliance' => 'Compliance',
+                        ];
+                        if ($profile_notes !== '') {
+                            $candidate_profile_tabs['admin_notes'] = 'Admin Notes';
+                        }
+                        if (!isset($candidate_profile_tabs[$profile_section_tab])) {
+                            $profile_section_tab = 'overview';
+                        }
+                        $build_candidate_profile_tab_url = static function ($section_key) use ($portal_url) {
+                            return add_query_arg([
+                                'candidate' => 'profile',
+                                'profile_section' => sanitize_key((string) $section_key),
+                            ], $portal_url);
+                        };
                         ?>
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
                             <h2>Profile</h2>
                         </header>
                         <nav class="cmn-candidate-section-tabs" aria-label="Candidate profile sections">
-                            <a class="cmn-candidate-section-tab<?php echo $profile_section_tab === 'contact' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile', 'profile_section' => 'contact'], $portal_url)); ?>">Contact</a>
-                            <a class="cmn-candidate-section-tab<?php echo $profile_section_tab === 'payment' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile', 'profile_section' => 'payment'], $portal_url)); ?>">Payment</a>
-                            <a class="cmn-candidate-section-tab<?php echo $profile_section_tab === 'compliance' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile', 'profile_section' => 'compliance'], $portal_url)); ?>">Compliance</a>
+                            <?php foreach ($candidate_profile_tabs as $candidate_profile_tab_key => $candidate_profile_tab_label) : ?>
+                                <a class="cmn-candidate-section-tab<?php echo $profile_section_tab === $candidate_profile_tab_key ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_candidate_profile_tab_url($candidate_profile_tab_key)); ?>"><?php echo esc_html($candidate_profile_tab_label); ?></a>
+                            <?php endforeach; ?>
                         </nav>
                         <div class="cmn-profile-progress" data-tour-target="profile-sections" data-profile-root>
                             <div class="cmn-profile-progress-main">
@@ -69110,7 +69208,7 @@ final class CMN_One_Plugin {
                             </div>
                         </div>
                         <div class="cmn-profile-grid cmn-profile-grid--candidate-profile">
-                            <div class="cmn-dashboard-card" data-profile-personal-card<?php echo $profile_section_tab !== 'contact' ? ' hidden' : ''; ?>>
+                            <div class="cmn-dashboard-card" data-profile-personal-card<?php echo $profile_section_tab !== 'overview' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Personal Details</h3>
                                 </div>
@@ -69132,10 +69230,6 @@ final class CMN_One_Plugin {
                                             <span class="cmn-profile-definition-label">Nationality</span>
                                             <span class="cmn-profile-definition-value" data-profile-nationality><?php echo esc_html($profile_nationality !== '' ? $profile_nationality : 'Not set'); ?></span>
                                         </div>
-                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
-                                            <span class="cmn-profile-definition-label">Address</span>
-                                            <span class="cmn-profile-definition-value" data-profile-address><?php echo esc_html($profile_address_display); ?></span>
-                                        </div>
                                     </div>
                                 </div>
                                 <form class="cmn-form cmn-inline-edit-form" data-profile-form="personal" hidden>
@@ -69154,33 +69248,10 @@ final class CMN_One_Plugin {
                                     <label>Nationality
                                         <input type="text" name="nationality" value="<?php echo esc_attr($profile_nationality); ?>" placeholder="e.g. British">
                                     </label>
-                                    <label>House / number
-                                        <input type="text" name="house_number" value="<?php echo esc_attr($profile_house_number); ?>">
-                                    </label>
-                                    <label>Address line 1
-                                        <input type="text" name="address_line1" value="<?php echo esc_attr($profile_address_line1); ?>">
-                                    </label>
-                                    <label>Address line 2
-                                        <input type="text" name="address_line2" value="<?php echo esc_attr($profile_address_line2); ?>">
-                                    </label>
-                                    <label>Address line 3
-                                        <input type="text" name="address_line3" value="<?php echo esc_attr($profile_address_line3); ?>">
-                                    </label>
-                                    <label>Town / city
-                                        <input type="text" name="town" value="<?php echo esc_attr($profile_town); ?>">
-                                    </label>
-                                    <label>County
-                                        <input type="text" name="county" value="<?php echo esc_attr($profile_county); ?>">
-                                    </label>
-                                    <label>Post code
-                                        <input type="text" name="postcode" value="<?php echo esc_attr($profile_postcode); ?>">
-                                    </label>
-                                    <label>Notes
-                                        <textarea name="notes" rows="3"><?php echo esc_textarea($profile_notes); ?></textarea>
-                                    </label>
+                                    <input type="hidden" name="notes" value="<?php echo esc_attr($profile_notes); ?>">
                                 </form>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-role-card<?php echo $profile_section_tab !== 'contact' ? ' hidden' : ''; ?>>
+                            <div class="cmn-dashboard-card" data-profile-role-card<?php echo $profile_section_tab !== 'roles' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Role & Preferences</h3>
                                 </div>
@@ -69303,52 +69374,83 @@ final class CMN_One_Plugin {
                                     </fieldset>
                                 </form>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-readonly-only<?php echo $profile_section_tab !== 'contact' ? ' hidden' : ''; ?>>
+                            <div class="cmn-dashboard-card"<?php echo $profile_section_tab !== 'address' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Address</h3>
                                 </div>
-                                <div class="cmn-profile-definition-grid">
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">House / number</span>
-                                        <span class="cmn-profile-definition-value" data-profile-house-number><?php echo esc_html($profile_house_number !== '' ? $profile_house_number : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Address line 1</span>
-                                        <span class="cmn-profile-definition-value" data-profile-address-line1><?php echo esc_html($profile_address_line1 !== '' ? $profile_address_line1 : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Address line 2</span>
-                                        <span class="cmn-profile-definition-value" data-profile-address-line2><?php echo esc_html($profile_address_line2 !== '' ? $profile_address_line2 : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Address line 3</span>
-                                        <span class="cmn-profile-definition-value" data-profile-address-line3><?php echo esc_html($profile_address_line3 !== '' ? $profile_address_line3 : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Town / city</span>
-                                        <span class="cmn-profile-definition-value" data-profile-town><?php echo esc_html($profile_town !== '' ? $profile_town : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">County</span>
-                                        <span class="cmn-profile-definition-value" data-profile-county><?php echo esc_html($profile_county !== '' ? $profile_county : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Postcode</span>
-                                        <span class="cmn-profile-definition-value" data-profile-postcode><?php echo esc_html($profile_postcode !== '' ? $profile_postcode : 'Not set'); ?></span>
+                                <div data-profile-view="address">
+                                    <div class="cmn-profile-definition-grid">
+                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                            <span class="cmn-profile-definition-label">Address summary</span>
+                                            <span class="cmn-profile-definition-value" data-profile-address><?php echo esc_html($profile_address_display); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row">
+                                            <span class="cmn-profile-definition-label">House / number</span>
+                                            <span class="cmn-profile-definition-value" data-profile-house-number><?php echo esc_html($profile_house_number !== '' ? $profile_house_number : 'Not set'); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row">
+                                            <span class="cmn-profile-definition-label">Address line 1</span>
+                                            <span class="cmn-profile-definition-value" data-profile-address-line1><?php echo esc_html($profile_address_line1 !== '' ? $profile_address_line1 : 'Not set'); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row">
+                                            <span class="cmn-profile-definition-label">Address line 2</span>
+                                            <span class="cmn-profile-definition-value" data-profile-address-line2><?php echo esc_html($profile_address_line2 !== '' ? $profile_address_line2 : 'Not set'); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row">
+                                            <span class="cmn-profile-definition-label">Address line 3</span>
+                                            <span class="cmn-profile-definition-value" data-profile-address-line3><?php echo esc_html($profile_address_line3 !== '' ? $profile_address_line3 : 'Not set'); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row">
+                                            <span class="cmn-profile-definition-label">Town / city</span>
+                                            <span class="cmn-profile-definition-value" data-profile-town><?php echo esc_html($profile_town !== '' ? $profile_town : 'Not set'); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row">
+                                            <span class="cmn-profile-definition-label">County</span>
+                                            <span class="cmn-profile-definition-value" data-profile-county><?php echo esc_html($profile_county !== '' ? $profile_county : 'Not set'); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row">
+                                            <span class="cmn-profile-definition-label">Postcode</span>
+                                            <span class="cmn-profile-definition-value" data-profile-postcode><?php echo esc_html($profile_postcode !== '' ? $profile_postcode : 'Not set'); ?></span>
+                                        </div>
                                     </div>
                                 </div>
+                                <form class="cmn-form cmn-inline-edit-form" data-profile-form="address" hidden>
+                                    <label>House / number
+                                        <input type="text" name="house_number" value="<?php echo esc_attr($profile_house_number); ?>">
+                                    </label>
+                                    <label>Address line 1
+                                        <input type="text" name="address_line1" value="<?php echo esc_attr($profile_address_line1); ?>">
+                                    </label>
+                                    <label>Address line 2
+                                        <input type="text" name="address_line2" value="<?php echo esc_attr($profile_address_line2); ?>">
+                                    </label>
+                                    <label>Address line 3
+                                        <input type="text" name="address_line3" value="<?php echo esc_attr($profile_address_line3); ?>">
+                                    </label>
+                                    <label>Town / city
+                                        <input type="text" name="town" value="<?php echo esc_attr($profile_town); ?>">
+                                    </label>
+                                    <label>County
+                                        <input type="text" name="county" value="<?php echo esc_attr($profile_county); ?>">
+                                    </label>
+                                    <label>Postcode
+                                        <input type="text" name="postcode" value="<?php echo esc_attr($profile_postcode); ?>">
+                                    </label>
+                                </form>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-readonly-only<?php echo $profile_section_tab !== 'contact' ? ' hidden' : ''; ?>>
-                                <div class="cmn-card-header">
-                                    <h3>Notes</h3>
-                                </div>
-                                <div class="cmn-profile-definition-grid">
-                                    <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
-                                        <span class="cmn-profile-definition-label">Profile notes</span>
-                                        <span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes !== '' ? $profile_notes : 'Not set'); ?></span>
+                            <?php if ($profile_notes !== '') : ?>
+                                <div class="cmn-dashboard-card" data-profile-readonly-only<?php echo $profile_section_tab !== 'admin_notes' ? ' hidden' : ''; ?>>
+                                    <div class="cmn-card-header">
+                                        <h3>Admin Notes</h3>
+                                    </div>
+                                    <div class="cmn-profile-definition-grid">
+                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                            <span class="cmn-profile-definition-label">Profile notes</span>
+                                            <span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes); ?></span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            <?php endif; ?>
                             <div class="cmn-dashboard-card"<?php echo $profile_section_tab !== 'compliance' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Compliance Status</h3>
@@ -69386,7 +69488,7 @@ final class CMN_One_Plugin {
                                     </ul>
                                 </details>
                             </div>
-                            <div class="cmn-dashboard-card cmn-doc-upload-card"<?php echo $profile_section_tab !== 'compliance' ? ' hidden' : ''; ?>>
+                            <div class="cmn-dashboard-card cmn-doc-upload-card"<?php echo $profile_section_tab !== 'documents' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Documents Upload</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>"><?php echo esc_html($doc_summary['badge_label']); ?></span>
@@ -69470,7 +69572,7 @@ final class CMN_One_Plugin {
                                     <div class="cmn-muted" data-doc-message></div>
                                 </div>
                             </div>
-                            <div class="cmn-dashboard-card cmn-dashboard-card-wide"<?php echo $profile_section_tab !== 'payment' ? ' hidden' : ''; ?>>
+                            <div class="cmn-dashboard-card cmn-dashboard-card-wide"<?php echo $profile_section_tab !== 'payments' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Payment</h3>
                                 </div>
