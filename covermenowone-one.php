@@ -60387,6 +60387,51 @@ final class CMN_One_Plugin {
         return date_i18n('l', strtotime($target_date)) . ' morning';
     }
 
+    private function get_candidate_availability_ui_state($availability_allowed, $already_marked, $calendar_blocked, $period_label) {
+        $availability_allowed = (bool) $availability_allowed;
+        $already_marked = (bool) $already_marked;
+        $calendar_blocked = (bool) $calendar_blocked;
+        $period_label = trim((string) $period_label);
+        if ($period_label === '') {
+            $period_label = 'this morning';
+        }
+        $upper_period_label = strtoupper($period_label);
+        $state = [
+            'state_key' => 'unconfirmed',
+            'state_class' => 'is-neutral',
+            'status_text' => 'Not confirmed yet',
+            'primary_label' => "CONFIRM I'M AVAILABLE {$upper_period_label}",
+            'show_primary_action' => true,
+            'show_confirmed_pill' => false,
+            'confirmed_pill_label' => 'AVAILABILITY CONFIRMED',
+            'show_unavailable_action' => false,
+            'unavailable_label' => 'Change to NOT AVAILABLE',
+        ];
+        if ($calendar_blocked) {
+            $state['state_key'] = 'confirmed_not_available';
+            $state['state_class'] = 'is-blocked';
+            $state['status_text'] = "I'm not available";
+            $state['show_primary_action'] = false;
+            return $state;
+        }
+        if ($already_marked) {
+            $state['state_key'] = 'confirmed_available';
+            $state['state_class'] = 'is-confirmed';
+            $state['status_text'] = 'Availability confirmed';
+            $state['show_primary_action'] = false;
+            $state['show_confirmed_pill'] = true;
+            $state['show_unavailable_action'] = true;
+            return $state;
+        }
+        if (!$availability_allowed) {
+            $state['state_key'] = 'window_closed';
+            $state['state_class'] = 'is-window-closed';
+            $state['status_text'] = 'Window closed';
+            return $state;
+        }
+        return $state;
+    }
+
     private function get_morning_window_bounds_for_date_utc($target_date) {
         $target_date = (string) $target_date;
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
@@ -68070,9 +68115,20 @@ final class CMN_One_Plugin {
                     }
                     ?>
                     <?php if ($tab === 'profile') : ?>
+                        <?php
+                        $profile_section_tab = sanitize_key((string) ($_GET['profile_section'] ?? 'contact'));
+                        if (!in_array($profile_section_tab, ['contact', 'payment', 'compliance'], true)) {
+                            $profile_section_tab = 'contact';
+                        }
+                        ?>
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
-                            <h2>Candidate Profile</h2>
+                            <h2>Profile</h2>
                         </header>
+                        <nav class="cmn-candidate-section-tabs" aria-label="Candidate profile sections">
+                            <a class="cmn-candidate-section-tab<?php echo $profile_section_tab === 'contact' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile', 'profile_section' => 'contact'], $portal_url)); ?>">Contact</a>
+                            <a class="cmn-candidate-section-tab<?php echo $profile_section_tab === 'payment' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile', 'profile_section' => 'payment'], $portal_url)); ?>">Payment</a>
+                            <a class="cmn-candidate-section-tab<?php echo $profile_section_tab === 'compliance' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile', 'profile_section' => 'compliance'], $portal_url)); ?>">Compliance</a>
+                        </nav>
                         <div class="cmn-profile-progress" data-tour-target="profile-sections" data-profile-root>
                             <div class="cmn-profile-progress-main">
                                 <span>Profile Completion</span>
@@ -68091,7 +68147,7 @@ final class CMN_One_Plugin {
                             </div>
                         </div>
                         <div class="cmn-profile-grid cmn-profile-grid--candidate-profile">
-                            <div class="cmn-dashboard-card" data-profile-personal-card>
+                            <div class="cmn-dashboard-card" data-profile-personal-card<?php echo $profile_section_tab !== 'contact' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Personal Details</h3>
                                 </div>
@@ -68161,7 +68217,7 @@ final class CMN_One_Plugin {
                                     </label>
                                 </form>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-role-card>
+                            <div class="cmn-dashboard-card" data-profile-role-card<?php echo $profile_section_tab !== 'contact' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Role & Preferences</h3>
                                 </div>
@@ -68284,7 +68340,7 @@ final class CMN_One_Plugin {
                                     </fieldset>
                                 </form>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-readonly-only>
+                            <div class="cmn-dashboard-card" data-profile-readonly-only<?php echo $profile_section_tab !== 'contact' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Address</h3>
                                 </div>
@@ -68319,7 +68375,7 @@ final class CMN_One_Plugin {
                                     </div>
                                 </div>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-readonly-only>
+                            <div class="cmn-dashboard-card" data-profile-readonly-only<?php echo $profile_section_tab !== 'contact' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Notes</h3>
                                 </div>
@@ -68330,7 +68386,7 @@ final class CMN_One_Plugin {
                                     </div>
                                 </div>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-edit-only hidden>
+                            <div class="cmn-dashboard-card"<?php echo $profile_section_tab !== 'compliance' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Compliance Status</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>" data-compliance-status><?php echo esc_html($doc_summary['badge_label']); ?></span>
@@ -68367,7 +68423,7 @@ final class CMN_One_Plugin {
                                     </ul>
                                 </details>
                             </div>
-                            <div class="cmn-dashboard-card cmn-doc-upload-card" data-profile-edit-only hidden>
+                            <div class="cmn-dashboard-card cmn-doc-upload-card"<?php echo $profile_section_tab !== 'compliance' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Documents Upload</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>"><?php echo esc_html($doc_summary['badge_label']); ?></span>
@@ -68451,7 +68507,29 @@ final class CMN_One_Plugin {
                                     <div class="cmn-muted" data-doc-message></div>
                                 </div>
                             </div>
-                            <div class="cmn-dashboard-card cmn-dashboard-card-wide" data-profile-readonly-only>
+                            <div class="cmn-dashboard-card cmn-dashboard-card-wide"<?php echo $profile_section_tab !== 'payment' ? ' hidden' : ''; ?>>
+                                <div class="cmn-card-header">
+                                    <h3>Payment</h3>
+                                </div>
+                                <div class="cmn-profile-definition-grid">
+                                    <div class="cmn-profile-definition-row">
+                                        <span class="cmn-profile-definition-label">Payment schedule</span>
+                                        <span class="cmn-profile-definition-value">Weekly (Fri-Thu, paid Friday)</span>
+                                    </div>
+                                    <div class="cmn-profile-definition-row">
+                                        <span class="cmn-profile-definition-label">Bank details</span>
+                                        <span class="cmn-profile-definition-value">Manage in Finance tab</span>
+                                    </div>
+                                    <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                        <span class="cmn-profile-definition-label">Payout support</span>
+                                        <span class="cmn-profile-definition-value">Use Query Pay in Finance for any payroll questions.</span>
+                                    </div>
+                                </div>
+                                <div class="cmn-settings-actions">
+                                    <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['cmn_tab' => 'candidate_finance', 'candidate' => false], $portal_url)); ?>">Open Finance</a>
+                                </div>
+                            </div>
+                            <div class="cmn-dashboard-card cmn-dashboard-card-wide" data-profile-readonly-only<?php echo $profile_section_tab !== 'compliance' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Admin Verification Status</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>" data-admin-verification-status><?php echo esc_html($doc_summary['badge_label']); ?></span>
@@ -68461,8 +68539,14 @@ final class CMN_One_Plugin {
                         </div>
                     <?php elseif ($tab === 'calendar') : ?>
                         <header class="cmn-candidate-header" data-tour-target="calendar-tab">
-                            <h2>Manage Availability</h2>
-                            <p>Tap dates to mark yourself available (green) or unavailable (red).</p>
+                            <div class="cmn-candidate-header-main">
+                                <h2>Availability Calendar</h2>
+                                <p>Select a day to cycle availability status.</p>
+                            </div>
+                            <div class="cmn-candidate-header-actions">
+                                <button class="cmn-ghost" type="button" data-calendar-header-clear>Clear</button>
+                                <button class="cmn-primary" type="button" data-calendar-header-save>Save</button>
+                            </div>
                         </header>
                         <div class="cmn-availability-layout">
                             <div class="cmn-availability-left">
@@ -68552,25 +68636,37 @@ final class CMN_One_Plugin {
                         </div>
                     <?php elseif ($tab === 'learning') : ?>
                         <header class="cmn-candidate-header" data-tour-target="learning-centre">
-                            <h2>Learning Centre - Coming soon</h2>
+                            <div class="cmn-candidate-header-main">
+                                <h2>Learning Centre</h2>
+                                <p>Training updates, notifications, and certificate tracking.</p>
+                            </div>
+                            <label class="cmn-inline-check cmn-learning-header-toggle">
+                                <input type="checkbox" data-learning-opt-in <?php echo $learning_opt_in ? 'checked' : ''; ?>>
+                                Course notifications
+                            </label>
                         </header>
                         <div class="cmn-learning-grid">
-                            <div class="cmn-dashboard-card">
-                                <h3>Learning Centre - Coming soon</h3>
-                                <p>We're adding training and resources soon.</p>
-                                <label class="cmn-inline-check">
-                                    <input type="checkbox" data-learning-opt-in <?php echo $learning_opt_in ? 'checked' : ''; ?>>
-                                    Notify me when courses are available
-                                </label>
-                                <button class="cmn-primary" type="button" data-learning-save>Save preference</button>
+                            <div class="cmn-dashboard-card cmn-learning-announcement-card">
+                                <h3>Upcoming Courses</h3>
+                                <p>New compliance and classroom-readiness modules are being scheduled. Enable alerts to get notified when enrolment opens.</p>
+                                <div class="cmn-learning-optin-row">
+                                    <button class="cmn-primary" type="button" data-learning-save>Save preference</button>
+                                </div>
                                 <div class="cmn-muted" data-learning-message>
                                     <?php echo $learning_opt_in ? 'You\'ll be notified when courses go live.' : ''; ?>
                                 </div>
                             </div>
-                            <div class="cmn-dashboard-card" data-tour-target="certificates">
-                                <h3>Certificates</h3>
-                                <p>Upload and manage your compliance documents.</p>
-                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile'], $portal_url)); ?>">View Certificates</a>
+                            <div class="cmn-dashboard-card cmn-learning-certificates-card" data-tour-target="certificates">
+                                <h3>Certificates Management</h3>
+                                <ul class="cmn-status-list">
+                                    <li class="<?php echo $doc_cv['uploaded'] ? 'is-ok' : 'is-warn'; ?>">CV <span><?php echo esc_html($doc_cv['status_label'] ?? ($doc_cv['uploaded'] ? 'Uploaded' : 'Missing')); ?></span></li>
+                                    <li class="<?php echo $doc_dbs['uploaded'] ? 'is-ok' : 'is-warn'; ?>">DBS <span><?php echo esc_html($doc_dbs['status_label'] ?? ($doc_dbs['uploaded'] ? 'Uploaded' : 'Missing')); ?></span></li>
+                                    <li class="<?php echo $doc_id['uploaded'] ? 'is-ok' : 'is-warn'; ?>">Photo ID <span><?php echo esc_html($doc_id['status_label'] ?? ($doc_id['uploaded'] ? 'Uploaded' : 'Missing')); ?></span></li>
+                                </ul>
+                                <div class="cmn-settings-actions">
+                                    <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile', 'profile_section' => 'compliance'], $portal_url)); ?>">Manage Certificates</a>
+                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'support'], $portal_url)); ?>">Request Verification Help</a>
+                                </div>
                             </div>
                         </div>
                     <?php elseif ($tab === 'rewards') : ?>
@@ -68589,186 +68685,229 @@ final class CMN_One_Plugin {
                         }
                         $deletion_requested = $current_candidate_user_id ? get_user_meta($current_candidate_user_id, 'cmn_deletion_requested', true) : '';
                         $deletion_requested_at = $current_candidate_user_id ? (string) get_user_meta($current_candidate_user_id, 'cmn_deletion_requested_at', true) : '';
+                        $candidate_settings_tab = sanitize_key((string) ($_GET['cmn_candidate_settings_tab'] ?? 'appearance'));
+                        if (!in_array($candidate_settings_tab, ['appearance', 'notifications', 'email', 'quiet_hours', 'security'], true)) {
+                            $candidate_settings_tab = 'appearance';
+                        }
                         ?>
                         <header class="cmn-candidate-header" data-tour-target="settings">
                             <h2>Settings</h2>
                         </header>
-                        <div class="cmn-dashboard-card" data-candidate-settings>
-                            <h3>Appearance</h3>
-                            <p class="cmn-muted">Choose your portal colour scheme.</p>
-                            <label>Theme
-                                <select name="cmn_theme" data-settings-theme>
-                                    <?php foreach ($this->get_theme_scheme_choices() as $theme_key => $theme_label) : ?>
-                                        <option value="<?php echo esc_attr($theme_key); ?>"><?php echo esc_html($theme_label); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </label>
-                            <h3>Notification Centre</h3>
-                            <p class="cmn-muted">Portal + email channels, quiet hours, and urgency rules.</p>
-                            <div class="cmn-settings-grid">
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_portal_enabled"> Portal notifications</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_email_enabled"> Email notifications</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_quiet_hours_enabled"> Enable quiet hours</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_allow_urgent_quiet"> Allow urgent alerts during quiet hours</label>
-                                <label>Quiet hours start
-                                    <input type="time" data-settings-notify-time="cmn_notify_quiet_start" step="300">
-                                </label>
-                                <label>Quiet hours end
-                                    <input type="time" data-settings-notify-time="cmn_notify_quiet_end" step="300">
-                                </label>
-                            </div>
-                            <h3>Email Notifications</h3>
-                            <p class="cmn-muted">Control which email updates you receive.</p>
-                            <div class="cmn-settings-grid">
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_support_updates"> Support updates</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_booking_request"> Booking requests</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_booking_confirmed"> Booking confirmations</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_booking_cancelled"> Booking cancellations</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_profile_reminders"> Profile reminders</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_learning_courses"> Learning course updates</label>
-                                <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_availability_nudges"> Availability nudges</label>
-                            </div>
-                            <div class="cmn-settings-actions">
-                                <button class="cmn-primary" type="button" data-settings-save>Save settings</button>
-                                <span class="cmn-muted" data-settings-message></span>
-                            </div>
-                            <div class="cmn-settings-danger-zone">
-                                <h3>Delete Account</h3>
-                                <p class="cmn-muted">This will permanently remove your access and delete your profile. This cannot be undone.</p>
-                                <label>Type your email to confirm
-                                    <input type="email" data-delete-confirm-email placeholder="<?php echo esc_attr($candidate_email_confirm); ?>" <?php echo $deletion_requested ? 'disabled' : ''; ?>>
-                                </label>
-                                <div class="cmn-settings-actions">
-                                    <button class="cmn-danger" type="button" data-delete-request-btn <?php echo $deletion_requested ? 'disabled' : ''; ?>>Request account deletion</button>
-                                    <span class="cmn-muted" data-delete-request-msg>
-                                        <?php if ($deletion_requested) : ?>
-                                            Pending admin action<?php echo $deletion_requested_at ? ' since ' . esc_html(date_i18n('M j, Y g:ia', strtotime($deletion_requested_at))) : ''; ?>.
-                                        <?php endif; ?>
-                                    </span>
-                                </div>
+                        <div class="cmn-dashboard-card cmn-candidate-settings-page" data-candidate-settings data-candidate-settings-active-tab="<?php echo esc_attr($candidate_settings_tab); ?>">
+                            <nav class="cmn-candidate-settings-tabs" aria-label="Candidate settings tabs">
+                                <button class="cmn-candidate-settings-tab<?php echo $candidate_settings_tab === 'appearance' ? ' is-active' : ''; ?>" type="button" data-candidate-settings-tab="appearance">Appearance</button>
+                                <button class="cmn-candidate-settings-tab<?php echo $candidate_settings_tab === 'notifications' ? ' is-active' : ''; ?>" type="button" data-candidate-settings-tab="notifications">Notification Centre</button>
+                                <button class="cmn-candidate-settings-tab<?php echo $candidate_settings_tab === 'email' ? ' is-active' : ''; ?>" type="button" data-candidate-settings-tab="email">Email Notifications</button>
+                                <button class="cmn-candidate-settings-tab<?php echo $candidate_settings_tab === 'quiet_hours' ? ' is-active' : ''; ?>" type="button" data-candidate-settings-tab="quiet_hours">Quiet Hours</button>
+                                <button class="cmn-candidate-settings-tab<?php echo $candidate_settings_tab === 'security' ? ' is-active' : ''; ?>" type="button" data-candidate-settings-tab="security">Security</button>
+                            </nav>
+                            <div class="cmn-candidate-settings-panels">
+                                <section class="cmn-candidate-settings-panel<?php echo $candidate_settings_tab === 'appearance' ? ' is-active' : ''; ?>" data-candidate-settings-panel="appearance"<?php echo $candidate_settings_tab === 'appearance' ? '' : ' hidden'; ?>>
+                                    <h3>Appearance</h3>
+                                    <p class="cmn-muted">Choose your portal colour scheme.</p>
+                                    <div class="cmn-settings-grid">
+                                        <label>Theme
+                                            <select name="cmn_theme" data-settings-theme>
+                                                <?php foreach ($this->get_theme_scheme_choices() as $theme_key => $theme_label) : ?>
+                                                    <option value="<?php echo esc_attr($theme_key); ?>"><?php echo esc_html($theme_label); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div class="cmn-settings-actions">
+                                        <button class="cmn-primary" type="button" data-settings-save>Save Appearance</button>
+                                        <span class="cmn-muted" data-settings-message></span>
+                                    </div>
+                                </section>
+                                <section class="cmn-candidate-settings-panel<?php echo $candidate_settings_tab === 'notifications' ? ' is-active' : ''; ?>" data-candidate-settings-panel="notifications"<?php echo $candidate_settings_tab === 'notifications' ? '' : ' hidden'; ?>>
+                                    <h3>Notification Centre</h3>
+                                    <p class="cmn-muted">Manage portal and email alert channels.</p>
+                                    <div class="cmn-settings-grid">
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_portal_enabled"> Portal notifications</label>
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_email_enabled"> Email notifications</label>
+                                    </div>
+                                    <div class="cmn-settings-actions">
+                                        <button class="cmn-primary" type="button" data-settings-save>Save Notification Centre</button>
+                                        <span class="cmn-muted" data-settings-message></span>
+                                    </div>
+                                </section>
+                                <section class="cmn-candidate-settings-panel<?php echo $candidate_settings_tab === 'email' ? ' is-active' : ''; ?>" data-candidate-settings-panel="email"<?php echo $candidate_settings_tab === 'email' ? '' : ' hidden'; ?>>
+                                    <h3>Email Notifications</h3>
+                                    <p class="cmn-muted">Control which email updates you receive.</p>
+                                    <div class="cmn-settings-grid">
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_support_updates"> Support updates</label>
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_booking_request"> Booking requests</label>
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_booking_confirmed"> Booking confirmations</label>
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_booking_cancelled"> Booking cancellations</label>
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_profile_reminders"> Profile reminders</label>
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_learning_courses"> Learning course updates</label>
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-pref="cmn_notify_email_availability_nudges"> Availability nudges</label>
+                                    </div>
+                                    <div class="cmn-settings-actions">
+                                        <button class="cmn-primary" type="button" data-settings-save>Save Email Preferences</button>
+                                        <span class="cmn-muted" data-settings-message></span>
+                                    </div>
+                                </section>
+                                <section class="cmn-candidate-settings-panel<?php echo $candidate_settings_tab === 'quiet_hours' ? ' is-active' : ''; ?>" data-candidate-settings-panel="quiet_hours"<?php echo $candidate_settings_tab === 'quiet_hours' ? '' : ' hidden'; ?>>
+                                    <h3>Quiet Hours</h3>
+                                    <p class="cmn-muted">Control when non-urgent alerts are muted.</p>
+                                    <div class="cmn-settings-grid">
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_quiet_hours_enabled"> Enable quiet hours</label>
+                                        <label class="cmn-inline-check"><input type="checkbox" data-settings-notify="cmn_notify_allow_urgent_quiet"> Allow urgent alerts during quiet hours</label>
+                                        <label>Quiet hours start
+                                            <input type="time" data-settings-notify-time="cmn_notify_quiet_start" step="300">
+                                        </label>
+                                        <label>Quiet hours end
+                                            <input type="time" data-settings-notify-time="cmn_notify_quiet_end" step="300">
+                                        </label>
+                                    </div>
+                                    <div class="cmn-settings-actions">
+                                        <button class="cmn-primary" type="button" data-settings-save>Save Quiet Hours</button>
+                                        <span class="cmn-muted" data-settings-message></span>
+                                    </div>
+                                </section>
+                                <section class="cmn-candidate-settings-panel<?php echo $candidate_settings_tab === 'security' ? ' is-active' : ''; ?>" data-candidate-settings-panel="security"<?php echo $candidate_settings_tab === 'security' ? '' : ' hidden'; ?>>
+                                    <h3>Security</h3>
+                                    <p class="cmn-muted">Manage account access and security actions.</p>
+                                    <div class="cmn-settings-danger-zone">
+                                        <h4>Delete Account</h4>
+                                        <p class="cmn-muted">This permanently removes your profile and portal access. This cannot be undone.</p>
+                                        <label>Type your email to confirm
+                                            <input type="email" data-delete-confirm-email placeholder="<?php echo esc_attr($candidate_email_confirm); ?>" <?php echo $deletion_requested ? 'disabled' : ''; ?>>
+                                        </label>
+                                        <div class="cmn-settings-actions">
+                                            <button class="cmn-danger" type="button" data-delete-request-btn <?php echo $deletion_requested ? 'disabled' : ''; ?>>Request account deletion</button>
+                                            <span class="cmn-muted" data-delete-request-msg>
+                                                <?php if ($deletion_requested) : ?>
+                                                    Pending admin action<?php echo $deletion_requested_at ? ' since ' . esc_html(date_i18n('M j, Y g:ia', strtotime($deletion_requested_at))) : ''; ?>.
+                                                <?php endif; ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-settings-actions">
+                                        <button class="cmn-primary" type="button" data-settings-save>Save Security</button>
+                                        <span class="cmn-muted" data-settings-message></span>
+                                    </div>
+                                </section>
                             </div>
                         </div>
                     <?php elseif ($tab === 'bookings') : ?>
                         <header class="cmn-candidate-header" data-tour-target="bookings-tab">
-                            <h2>Bookings</h2>
+                            <div class="cmn-candidate-header-main">
+                                <h2>Bookings</h2>
+                            </div>
+                            <div class="cmn-candidate-header-actions">
+                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'calendar'], $portal_url)); ?>">Update availability</a>
+                            </div>
                         </header>
+                        <?php
+                        $booking_tab = sanitize_key((string) ($_GET['tab'] ?? 'requests'));
+                        if (!in_array($booking_tab, ['requests', 'upcoming', 'past'], true)) {
+                            $booking_tab = 'requests';
+                        }
+                        ?>
                         <?php $booking_notice = isset($_GET['cmn_notice']) ? sanitize_text_field(wp_unslash($_GET['cmn_notice'])) : ''; ?>
                         <?php if ($booking_notice) : ?>
                             <div class="cmn-register-success"><?php echo esc_html($booking_notice); ?></div>
                         <?php endif; ?>
-                        <div class="cmn-dashboard-card">
-                            <div class="cmn-card-header">
-                                <h3>Booking Requests</h3>
-                                <span class="cmn-muted">15-minute response window</span>
-                            </div>
-                            <?php if ($candidate_requests) : ?>
-                                <div class="cmn-list">
-                                    <?php foreach ($candidate_requests as $request) : ?>
-                                        <?php
-                                        $request_id = (int) ($request['id'] ?? 0);
-                                        $request_status = strtolower((string) ($request['status'] ?? 'requested'));
-                                        $expires_at = $this->get_request_expires_at($request);
-                                        $is_expired = $this->is_request_expired($request);
-                                        if ($request_status === 'requested' && $is_expired) {
-                                            $request_status = 'expired';
-                                        }
-                                        $requested_date = sanitize_text_field($request['requested_date'] ?? '');
-                                        $requested_label = $requested_date ? date_i18n('l, F jS', strtotime($requested_date)) : 'Tomorrow';
-                                        $candidate_rate = isset($request['candidate_pay_rate']) ? (float) $request['candidate_pay_rate'] : 0.0;
-                                        $location_label = '';
-                                        $school_id_for_request = (int) ($request['school_id'] ?? 0);
-                                        if (!$school_id_for_request && !empty($request['school_email_domain'])) {
-                                            $school_id_for_request = $this->get_school_post_id_by_domain((string) $request['school_email_domain']);
-                                        }
-                                        $school_name_for_request = 'School';
-                                        if ($school_id_for_request > 0) {
-                                            $resolved_school_name = (string) get_the_title($school_id_for_request);
-                                            if ($resolved_school_name !== '') {
-                                                $school_name_for_request = $resolved_school_name;
-                                            }
-                                        }
-                                        if ($school_name_for_request === 'School' && !empty($request['school_email_domain'])) {
-                                            $resolved_school_name = (string) $this->get_school_name_by_domain((string) $request['school_email_domain']);
-                                            if ($resolved_school_name !== '') {
-                                                $school_name_for_request = $resolved_school_name;
-                                            }
-                                        }
-                                        if ($school_id_for_request) {
-                                            $location_label = (string) get_post_meta($school_id_for_request, 'cmn_location', true);
-                                        }
-                                        $routing_level_label = sanitize_text_field((string) ($request['routing_level'] ?? 'Standard'));
-                                        $routing_tier_key = sanitize_key((string) ($request['routing_tier'] ?? 'standard'));
-                                        if (!in_array($routing_tier_key, ['standard', 'bronze', 'silver', 'gold', 'elite'], true)) {
-                                            $routing_tier_key = 'standard';
-                                        }
-                                        $booking_id_for_request = $this->get_booking_id_for_request($request_id);
-                                        ?>
-                                        <div class="cmn-list-item cmn-request-card">
-                                            <strong><?php echo esc_html($requested_label); ?></strong>
-                                            <span class="cmn-request-school">
-                                                <?php echo esc_html($school_name_for_request); ?>
-                                                <span class="cmn-spp-routing-badge is-<?php echo esc_attr($routing_tier_key); ?>"><?php echo esc_html($routing_level_label); ?></span>
-                                            </span>
-                                            <span><?php echo esc_html($location_label ?: 'Location shared after acceptance'); ?></span>
-                                            <span class="cmn-pill cmn-pill--status">Pay: GBP <?php echo esc_html(number_format($candidate_rate, 2)); ?></span>
-                                            <span class="cmn-pill cmn-pill--<?php echo esc_attr($request_status); ?>"><?php echo esc_html(ucfirst(str_replace('_', ' ', $request_status))); ?></span>
-                                            <?php if ($request_status === 'requested') : ?>
-                                                <?php if ($expires_at) : ?>
-                                                    <small class="cmn-request-countdown" data-request-expires="<?php echo esc_attr(gmdate('c', strtotime($expires_at))); ?>">Time remaining...</small>
-                                                <?php endif; ?>
-                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline" data-cmn-accept-warning>
-                                                    <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
-                                                    <input type="hidden" name="action" value="cmn_candidate_request_action">
-                                                    <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr($request_id); ?>">
-                                                    <input type="hidden" name="cmn_request_action" value="accept">
-                                                    <button class="cmn-primary" type="submit">Accept</button>
-                                                </form>
-                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
-                                                    <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
-                                                    <input type="hidden" name="action" value="cmn_candidate_request_action">
-                                                    <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr($request_id); ?>">
-                                                    <input type="hidden" name="cmn_request_action" value="tentative">
-                                                    <input type="text" name="cmn_tentative_note" placeholder="Tentative note (optional)">
-                                                    <button class="cmn-ghost" type="submit">Tentative</button>
-                                                </form>
-                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
-                                                    <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
-                                                    <input type="hidden" name="action" value="cmn_candidate_request_action">
-                                                    <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr($request_id); ?>">
-                                                    <input type="hidden" name="cmn_request_action" value="decline">
-                                                    <input type="text" name="cmn_decline_reason" placeholder="Reason (optional)">
-                                                    <button class="cmn-ghost" type="submit">Decline</button>
-                                                </form>
-                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
-                                                    <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
-                                                    <input type="hidden" name="action" value="cmn_candidate_request_action">
-                                                    <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr($request_id); ?>">
-                                                    <input type="hidden" name="cmn_request_action" value="negotiate">
-                                                    <button class="cmn-ghost" type="submit">Negotiate rate</button>
-                                                </form>
-                                            <?php elseif ($request_status === 'expired') : ?>
-                                                <small class="cmn-muted">Request expired.</small>
-                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
-                                                    <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
-                                                    <input type="hidden" name="action" value="cmn_candidate_request_action">
-                                                    <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr($request_id); ?>">
-                                                    <input type="hidden" name="cmn_request_action" value="still_needed">
-                                                    <button class="cmn-ghost" type="submit">Request still needed?</button>
-                                                </form>
-                                            <?php endif; ?>
-                                            <?php if ($booking_id_for_request && in_array($request_status, ['accepted', 'confirmed', 'tentative'], true)) : ?>
-                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id_for_request, 'cmn_thread_type' => 'booking_details'], $portal_url)); ?>">Open booking chat</a>
-                                            <?php endif; ?>
-                                            <?php if ($booking_id_for_request && $request_status === 'requested') : ?>
-                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id_for_request, 'cmn_thread_type' => 'pay_negotiation'], $portal_url)); ?>">Open pay negotiation chat</a>
-                                            <?php endif; ?>
-                                        </div>
-                                    <?php endforeach; ?>
+                        <?php if ($booking_tab === 'requests') : ?>
+                            <div class="cmn-dashboard-card">
+                                <div class="cmn-card-header">
+                                    <h3>Booking Requests</h3>
+                                    <span class="cmn-muted">15-minute response window</span>
                                 </div>
-                            <?php else : ?>
-                                <div class="cmn-empty">No booking requests yet.</div>
-                            <?php endif; ?>
-                        </div>
+                                <?php if ($candidate_requests) : ?>
+                                    <div class="cmn-list">
+                                        <?php foreach ($candidate_requests as $request) : ?>
+                                            <?php
+                                            $request_id = (int) ($request['id'] ?? 0);
+                                            $request_status = strtolower((string) ($request['status'] ?? 'requested'));
+                                            $expires_at = $this->get_request_expires_at($request);
+                                            $is_expired = $this->is_request_expired($request);
+                                            if ($request_status === 'requested' && $is_expired) {
+                                                $request_status = 'expired';
+                                            }
+                                            $requested_date = sanitize_text_field($request['requested_date'] ?? '');
+                                            $requested_label = $requested_date ? date_i18n('l, F jS', strtotime($requested_date)) : 'Tomorrow';
+                                            $candidate_rate = isset($request['candidate_pay_rate']) ? (float) $request['candidate_pay_rate'] : 0.0;
+                                            $location_label = '';
+                                            $school_id_for_request = (int) ($request['school_id'] ?? 0);
+                                            if (!$school_id_for_request && !empty($request['school_email_domain'])) {
+                                                $school_id_for_request = $this->get_school_post_id_by_domain((string) $request['school_email_domain']);
+                                            }
+                                            $school_name_for_request = 'School';
+                                            if ($school_id_for_request > 0) {
+                                                $resolved_school_name = (string) get_the_title($school_id_for_request);
+                                                if ($resolved_school_name !== '') {
+                                                    $school_name_for_request = $resolved_school_name;
+                                                }
+                                            }
+                                            if ($school_name_for_request === 'School' && !empty($request['school_email_domain'])) {
+                                                $resolved_school_name = (string) $this->get_school_name_by_domain((string) $request['school_email_domain']);
+                                                if ($resolved_school_name !== '') {
+                                                    $school_name_for_request = $resolved_school_name;
+                                                }
+                                            }
+                                            if ($school_id_for_request) {
+                                                $location_label = (string) get_post_meta($school_id_for_request, 'cmn_location', true);
+                                            }
+                                            $routing_level_label = sanitize_text_field((string) ($request['routing_level'] ?? 'Standard'));
+                                            $routing_tier_key = sanitize_key((string) ($request['routing_tier'] ?? 'standard'));
+                                            if (!in_array($routing_tier_key, ['standard', 'bronze', 'silver', 'gold', 'elite'], true)) {
+                                                $routing_tier_key = 'standard';
+                                            }
+                                            $booking_id_for_request = $this->get_booking_id_for_request($request_id);
+                                            ?>
+                                            <div class="cmn-list-item cmn-request-card">
+                                                <strong><?php echo esc_html($requested_label); ?></strong>
+                                                <span class="cmn-request-school">
+                                                    <?php echo esc_html($school_name_for_request); ?>
+                                                    <span class="cmn-spp-routing-badge is-<?php echo esc_attr($routing_tier_key); ?>"><?php echo esc_html($routing_level_label); ?></span>
+                                                </span>
+                                                <span><?php echo esc_html($location_label ?: 'Location shared after acceptance'); ?></span>
+                                                <span class="cmn-pill cmn-pill--status">Pay: GBP <?php echo esc_html(number_format($candidate_rate, 2)); ?></span>
+                                                <span class="cmn-pill cmn-pill--<?php echo esc_attr($request_status); ?>"><?php echo esc_html(ucfirst(str_replace('_', ' ', $request_status))); ?></span>
+                                                <?php if ($request_status === 'requested') : ?>
+                                                    <?php if ($expires_at) : ?>
+                                                        <small class="cmn-request-countdown" data-request-expires="<?php echo esc_attr(gmdate('c', strtotime($expires_at))); ?>">Time remaining...</small>
+                                                    <?php endif; ?>
+                                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline" data-cmn-accept-warning>
+                                                        <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
+                                                        <input type="hidden" name="action" value="cmn_candidate_request_action">
+                                                        <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr($request_id); ?>">
+                                                        <input type="hidden" name="cmn_request_action" value="accept">
+                                                        <button class="cmn-primary" type="submit">Accept</button>
+                                                    </form>
+                                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                                        <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
+                                                        <input type="hidden" name="action" value="cmn_candidate_request_action">
+                                                        <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr($request_id); ?>">
+                                                        <input type="hidden" name="cmn_request_action" value="tentative">
+                                                        <input type="text" name="cmn_tentative_note" placeholder="Tentative note (optional)">
+                                                        <button class="cmn-ghost" type="submit">Tentative</button>
+                                                    </form>
+                                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                                        <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
+                                                        <input type="hidden" name="action" value="cmn_candidate_request_action">
+                                                        <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr($request_id); ?>">
+                                                        <input type="hidden" name="cmn_request_action" value="decline">
+                                                        <input type="text" name="cmn_decline_reason" placeholder="Reason (optional)">
+                                                        <button class="cmn-ghost" type="submit">Decline</button>
+                                                    </form>
+                                                <?php elseif ($request_status === 'expired') : ?>
+                                                    <small class="cmn-muted">Request expired.</small>
+                                                <?php endif; ?>
+                                                <?php if ($booking_id_for_request && in_array($request_status, ['accepted', 'confirmed', 'tentative'], true)) : ?>
+                                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id_for_request, 'cmn_thread_type' => 'booking_details'], $portal_url)); ?>">Open booking chat</a>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php else : ?>
+                                    <div class="cmn-empty">No booking requests yet.</div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
                         <?php
                         $chat_booking_id = isset($_GET['cmn_booking_chat']) ? (int) $_GET['cmn_booking_chat'] : 0;
                         $chat_thread_type = sanitize_key((string) ($_GET['cmn_thread_type'] ?? 'booking_details'));
@@ -68913,7 +69052,6 @@ final class CMN_One_Plugin {
                         endif;
                         ?>
                         <?php
-                        $booking_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'upcoming';
                         $candidate_calendar_url = add_query_arg(['candidate' => 'calendar'], $portal_url);
                         $candidate_profile_url = add_query_arg(['candidate' => 'profile'], $portal_url);
                         $booking_args = [];
@@ -68933,10 +69071,12 @@ final class CMN_One_Plugin {
                         ?>
                         <div class="cmn-bookings-toolbar">
                             <div class="cmn-booking-tabs">
+                                <a class="cmn-booking-tab<?php echo $booking_tab === 'requests' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'requests'], $portal_url)); ?>">Requests</a>
                                 <a class="cmn-booking-tab<?php echo $booking_tab === 'upcoming' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'upcoming'], $portal_url)); ?>">Upcoming</a>
                                 <a class="cmn-booking-tab<?php echo $booking_tab === 'past' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'past'], $portal_url)); ?>">Past</a>
                             </div>
                         </div>
+                        <?php if ($booking_tab !== 'requests') : ?>
                         <div class="cmn-booking-table">
                             <div class="cmn-booking-row header">
                                 <div>Date</div>
@@ -68946,6 +69086,7 @@ final class CMN_One_Plugin {
                                 <div>Feedback</div>
                             </div>
                             <?php if ($booking_query && $booking_query->have_posts()) : ?>
+                                <?php $rendered_booking_rows = 0; ?>
                                 <?php while ($booking_query->have_posts()) : $booking_query->the_post(); ?>
                                     <?php
                                     $booking_id = get_the_ID();
@@ -68957,6 +69098,17 @@ final class CMN_One_Plugin {
                                     $deadline = (int) get_post_meta(get_the_ID(), 'cmn_candidate_deadline', true);
                                     $token = get_post_meta(get_the_ID(), 'cmn_candidate_token', true);
                                     $remaining = $deadline ? max(0, $deadline - time()) : 0;
+                                    $date_key = '';
+                                    if ($date !== '' && strtotime($date) !== false) {
+                                        $date_key = date('Y-m-d', strtotime($date));
+                                    }
+                                    if ($booking_tab === 'upcoming' && $date_key !== '' && $date_key < $today) {
+                                        continue;
+                                    }
+                                    if ($booking_tab === 'past' && $date_key !== '' && $date_key >= $today) {
+                                        continue;
+                                    }
+                                    $rendered_booking_rows++;
                                     $feedback_eligible = $this->is_booking_feedback_eligible($booking_id);
                                     $feedback_payload = $feedback_eligible ? $this->get_booking_feedback_payload($booking_id, get_current_user_id(), 'candidate') : null;
                                     $feedback_submitted = !empty($feedback_payload['viewer_feedback']);
@@ -68990,6 +69142,16 @@ final class CMN_One_Plugin {
                                         </div>
                                     <?php endif; ?>
                                 <?php endwhile; wp_reset_postdata(); ?>
+                                <?php if ($rendered_booking_rows < 1) : ?>
+                                    <?php
+                                    echo $this->render_empty_explain_panel(
+                                        $booking_tab === 'past' ? 'No past bookings yet' : 'No upcoming bookings yet',
+                                        $booking_tab === 'past' ? 'Completed bookings will appear once shifts are finished.' : 'You have no upcoming confirmed bookings right now.',
+                                        'Update availability',
+                                        $candidate_calendar_url
+                                    );
+                                    ?>
+                                <?php endif; ?>
                             <?php else : ?>
                                 <?php
                                 echo $this->render_empty_explain_panel(
@@ -69001,6 +69163,7 @@ final class CMN_One_Plugin {
                                 ?>
                             <?php endif; ?>
                         </div>
+                        <?php endif; ?>
                     <?php elseif ($tab === 'support') : ?>
                         <header class="cmn-candidate-header" data-tour-target="support-hub">
                             <h2>Support</h2>
@@ -69013,7 +69176,6 @@ final class CMN_One_Plugin {
                                 </div>
                                 <button class="cmn-primary" type="button" data-support-open>Open Support Ticket</button>
                             </div>
-                            <?php echo $this->render_support_whats_new_panel('candidate'); ?>
                             <div class="cmn-support-dashboard" data-support-dashboard>
                                 <button class="cmn-support-tile is-active" type="button" data-support-tile="all">
                                     <span>All tickets</span>
@@ -69044,6 +69206,7 @@ final class CMN_One_Plugin {
                                         <button class="cmn-ghost" type="button" data-support-filter="closed">Closed</button>
                                         <button class="cmn-ghost" type="button" data-support-filter="needs_feedback">Needs feedback</button>
                                     </div>
+                                    <?php echo $this->render_support_whats_new_panel('candidate'); ?>
                                     <div class="cmn-support-list" data-support-list>
                                         <div class="cmn-muted">Loading tickets...</div>
                                     </div>
@@ -69178,29 +69341,44 @@ final class CMN_One_Plugin {
                         } elseif ($calendar_blocked) {
                             $availability_button_helper = 'You have marked yourself unavailable for ' . $period_label . ' in your calendar.';
                         }
-                        $availability_state_class = 'is-neutral';
-                        $availability_state_text = 'Not confirmed yet';
-                        if ($calendar_blocked) {
-                            $availability_state_class = 'is-blocked';
-                            $availability_state_text = 'I\'m not available';
-                        } elseif ($already_marked) {
-                            $availability_state_class = 'is-confirmed';
-                            $availability_state_text = 'I\'m available';
-                        }
-                        $availability_button_disabled = (!$availability_allowed);
+                        $availability_ui_state = $this->get_candidate_availability_ui_state($availability_allowed, $already_marked, $calendar_blocked, $period_label);
+                        $availability_state_key = (string) ($availability_ui_state['state_key'] ?? 'unconfirmed');
+                        $availability_state_class = (string) ($availability_ui_state['state_class'] ?? 'is-neutral');
+                        $availability_state_text = (string) ($availability_ui_state['status_text'] ?? 'Not confirmed yet');
+                        $availability_primary_label = (string) ($availability_ui_state['primary_label'] ?? ("CONFIRM I'M AVAILABLE " . strtoupper($period_label)));
+                        $availability_unavailable_label = (string) ($availability_ui_state['unavailable_label'] ?? 'Change to NOT AVAILABLE');
+                        $availability_confirmed_pill_label = (string) ($availability_ui_state['confirmed_pill_label'] ?? 'AVAILABILITY CONFIRMED');
+                        $availability_show_primary_action = !empty($availability_ui_state['show_primary_action']);
+                        $availability_show_unavailable_action = !empty($availability_ui_state['show_unavailable_action']);
+                        $availability_show_confirmed_pill = !empty($availability_ui_state['show_confirmed_pill']);
+                        $availability_button_disabled = (!$availability_allowed || $calendar_blocked);
                         $confirmed_count = $this->count_available_candidates_for_date($target_date);
+                        $dashboard_bookings_tab = sanitize_key((string) ($_GET['cmn_dash_bookings_tab'] ?? 'upcoming'));
+                        if (!in_array($dashboard_bookings_tab, ['upcoming', 'history'], true)) {
+                            $dashboard_bookings_tab = 'upcoming';
+                        }
                         ?>
-                        <div class="cmn-availability-hero <?php echo esc_attr($availability_state_class); ?>" data-availability-card data-tour-target="availability-button">
+                        <header class="cmn-candidate-header cmn-candidate-dashboard-header">
+                            <div class="cmn-candidate-header-main">
+                                <h2>Dashboard</h2>
+                                <p>Operational snapshot for availability and booking flow.</p>
+                            </div>
+                            <span class="cmn-status-chip <?php echo esc_attr($availability_state_key === 'confirmed_available' ? 'is-approved' : ($availability_state_key === 'confirmed_not_available' ? 'is-declined' : 'is-pending')); ?>">
+                                Availability: <?php echo esc_html($availability_state_text); ?>
+                            </span>
+                        </header>
+                        <div class="cmn-availability-hero <?php echo esc_attr($availability_state_class); ?>" data-availability-card data-availability-state="<?php echo esc_attr($availability_state_key); ?>" data-tour-target="availability-button">
                             <div class="cmn-availability-hero-content confirm-section">
                                 <h2><?php echo esc_html($availability_heading); ?></h2>
                                 <div class="cmn-availability-status <?php echo esc_attr($availability_state_class); ?>" data-availability-message><?php echo esc_html($availability_state_text); ?></div>
                                                                 <div class="cmn-availability-countdown" data-availability-countdown></div>
                             </div>
                             <div class="cmn-availability-hero-action confirm-actions">
-                                <button id="cmn-tomorrow-availability-btn" class="cmn-availability-btn btn-confirm cmn-primary cmn-candidate-primary-action" type="button" data-availability-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>"<?php echo $availability_button_disabled ? ' disabled' : ''; ?> data-availability-date="<?php echo esc_attr($target_date); ?>" data-available="<?php echo $already_marked ? '1' : '0'; ?>" data-calendar-blocked="<?php echo $calendar_blocked ? '1' : '0'; ?>" data-availability-period-label="<?php echo esc_attr($period_label); ?>"<?php echo $availability_next_press_label !== '' ? ' data-availability-next-open-label="' . esc_attr($availability_next_press_label) . '"' : ''; ?><?php echo !empty($availability_window['window_open_at']) ? ' data-availability-open-at="' . esc_attr((string) $availability_window['window_open_at']) . '"' : ''; ?><?php echo !empty($availability_window['window_close_at']) ? ' data-availability-close-at="' . esc_attr((string) $availability_window['window_close_at']) . '"' : ''; ?>>
-                                    <?php echo esc_html($already_marked ? ('Confirmed for ' . $period_label) : ('Confirm availability for ' . $period_label)); ?>
+                                <button id="cmn-tomorrow-availability-btn" class="cmn-availability-btn btn-confirm cmn-primary cmn-candidate-primary-action" type="button" data-availability-button data-availability-primary-action data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>"<?php echo $availability_button_disabled ? ' disabled' : ''; ?><?php echo !$availability_show_primary_action ? ' hidden aria-hidden="true"' : ''; ?> data-availability-date="<?php echo esc_attr($target_date); ?>" data-available="<?php echo $already_marked ? '1' : '0'; ?>" data-calendar-blocked="<?php echo $calendar_blocked ? '1' : '0'; ?>" data-availability-period-label="<?php echo esc_attr($period_label); ?>"<?php echo $availability_next_press_label !== '' ? ' data-availability-next-open-label="' . esc_attr($availability_next_press_label) . '"' : ''; ?><?php echo !empty($availability_window['window_open_at']) ? ' data-availability-open-at="' . esc_attr((string) $availability_window['window_open_at']) . '"' : ''; ?><?php echo !empty($availability_window['window_close_at']) ? ' data-availability-close-at="' . esc_attr((string) $availability_window['window_close_at']) . '"' : ''; ?>>
+                                    <?php echo esc_html($availability_primary_label); ?>
                                 </button>
-                                <button id="cmn-unavailable-morning-btn" class="cmn-availability-btn-secondary" type="button" data-availability-unavailable-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>" data-availability-date="<?php echo esc_attr($target_date); ?>">I'm not available</button>
+                                <div class="cmn-availability-confirmed-pill" data-availability-confirmed-pill<?php echo $availability_show_confirmed_pill ? '' : ' hidden'; ?>><?php echo esc_html($availability_confirmed_pill_label); ?></div>
+                                <button id="cmn-unavailable-morning-btn" class="cmn-availability-btn-secondary" type="button" data-availability-unavailable-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>" data-availability-date="<?php echo esc_attr($target_date); ?>"<?php echo $availability_show_unavailable_action ? '' : ' hidden aria-hidden="true"'; ?>><?php echo esc_html($availability_unavailable_label); ?></button>
                                 <div class="cmn-availability-lower-band">
                                     <div class="cmn-availability-bottom-row">
                                         <div class="cmn-availability-status-dot-wrap">
@@ -69208,68 +69386,73 @@ final class CMN_One_Plugin {
                                             <span class="cmn-availability-status-dot-label" data-availability-dot-label><?php echo esc_html($availability_state_text); ?></span>
                                         </div>
                                     </div>
-                                    <div class="cmn-availability-impact" data-availability-impact><?php echo esc_html($already_marked ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.'); ?></div>
+                                    <div class="cmn-availability-impact" data-availability-impact><?php echo esc_html($availability_state_key === 'confirmed_available' ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.'); ?></div>
                                     <div class="cmn-availability-social" data-availability-social>🔥 <?php echo esc_html((string) $confirmed_count); ?> candidates have already confirmed</div>
                                 </div>
                                 <div class="cmn-availability-helper" data-availability-helper><?php echo esc_html($availability_button_helper); ?></div>
                             </div>
                         </div>
-                        <div class="cmn-dashboard-row cmn-dashboard-row-equal">
-                            <div class="cmn-dashboard-card" data-tour-target="upcoming-bookings">
-                                <div class="cmn-card-header">
-                                    <h3>Upcoming Booking</h3>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings'], $portal_url)); ?>">View all</a>
-                                </div>
-                                <?php if ($upcoming_booking) : ?>
-                                    <?php
-                                    $booking_date = get_post_meta($upcoming_booking->ID, 'cmn_date', true) ?: get_post_meta($upcoming_booking->ID, 'cmn_start_date', true);
-                                    $school_id = (int) get_post_meta($upcoming_booking->ID, 'cmn_school_id', true);
-                                    $school_name = $school_id ? get_the_title($school_id) : 'School';
-                                    ?>
-                                    <strong><?php echo esc_html($booking_date ? date_i18n('l, F jS', strtotime($booking_date)) : ''); ?></strong>
-                                    <span><?php echo esc_html($school_name); ?></span>
-                                    <span class="cmn-pill cmn-pill--confirmed">Confirmed</span>
-                                <?php else : ?>
-                                    <?php
-                                    echo $this->render_empty_explain_panel(
-                                        'No upcoming bookings',
-                                        'You have no upcoming confirmed bookings yet.',
-                                        'Update availability',
-                                        $candidate_calendar_url
-                                    );
-                                    ?>
-                                <?php endif; ?>
+                        <div class="cmn-dashboard-card cmn-candidate-dashboard-bookings-card" data-tour-target="upcoming-bookings">
+                            <div class="cmn-card-header">
+                                <h3>Bookings</h3>
+                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings'], $portal_url)); ?>">View all</a>
                             </div>
-                            <div class="cmn-dashboard-card" data-tour-target="booking-history">
-                                <div class="cmn-card-header">
-                                    <h3>Booking History</h3>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'past'], $portal_url)); ?>">View all</a>
-                                </div>
-                                <?php if ($past_bookings) : ?>
-                                    <div class="cmn-list">
-                                        <?php foreach ($past_bookings as $booking) : ?>
-                                            <?php
-                                            $booking_date = get_post_meta($booking->ID, 'cmn_date', true) ?: get_post_meta($booking->ID, 'cmn_start_date', true);
-                                            $school_id = (int) get_post_meta($booking->ID, 'cmn_school_id', true);
-                                            $school_name = $school_id ? get_the_title($school_id) : 'School';
-                                            ?>
-                                            <div class="cmn-list-item">
-                                                <strong><?php echo esc_html($school_name); ?></strong>
-                                                <span><?php echo esc_html($booking_date ? date_i18n('M j, Y', strtotime($booking_date)) : ''); ?></span>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php else : ?>
-                                    <?php
-                                    echo $this->render_empty_explain_panel(
-                                        'No booking history',
-                                        'Completed bookings will appear here after your first placement.',
-                                        'Complete profile',
-                                        $candidate_profile_url
-                                    );
-                                    ?>
-                                <?php endif; ?>
+                            <div class="cmn-booking-tabs cmn-candidate-dashboard-booking-tabs">
+                                <a class="cmn-booking-tab<?php echo $dashboard_bookings_tab === 'upcoming' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'dashboard', 'cmn_dash_bookings_tab' => 'upcoming'], $portal_url)); ?>">Upcoming</a>
+                                <a class="cmn-booking-tab<?php echo $dashboard_bookings_tab === 'history' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'dashboard', 'cmn_dash_bookings_tab' => 'history'], $portal_url)); ?>">History</a>
                             </div>
+                            <?php if ($dashboard_bookings_tab === 'upcoming') : ?>
+                                <div class="cmn-candidate-dashboard-bookings-panel">
+                                    <?php if ($upcoming_booking) : ?>
+                                        <?php
+                                        $booking_date = get_post_meta($upcoming_booking->ID, 'cmn_date', true) ?: get_post_meta($upcoming_booking->ID, 'cmn_start_date', true);
+                                        $school_id = (int) get_post_meta($upcoming_booking->ID, 'cmn_school_id', true);
+                                        $school_name = $school_id ? get_the_title($school_id) : 'School';
+                                        ?>
+                                        <div class="cmn-list-item">
+                                            <strong><?php echo esc_html($school_name); ?></strong>
+                                            <span><?php echo esc_html($booking_date ? date_i18n('l, F jS', strtotime($booking_date)) : ''); ?></span>
+                                            <span class="cmn-pill cmn-pill--confirmed">Confirmed</span>
+                                        </div>
+                                    <?php else : ?>
+                                        <?php
+                                        echo $this->render_empty_explain_panel(
+                                            'No upcoming bookings',
+                                            'You have no upcoming confirmed bookings yet.',
+                                            'Update availability',
+                                            $candidate_calendar_url
+                                        );
+                                        ?>
+                                    <?php endif; ?>
+                                </div>
+                            <?php else : ?>
+                                <div class="cmn-candidate-dashboard-bookings-panel" data-tour-target="booking-history">
+                                    <?php if ($past_bookings) : ?>
+                                        <div class="cmn-list">
+                                            <?php foreach ($past_bookings as $booking) : ?>
+                                                <?php
+                                                $booking_date = get_post_meta($booking->ID, 'cmn_date', true) ?: get_post_meta($booking->ID, 'cmn_start_date', true);
+                                                $school_id = (int) get_post_meta($booking->ID, 'cmn_school_id', true);
+                                                $school_name = $school_id ? get_the_title($school_id) : 'School';
+                                                ?>
+                                                <div class="cmn-list-item">
+                                                    <strong><?php echo esc_html($school_name); ?></strong>
+                                                    <span><?php echo esc_html($booking_date ? date_i18n('M j, Y', strtotime($booking_date)) : ''); ?></span>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else : ?>
+                                        <?php
+                                        echo $this->render_empty_explain_panel(
+                                            'No booking history',
+                                            'Completed bookings will appear here after your first placement.',
+                                            'Complete profile',
+                                            $candidate_profile_url
+                                        );
+                                        ?>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                         <div class="cmn-dashboard-card cmn-earnings-card">
                             <div class="cmn-card-header">
@@ -72336,8 +72519,24 @@ final class CMN_One_Plugin {
         ?>
         <section class="cmn-candidate-finance-page">
             <article class="cmn-dashboard-card cmn-candidate-finance-header-card">
-                <h2>Finance</h2>
-                <p>Your weekly pay overview and payment details.</p>
+                <div class="cmn-candidate-finance-header-main">
+                    <h2>Finance</h2>
+                    <p>Weekly payout overview, pay period status, and banking controls.</p>
+                </div>
+                <div class="cmn-candidate-finance-header-stats">
+                    <div class="cmn-candidate-finance-header-stat">
+                        <span>Current period</span>
+                        <strong><?php echo esc_html($weekly_earnings_week_label !== '' ? $weekly_earnings_week_label : 'Fri-Thu'); ?></strong>
+                    </div>
+                    <div class="cmn-candidate-finance-header-stat">
+                        <span>Status</span>
+                        <strong><span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>"><?php echo esc_html($weekly_state_label); ?></span></strong>
+                    </div>
+                    <div class="cmn-candidate-finance-header-stat">
+                        <span>Expected payout</span>
+                        <strong><?php echo esc_html($weekly_expected_display); ?></strong>
+                    </div>
+                </div>
             </article>
             <?php if ($finance_notice_message !== '') : ?>
                 <div class="<?php echo esc_attr($finance_notice_class); ?> cmn-candidate-finance-bank-message"><?php echo esc_html($finance_notice_message); ?></div>
@@ -72346,9 +72545,12 @@ final class CMN_One_Plugin {
                      data-cmn-weekly-earnings-root
                      data-cmn-weekly-earnings-action="cmn_candidate_weekly_earnings_overview"
                      data-cmn-weekly-earnings-nonce="<?php echo esc_attr(wp_create_nonce('cmn_candidate_weekly_earnings_view')); ?>">
-                <div class="cmn-card-header">
+                <div class="cmn-card-header cmn-candidate-finance-weekly-head">
                     <h3>Weekly Pay Overview</h3>
-                    <span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>" data-cmn-weekly-earnings-chip><?php echo esc_html($weekly_state_label); ?></span>
+                    <div class="cmn-candidate-finance-weekly-head-actions">
+                        <span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>" data-cmn-weekly-earnings-chip><?php echo esc_html($weekly_state_label); ?></span>
+                        <button class="cmn-primary cmn-btn-mini" type="button" data-cmn-payroll-query-open>Query pay</button>
+                    </div>
                 </div>
                 <p class="cmn-muted cmn-candidate-weekly-earnings-range" data-cmn-weekly-earnings-range><?php echo esc_html($weekly_earnings_week_label); ?> (Fri-Thu)</p>
                 <div class="cmn-profile-meta-grid cmn-candidate-weekly-earnings-grid">
@@ -72371,9 +72573,6 @@ final class CMN_One_Plugin {
                 <?php else : ?>
                     <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error hidden></div>
                 <?php endif; ?>
-                <div class="cmn-candidate-finance-actions">
-                    <button class="cmn-primary" type="button" data-cmn-payroll-query-open>Query pay</button>
-                </div>
                 <div class="cmn-candidate-payroll-query-panel" data-cmn-payroll-query-panel hidden>
                     <form class="cmn-candidate-payroll-query-form"
                           data-cmn-payroll-query-form
@@ -72418,56 +72617,64 @@ final class CMN_One_Plugin {
                     </form>
                 </div>
             </article>
-            <article class="cmn-dashboard-card cmn-candidate-finance-payment-card">
-                <h3>Payment Details</h3>
-                <div class="cmn-candidate-finance-status-list">
-                    <div class="cmn-candidate-finance-status-row">
-                        <span>Bank details</span>
-                        <strong><span class="cmn-status-chip <?php echo esc_attr($bank_status_chip); ?>"><?php echo esc_html($bank_status_label); ?></span></strong>
+            <article class="cmn-dashboard-card cmn-candidate-finance-details-card" id="cmn-candidate-bank-details">
+                <div class="cmn-card-header">
+                    <h3>Payment Details &amp; Bank Information</h3>
+                </div>
+                <div class="cmn-candidate-finance-details-grid">
+                    <div class="cmn-candidate-finance-details-column is-summary">
+                        <div class="cmn-candidate-finance-status-list">
+                            <div class="cmn-candidate-finance-status-row">
+                                <span>Bank details</span>
+                                <strong><span class="cmn-status-chip <?php echo esc_attr($bank_status_chip); ?>"><?php echo esc_html($bank_status_label); ?></span></strong>
+                            </div>
+                            <div class="cmn-candidate-finance-status-row">
+                                <span>Payment schedule</span>
+                                <strong>Weekly (Fri-Thu, paid Friday)</strong>
+                            </div>
+                            <div class="cmn-candidate-finance-status-row">
+                                <span>Payout state</span>
+                                <strong><span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>"><?php echo esc_html($weekly_state_label); ?></span></strong>
+                            </div>
+                        </div>
+                        <p class="cmn-muted">Use Query pay above if you need to raise a payroll issue for this period.</p>
                     </div>
-                    <div class="cmn-candidate-finance-status-row">
-                        <span>Payment schedule</span>
-                        <strong>Weekly (Fri-Thu, paid Friday)</strong>
+                    <div class="cmn-candidate-finance-details-column is-bank">
+                        <h4>Bank Details</h4>
+                        <p class="cmn-muted">Add your payment bank details. Re-enter full sort code and account number when updating.</p>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-bank-form">
+                            <?php wp_nonce_field('cmn_save_candidate_bank_details', 'cmn_candidate_bank_details_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_save_candidate_bank_details">
+                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('bank_details')); ?>">
+                            <div class="cmn-candidate-finance-bank-form-grid">
+                                <label>Account holder name
+                                    <input type="text" name="cmn_bank_account_name" value="<?php echo esc_attr($bank_account_name); ?>" minlength="2" maxlength="150" required>
+                                </label>
+                                <label>Sort code
+                                    <input type="text" name="cmn_bank_sort_code" value="" inputmode="numeric" placeholder="12-34-56" maxlength="10" required>
+                                </label>
+                                <label>Account number
+                                    <input type="text" name="cmn_bank_account_number" value="" inputmode="numeric" placeholder="8 digits" maxlength="16" required>
+                                </label>
+                            </div>
+                            <div class="cmn-candidate-finance-actions">
+                                <button class="cmn-primary" type="submit"><?php echo esc_html($bank_action_label); ?></button>
+                            </div>
+                        </form>
+                        <?php if ($has_bank_details && $bank_sort_code_display !== '' && $bank_account_number_display !== '') : ?>
+                            <div class="cmn-candidate-finance-bank-preview">
+                                <div class="cmn-candidate-finance-bank-preview-row">
+                                    <span>Sort code</span>
+                                    <strong><?php echo esc_html($bank_sort_code_display); ?></strong>
+                                </div>
+                                <div class="cmn-candidate-finance-bank-preview-row">
+                                    <span>Account number</span>
+                                    <strong><?php echo esc_html($bank_account_number_display); ?></strong>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
-                <div class="cmn-candidate-finance-actions">
-                    <a class="cmn-ghost" href="#cmn-candidate-bank-details"><?php echo esc_html($has_bank_details ? 'Update bank details' : 'Add bank details'); ?></a>
-                </div>
-            </article>
-            <article class="cmn-dashboard-card cmn-candidate-finance-bank-card" id="cmn-candidate-bank-details">
-                <h3>Bank Details</h3>
-                <p class="cmn-muted">Add your payment bank details. Re-enter full sort code and account number when updating.</p>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-bank-form">
-                    <?php wp_nonce_field('cmn_save_candidate_bank_details', 'cmn_candidate_bank_details_nonce'); ?>
-                    <input type="hidden" name="action" value="cmn_save_candidate_bank_details">
-                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('bank_details')); ?>">
-                    <div class="cmn-candidate-finance-bank-form-grid">
-                        <label>Account holder name
-                            <input type="text" name="cmn_bank_account_name" value="<?php echo esc_attr($bank_account_name); ?>" minlength="2" maxlength="150" required>
-                        </label>
-                        <label>Sort code
-                            <input type="text" name="cmn_bank_sort_code" value="" inputmode="numeric" placeholder="12-34-56" maxlength="10" required>
-                        </label>
-                        <label>Account number
-                            <input type="text" name="cmn_bank_account_number" value="" inputmode="numeric" placeholder="8 digits" maxlength="16" required>
-                        </label>
-                    </div>
-                    <div class="cmn-candidate-finance-actions">
-                        <button class="cmn-primary" type="submit"><?php echo esc_html($bank_action_label); ?></button>
-                    </div>
-                </form>
-                <?php if ($has_bank_details && $bank_sort_code_display !== '' && $bank_account_number_display !== '') : ?>
-                    <div class="cmn-candidate-finance-bank-preview">
-                        <div class="cmn-candidate-finance-bank-preview-row">
-                            <span>Sort code</span>
-                            <strong><?php echo esc_html($bank_sort_code_display); ?></strong>
-                        </div>
-                        <div class="cmn-candidate-finance-bank-preview-row">
-                            <span>Account number</span>
-                            <strong><?php echo esc_html($bank_account_number_display); ?></strong>
-                        </div>
-                    </div>
-                <?php endif; ?>
             </article>
             <article class="cmn-dashboard-card cmn-candidate-finance-documents-card">
                 <h3>Documents</h3>
@@ -73266,49 +73473,56 @@ final class CMN_One_Plugin {
                 'created_at' => sanitize_text_field((string) ($formatted_row['created_at'] ?? '')),
             ];
         }
+        $feedback_total_entries = count($entry_rows);
+        $feedback_page = max(1, (int) ($_GET['cmn_feedback_page'] ?? 1));
+        $feedback_per_page = 8;
+        $feedback_total_pages = max(1, (int) ceil($feedback_total_entries / $feedback_per_page));
+        if ($feedback_page > $feedback_total_pages) {
+            $feedback_page = $feedback_total_pages;
+        }
+        $paged_entry_rows = array_slice($entry_rows, ($feedback_page - 1) * $feedback_per_page, $feedback_per_page);
+        $portal_url = $this->get_portal_base_url();
 
         ob_start();
         ?>
         <section class="cmn-candidate-feedback-page">
-            <header class="cmn-candidate-header">
-                <h2>Feedback & Ratings</h2>
-                <p>See every school review, module score, and comment for your completed bookings.</p>
+            <header class="cmn-candidate-header cmn-candidate-feedback-header">
+                <div class="cmn-candidate-header-main">
+                    <h2>Feedback &amp; Ratings</h2>
+                    <p>School feedback from completed bookings, with module-level scoring history.</p>
+                </div>
+                <div class="cmn-candidate-feedback-overall">
+                    <span>Overall Rating</span>
+                    <strong><?php echo esc_html(number_format((float) ($rating_payload['avg_rating'] ?? 0), 1)); ?>/5</strong>
+                    <small><?php echo esc_html((string) ((int) ($rating_payload['feedback_count'] ?? 0))); ?> feedback entries</small>
+                </div>
             </header>
-            <div class="cmn-profile-grid">
-                <article class="cmn-dashboard-card">
-                    <div class="cmn-card-header">
-                        <h3>Overall Rating</h3>
-                        <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
-                    </div>
-                    <p class="cmn-muted">Based on <?php echo esc_html((string) ((int) ($rating_payload['feedback_count'] ?? 0))); ?> completed feedback submission(s).</p>
-                    <p><strong><?php echo esc_html(number_format((float) ($rating_payload['avg_rating_raw'] ?? 0), 2)); ?>/5</strong> average across all 7 modules.</p>
-                </article>
-                <article class="cmn-dashboard-card">
-                    <div class="cmn-card-header">
-                        <h3>Module Breakdown</h3>
-                    </div>
-                    <ul class="cmn-status-list">
-                        <?php foreach ((array) $breakdown_rows as $breakdown_row) : ?>
-                            <?php
-                            $module_label = sanitize_text_field((string) ($breakdown_row['label'] ?? 'Module'));
-                            $module_average = round((float) ($breakdown_row['average'] ?? 0), 1);
-                            ?>
-                            <li>
-                                <span><?php echo esc_html($module_label); ?></span>
-                                <strong><?php echo esc_html(number_format($module_average, 1)); ?>/5</strong>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </article>
-            </div>
+            <article class="cmn-dashboard-card cmn-candidate-feedback-breakdown-card">
+                <div class="cmn-card-header">
+                    <h3>Module Breakdown</h3>
+                    <span class="cmn-muted">7 module averages</span>
+                </div>
+                <div class="cmn-candidate-feedback-module-row">
+                    <?php foreach ((array) $breakdown_rows as $breakdown_row) : ?>
+                        <?php
+                        $module_label = sanitize_text_field((string) ($breakdown_row['label'] ?? 'Module'));
+                        $module_average = round((float) ($breakdown_row['average'] ?? 0), 1);
+                        ?>
+                        <div class="cmn-candidate-feedback-module-card">
+                            <span><?php echo esc_html($module_label); ?></span>
+                            <strong><?php echo esc_html(number_format($module_average, 1)); ?>/5</strong>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </article>
             <article class="cmn-dashboard-card cmn-dashboard-card-wide">
                 <div class="cmn-card-header">
-                    <h3>All Feedback</h3>
-                    <span class="cmn-muted"><?php echo esc_html((string) count($entry_rows)); ?> entries</span>
+                    <h3>Feedback Entries</h3>
+                    <span class="cmn-muted"><?php echo esc_html((string) $feedback_total_entries); ?> total</span>
                 </div>
-                <?php if ($entry_rows) : ?>
+                <?php if ($paged_entry_rows) : ?>
                     <div class="cmn-list cmn-candidate-feedback-list">
-                        <?php foreach ($entry_rows as $entry_row) : ?>
+                        <?php foreach ($paged_entry_rows as $entry_row) : ?>
                             <?php
                             $booking_date_display = '';
                             if (!empty($entry_row['booking_date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $entry_row['booking_date'])) {
@@ -73332,14 +73546,11 @@ final class CMN_One_Plugin {
                                         <strong class="cmn-profile-meta-value"><?php echo esc_html($booking_date_display !== '' ? $booking_date_display : '—'); ?></strong>
                                     </div>
                                 </div>
-                                <ul class="cmn-status-list">
+                                <div class="cmn-candidate-feedback-entry-modules">
                                     <?php foreach ((array) ($entry_row['module_scores'] ?? []) as $module_row) : ?>
-                                        <li>
-                                            <span><?php echo esc_html((string) ($module_row['label'] ?? 'Module')); ?></span>
-                                            <strong><?php echo esc_html((string) ((int) ($module_row['score'] ?? 0))); ?>/5</strong>
-                                        </li>
+                                        <span class="cmn-status-chip"><?php echo esc_html((string) ($module_row['label'] ?? 'Module')); ?>: <?php echo esc_html((string) ((int) ($module_row['score'] ?? 0))); ?>/5</span>
                                     <?php endforeach; ?>
-                                </ul>
+                                </div>
                                 <?php if (!empty($entry_row['comments'])) : ?>
                                     <p class="cmn-muted"><?php echo esc_html((string) $entry_row['comments']); ?></p>
                                 <?php else : ?>
@@ -73348,8 +73559,27 @@ final class CMN_One_Plugin {
                             </div>
                         <?php endforeach; ?>
                     </div>
+                    <?php if ($feedback_total_pages > 1) : ?>
+                        <div class="cmn-candidate-feedback-pagination">
+                            <?php if ($feedback_page > 1) : ?>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg([
+                                    'candidate' => 'feedback_ratings',
+                                    'cmn_feedback_page' => $feedback_page - 1,
+                                ], $portal_url)); ?>">Previous</a>
+                            <?php endif; ?>
+                            <span class="cmn-muted">Page <?php echo esc_html((string) $feedback_page); ?> of <?php echo esc_html((string) $feedback_total_pages); ?></span>
+                            <?php if ($feedback_page < $feedback_total_pages) : ?>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg([
+                                    'candidate' => 'feedback_ratings',
+                                    'cmn_feedback_page' => $feedback_page + 1,
+                                ], $portal_url)); ?>">Next</a>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
                 <?php else : ?>
-                    <div class="cmn-empty">No feedback submitted yet. Ratings will appear here after schools complete reviews for finished bookings.</div>
+                    <div class="cmn-empty">
+                        No feedback submitted yet. Ratings will appear here after schools complete reviews for finished bookings.
+                    </div>
                 <?php endif; ?>
             </article>
         </section>
@@ -73409,9 +73639,16 @@ final class CMN_One_Plugin {
 
         ob_start();
         ?>
-        <header class="cmn-candidate-header">
-            <h2>CMN Rewards</h2>
-            <p>Track your progress, bonus milestones, referral tickets, and conduct status.</p>
+        <header class="cmn-candidate-header cmn-candidate-rewards-header">
+            <div class="cmn-candidate-header-main">
+                <h2>Rewards</h2>
+                <p>Track your tier, shift milestones, referral credits, and conduct status.</p>
+            </div>
+            <div class="cmn-candidate-rewards-header-stats">
+                <span class="cmn-status-chip cmn-rewards-tier-badge is-<?php echo esc_attr($tier); ?>"><?php echo esc_html($tier_label); ?></span>
+                <span class="cmn-status-chip is-pending">Shifts: <?php echo esc_html(number_format($shifts_completed)); ?></span>
+                <span class="cmn-status-chip <?php echo esc_attr($conduct_chip_class); ?>"><?php echo esc_html($conduct_label); ?></span>
+            </div>
         </header>
         <section class="cmn-rewards-dashboard cmn-candidate-rewards"
                  data-cmn-rewards-root
@@ -73502,13 +73739,16 @@ final class CMN_One_Plugin {
 
             <article class="cmn-dashboard-card cmn-candidate-rewards-card cmn-candidate-rewards-conduct-panel">
                 <h3>Conduct & Appeals</h3>
-                <p class="cmn-muted">No-show means the school expected you and there was no communication logged in the booking chat.</p>
-                <ul class="cmn-candidate-rewards-policy">
-                    <li>Each no-show deducts 3 shifts from your rewards count.</li>
-                    <li>First no-show issues a Yellow warning.</li>
-                    <li>Second no-show triggers a formal review meeting.</li>
-                    <li>Third no-show can remove rewards eligibility.</li>
-                </ul>
+                <p class="cmn-muted">No-show records are reviewed against booking chat communication and attendance evidence.</p>
+                <details class="cmn-candidate-rewards-conduct-details">
+                    <summary>Conduct guidelines</summary>
+                    <ul class="cmn-candidate-rewards-policy">
+                        <li>Each no-show deducts 3 shifts from your rewards count.</li>
+                        <li>First no-show issues a Yellow warning.</li>
+                        <li>Second no-show triggers a formal review meeting.</li>
+                        <li>Third no-show can remove rewards eligibility.</li>
+                    </ul>
+                </details>
                 <div class="cmn-candidate-rewards-appeal-actions">
                     <button class="cmn-primary" type="button" data-cmn-rewards-open-appeal <?php echo $appeal_options ? '' : 'disabled'; ?>>Raise an appeal</button>
                     <span class="cmn-muted" data-cmn-rewards-appeal-availability>

@@ -3257,12 +3257,17 @@ document.addEventListener('DOMContentLoaded', function () {
       var availabilityDot = document.querySelector('[data-availability-dot]');
       var availabilityDotLabel = document.querySelector('[data-availability-dot-label]');
       var unavailableButton = document.querySelector('[data-availability-unavailable-button]');
+      var availabilityConfirmedPill = document.querySelector('[data-availability-confirmed-pill]');
       var availabilityImpact = document.querySelector('[data-availability-impact]');
       var availabilitySocial = document.querySelector('[data-availability-social]');
       var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
       var availabilityPeriodLabel = availabilityButton.getAttribute('data-availability-period-label') || 'tomorrow morning';
-      var confirmActionLabel = 'Confirm availability for ' + availabilityPeriodLabel;
-      var changeActionLabel = 'Change to not available';
+      var confirmActionLabel = (availabilityButton.textContent || '').trim();
+      if (!confirmActionLabel) {
+        confirmActionLabel = "CONFIRM I'M AVAILABLE " + availabilityPeriodLabel.toUpperCase();
+      }
+      var changeActionLabel = 'Change to NOT AVAILABLE';
+      var confirmedPillLabel = 'AVAILABILITY CONFIRMED';
       var countdownEl = document.querySelector('[data-availability-countdown]');
       var openAtRaw = availabilityButton.getAttribute('data-availability-open-at') || '';
       var closeAtRaw = availabilityButton.getAttribute('data-availability-close-at') || '';
@@ -3341,13 +3346,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         availabilitySocial.textContent = '🔥 ' + availabilityConfirmedCount + ' candidates have already confirmed';
       };
-      var setAvailabilityActionVisibility = function (isAvailable) {
-        if (isAvailable) {
+      var setAvailabilityActionVisibility = function (isAvailable, options) {
+        options = options || {};
+        var isBlockedState = !!options.blocked;
+        if (isAvailable || isBlockedState) {
           availabilityButton.setAttribute('hidden', 'hidden');
           availabilityButton.setAttribute('aria-hidden', 'true');
         } else {
           availabilityButton.removeAttribute('hidden');
           availabilityButton.removeAttribute('aria-hidden');
+        }
+        if (availabilityConfirmedPill) {
+          availabilityConfirmedPill.textContent = confirmedPillLabel;
+          if (isAvailable) {
+            availabilityConfirmedPill.removeAttribute('hidden');
+          } else {
+            availabilityConfirmedPill.setAttribute('hidden', 'hidden');
+          }
         }
         if (!unavailableButton) {
           return;
@@ -3437,21 +3452,44 @@ document.addEventListener('DOMContentLoaded', function () {
       var setAvailabilityVisualState = function (isAvailable, options) {
         options = options || {};
         var wasAvailable = availabilityButton.getAttribute('data-available') === '1';
+        var stateKey = options.stateKey || (isAvailable ? 'confirmed_available' : 'unconfirmed');
+        var isBlockedState = stateKey === 'confirmed_not_available';
+        var isWindowClosedState = stateKey === 'window_closed';
         availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
         setAvailabilityButtonLabel(confirmActionLabel);
-        setAvailabilityActionVisibility(isAvailable);
+        setAvailabilityActionVisibility(isAvailable, { blocked: isBlockedState });
         if (availabilityCard) {
+          availabilityCard.setAttribute('data-availability-state', stateKey);
           availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
-          if (!isAvailable) {
-            availabilityCard.classList.remove('is-blocked');
+          availabilityCard.classList.toggle('is-blocked', isBlockedState);
+          if (!isAvailable && !isBlockedState) {
+            availabilityCard.classList.remove('is-confirmed');
           }
         }
-        setStatusDot(isAvailable ? 'is-confirmed' : 'is-neutral', isAvailable ? 'Confirmed' : 'Not confirmed yet');
-        if (availabilityMessage) {
-          availabilityMessage.textContent = isAvailable ? 'Availability confirmed' : 'Not confirmed yet';
-        }
-        if (availabilityImpact) {
-          availabilityImpact.textContent = isAvailable ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.';
+        if (isBlockedState) {
+          setStatusDot('is-blocked', "I'm not available");
+          if (availabilityMessage) {
+            availabilityMessage.textContent = "I'm not available";
+          }
+          if (availabilityImpact) {
+            availabilityImpact.textContent = 'You will appear lower in manager searches.';
+          }
+        } else if (isWindowClosedState) {
+          setStatusDot('is-neutral', 'Window closed');
+          if (availabilityMessage) {
+            availabilityMessage.textContent = 'Window closed';
+          }
+          if (availabilityImpact) {
+            availabilityImpact.textContent = 'You will appear lower in manager searches.';
+          }
+        } else {
+          setStatusDot(isAvailable ? 'is-confirmed' : 'is-neutral', isAvailable ? 'Confirmed' : 'Not confirmed yet');
+          if (availabilityMessage) {
+            availabilityMessage.textContent = isAvailable ? 'Availability confirmed' : 'Not confirmed yet';
+          }
+          if (availabilityImpact) {
+            availabilityImpact.textContent = isAvailable ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.';
+          }
         }
         if (typeof options.confirmedCount === 'number' && !Number.isNaN(options.confirmedCount)) {
           availabilityConfirmedCount = Math.max(0, options.confirmedCount);
@@ -3464,11 +3502,13 @@ document.addEventListener('DOMContentLoaded', function () {
       if (unavailableButton) {
         unavailableButton.textContent = changeActionLabel;
       }
-      if (availabilityCard && availabilityCard.classList.contains('is-blocked')) {
-        setAvailabilityActionVisibility(false);
-        renderAvailabilityConfirmedCount();
+      var initialStateKey = availabilityCard ? (availabilityCard.getAttribute('data-availability-state') || '').trim() : '';
+      if (initialStateKey === 'confirmed_not_available' || (availabilityCard && availabilityCard.classList.contains('is-blocked'))) {
+        setAvailabilityVisualState(false, { confirmedCount: availabilityConfirmedCount, stateKey: 'confirmed_not_available' });
+      } else if (availabilityButton.getAttribute('data-available') === '1') {
+        setAvailabilityVisualState(true, { confirmedCount: availabilityConfirmedCount, stateKey: 'confirmed_available' });
       } else {
-        setAvailabilityVisualState(availabilityButton.getAttribute('data-available') === '1', { confirmedCount: availabilityConfirmedCount });
+        setAvailabilityVisualState(false, { confirmedCount: availabilityConfirmedCount, stateKey: (initialStateKey === 'window_closed' ? 'window_closed' : 'unconfirmed') });
       }
       if (unavailableButton) {
         unavailableButton.addEventListener('click', function () {
@@ -3485,7 +3525,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (data) {
               unavailableButton.disabled = false;
               if (data && data.success) {
-                setAvailabilityVisualState(false, { confirmedCount: getConfirmedCountFromPayload(data.data) });
+                setAvailabilityVisualState(false, { confirmedCount: getConfirmedCountFromPayload(data.data), stateKey: 'unconfirmed' });
                 syncAvailabilityButtonLabel();
               } else if (availabilityMessage) {
                 availabilityMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to update availability.';
@@ -3522,9 +3562,13 @@ document.addEventListener('DOMContentLoaded', function () {
           .then(function (data) {
             if (data && data.success) {
               if (data.data && typeof data.data.available !== 'undefined') {
-                setAvailabilityVisualState(!!data.data.available, { confirmedCount: getConfirmedCountFromPayload(data.data) });
+                var nextAvailableState = !!data.data.available;
+                setAvailabilityVisualState(nextAvailableState, {
+                  confirmedCount: getConfirmedCountFromPayload(data.data),
+                  stateKey: nextAvailableState ? 'confirmed_available' : 'unconfirmed'
+                });
               } else {
-                setAvailabilityVisualState(true, { confirmedCount: getConfirmedCountFromPayload(data.data) });
+                setAvailabilityVisualState(true, { confirmedCount: getConfirmedCountFromPayload(data.data), stateKey: 'confirmed_available' });
               }
               if (data.data && typeof data.data.button_enabled !== 'undefined') {
                 availabilityButton.disabled = !data.data.button_enabled;
@@ -5262,6 +5306,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var dataInput = calendarForm.querySelector('input[name="cmn_calendar_data"]');
     var monthInput = calendarForm.querySelector('input[name="cmn_calendar_month"]');
     var cells = calendarForm.querySelectorAll('.cmn-calendar-cell[data-date]');
+    var headerSaveButtons = document.querySelectorAll('[data-calendar-header-save]');
+    var headerClearButtons = document.querySelectorAll('[data-calendar-header-clear]');
     var data = {};
     try {
       data = JSON.parse(dataInput.value || '{}');
@@ -5332,6 +5378,25 @@ document.addEventListener('DOMContentLoaded', function () {
             }
           }
           d.setDate(d.getDate() + 1);
+        }
+      });
+    });
+
+    headerSaveButtons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (typeof calendarForm.requestSubmit === 'function') {
+          calendarForm.requestSubmit();
+        } else {
+          calendarForm.submit();
+        }
+      });
+    });
+
+    headerClearButtons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var clearButton = calendarForm.querySelector('[data-calendar-set="clear"]');
+        if (clearButton) {
+          clearButton.click();
         }
       });
     });
@@ -9296,11 +9361,77 @@ document.addEventListener('DOMContentLoaded', function () {
     var prefInputs = candidateSettingsRoot.querySelectorAll('[data-settings-pref]');
     var notifyToggleInputs = candidateSettingsRoot.querySelectorAll('[data-settings-notify]');
     var notifyTimeInputs = candidateSettingsRoot.querySelectorAll('[data-settings-notify-time]');
-    var saveBtn = candidateSettingsRoot.querySelector('[data-settings-save]');
-    var msgEl = candidateSettingsRoot.querySelector('[data-settings-message]');
+    var saveButtons = candidateSettingsRoot.querySelectorAll('[data-settings-save]');
+    var settingsMessageEls = candidateSettingsRoot.querySelectorAll('[data-settings-message]');
+    var settingsTabButtons = candidateSettingsRoot.querySelectorAll('[data-candidate-settings-tab]');
+    var settingsPanels = candidateSettingsRoot.querySelectorAll('[data-candidate-settings-panel]');
     var deleteEmailInput = candidateSettingsRoot.querySelector('[data-delete-confirm-email]');
     var deleteRequestBtn = candidateSettingsRoot.querySelector('[data-delete-request-btn]');
     var deleteRequestMsg = candidateSettingsRoot.querySelector('[data-delete-request-msg]');
+    var activeSettingsTab = candidateSettingsRoot.getAttribute('data-candidate-settings-active-tab') || 'appearance';
+    var getActiveSettingsPanel = function () {
+      return candidateSettingsRoot.querySelector('.cmn-candidate-settings-panel.is-active');
+    };
+    var getActiveSettingsMessageEl = function () {
+      var panel = getActiveSettingsPanel();
+      return panel ? panel.querySelector('[data-settings-message]') : candidateSettingsRoot.querySelector('[data-settings-message]');
+    };
+    var setSettingsMessage = function (message, silent, clearAfterMs) {
+      if (silent) {
+        return;
+      }
+      settingsMessageEls.forEach(function (el) {
+        el.textContent = '';
+      });
+      var target = getActiveSettingsMessageEl();
+      if (!target) {
+        return;
+      }
+      var text = String(message || '');
+      target.textContent = text;
+      if (clearAfterMs && clearAfterMs > 0) {
+        window.setTimeout(function () {
+          if (target.textContent === text) {
+            target.textContent = '';
+          }
+        }, clearAfterMs);
+      }
+    };
+    var activateSettingsTab = function (tabKey, updateUrl) {
+      var nextTab = String(tabKey || '').trim();
+      if (!nextTab) {
+        return;
+      }
+      var matched = false;
+      settingsTabButtons.forEach(function (btn) {
+        var key = btn.getAttribute('data-candidate-settings-tab') || '';
+        var isActive = key === nextTab;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        if (isActive) {
+          matched = true;
+        }
+      });
+      settingsPanels.forEach(function (panel) {
+        var key = panel.getAttribute('data-candidate-settings-panel') || '';
+        var isActive = key === nextTab;
+        panel.classList.toggle('is-active', isActive);
+        panel.hidden = !isActive;
+      });
+      if (!matched) {
+        return;
+      }
+      activeSettingsTab = nextTab;
+      candidateSettingsRoot.setAttribute('data-candidate-settings-active-tab', nextTab);
+      if (!updateUrl || !window.history || typeof window.history.replaceState !== 'function') {
+        return;
+      }
+      try {
+        var nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('cmn_candidate_settings_tab', nextTab);
+        window.history.replaceState(window.history.state || {}, '', nextUrl.toString());
+      } catch (e) {}
+    };
     var settingsFetch = function (action, extraPayload) {
       var formData = new FormData();
       formData.append('action', action);
@@ -9364,31 +9495,20 @@ document.addEventListener('DOMContentLoaded', function () {
       Object.keys(notificationPrefs).forEach(function (key) {
         fd.append('notification_preferences[' + key + ']', notificationPrefs[key]);
       });
-      if (msgEl && !silent) {
-        msgEl.textContent = 'Saving...';
-      }
+      setSettingsMessage('Saving...', silent);
       return fetch(window.cmnPortal.ajaxUrl, {
         method: 'POST',
         credentials: 'same-origin',
         body: fd,
       }).then(function (response) { return response.json(); }).then(function (data) {
         if (!data || !data.success) {
-          if (msgEl) {
-            msgEl.textContent = (data && data.data && data.data.message) ? data.data.message : 'Unable to save settings.';
-          }
+          setSettingsMessage((data && data.data && data.data.message) ? data.data.message : 'Unable to save settings.', silent);
           return;
         }
         cmnApplyThemeClass((data.data && data.data.theme) ? data.data.theme : payload.theme);
-        if (msgEl && !silent) {
-          msgEl.textContent = 'Settings saved.';
-          setTimeout(function () {
-            msgEl.textContent = '';
-          }, 1500);
-        }
+        setSettingsMessage('Settings saved.', silent, 1500);
       }).catch(function () {
-        if (msgEl && !silent) {
-          msgEl.textContent = 'Unable to save settings.';
-        }
+        setSettingsMessage('Unable to save settings.', silent);
       });
     };
 
@@ -9435,6 +9555,14 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
 
+    activateSettingsTab(activeSettingsTab, false);
+    settingsTabButtons.forEach(function (tabBtn) {
+      tabBtn.addEventListener('click', function () {
+        var tabKey = tabBtn.getAttribute('data-candidate-settings-tab') || '';
+        activateSettingsTab(tabKey, true);
+      });
+    });
+
     if (themeSelect) {
       themeSelect.addEventListener('change', function () {
         cmnApplyThemeClass(themeSelect.value);
@@ -9442,11 +9570,11 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     }
 
-    if (saveBtn) {
+    saveButtons.forEach(function (saveBtn) {
       saveBtn.addEventListener('click', function () {
         saveSettings(false);
       });
-    }
+    });
 
     if (deleteRequestBtn) {
       deleteRequestBtn.addEventListener('click', function () {
