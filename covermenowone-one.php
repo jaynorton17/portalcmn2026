@@ -23656,7 +23656,7 @@ final class CMN_One_Plugin {
                 ];
                 $missing_fields = $this->get_school_profile_missing_fields($school_post_id);
                 $fallback_profile_html = (string) $this->build_school_view_fallback_profile($school_post_id, $missing_fields);
-                $this->log_school_view_stage_timing('load_school_meta', $meta_stage_started_at, [
+                $this->log_school_view_stage_timing('load_meta', $meta_stage_started_at, [
                     'resolved_school_post_id' => (int) $school_post_id,
                     'permission_granted' => $permission_granted ? 1 : 0,
                     'missing_fields_count' => count($missing_fields),
@@ -23719,7 +23719,7 @@ final class CMN_One_Plugin {
                         ));
                     }
                     $render_stage = 'render_shell';
-                    $this->log_school_view_stage_timing('render', $render_stage_started_at, [
+                    $this->log_school_view_stage_timing('render_template', $render_stage_started_at, [
                         'resolved_school_post_id' => (int) $school_post_id,
                         'phase' => 'profile_markup',
                     ]);
@@ -40063,6 +40063,13 @@ final class CMN_One_Plugin {
             if ($status_pill_label === '') {
                 $status_pill_label = 'Pending';
             }
+            $status_pill_class = 'is-' . sanitize_html_class($status_key !== '' ? $status_key : 'pending');
+            $overview_detail_rows = $this->get_school_overview_tile_rows($school_id, [
+                'manager_or_contact' => $details_manager_or_contact,
+                'last_contacted_label' => $last_activity_label,
+                'last_contacted_exact' => $last_activity_exact,
+                'account_manager_name' => $assigned_manager_name,
+            ]);
             $feedback_avg_overall = (float) ($feedback_summary['avg_overall'] ?? 0);
             $feedback_count = (int) ($feedback_summary['feedback_count'] ?? 0);
             $feedback_fallback_average = (float) $meta('cmn_feedback_average');
@@ -40074,6 +40081,7 @@ final class CMN_One_Plugin {
             $feedback_stars_filled = max(0, min(5, (int) floor($feedback_rating_for_stars)));
             $feedback_summary_label = number_format($feedback_rating_for_stars, 1) . '/5';
             $feedback_has_entries = $feedback_count > 0;
+            $feedback_link_title = $feedback_has_entries ? 'View feedback' : 'No feedback submitted yet';
             $latest_call_activity = null;
             $latest_email_activity = null;
             $latest_note_activity = null;
@@ -40201,9 +40209,9 @@ final class CMN_One_Plugin {
             <div class="cmn-school-profile-status-wrap">
                 <div class="cmn-school-profile-status">
                     <span class="cmn-pill cmn-pill--school-id">School ID: <?php echo esc_html($display_school_identifier); ?></span>
-                    <span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_pill_label); ?></span>
+                    <span class="cmn-pill cmn-pill--status <?php echo esc_attr($status_pill_class); ?>"><?php echo esc_html($status_pill_label); ?></span>
                 </div>
-                <a class="cmn-school-feedback-stars<?php echo !$feedback_has_entries ? ' is-empty' : ''; ?>" href="<?php echo esc_url($feedback_jump_url); ?>" data-school-feedback-jump aria-label="Open school feedback details" title="<?php echo esc_attr($feedback_has_entries ? ($feedback_summary_label . ' (' . $feedback_count . ' total)') : 'No feedback submitted yet'); ?>">
+                <a class="cmn-school-feedback-stars<?php echo !$feedback_has_entries ? ' is-empty' : ''; ?>" href="<?php echo esc_url($feedback_jump_url); ?>" data-school-feedback-jump aria-label="Open school feedback details" title="<?php echo esc_attr($feedback_link_title); ?>">
 	                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
 	                        <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
 	                            <?php $star_active = ($star_i <= $feedback_stars_filled); ?>
@@ -40236,16 +40244,7 @@ final class CMN_One_Plugin {
             <?php endforeach; ?>
         </nav>
 	        <?php if ($show_profile_issues && $issues_preview) : ?>
-	            <section class="cmn-panel-card cmn-school-profile-issues-strip">
-	                <div class="cmn-school-profile-issues-strip-head">
-	                    <strong>Issues</strong>
-	                    <div class="cmn-school-profile-issues-actions">
-	                        <?php if ($can_quick_edit_profile) : ?>
-	                            <button class="cmn-ghost cmn-btn-mini" type="button" data-school-quick-edit-toggle aria-expanded="false" aria-controls="cmn-school-quick-edit-panel">Quick fix</button>
-	                        <?php endif; ?>
-	                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_tab_url('settings')); ?>">Settings</a>
-	                    </div>
-	                </div>
+	            <section class="cmn-panel-card cmn-school-profile-issues-strip cmn-school-profile-issues-strip--compact" role="status" aria-live="polite">
                 <div class="cmn-school-profile-issues-strip-list">
                     <?php foreach ($issues_preview as $issue_text) : ?>
                         <span class="cmn-pill cmn-pill--pending"><?php echo esc_html($issue_text); ?></span>
@@ -40308,34 +40307,22 @@ final class CMN_One_Plugin {
                     <h4 class="cmn-school-details-name"><?php echo esc_html((string) $school->post_title); ?></h4>
                 </div>
                 <div class="cmn-meta-grid cmn-meta-grid--school-details-compact">
-                    <div class="cmn-school-detail-item">
-                        <span class="cmn-school-detail-label">Location</span>
-                        <strong class="cmn-school-detail-value"><?php echo esc_html($display($details_location)); ?></strong>
-                    </div>
-                    <?php if ($details_manager_or_contact !== '') : ?>
+                    <?php foreach ($overview_detail_rows as $overview_row) : ?>
+                        <?php
+                        $overview_label = (string) ($overview_row['label'] ?? '');
+                        $overview_value = (string) ($overview_row['value'] ?? '—');
+                        $overview_title = trim((string) ($overview_row['title'] ?? ''));
+                        if ($overview_label === '') {
+                            continue;
+                        }
+                        ?>
                         <div class="cmn-school-detail-item">
-                            <span class="cmn-school-detail-label">Cover Manager / Primary Contact</span>
-                            <strong class="cmn-school-detail-value"><?php echo esc_html($details_manager_or_contact); ?></strong>
+                            <span class="cmn-school-detail-label"><?php echo esc_html($overview_label); ?></span>
+                            <strong class="cmn-school-detail-value"<?php echo $overview_title !== '' ? ' title="' . esc_attr($overview_title) . '"' : ''; ?>>
+                                <?php echo esc_html($overview_value !== '' ? $overview_value : '—'); ?>
+                            </strong>
                         </div>
-                    <?php endif; ?>
-                    <?php if ($details_phone !== '') : ?>
-                        <div class="cmn-school-detail-item">
-                            <span class="cmn-school-detail-label">Contact number</span>
-                            <strong class="cmn-school-detail-value"><?php echo esc_html($details_phone); ?></strong>
-                        </div>
-                    <?php endif; ?>
-                    <?php if ($details_email !== '') : ?>
-                        <div class="cmn-school-detail-item">
-                            <span class="cmn-school-detail-label">Email</span>
-                            <strong class="cmn-school-detail-value"><?php echo esc_html($details_email); ?></strong>
-                        </div>
-                    <?php endif; ?>
-                    <div class="cmn-school-detail-item">
-                        <span class="cmn-school-detail-label">Last contacted</span>
-                        <strong class="cmn-school-detail-value" title="<?php echo esc_attr($last_activity_exact !== '' ? $last_activity_exact : 'No timestamp available'); ?>">
-                            <?php echo esc_html($last_activity_label); ?>
-                        </strong>
-                    </div>
+                    <?php endforeach; ?>
                 </div>
             </div>
 	            <?php if ($has_application_context) : ?>
@@ -40819,7 +40806,7 @@ final class CMN_One_Plugin {
                 'missing_fields_count' => count($missing_profile_fields),
                 'render_duration_ms' => (int) round((microtime(true) - $render_started_at) * 1000),
             ]);
-            $this->log_school_view_stage_timing('render', $render_started_at, [
+            $this->log_school_view_stage_timing('render_template', $render_started_at, [
                 'school_post_id' => (int) $school_id,
                 'phase' => 'profile_panels',
             ]);
@@ -40836,7 +40823,7 @@ final class CMN_One_Plugin {
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]));
-            return '<div class="cmn-panel-card"><h3>Could not load school profile</h3><p>Profile rendering failed, so a safe fallback is shown instead.</p></div>';
+            return '<div class="cmn-panel-card"><h3>School profile could not be loaded</h3><p>Profile rendering failed, so a safe fallback is shown instead.</p></div>';
         }
     }
 
@@ -60419,10 +60406,7 @@ final class CMN_One_Plugin {
         $request_status = sanitize_key((string) $request_status);
         $context = is_array($context) ? $context : [];
 
-        if ($this->is_school_lead_like_status($status_key, $pipeline_stage_key, $request_status)) {
-            return $this->school_lead_has_contact_method($school_id) ? [] : ['Missing contact details'];
-        }
-
+        $is_lead_profile = $this->is_school_lead_like_status($status_key, $pipeline_stage_key, $request_status);
         $issues = [];
         $add_issue = function ($label) use (&$issues) {
             $label = trim((string) $label);
@@ -60435,15 +60419,6 @@ final class CMN_One_Plugin {
         $missing_profile_fields = isset($context['missing_profile_fields']) && is_array($context['missing_profile_fields'])
             ? array_values(array_filter(array_map('sanitize_text_field', (array) $context['missing_profile_fields'])))
             : $this->get_school_profile_missing_fields($school_id);
-        if ($missing_profile_fields) {
-            $missing_field_preview = array_slice($missing_profile_fields, 0, 3);
-            $missing_label = 'Missing fields: ' . implode(', ', $missing_field_preview);
-            if (count($missing_profile_fields) > 3) {
-                $missing_label .= ' +' . (count($missing_profile_fields) - 3) . ' more';
-            }
-            $add_issue($missing_label);
-        }
-
         $school_postcode = '';
         if (array_key_exists('school_postcode', $context)) {
             $school_postcode = trim((string) $context['school_postcode']);
@@ -60453,6 +60428,34 @@ final class CMN_One_Plugin {
         $has_school_coords = array_key_exists('school_coords', $context)
             ? !empty($context['school_coords'])
             : !empty($this->get_geo_coordinates_for_post($school_id));
+        $requires_location_verification = $this->school_requires_location_verification($school_id);
+
+        if ($is_lead_profile) {
+            if (!$this->school_lead_has_contact_method($school_id)) {
+                $add_issue('Missing contact method (phone or email required).');
+            }
+            if ($requires_location_verification) {
+                if ($school_postcode === '') {
+                    $add_issue('Postcode missing');
+                }
+                if (!$has_school_coords) {
+                    $add_issue('Location not verified');
+                }
+            }
+            return $issues;
+        }
+
+        $is_client_profile = in_array($status_key, ['client', 'active', 'active_client', 'live'], true) || $request_status === 'approved';
+        $enforce_location_checks = ($is_client_profile || $requires_location_verification);
+
+        if ($missing_profile_fields) {
+            $missing_field_preview = array_slice($missing_profile_fields, 0, 3);
+            $missing_label = 'Missing fields: ' . implode(', ', $missing_field_preview);
+            if (count($missing_profile_fields) > 3) {
+                $missing_label .= ' +' . (count($missing_profile_fields) - 3) . ' more';
+            }
+            $add_issue($missing_label);
+        }
 
         $domain_valid = array_key_exists('domain_valid', $context)
             ? !empty($context['domain_valid'])
@@ -60466,24 +60469,157 @@ final class CMN_One_Plugin {
             $domain_valid = ($school_domain !== '' && $this->is_school_registration_domain($school_domain));
         }
 
-        if ($school_postcode === '') {
-            $add_issue('Postcode missing');
+        if ($enforce_location_checks) {
+            if ($school_postcode === '') {
+                $add_issue('Postcode missing');
+            }
+            if (!$has_school_coords) {
+                $add_issue('Location not verified');
+            }
         }
-        if (!$has_school_coords) {
-            $add_issue('Location not verified');
-        }
-        if (!$domain_valid) {
+        if (($is_client_profile || $requires_location_verification) && !$domain_valid) {
             $add_issue('School domain missing');
         }
 
         $critical_meta_missing = array_key_exists('critical_meta_missing', $context)
             ? !empty($context['critical_meta_missing'])
             : (!$domain_valid || ($school_postcode === '' && !$has_school_coords));
-        if ($critical_meta_missing && !$issues) {
+        if (($is_client_profile || $requires_location_verification) && $critical_meta_missing && !$issues) {
             $add_issue('Profile data incomplete');
         }
 
         return $issues;
+    }
+
+    private function get_school_overview_field_map() {
+        $defaults = [
+            'location' => [
+                'label' => 'Location',
+                'meta_keys' => ['cmn_location', 'cmn_town', 'cmn_city'],
+            ],
+            'manager_or_contact' => [
+                'label' => 'Cover Manager / Primary Contact',
+                'context_key' => 'manager_or_contact',
+            ],
+            'contact_number' => [
+                'label' => 'Contact number',
+                'meta_keys' => ['cmn_phone', 'cmn_contact_phone', 'cmn_primary_contact_phone'],
+            ],
+            'email' => [
+                'label' => 'Email',
+                'meta_keys' => ['cmn_email', 'cmn_contact1_email', 'cmn_contact_email'],
+                'sanitize' => 'email',
+            ],
+            'last_contacted' => [
+                'label' => 'Last contacted',
+                'context_key' => 'last_contacted_label',
+                'tooltip_key' => 'last_contacted_exact',
+                'always_show' => true,
+                'empty_value' => 'No recent activity',
+            ],
+            'account_manager' => [
+                'label' => 'Account manager',
+                'meta_keys' => ['cmn_account_manager'],
+                'context_key' => 'account_manager_name',
+            ],
+            'primary_contact' => [
+                'label' => 'Primary contact',
+                'meta_keys' => ['cmn_contact1', 'cmn_contact_name'],
+            ],
+            'cover_manager' => [
+                'label' => 'Cover manager',
+                'meta_keys' => ['cmn_cover_manager', 'cmn_cover_manager_name'],
+            ],
+        ];
+        $map = apply_filters('cmn_school_overview_field_map', $defaults);
+        return is_array($map) ? $map : $defaults;
+    }
+
+    private function get_school_overview_tile_rows($school_id, $context = []) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return [];
+        }
+        $context = is_array($context) ? $context : [];
+        $field_map = $this->get_school_overview_field_map();
+        if (!$field_map) {
+            return [];
+        }
+        $default_fields = ['location', 'manager_or_contact', 'contact_number', 'email', 'last_contacted'];
+        $requested_fields = apply_filters('cmn_school_overview_tile_fields', $default_fields, $school_id, $context, $field_map);
+        if (!is_array($requested_fields) || !$requested_fields) {
+            $requested_fields = $default_fields;
+        }
+
+        $rows = [];
+        foreach ($requested_fields as $field_key) {
+            $field_key = sanitize_key((string) $field_key);
+            if ($field_key === '' || !isset($field_map[$field_key]) || !is_array($field_map[$field_key])) {
+                continue;
+            }
+            $field = $field_map[$field_key];
+            $label = sanitize_text_field((string) ($field['label'] ?? ucwords(str_replace('_', ' ', (string) $field_key))));
+            if ($label === '') {
+                continue;
+            }
+
+            $value = '';
+            $tooltip = '';
+
+            $context_key = sanitize_key((string) ($field['context_key'] ?? ''));
+            if ($context_key !== '' && array_key_exists($context_key, $context)) {
+                $value = trim((string) $context[$context_key]);
+            }
+
+            if ($value === '') {
+                $meta_keys = [];
+                if (!empty($field['meta_keys']) && is_array($field['meta_keys'])) {
+                    $meta_keys = array_values(array_filter(array_map('sanitize_key', (array) $field['meta_keys'])));
+                } elseif (!empty($field['meta_key'])) {
+                    $meta_key = sanitize_key((string) $field['meta_key']);
+                    if ($meta_key !== '') {
+                        $meta_keys[] = $meta_key;
+                    }
+                }
+                foreach ($meta_keys as $meta_key) {
+                    $meta_value = trim((string) get_post_meta($school_id, $meta_key, true));
+                    if ($meta_value !== '') {
+                        $value = $meta_value;
+                        break;
+                    }
+                }
+            }
+
+            $sanitize_type = sanitize_key((string) ($field['sanitize'] ?? 'text'));
+            if ($sanitize_type === 'email') {
+                $value = sanitize_email($value);
+            } else {
+                $value = sanitize_text_field($value);
+            }
+
+            $tooltip_key = sanitize_key((string) ($field['tooltip_key'] ?? ''));
+            if ($tooltip_key !== '' && array_key_exists($tooltip_key, $context)) {
+                $tooltip = trim((string) $context[$tooltip_key]);
+            }
+            $tooltip = sanitize_text_field($tooltip);
+
+            $always_show = !empty($field['always_show']);
+            if ($value === '') {
+                $value = sanitize_text_field((string) ($field['empty_value'] ?? ''));
+            }
+            if ($value === '' && !$always_show) {
+                continue;
+            }
+
+            $rows[] = [
+                'key' => $field_key,
+                'label' => $label,
+                'value' => $value !== '' ? $value : '—',
+                'title' => $tooltip,
+            ];
+        }
+
+        return $rows;
     }
 
     private function get_candidate_registration_profile_mapping_matrix() {
@@ -77911,6 +78047,9 @@ p{margin:0;line-height:1.5}
     }
 
     private function log_school_view_stage_timing($stage, $started_at, $context = []) {
+        if (!$this->is_school_debug_enabled()) {
+            return;
+        }
         $stage = sanitize_key((string) $stage);
         if ($stage === '') {
             return;
@@ -77951,6 +78090,9 @@ p{margin:0;line-height:1.5}
         }
         $requested_identifier = sanitize_text_field((string) $requested_identifier);
         $resolved_school_id = (int) $resolved_school_id;
+        $portal_page = get_page_by_title('Portal');
+        $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
+        $back_to_schools_url = add_query_arg(['view' => 'schools'], $portal_url);
         $school_name = '';
         $status_display = '';
         $edit_link = '';
@@ -77963,8 +78105,6 @@ p{margin:0;line-height:1.5}
             $status_display = $status_raw !== '' ? $status_raw : 'pending';
             $edit_link = get_edit_post_link($resolved_school_id, '');
             if ($edit_link === '') {
-                $portal_page = get_page_by_title('Portal');
-                $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
                 $school_code = (string) get_post_meta($resolved_school_id, 'cmn_school_id', true);
                 if ($school_code === '') {
                     $school_code = (string) $resolved_school_id;
@@ -77979,7 +78119,7 @@ p{margin:0;line-height:1.5}
         }
         $lines = [
             '<div class="cmn-panel-card">',
-            '<h3>Could not load school profile</h3>',
+            '<h3>School profile could not be loaded</h3>',
             '<p>' . esc_html($reason_short) . '</p>',
             $school_name !== '' ? ('<p><strong>School:</strong> ' . esc_html($school_name) . '</p>') : '',
             $status_display !== '' ? ('<p><strong>Status:</strong> ' . esc_html(ucfirst($status_display)) . '</p>') : '',
@@ -77987,6 +78127,7 @@ p{margin:0;line-height:1.5}
             '<p class="cmn-muted">Requested school_id: ' . esc_html($requested_identifier !== '' ? $requested_identifier : '—') . '</p>',
             '<p class="cmn-muted">Resolved post ID: ' . esc_html($resolved_school_id > 0 ? (string) $resolved_school_id : '—') . '</p>',
             $edit_link !== '' ? ('<p><a class="cmn-ghost cmn-btn-mini" href="' . esc_url($edit_link) . '">Edit profile</a></p>') : '',
+            '<p><a class="cmn-ghost cmn-btn-mini" href="' . esc_url($back_to_schools_url) . '">Back to Schools</a></p>',
             '</div>',
         ];
         return implode('', $lines);
