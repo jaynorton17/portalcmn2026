@@ -27355,11 +27355,24 @@ final class CMN_One_Plugin {
         }
         $search = strtolower(trim((string) $search));
         $limit = max(1, min(500, (int) $limit));
+        static $runtime_cache = [];
+        $cache_key = 'cmn_school_requests_queue_' . substr(md5($status_filter . '|' . $search . '|' . $limit), 0, 24);
+        if (isset($runtime_cache[$cache_key]) && is_array($runtime_cache[$cache_key])) {
+            return $runtime_cache[$cache_key];
+        }
+        $cached_rows = get_transient($cache_key);
+        if (is_array($cached_rows)) {
+            $runtime_cache[$cache_key] = $cached_rows;
+            return $cached_rows;
+        }
         $query = new WP_Query([
             'post_type' => 'cmn_school',
             'post_status' => ['publish', 'draft', 'pending', 'private'],
             'posts_per_page' => $limit,
             'fields' => 'ids',
+            'update_post_meta_cache' => true,
+            'update_post_term_cache' => false,
+            'cache_results' => true,
             'meta_query' => [
                 'relation' => 'OR',
                 [
@@ -27383,6 +27396,9 @@ final class CMN_One_Plugin {
             'order' => 'DESC',
             'no_found_rows' => true,
         ]);
+        if (!empty($query->posts)) {
+            update_meta_cache('post', (array) $query->posts);
+        }
         $rows = [];
         foreach ((array) $query->posts as $school_id) {
             $school_id = (int) $school_id;
@@ -27403,6 +27419,10 @@ final class CMN_One_Plugin {
             $requested_at = (string) get_post_meta($school_id, 'cmn_registration_requested_at', true);
             $post_date = (string) get_post_field('post_date', $school_id);
             $title = (string) get_the_title($school_id);
+            $assigned_manager_id = (int) get_post_meta($school_id, 'cmn_account_manager_user', true);
+            if ($assigned_manager_id < 1) {
+                $assigned_manager_id = (int) get_post_meta($school_id, 'cmn_account_manager_user_id', true);
+            }
             if ($search !== '') {
                 $haystack = strtolower(implode(' ', [$ref, $email, $domain, $location, $title]));
                 if (strpos($haystack, $search) === false) {
@@ -27425,6 +27445,7 @@ final class CMN_One_Plugin {
                 'more_info_note' => (string) get_post_meta($school_id, 'cmn_access_request_more_info_note', true),
                 'latest_school_reply' => (string) get_post_meta($school_id, 'cmn_access_request_latest_school_reply', true),
                 'latest_school_reply_at' => (string) get_post_meta($school_id, 'cmn_access_request_latest_school_reply_at', true),
+                'assigned_manager_id' => $assigned_manager_id,
             ];
         }
         usort($rows, static function ($a, $b) {
@@ -27437,6 +27458,8 @@ final class CMN_One_Plugin {
             }
             return $b_time <=> $a_time;
         });
+        $runtime_cache[$cache_key] = $rows;
+        set_transient($cache_key, $rows, 8);
         return $rows;
     }
 
@@ -27558,7 +27581,6 @@ final class CMN_One_Plugin {
     }
 
     private function count_pending_school_requests() {
-        $this->maybe_repair_imported_school_application_states();
         $rows = $this->get_school_requests_queue('pending', '', 500);
         $user_id = (int) get_current_user_id();
         if ($this->is_restricted_account_manager($user_id)) {
@@ -27580,7 +27602,6 @@ final class CMN_One_Plugin {
         if (!$this->is_staff_user()) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to staff only.</p></div></section>';
         }
-        $this->maybe_repair_imported_school_application_states();
         $status_filter = sanitize_key((string) ($_GET['status'] ?? 'pending'));
         if (!in_array($status_filter, ['pending', 'approved', 'more_info_needed', 'rejected', 'all'], true)) {
             $status_filter = 'pending';
@@ -27598,7 +27619,12 @@ final class CMN_One_Plugin {
                 return $this->render_staff_shell('school_requests', $fallback);
             }
         }
+        $queue_t0 = microtime(true);
         $rows = $this->get_school_requests_queue($status_filter, $search, 300);
+        $queue_elapsed = microtime(true) - $queue_t0;
+        if ($queue_elapsed > 1.2) {
+            error_log('[CMN_PERF] school_requests_queue_slow status=' . $status_filter . ' q=' . sanitize_key($search) . ' elapsed=' . round($queue_elapsed, 3) . ' rows=' . count($rows));
+        }
         $current_user_id = (int) get_current_user_id();
         if ($this->is_restricted_account_manager($current_user_id)) {
             $manageable_school_ids = $this->get_manageable_school_ids_for_user($current_user_id);
@@ -27612,8 +27638,32 @@ final class CMN_One_Plugin {
         }
         $can_update_assignment = $this->is_admin_user($current_user_id);
         $account_managers = $can_update_assignment ? $this->get_account_manager_users() : [];
-        $recent_cutoff = time() - (7 * DAY_IN_SECONDS);
+        $assigned_manager_map = [];
+        $assigned_manager_ids = [];
         foreach ($rows as $row) {
+            $manager_id = (int) ($row['assigned_manager_id'] ?? 0);
+            if ($manager_id > 0) {
+                $assigned_manager_ids[$manager_id] = $manager_id;
+            }
+        }
+        if ($assigned_manager_ids) {
+            $assigned_manager_users = get_users([
+                'include' => array_values($assigned_manager_ids),
+                'fields' => ['ID', 'display_name'],
+                'count_total' => false,
+            ]);
+            foreach ((array) $assigned_manager_users as $assigned_manager_user) {
+                if ($assigned_manager_user instanceof WP_User) {
+                    $assigned_manager_map[(int) $assigned_manager_user->ID] = (string) $assigned_manager_user->display_name;
+                }
+            }
+        }
+        $recent_cutoff = time() - (7 * DAY_IN_SECONDS);
+        $notify_budget = 40;
+        foreach ($rows as $row) {
+            if ($notify_budget <= 0) {
+                break;
+            }
             if ((string) ($row['status'] ?? '') !== 'pending') {
                 continue;
             }
@@ -27626,6 +27676,7 @@ final class CMN_One_Plugin {
                 (int) ($row['school_id'] ?? 0),
                 (string) ($row['ref'] ?? '')
             );
+            $notify_budget--;
         }
         $current_url = add_query_arg([
             'view' => 'school-requests',
@@ -27679,17 +27730,8 @@ final class CMN_One_Plugin {
                     }
                     $school_id = (int) ($row['school_id'] ?? 0);
                     $ref_value = (string) ($row['ref'] ?? '');
-                    $assigned_manager_id = (int) get_post_meta($school_id, 'cmn_account_manager_user', true);
-                    if ($assigned_manager_id < 1) {
-                        $assigned_manager_id = (int) get_post_meta($school_id, 'cmn_account_manager_user_id', true);
-                    }
-                    $assigned_manager_name = '';
-                    if ($assigned_manager_id > 0) {
-                        $assigned_manager_user = get_user_by('id', $assigned_manager_id);
-                        if ($assigned_manager_user && !empty($assigned_manager_user->display_name)) {
-                            $assigned_manager_name = (string) $assigned_manager_user->display_name;
-                        }
-                    }
+                    $assigned_manager_id = (int) ($row['assigned_manager_id'] ?? 0);
+                    $assigned_manager_name = $assigned_manager_id > 0 ? (string) ($assigned_manager_map[$assigned_manager_id] ?? '') : '';
                     ?>
                     <article class="cmn-dashboard-card cmn-school-request-review-card">
                         <header class="cmn-school-request-review-card-head">
