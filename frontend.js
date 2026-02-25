@@ -8308,6 +8308,10 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!selectEl || !saveEl) {
         return;
       }
+      if (selectEl.options && selectEl.options.length <= 1) {
+        selectEl.disabled = true;
+        selectEl.setAttribute('aria-disabled', 'true');
+      }
 
       var fetchTheme = function () {
         var fd = new FormData();
@@ -8584,9 +8588,39 @@ document.addEventListener('DOMContentLoaded', function () {
 
   var candidateDocsRoot = document.querySelector('[data-candidate-docs]');
   var candidateProfileRoot = document.querySelector('[data-profile-root]');
+  var profileCompletionHelp = document.querySelector('[data-profile-completion-help]');
+  var profileCompletionHelpText = document.querySelector('[data-profile-completion-helper-text]');
+  var profileCompletionMissing = document.querySelector('[data-profile-completion-missing]');
+  var renderProfileCompletionMissing = function (missingItems, pct) {
+    if (!profileCompletionHelp || !profileCompletionHelpText || !profileCompletionMissing) {
+      return;
+    }
+    var items = Array.isArray(missingItems) ? missingItems.filter(function (item) {
+      return !!item;
+    }) : [];
+    profileCompletionMissing.innerHTML = '';
+    if (items.length) {
+      profileCompletionHelp.classList.remove('is-complete');
+      profileCompletionHelpText.textContent = 'To reach 100% complete:';
+      items.forEach(function (item) {
+        var li = document.createElement('li');
+        li.textContent = String(item);
+        profileCompletionMissing.appendChild(li);
+      });
+      profileCompletionMissing.hidden = false;
+      return;
+    }
+    profileCompletionHelp.classList.add('is-complete');
+    profileCompletionHelpText.textContent = (typeof pct === 'number' && pct >= 100)
+      ? 'Profile complete. You are at 100%.'
+      : 'All key profile items are complete.';
+    profileCompletionMissing.hidden = true;
+  };
   if (candidateProfileRoot && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateProfileNonce) {
     var profileMain = candidateProfileRoot.closest('.cmn-candidate-main');
-    var profileGlobalEditButton = candidateProfileRoot.querySelector('[data-profile-global-edit]');
+    var profileGlobalEditButtons = Array.prototype.slice.call(
+      profileMain ? profileMain.querySelectorAll('[data-profile-global-edit]') : candidateProfileRoot.querySelectorAll('[data-profile-global-edit]')
+    );
     var profileGlobalActions = document.querySelector('[data-profile-global-actions]');
     var profileGlobalSave = document.querySelector('[data-profile-global-save]');
     var profileGlobalCancel = document.querySelector('[data-profile-global-cancel]');
@@ -8598,6 +8632,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var profileIsEditing = false;
     var profileSaveInFlight = false;
     var profileEditSnapshot = '';
+    var profilePhotoRoot = document.querySelector('[data-profile-photo-root]');
 
     var setProfileMessage = function (text) {
       var msg = document.querySelector('[data-doc-message]');
@@ -8605,6 +8640,121 @@ document.addEventListener('DOMContentLoaded', function () {
         msg.textContent = text || '';
       }
     };
+
+    if (profilePhotoRoot) {
+      var profilePhotoInput = profilePhotoRoot.querySelector('[data-profile-photo-input]');
+      var profilePhotoPreview = profilePhotoRoot.querySelector('[data-profile-photo-preview]');
+      var profilePhotoUploadBtn = profilePhotoRoot.querySelector('[data-profile-photo-upload-trigger]');
+      var profilePhotoRemoveBtn = profilePhotoRoot.querySelector('[data-profile-photo-remove]');
+      var profilePhotoMessage = profilePhotoRoot.querySelector('[data-profile-photo-message]');
+      var profilePhotoFallback = profilePhotoRoot.getAttribute('data-fallback-url') || '';
+      var profilePhotoBusy = false;
+      var setProfilePhotoMessage = function (text, isError) {
+        if (!profilePhotoMessage) {
+          return;
+        }
+        profilePhotoMessage.textContent = text || '';
+        profilePhotoMessage.classList.toggle('is-error', !!isError);
+      };
+      var setProfilePhotoBusy = function (busy) {
+        profilePhotoBusy = !!busy;
+        if (profilePhotoUploadBtn) {
+          profilePhotoUploadBtn.disabled = profilePhotoBusy;
+        }
+        if (profilePhotoRemoveBtn) {
+          profilePhotoRemoveBtn.disabled = profilePhotoBusy || profilePhotoRemoveBtn.getAttribute('data-has-photo') === '0';
+        }
+      };
+      var setProfilePhotoState = function (photoUrl, hasPhoto) {
+        if (profilePhotoPreview) {
+          var resolvedUrl = (photoUrl || profilePhotoFallback || profilePhotoPreview.src || '');
+          profilePhotoPreview.src = resolvedUrl;
+        }
+        if (profilePhotoRemoveBtn) {
+          profilePhotoRemoveBtn.setAttribute('data-has-photo', hasPhoto ? '1' : '0');
+          profilePhotoRemoveBtn.disabled = !hasPhoto;
+        }
+      };
+
+      if (profilePhotoUploadBtn && profilePhotoInput) {
+        profilePhotoUploadBtn.addEventListener('click', function () {
+          if (profilePhotoBusy) {
+            return;
+          }
+          profilePhotoInput.click();
+        });
+      }
+
+      if (profilePhotoInput) {
+        profilePhotoInput.addEventListener('change', function () {
+          if (profilePhotoBusy || !profilePhotoInput.files || !profilePhotoInput.files[0]) {
+            return;
+          }
+          var fd = new FormData();
+          fd.append('action', 'cmn_candidate_profile_photo_upload');
+          fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+          fd.append('profile_photo', profilePhotoInput.files[0]);
+          setProfilePhotoBusy(true);
+          setProfilePhotoMessage('Uploading photo...', false);
+          fetch(window.cmnPortal.ajaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: fd
+          }).then(function (response) {
+            return response.json();
+          }).then(function (data) {
+            if (!data || !data.success) {
+              var uploadError = data && data.data && data.data.message ? data.data.message : 'Unable to upload photo.';
+              setProfilePhotoMessage(uploadError, true);
+              return;
+            }
+            var photoUrl = data.data && data.data.photo_url ? String(data.data.photo_url) : profilePhotoFallback;
+            setProfilePhotoState(photoUrl, true);
+            setProfilePhotoMessage((data.data && data.data.message) ? String(data.data.message) : 'Photo updated.', false);
+          }).catch(function () {
+            setProfilePhotoMessage('Unable to upload photo.', true);
+          }).finally(function () {
+            setProfilePhotoBusy(false);
+            profilePhotoInput.value = '';
+          });
+        });
+      }
+
+      if (profilePhotoRemoveBtn) {
+        profilePhotoRemoveBtn.addEventListener('click', function () {
+          if (profilePhotoBusy || profilePhotoRemoveBtn.getAttribute('data-has-photo') !== '1') {
+            return;
+          }
+          var fd = new FormData();
+          fd.append('action', 'cmn_candidate_profile_photo_remove');
+          fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+          setProfilePhotoBusy(true);
+          setProfilePhotoMessage('Removing photo...', false);
+          fetch(window.cmnPortal.ajaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: fd
+          }).then(function (response) {
+            return response.json();
+          }).then(function (data) {
+            if (!data || !data.success) {
+              var removeError = data && data.data && data.data.message ? data.data.message : 'Unable to remove photo.';
+              setProfilePhotoMessage(removeError, true);
+              return;
+            }
+            var fallbackUrl = data.data && data.data.photo_url ? String(data.data.photo_url) : profilePhotoFallback;
+            setProfilePhotoState(fallbackUrl, false);
+            setProfilePhotoMessage((data.data && data.data.message) ? String(data.data.message) : 'Photo removed.', false);
+          }).catch(function () {
+            setProfilePhotoMessage('Unable to remove photo.', true);
+          }).finally(function () {
+            setProfilePhotoBusy(false);
+          });
+        });
+      }
+
+      setProfilePhotoState(profilePhotoPreview ? profilePhotoPreview.getAttribute('src') : profilePhotoFallback, !!(profilePhotoRemoveBtn && !profilePhotoRemoveBtn.disabled));
+    }
 
     var serializeProfileForm = function (form) {
       if (!form) {
@@ -8687,9 +8837,12 @@ document.addEventListener('DOMContentLoaded', function () {
       profileEditOnlyCards.forEach(function (card) {
         card.hidden = !profileIsEditing;
       });
-      if (profileGlobalEditButton) {
-        profileGlobalEditButton.hidden = profileIsEditing;
-      }
+      profileGlobalEditButtons.forEach(function (button) {
+        if (!button) {
+          return;
+        }
+        button.hidden = profileIsEditing;
+      });
       if (profileGlobalActions) {
         profileGlobalActions.hidden = !profileIsEditing;
       }
@@ -8726,12 +8879,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
 
-      var roleInputs = document.querySelectorAll('[data-profile-form="role"] input[name="roles[]"]:checked');
+      var roleInputs = document.querySelectorAll('[data-profile-form] input[name="roles[]"]:checked');
       roleInputs.forEach(function (input) {
         fd.append('roles[]', input.value);
       });
 
-      var dayInputs = document.querySelectorAll('[data-profile-form="role"] input[name="availability_days[]"]:checked');
+      var dayInputs = document.querySelectorAll('[data-profile-form] input[name="availability_days[]"]:checked');
       dayInputs.forEach(function (input) {
         fd.append('availability_days[]', input.value);
       });
@@ -8789,6 +8942,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (nationalityEl) {
           nationalityEl.textContent = profile.nationality || 'Not set';
+        }
+        var nationalityAction = document.querySelector('[data-profile-nationality-action]');
+        if (nationalityAction) {
+          nationalityAction.hidden = !!(profile.nationality && String(profile.nationality).trim() !== '');
         }
         if (roleEl) {
           roleEl.textContent = profile.role_type || 'Not set';
@@ -8855,6 +9012,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var completionBar = document.querySelector('[data-profile-completion-bar]');
         var completionCopy = document.querySelector('[data-profile-completion-copy]');
         var pct = typeof data.data.completion === 'number' ? data.data.completion : null;
+        var missingItems = Array.isArray(data.data.completion_missing) ? data.data.completion_missing : [];
         if (pct !== null) {
           if (completionText) {
             completionText.textContent = pct + '% Complete';
@@ -8866,6 +9024,7 @@ document.addEventListener('DOMContentLoaded', function () {
             completionCopy.textContent = 'Profile ' + pct + '% complete';
           }
         }
+        renderProfileCompletionMissing(missingItems, pct);
 
         profileForms.forEach(function (form) {
           commitProfileFormDefaults(form);
@@ -8882,11 +9041,14 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     };
 
-    if (profileGlobalEditButton) {
-      profileGlobalEditButton.addEventListener('click', function () {
+    profileGlobalEditButtons.forEach(function (button) {
+      if (!button) {
+        return;
+      }
+      button.addEventListener('click', function () {
         toggleProfileEditMode(true);
       });
-    }
+    });
     if (profileGlobalCancel) {
       profileGlobalCancel.addEventListener('click', function () {
         toggleProfileEditMode(false, false);
@@ -8928,7 +9090,7 @@ document.addEventListener('DOMContentLoaded', function () {
         docMessage.textContent = text || '';
       }
     };
-    var updateCompletion = function (pct) {
+    var updateCompletion = function (pct, missingItems) {
       if (typeof pct !== 'number') {
         return;
       }
@@ -8941,6 +9103,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (completionBar) {
         completionBar.style.width = pct + '%';
       }
+      renderProfileCompletionMissing(missingItems, pct);
     };
     var updateComplianceSummary = function () {
       var states = ['dbs', 'id', 'cv'].map(function (type) {
@@ -9203,7 +9366,7 @@ document.addEventListener('DOMContentLoaded', function () {
             applyCompliancePayload(data.data.compliance);
           }
           if (data.data && typeof data.data.completion === 'number') {
-            updateCompletion(data.data.completion);
+            updateCompletion(data.data.completion, data.data.completion_missing);
           }
           setDocMessage('Document uploaded successfully.');
         };
@@ -9244,7 +9407,7 @@ document.addEventListener('DOMContentLoaded', function () {
             applyCompliancePayload(data.data.compliance);
           }
           if (data.data && typeof data.data.completion === 'number') {
-            updateCompletion(data.data.completion);
+            updateCompletion(data.data.completion, data.data.completion_missing);
           }
           setDocMessage('Document removed.');
         }).catch(function () {
@@ -10244,12 +10407,15 @@ document.addEventListener('DOMContentLoaded', function () {
     try { payload = JSON.parse(payloadRaw); } catch (e) { payload = {}; }
     var datasetAll = Array.isArray(payload.all) ? payload.all.slice() : [];
     var tab = 'all';
-    var activeIndex = 0;
+    var startIndex = 0;
     var carousel = root.querySelector('[data-live-carousel]');
     var dots = root.querySelector('[data-live-dots]');
     var tabsEl = root.querySelector('.cmn-live-tabs');
     var kpis = root.querySelector('[data-live-kpis]');
     var drawer = root.querySelector('[data-live-filter-drawer]');
+    if (drawer) {
+      drawer.hidden = true;
+    }
 
     var tabDefs = [
       {key:'all', label:'All Candidates'},
@@ -10266,6 +10432,18 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     };
 
+    var getVisibleWindow = function(list, offset, count){
+      if (!list.length) {
+        return [];
+      }
+      var limit = Math.max(1, Math.min(count, list.length));
+      var out = [];
+      for (var i = 0; i < limit; i += 1) {
+        out.push(list[(offset + i) % list.length]);
+      }
+      return out;
+    };
+
     var postAction = function(action, candidateId, extra){
       var form = new FormData();
       form.append('action', 'cmn_school_live_match_action');
@@ -10276,21 +10454,28 @@ document.addEventListener('DOMContentLoaded', function () {
       return fetch((window.cmnPortal && window.cmnPortal.ajaxUrl) || '', {method:'POST', credentials:'same-origin', body:form}).then(function(r){ return r.json(); });
     };
 
-    var cardHtml = function(item, mode){
-      if (!item) return '<div></div>';
-      if (mode === 'side') {
-        return '<article class="cmn-live-card is-side cmn-live-preview" data-candidate-id="'+item.candidate_id+'">'
-          + '<div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div></div>'
-          + '</article>';
+    var resolveDistanceText = function(rawValue){
+      var raw = String(rawValue || '').trim();
+      if (!raw) {
+        return '';
       }
+      if (/^\d+(\.\d+)?$/.test(raw)) {
+        return raw + ' miles';
+      }
+      return raw;
+    };
+
+    var cardHtml = function(item){
+      if (!item) return '<div></div>';
       var banner = item.status === 'available' ? '<div class="cmn-live-banner">Available This Morning<br><small>Confirmed at '+(item.confirmed_at||'--:--')+'</small></div>' : '<div class="cmn-live-banner" style="background:rgba(68,54,12,.86)">Awaiting confirmation</div>';
+      var distanceText = resolveDistanceText(item.distance);
       return '<article class="cmn-live-card" data-candidate-id="'+item.candidate_id+'">'
-        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+' ✓</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-rating">★ '+Number(item.rating||0).toFixed(1)+' ('+(item.reviews||0)+' reviews)</div></div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
-        + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span style="font-size:38%;font-weight:500">Per day</span></div></div>'
+        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-rating">★ '+Number(item.rating||0).toFixed(1)+' ('+(item.reviews||0)+')</div></div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
+        + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
+        + (distanceText ? '<div class="cmn-live-distance">'+distanceText+'</div>' : '')
         + '<div class="cmn-live-skills"><span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span></div>'
         + '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now">Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="'+(item.profile_url || '#')+'" target="_blank" rel="noopener">View Profile</a></div>'
         + '<div class="cmn-live-offer" data-live-offer></div>'
-        + '<div class="cmn-live-photo-nudge">You\'re 34% more likely to get an enquiry with a photo.</div>'
         + '</article>';
     };
 
@@ -10304,33 +10489,23 @@ document.addEventListener('DOMContentLoaded', function () {
     var render = function(){
       var list = getFiltered();
       if (!list.length) { carousel.innerHTML = '<div class="cmn-muted">No candidates in this tab.</div>'; dots.innerHTML=''; renderTabs(); return; }
-      if (activeIndex >= list.length) activeIndex = 0;
-      var left = list[(activeIndex - 1 + list.length) % list.length];
-      var center = list[activeIndex];
-      var right = list[(activeIndex + 1) % list.length];
-      carousel.innerHTML = cardHtml(left,'side') + cardHtml(center,'center') + cardHtml(right,'side');
-      dots.innerHTML = list.map(function(_,idx){ return '<span class="cmn-live-dot'+(idx===activeIndex?' is-active':'')+'" data-live-dot="'+idx+'"></span>'; }).join('');
+      if (startIndex >= list.length) startIndex = 0;
+      var visible = getVisibleWindow(list, startIndex, 3);
+      carousel.innerHTML = visible.map(function(item){ return cardHtml(item); }).join('');
+      dots.innerHTML = list.map(function(_,idx){ return '<button type="button" class="cmn-live-dot'+(idx===startIndex?' is-active':'')+'" data-live-dot="'+idx+'" aria-label="Show candidate '+(idx+1)+'"></button>'; }).join('');
       renderTabs();
     };
 
     root.addEventListener('click', function(e){
       var tabBtn = e.target.closest('[data-live-tab]');
-      if (tabBtn) { tab = tabBtn.getAttribute('data-live-tab') || 'all'; activeIndex = 0; render(); return; }
-      if (e.target.closest('[data-live-prev]')) { activeIndex -= 1; if (activeIndex < 0) activeIndex = getFiltered().length - 1; render(); return; }
-      if (e.target.closest('[data-live-next]')) { activeIndex = (activeIndex + 1) % Math.max(1,getFiltered().length); render(); return; }
+      if (tabBtn) { tab = tabBtn.getAttribute('data-live-tab') || 'all'; startIndex = 0; render(); return; }
+      if (e.target.closest('[data-live-prev]')) { var prevLen = Math.max(1, getFiltered().length); startIndex = (startIndex - 1 + prevLen) % prevLen; render(); return; }
+      if (e.target.closest('[data-live-next]')) { startIndex = (startIndex + 1) % Math.max(1,getFiltered().length); render(); return; }
       var dot = e.target.closest('[data-live-dot]');
-      if (dot) { activeIndex = parseInt(dot.getAttribute('data-live-dot') || '0',10) || 0; render(); return; }
-      var sideCard = e.target.closest('.cmn-live-card.is-side');
-      if (sideCard) {
-        var list = getFiltered();
-        var id = parseInt(sideCard.getAttribute('data-candidate-id') || '0',10);
-        var idx = list.findIndex(function(item){ return Number(item.candidate_id) === id; });
-        if (idx >= 0) { activeIndex = idx; render(); }
-        return;
-      }
-      if (e.target.closest('[data-live-filter-open]')) { drawer.hidden = false; return; }
-      if (e.target.closest('[data-live-filter-close]')) { drawer.hidden = true; return; }
-      if (e.target.closest('[data-live-filter-apply]')) { activeIndex = 0; drawer.hidden = true; render(); return; }
+      if (dot) { startIndex = parseInt(dot.getAttribute('data-live-dot') || '0',10) || 0; render(); return; }
+      if (drawer && e.target.closest('[data-live-filter-open]')) { drawer.hidden = false; return; }
+      if (drawer && e.target.closest('[data-live-filter-close]')) { drawer.hidden = true; return; }
+      if (drawer && e.target.closest('[data-live-filter-apply]')) { startIndex = 0; drawer.hidden = true; render(); return; }
       if (e.target.closest('[data-live-broadcast]')) { postAction('broadcast_request', 0, {}); return; }
 
       var actionBtn = e.target.closest('[data-live-action]');
@@ -10339,13 +10514,13 @@ document.addEventListener('DOMContentLoaded', function () {
       var candidateId = parseInt((card && card.getAttribute('data-candidate-id')) || '0', 10);
       if (!candidateId) { return; }
       var action = actionBtn.getAttribute('data-live-action') || '';
-      var current = getFiltered()[activeIndex] || null;
+      var current = datasetAll.find(function(item){ return Number(item.candidate_id) === candidateId; }) || null;
       var extra = current ? {requested_date: (current.target_date || '')} : {};
       postAction(action, candidateId, extra).then(function(data){
         if (!data || !data.success) return;
         if (action === 'not_interested') {
           datasetAll = datasetAll.filter(function(item){ return Number(item.candidate_id) !== candidateId; });
-          activeIndex = 0;
+          startIndex = 0;
           render();
           return;
         }
@@ -10358,6 +10533,9 @@ document.addEventListener('DOMContentLoaded', function () {
           var expiry = new Date((data.data.expires_at || '').replace(' ','T') + 'Z');
           var offerEl = card ? card.querySelector('[data-live-offer]') : null;
           if (offerEl && !isNaN(expiry.getTime())) {
+            if (offerEl._cmnTimerId) {
+              window.clearInterval(offerEl._cmnTimerId);
+            }
             var tick = function(){
               var now = new Date();
               var sec = Math.max(0, Math.floor((expiry.getTime() - now.getTime())/1000));
@@ -10366,17 +10544,41 @@ document.addEventListener('DOMContentLoaded', function () {
               offerEl.textContent = sec > 0 ? ('Offer expires in '+mm+':'+ss) : 'Offer expired';
             };
             tick();
-            window.setInterval(tick, 1000);
+            offerEl._cmnTimerId = window.setInterval(tick, 1000);
           }
         }
       });
     });
 
-    root.addEventListener('keydown', function(e){ if (e.key==='ArrowLeft'){ activeIndex = activeIndex-1; if (activeIndex<0) activeIndex = getFiltered().length-1; render(); } if (e.key==='ArrowRight'){ activeIndex=(activeIndex+1)%Math.max(1,getFiltered().length); render(); } });
+    root.addEventListener('keydown', function(e){
+      if (e.key==='ArrowLeft'){
+        var leftLen = Math.max(1, getFiltered().length);
+        startIndex = (startIndex - 1 + leftLen) % leftLen;
+        render();
+      }
+      if (e.key==='ArrowRight'){
+        startIndex = (startIndex + 1) % Math.max(1,getFiltered().length);
+        render();
+      }
+    });
     var touchStartX = 0;
     carousel.addEventListener('touchstart', function(e){ touchStartX = e.touches && e.touches[0] ? e.touches[0].clientX : 0; }, {passive:true});
-    carousel.addEventListener('touchend', function(e){ var endX = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : 0; if ((touchStartX-endX)>40){ activeIndex=(activeIndex+1)%Math.max(1,getFiltered().length); render(); } else if ((endX-touchStartX)>40){ activeIndex=activeIndex-1; if (activeIndex<0) activeIndex=getFiltered().length-1; render(); } }, {passive:true});
+    carousel.addEventListener('touchend', function(e){
+      var endX = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : 0;
+      if ((touchStartX-endX)>40){
+        startIndex=(startIndex+1)%Math.max(1,getFiltered().length);
+        render();
+      } else if ((endX-touchStartX)>40){
+        var touchLen = Math.max(1, getFiltered().length);
+        startIndex=(startIndex-1+touchLen)%touchLen;
+        render();
+      }
+    }, {passive:true});
 
     render();
   });
 })();
+    if (themeSelect && themeSelect.options && themeSelect.options.length <= 1) {
+      themeSelect.disabled = true;
+      themeSelect.setAttribute('aria-disabled', 'true');
+    }

@@ -813,6 +813,8 @@ final class CMN_One_Plugin {
         add_action('login_footer', [$this, 'login_footer_link']);
         add_action('admin_post_nopriv_cmn_portal_login', [$this, 'handle_portal_login']);
         add_action('admin_post_cmn_portal_login', [$this, 'handle_portal_login']);
+        add_action('admin_post_nopriv_cmn_portal_logout', [$this, 'handle_portal_logout']);
+        add_action('admin_post_cmn_portal_logout', [$this, 'handle_portal_logout']);
         add_action('admin_post_nopriv_', [$this, 'handle_portal_login_fallback_admin_post']);
         add_action('admin_post_', [$this, 'handle_portal_login_fallback_admin_post']);
         add_action('admin_post_nopriv_cmn_portal_forgot_password', [$this, 'handle_portal_forgot_password']);
@@ -854,6 +856,8 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_cv_save_formatted', [$this, 'handle_cv_save_formatted']);
         add_action('rest_api_init', [$this, 'register_cv_converter_rest_routes']);
         add_action('wp_ajax_cmn_candidate_update_profile', [$this, 'handle_candidate_update_profile']);
+        add_action('wp_ajax_cmn_candidate_profile_photo_upload', [$this, 'handle_candidate_profile_photo_upload']);
+        add_action('wp_ajax_cmn_candidate_profile_photo_remove', [$this, 'handle_candidate_profile_photo_remove']);
         add_action('wp_ajax_cmn_candidate_learning_opt_in', [$this, 'handle_candidate_learning_opt_in']);
         add_action('wp_ajax_cmn_candidate_rewards_overview', [$this, 'handle_candidate_rewards_overview']);
         add_action('wp_ajax_cmn_candidate_rewards_open_appeal', [$this, 'handle_candidate_rewards_open_appeal']);
@@ -8556,7 +8560,7 @@ final class CMN_One_Plugin {
                     <?php echo $this->render_topbar_livechat_button(); ?>
                     <?php echo $this->render_notifications_bell($user ? $user->ID : 0); ?>
                     <span>Welcome, <?php echo esc_html($user ? $user->display_name : 'Admin'); ?></span>
-                    <a class="cmn-topbar-logout" href="<?php echo esc_url(wp_logout_url($portal_url)); ?>">Logout</a>
+                    <a class="cmn-topbar-logout" href="<?php echo esc_url($this->get_portal_logout_url($portal_url)); ?>">Logout</a>
                 </div>
             </div>
             <div class="cmn-school-shell cmn-staff-shell">
@@ -12838,6 +12842,25 @@ final class CMN_One_Plugin {
         ], $this->get_portal_base_url());
     }
 
+    private function get_portal_logout_url($redirect_to = '') {
+        $logout_url = add_query_arg([
+            'view' => 'logout',
+            'candidate' => false,
+            'school' => false,
+            'cmn_tab' => false,
+        ], $this->get_portal_base_url());
+
+        $redirect_to = is_string($redirect_to) ? trim($redirect_to) : '';
+        if ($redirect_to !== '') {
+            $validated_redirect = wp_validate_redirect($redirect_to, '');
+            if ($validated_redirect !== '') {
+                $logout_url = add_query_arg(['redirect_to' => $validated_redirect], $logout_url);
+            }
+        }
+
+        return $logout_url;
+    }
+
     private function portal_safe_redirect($url) {
         $default = $this->get_portal_base_url();
         $target = wp_validate_redirect((string) $url, $default);
@@ -13099,10 +13122,19 @@ final class CMN_One_Plugin {
     }
 
     public function redirect_wp_login_for_portal_users() {
+        $action = isset($_REQUEST['action']) ? sanitize_text_field($_REQUEST['action']) : 'login';
+        $is_admin_override = isset($_GET['cmn_admin']) && $_GET['cmn_admin'] === '1';
+        if ($action === 'logout') {
+            if ($is_admin_override) {
+                return;
+            }
+            wp_safe_redirect($this->get_portal_logout_url());
+            exit;
+        }
         if (is_user_logged_in() && $this->is_admin_user()) {
             return;
         }
-        if (isset($_GET['cmn_admin']) && $_GET['cmn_admin'] === '1') {
+        if ($is_admin_override) {
             return;
         }
         $redirect_to_raw = isset($_REQUEST['redirect_to']) ? wp_unslash((string) $_REQUEST['redirect_to']) : '';
@@ -13123,10 +13155,6 @@ final class CMN_One_Plugin {
                     return;
                 }
             }
-        }
-        $action = isset($_REQUEST['action']) ? sanitize_text_field($_REQUEST['action']) : 'login';
-        if ($action === 'logout') {
-            return;
         }
         if (in_array($action, ['rp', 'resetpass'], true)) {
             $key = sanitize_text_field($_REQUEST['key'] ?? '');
@@ -16479,9 +16507,6 @@ final class CMN_One_Plugin {
     private function get_theme_scheme_choices() {
         return [
             'default' => 'CMN ONE Default',
-            'contrast' => 'High Contrast Dark',
-            'light' => 'Light Mode',
-            'teal' => 'Alternative Accent',
         ];
     }
 
@@ -16502,6 +16527,9 @@ final class CMN_One_Plugin {
         if ($user_id < 1) {
             return 'default';
         }
+        if ($this->is_candidate_user($user_id)) {
+            return 'default';
+        }
         $scheme = get_user_meta($user_id, 'cmn_theme_scheme', true);
         if ($scheme === '') {
             $legacy = get_user_meta($user_id, 'cmn_theme', true);
@@ -16516,6 +16544,9 @@ final class CMN_One_Plugin {
         $user_id = (int) $user_id;
         if ($user_id < 1) {
             return;
+        }
+        if ($this->is_candidate_user($user_id)) {
+            $scheme = 'default';
         }
         $normalized = $this->normalize_theme_scheme($scheme);
         update_user_meta($user_id, 'cmn_theme_scheme', $normalized);
@@ -22889,6 +22920,14 @@ final class CMN_One_Plugin {
         }
 
         $view = isset($_GET['view']) ? sanitize_text_field($_GET['view']) : '';
+        if ($view === 'logout') {
+            if (is_user_logged_in()) {
+                wp_logout();
+            }
+            $_GET['view'] = 'login';
+            unset($_GET['candidate'], $_GET['school'], $_GET['cmn_tab']);
+            return $this->render_login_shortcode(true);
+        }
         $cmn_tab = isset($_GET['cmn_tab']) ? sanitize_key((string) wp_unslash($_GET['cmn_tab'])) : '';
         $training_console = isset($_GET['cmn_training_console']) ? sanitize_key((string) wp_unslash($_GET['cmn_training_console'])) : '';
         if ($training_console === '1') {
@@ -25696,8 +25735,11 @@ final class CMN_One_Plugin {
         $internal_note_message = isset($_GET['cmn_note_msg']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_note_msg'])) : '';
         $internal_notes = $this->get_candidate_internal_notes($candidate_id);
 
-        $completion_percent = $candidate_user_id ? (int) get_user_meta($candidate_user_id, 'cmn_profile_completion_pct', true) : 0;
+        $completion_percent = 0;
+        $completion_missing_items = [];
         if ($candidate_user_id) {
+            $completion_state = $this->get_candidate_profile_completion_state($candidate_id, $candidate_user_id);
+            $completion_missing_items = (array) ($completion_state['missing'] ?? []);
             $completion_percent = (int) $this->update_candidate_profile_completion($candidate_id, $candidate_user_id);
         }
 
@@ -25844,6 +25886,16 @@ final class CMN_One_Plugin {
             </div>
             <strong><?php echo esc_html($completion_percent); ?>% Complete</strong>
         </div>
+        <?php if ($completion_percent < 100 && !empty($completion_missing_items)) : ?>
+            <div class="cmn-profile-completion-help">
+                <strong>To reach 100%:</strong>
+                <ul>
+                    <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
+                        <li><?php echo esc_html((string) $missing_item); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
 
         <div class="cmn-profile-grid cmn-staff-candidate-profile">
             <div class="cmn-dashboard-card">
@@ -39157,7 +39209,7 @@ final class CMN_One_Plugin {
         <div class="cmn-portal-grid">
             <div class="cmn-dashboard-card" data-theme-settings>
                 <h3>Colour Scheme</h3>
-                <p class="cmn-muted">Choose how the portal looks for your account.</p>
+                <p class="cmn-muted">Portal theme is standardised to match the admin console.</p>
                 <label>Theme
                     <select name="cmn_theme_scheme" data-theme-select>
                         <?php foreach ($this->get_theme_scheme_choices() as $key => $label) : ?>
@@ -60325,11 +60377,16 @@ final class CMN_One_Plugin {
         return $count > 0;
     }
 
-    private function update_candidate_profile_completion($candidate_id, $user_id) {
+    private function get_candidate_profile_completion_state($candidate_id, $user_id) {
         $candidate_id = (int) $candidate_id;
         $user_id = (int) $user_id;
         if (!$candidate_id || !$user_id) {
-            return 0;
+            return [
+                'percent' => 0,
+                'completed' => 0,
+                'total' => 0,
+                'missing' => [],
+            ];
         }
         $candidate_post = get_post($candidate_id);
         $profile_email = (string) get_post_meta($candidate_id, 'cmn_email', true);
@@ -60365,29 +60422,50 @@ final class CMN_One_Plugin {
         $doc_id = $this->get_candidate_doc_status($candidate_id, $user_id, 'id');
         $doc_cv = $this->get_candidate_doc_status($candidate_id, $user_id, 'cv');
 
-        $fields = [
-            $first_name,
-            $last_name,
-            $profile_email,
-            $profile_phone,
-            $nationality,
-            $role_label,
-            $travel_distance,
-            $location,
-            in_array($driving_licence, ['yes', 'no'], true) ? $driving_licence : '',
-            in_array($car_owner, ['yes', 'no'], true) ? $car_owner : '',
-            in_array($qts_status, ['yes', 'no'], true) ? $qts_status : '',
-            $doc_cv['uploaded'] ? '1' : '',
-            $doc_dbs['uploaded'] ? '1' : '',
-            $doc_id['uploaded'] ? '1' : '',
+        $checks = [
+            ['value' => $first_name, 'missing' => 'Add first name'],
+            ['value' => $last_name, 'missing' => 'Add last name'],
+            ['value' => $profile_email, 'missing' => 'Add email address'],
+            ['value' => $profile_phone, 'missing' => 'Add phone number'],
+            ['value' => $nationality, 'missing' => 'Add nationality'],
+            ['value' => $role_label, 'missing' => 'Select role type'],
+            ['value' => $travel_distance, 'missing' => 'Set travel radius'],
+            ['value' => $location, 'missing' => 'Add location'],
+            ['value' => in_array($driving_licence, ['yes', 'no'], true) ? $driving_licence : '', 'missing' => 'Answer driving licence'],
+            ['value' => in_array($car_owner, ['yes', 'no'], true) ? $car_owner : '', 'missing' => 'Answer own vehicle'],
+            ['value' => in_array($qts_status, ['yes', 'no'], true) ? $qts_status : '', 'missing' => 'Set QTS status'],
+            ['value' => $doc_cv['uploaded'] ? '1' : '', 'missing' => 'Upload CV'],
+            ['value' => $doc_dbs['uploaded'] ? '1' : '', 'missing' => 'Upload DBS'],
+            ['value' => $doc_id['uploaded'] ? '1' : '', 'missing' => 'Upload Photo ID'],
         ];
         $completed = 0;
-        foreach ($fields as $field) {
-            if (!empty($field)) {
+        $missing = [];
+        foreach ($checks as $check) {
+            if (!empty($check['value'])) {
                 $completed++;
+                continue;
             }
+            $missing[] = (string) ($check['missing'] ?? 'Complete missing field');
         }
-        $pct = (int) round(($completed / max(1, count($fields))) * 100);
+        $total = count($checks);
+        $pct = (int) round(($completed / max(1, $total)) * 100);
+
+        return [
+            'percent' => $pct,
+            'completed' => $completed,
+            'total' => $total,
+            'missing' => array_values(array_unique(array_filter(array_map('sanitize_text_field', $missing)))),
+        ];
+    }
+
+    private function update_candidate_profile_completion($candidate_id, $user_id) {
+        $candidate_id = (int) $candidate_id;
+        $user_id = (int) $user_id;
+        if (!$candidate_id || !$user_id) {
+            return 0;
+        }
+        $state = $this->get_candidate_profile_completion_state($candidate_id, $user_id);
+        $pct = (int) ($state['percent'] ?? 0);
         update_user_meta($user_id, 'cmn_profile_completion_pct', (string) $pct);
         update_post_meta($candidate_id, 'cmn_profile_completion_pct', (string) $pct);
         return $pct;
@@ -62495,7 +62573,7 @@ final class CMN_One_Plugin {
                     <?php echo $this->render_topbar_livechat_button(); ?>
                     <?php echo $this->render_notifications_bell(get_current_user_id()); ?>
                     <span>Welcome, <?php echo esc_html(wp_get_current_user()->display_name); ?></span>
-                    <a class="cmn-topbar-logout" href="<?php echo esc_url(wp_logout_url($portal_url)); ?>">Logout</a>
+                    <a class="cmn-topbar-logout" href="<?php echo esc_url($this->get_portal_logout_url($portal_url)); ?>">Logout</a>
                 </div>
             </div>
             <div class="cmn-school-shell">
@@ -62527,7 +62605,7 @@ final class CMN_One_Plugin {
                                 <span class="cmn-school-nav-label"><?php echo esc_html($label); ?></span>
                             </a>
                         <?php endforeach; ?>
-                        <a class="cmn-school-nav-link" href="<?php echo esc_url(wp_logout_url($portal_url)); ?>">Logout</a>
+                        <a class="cmn-school-nav-link" href="<?php echo esc_url($this->get_portal_logout_url($portal_url)); ?>">Logout</a>
                     </nav>
                 </aside>
                 <main class="cmn-school-main">
@@ -63875,7 +63953,7 @@ final class CMN_One_Plugin {
                         <?php endif; ?>
                         <div class="cmn-dashboard-card">
                             <h3>Colour Scheme</h3>
-                            <p class="cmn-muted">Choose how the portal looks for your account.</p>
+                            <p class="cmn-muted">Portal theme is standardised to match the admin console.</p>
                             <div data-theme-settings>
                                 <label>Theme
                                     <select name="cmn_theme_scheme" data-theme-select>
@@ -64063,6 +64141,10 @@ final class CMN_One_Plugin {
                 $last_name = (string) end($parts);
             }
         }
+        $profile_photo_state = $this->get_candidate_profile_photo_state($candidate_id, $candidate_user_id);
+        $profile_photo_url = (string) ($profile_photo_state['url'] ?? $this->get_default_profile_photo_url());
+        $has_profile_photo = !empty($profile_photo_state['has_photo']);
+        $profile_photo_fallback = $this->get_default_profile_photo_url();
         $profile_email = $meta('cmn_email') ?: ($user ? $user->user_email : '');
         $profile_phone = $candidate_user_id ? (string) get_user_meta($candidate_user_id, 'phone', true) : '';
         if ($profile_phone === '') {
@@ -64147,27 +64229,11 @@ final class CMN_One_Plugin {
         }
         $learning_opt_in = $candidate_user_id ? get_user_meta($candidate_user_id, 'cmn_learning_notify_opt_in', true) === '1' : false;
 
-        $completion_fields = [
-            $first_name,
-            $last_name,
-            $profile_email,
-            $profile_phone,
-            $profile_nationality,
-            $role_label,
-            $travel_distance,
-            in_array($qts_status, ['yes', 'no'], true) ? $qts_status : '',
-            $doc_cv['uploaded'] ? '1' : '',
-            $doc_dbs['uploaded'] ? '1' : '',
-            $doc_id['uploaded'] ? '1' : '',
-        ];
-        $completed = 0;
-        foreach ($completion_fields as $value) {
-            if (!empty($value)) {
-                $completed++;
-            }
-        }
-        $completion_percent = (int) round(($completed / max(1, count($completion_fields))) * 100);
+        $completion_percent = 0;
+        $completion_missing_items = [];
         if ($candidate_id && $candidate_user_id) {
+            $completion_state = $this->get_candidate_profile_completion_state($candidate_id, $candidate_user_id);
+            $completion_missing_items = (array) ($completion_state['missing'] ?? []);
             $completion_percent = $this->update_candidate_profile_completion($candidate_id, $candidate_user_id);
         }
 
@@ -64352,7 +64418,11 @@ final class CMN_One_Plugin {
                 $tab = 'dashboard';
             }
         }
-        $logout_url = wp_logout_url($portal_url);
+        $logout_url = add_query_arg([
+            'view' => 'logout',
+            'candidate' => false,
+            'cmn_tab' => false,
+        ], $this->get_portal_base_url());
 
         $render_static_calendar = function () use ($calendar_data, $cal_month, $start_weekday, $days_in_month) {
             ?>
@@ -64395,7 +64465,7 @@ final class CMN_One_Plugin {
                     <?php echo $this->render_topbar_livechat_button(); ?>
                     <div data-tour-target="bell"><?php echo $this->render_notifications_bell($user ? $user->ID : 0); ?></div>
                     <span>Welcome, <?php echo esc_html($user ? $user->display_name : 'Candidate'); ?></span>
-                    <a class="cmn-topbar-logout" href="<?php echo esc_url(wp_logout_url($portal_url)); ?>" data-tour-target="logout-top">Logout</a>
+                    <a class="cmn-topbar-logout" href="<?php echo esc_url($logout_url); ?>" data-tour-target="logout-top">Logout</a>
                 </div>
             </div>
             <div class="cmn-candidate-shell">
@@ -64474,6 +64544,23 @@ final class CMN_One_Plugin {
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
                             <h2>Candidate Profile</h2>
                         </header>
+                        <div class="cmn-dashboard-card cmn-profile-photo-card" data-profile-photo-root data-fallback-url="<?php echo esc_attr($profile_photo_fallback); ?>">
+                            <div class="cmn-card-header">
+                                <h3>Profile photo</h3>
+                            </div>
+                            <div class="cmn-profile-photo-layout">
+                                <img class="cmn-profile-photo-preview" src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name); ?> profile photo" data-profile-photo-preview>
+                                <div class="cmn-profile-photo-meta">
+                                    <div class="cmn-profile-photo-actions">
+                                        <input type="file" class="cmn-hidden-input" data-profile-photo-input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+                                        <button class="cmn-primary" type="button" data-profile-photo-upload-trigger>Upload photo</button>
+                                        <button class="cmn-ghost" type="button" data-profile-photo-remove data-has-photo="<?php echo $has_profile_photo ? '1' : '0'; ?>"<?php echo $has_profile_photo ? '' : ' disabled'; ?>>Remove photo</button>
+                                    </div>
+                                    <p class="cmn-muted">Profiles with a photo are 34% more likely to receive an enquiry.</p>
+                                    <p class="cmn-muted cmn-profile-photo-message" data-profile-photo-message></p>
+                                </div>
+                            </div>
+                        </div>
                         <div class="cmn-profile-progress" data-tour-target="profile-sections" data-profile-root>
                             <div class="cmn-profile-progress-main">
                                 <span>Profile Completion</span>
@@ -64481,8 +64568,17 @@ final class CMN_One_Plugin {
                             </div>
                             <div class="cmn-profile-progress-actions">
                                 <strong data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>
-                                <button class="cmn-ghost" type="button" data-profile-global-edit>Edit Profile</button>
                             </div>
+                        </div>
+                        <div class="cmn-profile-completion-help<?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? ' is-complete' : ''; ?>" data-profile-completion-help>
+                            <strong data-profile-completion-helper-text>
+                                <?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? 'Profile complete. You are at 100%.' : 'To reach 100% complete:'; ?>
+                            </strong>
+                            <ul data-profile-completion-missing<?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? ' hidden' : ''; ?>>
+                                <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
+                                    <li><?php echo esc_html((string) $missing_item); ?></li>
+                                <?php endforeach; ?>
+                            </ul>
                         </div>
                         <div class="cmn-profile-global-editbar" data-profile-global-actions hidden>
                             <span class="cmn-muted" data-profile-global-msg></span>
@@ -64494,7 +64590,8 @@ final class CMN_One_Plugin {
                         <div class="cmn-profile-grid cmn-profile-grid--candidate-profile">
                             <div class="cmn-dashboard-card" data-profile-personal-card>
                                 <div class="cmn-card-header">
-                                    <h3>Personal Details</h3>
+                                    <h3>Profile Details</h3>
+                                    <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit personal details">✎</button>
                                 </div>
                                 <div data-profile-view="personal">
                                     <div class="cmn-profile-definition-grid">
@@ -64512,62 +64609,11 @@ final class CMN_One_Plugin {
                                         </div>
                                         <div class="cmn-profile-definition-row">
                                             <span class="cmn-profile-definition-label">Nationality</span>
-                                            <span class="cmn-profile-definition-value" data-profile-nationality><?php echo esc_html($profile_nationality !== '' ? $profile_nationality : 'Not set'); ?></span>
+                                            <span class="cmn-profile-definition-value cmn-profile-definition-value-with-action">
+                                                <span data-profile-nationality><?php echo esc_html($profile_nationality !== '' ? $profile_nationality : 'Not set'); ?></span>
+                                                <button class="cmn-ghost cmn-btn-mini cmn-profile-inline-action" type="button" data-profile-global-edit data-profile-nationality-action<?php echo $profile_nationality !== '' ? ' hidden' : ''; ?>>Set nationality</button>
+                                            </span>
                                         </div>
-                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
-                                            <span class="cmn-profile-definition-label">Address</span>
-                                            <span class="cmn-profile-definition-value" data-profile-address><?php echo esc_html($profile_address_display); ?></span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <form class="cmn-form cmn-inline-edit-form" data-profile-form="personal" hidden>
-                                    <label>First name
-                                        <input type="text" name="first_name" value="<?php echo esc_attr($first_name); ?>" required>
-                                    </label>
-                                    <label>Last name
-                                        <input type="text" name="last_name" value="<?php echo esc_attr($last_name); ?>" required>
-                                    </label>
-                                    <label>Email
-                                        <input type="email" name="email" value="<?php echo esc_attr($profile_email); ?>" required>
-                                    </label>
-                                    <label>Phone
-                                        <input type="text" name="phone" value="<?php echo esc_attr($profile_phone); ?>" required>
-                                    </label>
-                                    <label>Nationality
-                                        <input type="text" name="nationality" value="<?php echo esc_attr($profile_nationality); ?>" placeholder="e.g. British">
-                                    </label>
-                                    <label>House / number
-                                        <input type="text" name="house_number" value="<?php echo esc_attr($profile_house_number); ?>">
-                                    </label>
-                                    <label>Address line 1
-                                        <input type="text" name="address_line1" value="<?php echo esc_attr($profile_address_line1); ?>">
-                                    </label>
-                                    <label>Address line 2
-                                        <input type="text" name="address_line2" value="<?php echo esc_attr($profile_address_line2); ?>">
-                                    </label>
-                                    <label>Address line 3
-                                        <input type="text" name="address_line3" value="<?php echo esc_attr($profile_address_line3); ?>">
-                                    </label>
-                                    <label>Town / city
-                                        <input type="text" name="town" value="<?php echo esc_attr($profile_town); ?>">
-                                    </label>
-                                    <label>County
-                                        <input type="text" name="county" value="<?php echo esc_attr($profile_county); ?>">
-                                    </label>
-                                    <label>Post code
-                                        <input type="text" name="postcode" value="<?php echo esc_attr($profile_postcode); ?>">
-                                    </label>
-                                    <label>Notes
-                                        <textarea name="notes" rows="3"><?php echo esc_textarea($profile_notes); ?></textarea>
-                                    </label>
-                                </form>
-                            </div>
-                            <div class="cmn-dashboard-card" data-profile-role-card>
-                                <div class="cmn-card-header">
-                                    <h3>Role & Preferences</h3>
-                                </div>
-                                <div data-profile-view="role">
-                                    <div class="cmn-profile-definition-grid">
                                         <div class="cmn-profile-definition-row">
                                             <span class="cmn-profile-definition-label">Primary role</span>
                                             <span class="cmn-profile-definition-value" data-profile-role><?php echo esc_html($role_label); ?></span>
@@ -64612,9 +64658,32 @@ final class CMN_One_Plugin {
                                             <span class="cmn-profile-definition-label">Availability days</span>
                                             <span class="cmn-profile-definition-value" data-profile-days><?php echo esc_html($availability_days_label); ?></span>
                                         </div>
+                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                            <span class="cmn-profile-definition-label">Address</span>
+                                            <span class="cmn-profile-definition-value" data-profile-address><?php echo esc_html($profile_address_display); ?></span>
+                                        </div>
+                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                            <span class="cmn-profile-definition-label">Notes</span>
+                                            <span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes !== '' ? $profile_notes : 'Not set'); ?></span>
+                                        </div>
                                     </div>
                                 </div>
-                                <form class="cmn-form cmn-inline-edit-form" data-profile-form="role" hidden>
+                                <form class="cmn-form cmn-inline-edit-form" data-profile-form="personal" hidden>
+                                    <label>First name
+                                        <input type="text" name="first_name" value="<?php echo esc_attr($first_name); ?>" required>
+                                    </label>
+                                    <label>Last name
+                                        <input type="text" name="last_name" value="<?php echo esc_attr($last_name); ?>" required>
+                                    </label>
+                                    <label>Email
+                                        <input type="email" name="email" value="<?php echo esc_attr($profile_email); ?>" required>
+                                    </label>
+                                    <label>Phone
+                                        <input type="text" name="phone" value="<?php echo esc_attr($profile_phone); ?>" required>
+                                    </label>
+                                    <label>Nationality
+                                        <input type="text" name="nationality" value="<?php echo esc_attr($profile_nationality); ?>" placeholder="e.g. British">
+                                    </label>
                                     <label>Role type
                                         <input type="text" name="role_type" value="<?php echo esc_attr($role_label); ?>" required>
                                     </label>
@@ -64683,53 +64752,31 @@ final class CMN_One_Plugin {
                                             <?php endforeach; ?>
                                         </div>
                                     </fieldset>
+                                    <label>House / number
+                                        <input type="text" name="house_number" value="<?php echo esc_attr($profile_house_number); ?>">
+                                    </label>
+                                    <label>Address line 1
+                                        <input type="text" name="address_line1" value="<?php echo esc_attr($profile_address_line1); ?>">
+                                    </label>
+                                    <label>Address line 2
+                                        <input type="text" name="address_line2" value="<?php echo esc_attr($profile_address_line2); ?>">
+                                    </label>
+                                    <label>Address line 3
+                                        <input type="text" name="address_line3" value="<?php echo esc_attr($profile_address_line3); ?>">
+                                    </label>
+                                    <label>Town / city
+                                        <input type="text" name="town" value="<?php echo esc_attr($profile_town); ?>">
+                                    </label>
+                                    <label>County
+                                        <input type="text" name="county" value="<?php echo esc_attr($profile_county); ?>">
+                                    </label>
+                                    <label>Post code
+                                        <input type="text" name="postcode" value="<?php echo esc_attr($profile_postcode); ?>">
+                                    </label>
+                                    <label>Notes
+                                        <textarea name="notes" rows="3"><?php echo esc_textarea($profile_notes); ?></textarea>
+                                    </label>
                                 </form>
-                            </div>
-                            <div class="cmn-dashboard-card" data-profile-readonly-only>
-                                <div class="cmn-card-header">
-                                    <h3>Address</h3>
-                                </div>
-                                <div class="cmn-profile-definition-grid">
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">House / number</span>
-                                        <span class="cmn-profile-definition-value" data-profile-house-number><?php echo esc_html($profile_house_number !== '' ? $profile_house_number : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Address line 1</span>
-                                        <span class="cmn-profile-definition-value" data-profile-address-line1><?php echo esc_html($profile_address_line1 !== '' ? $profile_address_line1 : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Address line 2</span>
-                                        <span class="cmn-profile-definition-value" data-profile-address-line2><?php echo esc_html($profile_address_line2 !== '' ? $profile_address_line2 : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Address line 3</span>
-                                        <span class="cmn-profile-definition-value" data-profile-address-line3><?php echo esc_html($profile_address_line3 !== '' ? $profile_address_line3 : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Town / city</span>
-                                        <span class="cmn-profile-definition-value" data-profile-town><?php echo esc_html($profile_town !== '' ? $profile_town : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">County</span>
-                                        <span class="cmn-profile-definition-value" data-profile-county><?php echo esc_html($profile_county !== '' ? $profile_county : 'Not set'); ?></span>
-                                    </div>
-                                    <div class="cmn-profile-definition-row">
-                                        <span class="cmn-profile-definition-label">Postcode</span>
-                                        <span class="cmn-profile-definition-value" data-profile-postcode><?php echo esc_html($profile_postcode !== '' ? $profile_postcode : 'Not set'); ?></span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="cmn-dashboard-card" data-profile-readonly-only>
-                                <div class="cmn-card-header">
-                                    <h3>Notes</h3>
-                                </div>
-                                <div class="cmn-profile-definition-grid">
-                                    <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
-                                        <span class="cmn-profile-definition-label">Profile notes</span>
-                                        <span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes !== '' ? $profile_notes : 'Not set'); ?></span>
-                                    </div>
-                                </div>
                             </div>
                             <div class="cmn-dashboard-card" data-profile-edit-only hidden>
                                 <div class="cmn-card-header">
@@ -64996,7 +65043,7 @@ final class CMN_One_Plugin {
                         </header>
                         <div class="cmn-dashboard-card" data-candidate-settings>
                             <h3>Appearance</h3>
-                            <p class="cmn-muted">Choose your portal colour scheme.</p>
+                            <p class="cmn-muted">Your portal uses the same colour scheme as admin.</p>
                             <label>Theme
                                 <select name="cmn_theme" data-settings-theme>
                                     <?php foreach ($this->get_theme_scheme_choices() as $theme_key => $theme_label) : ?>
@@ -70026,25 +70073,85 @@ final class CMN_One_Plugin {
     }
 
 
-    private function get_school_live_match_photo_url($candidate_id) {
+    private function get_default_profile_photo_url() {
+        return 'https://covermenow.co.uk/wp-content/uploads/2026/02/cropped-73fa2b5c-e425-4854-a404-96824acab169.png';
+    }
+
+    private function get_candidate_profile_photo_state($candidate_id, $candidate_user_id = 0) {
         $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id < 1 && $candidate_id > 0) {
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        }
+
+        $attachment_id = 0;
+        if ($candidate_user_id > 0) {
+            $attachment_id = (int) get_user_meta($candidate_user_id, 'cmn_profile_photo_attachment_id', true);
+        }
+        if ($attachment_id < 1 && $candidate_id > 0) {
+            $attachment_id = (int) get_post_meta($candidate_id, 'cmn_profile_photo_attachment_id', true);
+        }
+        if ($attachment_id > 0) {
+            $url = wp_get_attachment_image_url($attachment_id, 'medium');
+            if (!is_string($url) || $url === '') {
+                $url = wp_get_attachment_url($attachment_id);
+            }
+            if (is_string($url) && $url !== '') {
+                return [
+                    'url' => $url,
+                    'has_photo' => true,
+                    'attachment_id' => $attachment_id,
+                ];
+            }
+        }
+
+        $meta_keys = ['cmn_profile_photo', 'cmn_photo_url', 'cmn_avatar_url', 'profile_photo_url'];
+        if ($candidate_user_id > 0) {
+            foreach ($meta_keys as $meta_key) {
+                $url = esc_url_raw((string) get_user_meta($candidate_user_id, $meta_key, true));
+                if ($url !== '') {
+                    return [
+                        'url' => $url,
+                        'has_photo' => true,
+                        'attachment_id' => 0,
+                    ];
+                }
+            }
+        }
         if ($candidate_id > 0) {
+            foreach ($meta_keys as $meta_key) {
+                $url = esc_url_raw((string) get_post_meta($candidate_id, $meta_key, true));
+                if ($url !== '') {
+                    return [
+                        'url' => $url,
+                        'has_photo' => true,
+                        'attachment_id' => 0,
+                    ];
+                }
+            }
             $thumb_id = (int) get_post_thumbnail_id($candidate_id);
             if ($thumb_id > 0) {
                 $url = wp_get_attachment_image_url($thumb_id, 'medium');
                 if (is_string($url) && $url !== '') {
-                    return $url;
-                }
-            }
-            $meta_keys = ['cmn_profile_photo', 'cmn_photo_url', 'cmn_avatar_url'];
-            foreach ($meta_keys as $meta_key) {
-                $url = esc_url_raw((string) get_post_meta($candidate_id, $meta_key, true));
-                if ($url !== '') {
-                    return $url;
+                    return [
+                        'url' => $url,
+                        'has_photo' => true,
+                        'attachment_id' => $thumb_id,
+                    ];
                 }
             }
         }
-        return 'https://covermenow.co.uk/wp-content/uploads/2026/02/cropped-73fa2b5c-e425-4854-a404-96824acab169.png';
+
+        return [
+            'url' => $this->get_default_profile_photo_url(),
+            'has_photo' => false,
+            'attachment_id' => 0,
+        ];
+    }
+
+    private function get_school_live_match_photo_url($candidate_id) {
+        $photo_state = $this->get_candidate_profile_photo_state((int) $candidate_id);
+        return (string) ($photo_state['url'] ?? $this->get_default_profile_photo_url());
     }
 
     private function is_candidate_hidden_for_school_live_matches($school_id, $candidate_id) {
@@ -70063,9 +70170,98 @@ final class CMN_One_Plugin {
 
     private function render_school_live_matches_panel($school_id, $availability_candidates, $can_request, $school_ready_responses, $availability_label) {
         $school_id = (int) $school_id;
+        $today = current_time('Y-m-d');
+        $tomorrow = $this->get_tomorrow_date();
+        $visibility_reasons = [
+            'not_approved' => 0,
+            'hidden_not_interested' => 0,
+            'out_of_radius' => 0,
+            'marked_unavailable' => 0,
+        ];
+        $visibility_candidate_ids = get_posts([
+            'post_type' => 'cmn_candidate',
+            'post_status' => ['publish', 'private', 'draft'],
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+        ]);
+        foreach ((array) $visibility_candidate_ids as $visibility_candidate_id_raw) {
+            $visibility_candidate_id = (int) $visibility_candidate_id_raw;
+            if ($visibility_candidate_id < 1) {
+                continue;
+            }
+            $candidate_status = sanitize_key((string) get_post_meta($visibility_candidate_id, 'cmn_status', true));
+            if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                $visibility_reasons['not_approved']++;
+                continue;
+            }
+            if ($this->is_candidate_hidden_for_school_live_matches($school_id, $visibility_candidate_id)) {
+                $visibility_reasons['hidden_not_interested']++;
+                continue;
+            }
+            if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($visibility_candidate_id, $school_id)) {
+                $visibility_reasons['out_of_radius']++;
+                continue;
+            }
+            if ($this->is_candidate_unavailable($visibility_candidate_id, $today) && $this->is_candidate_unavailable($visibility_candidate_id, $tomorrow)) {
+                $visibility_reasons['marked_unavailable']++;
+                continue;
+            }
+        }
         $candidates = $this->get_school_dashboard_available_candidates($school_id, 40);
         if (!$candidates) {
-            $availability_empty_reason = 'No matching candidates have responded yet.';
+            $fallback_posts = get_posts([
+                'post_type' => 'cmn_candidate',
+                'post_status' => ['publish', 'private'],
+                'posts_per_page' => 40,
+                'orderby' => 'date',
+                'order' => 'DESC',
+            ]);
+            foreach ((array) $fallback_posts as $fallback_post) {
+                if (!($fallback_post instanceof WP_Post)) {
+                    continue;
+                }
+                $candidate_id = (int) $fallback_post->ID;
+                if ($candidate_id < 1) {
+                    continue;
+                }
+                $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+                if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                    continue;
+                }
+                if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
+                    continue;
+                }
+                if ($this->is_candidate_unavailable($candidate_id, $today) && $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
+                    continue;
+                }
+                $target_date = !$this->is_candidate_unavailable($candidate_id, $today) ? $today : $tomorrow;
+                $candidates[] = [
+                    'post' => $fallback_post,
+                    'created_at' => current_time('mysql'),
+                    'availability_label' => 'Not Responded',
+                    'availability_date' => $target_date,
+                    'is_confirmed' => false,
+                ];
+            }
+        }
+        if (!$candidates) {
+            $availability_empty_reason = 'No matching candidates are currently eligible.';
+            $empty_reason_parts = [];
+            if ($visibility_reasons['marked_unavailable'] > 0) {
+                $empty_reason_parts[] = (string) ((int) $visibility_reasons['marked_unavailable']) . ' marked not available';
+            }
+            if ($visibility_reasons['out_of_radius'] > 0) {
+                $empty_reason_parts[] = (string) ((int) $visibility_reasons['out_of_radius']) . ' outside radius';
+            }
+            if ($visibility_reasons['hidden_not_interested'] > 0) {
+                $empty_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
+            }
+            if ($visibility_reasons['not_approved'] > 0) {
+                $empty_reason_parts[] = (string) ((int) $visibility_reasons['not_approved']) . ' pending approval';
+            }
+            if ($empty_reason_parts) {
+                $availability_empty_reason .= ' Current exclusions: ' . implode(' | ', $empty_reason_parts) . '.';
+            }
             return $this->render_empty_explain_panel('No live matches yet', $availability_empty_reason, 'Open support', add_query_arg(['school' => 'support'], $this->get_portal_base_url()));
         }
         $all = [];
@@ -70138,6 +70334,60 @@ final class CMN_One_Plugin {
             ],
             'can_request' => $can_request ? 1 : 0,
         ];
+        $render_live_match_card = static function($item, $can_request = true) {
+            if (!is_array($item)) {
+                return '';
+            }
+            $candidate_id = (int) ($item['candidate_id'] ?? 0);
+            $first_name = sanitize_text_field((string) ($item['first_name'] ?? 'Candidate'));
+            if ($first_name === '') {
+                $first_name = 'Candidate';
+            }
+            $photo_url = esc_url((string) ($item['photo_url'] ?? ''));
+            $role_line = sanitize_text_field((string) ($item['role_line'] ?? 'Candidate'));
+            $rating_value = number_format((float) ($item['rating'] ?? 0), 1);
+            $reviews = max(0, (int) ($item['reviews'] ?? 0));
+            $status = sanitize_html_class((string) ($item['status'] ?? 'not_responded'));
+            if (!in_array($status, ['available', 'not_responded', 'not_available'], true)) {
+                $status = 'not_responded';
+            }
+            $status_label = sanitize_text_field((string) ($item['status_label'] ?? 'NOT RESPONDED'));
+            $day_rate = (int) round((float) ($item['day_rate'] ?? 160));
+            $profile_url = esc_url((string) ($item['profile_url'] ?? '#'));
+            $is_shortlisted = !empty($item['is_shortlisted']);
+            $confirmed_at = sanitize_text_field((string) ($item['confirmed_at'] ?? ''));
+            $distance_text = sanitize_text_field((string) ($item['distance'] ?? ''));
+            if ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
+                $distance_text .= ' miles';
+            }
+            $banner_html = $status === 'available'
+                ? '<div class="cmn-live-banner">Available This Morning<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
+                : '<div class="cmn-live-banner" style="background:rgba(68,54,12,.86)">Awaiting confirmation</div>';
+            return '<article class="cmn-live-card" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
+                . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div><div class="cmn-live-rating">★ ' . esc_html($rating_value) . ' (' . esc_html((string) $reviews) . ')</div></div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
+                . '<div class="cmn-live-strip">' . $banner_html . '<div class="cmn-live-rate">£' . esc_html((string) $day_rate) . ' <span>per day</span></div></div>'
+                . ($distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($distance_text) . '</div>' : '')
+                . '<div class="cmn-live-skills"><span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span></div>'
+                . '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="' . $profile_url . '" target="_blank" rel="noopener">View Profile</a></div>'
+                . '<div class="cmn-live-offer" data-live-offer></div>'
+                . '</article>';
+        };
+        $initial_count = count($all);
+        $initial_visible = array_slice($all, 0, min(3, $initial_count));
+        $visibility_reason_parts = [];
+        if ($visibility_reasons['marked_unavailable'] > 0) {
+            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['marked_unavailable']) . ' marked not available';
+        }
+        if ($visibility_reasons['out_of_radius'] > 0) {
+            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['out_of_radius']) . ' outside radius';
+        }
+        if ($visibility_reasons['hidden_not_interested'] > 0) {
+            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
+        }
+        if ($visibility_reasons['not_approved'] > 0) {
+            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['not_approved']) . ' pending approval';
+        }
+        $visibility_reason_text = $visibility_reason_parts ? ('If someone is missing: ' . implode(' | ', $visibility_reason_parts) . '.') : '';
         ob_start();
         ?>
         <section class="cmn-live-matches" data-live-matches-root data-live-matches='<?php echo esc_attr(wp_json_encode($payload)); ?>'>
@@ -70147,12 +70397,27 @@ final class CMN_One_Plugin {
                 <button type="button" class="cmn-ghost cmn-live-filter-btn" data-live-filter-open>Filters</button>
             </div>
             <div class="cmn-live-tabs" role="tablist" aria-label="Live match tabs"></div>
+            <?php if ($visibility_reason_text !== '') : ?>
+                <p class="cmn-live-visibility-note"><?php echo esc_html($visibility_reason_text); ?></p>
+            <?php endif; ?>
             <div class="cmn-live-carousel-wrap">
                 <button type="button" class="cmn-live-arrow is-left" data-live-prev aria-label="Previous">‹</button>
-                <div class="cmn-live-carousel" data-live-carousel></div>
+                <div class="cmn-live-carousel" data-live-carousel>
+                    <?php if ($initial_visible) : ?>
+                        <?php foreach ($initial_visible as $initial_item) : ?>
+                            <?php echo $render_live_match_card((array) $initial_item, (bool) $can_request); ?>
+                        <?php endforeach; ?>
+                    <?php else : ?>
+                        <div class="cmn-muted">No candidates available right now.</div>
+                    <?php endif; ?>
+                </div>
                 <button type="button" class="cmn-live-arrow is-right" data-live-next aria-label="Next">›</button>
             </div>
-            <div class="cmn-live-dots" data-live-dots></div>
+            <div class="cmn-live-dots" data-live-dots>
+                <?php for ($dot_idx = 0; $dot_idx < $initial_count; $dot_idx++) : ?>
+                    <button type="button" class="cmn-live-dot<?php echo $dot_idx === 0 ? ' is-active' : ''; ?>" data-live-dot="<?php echo esc_attr((string) $dot_idx); ?>" aria-label="<?php echo esc_attr('Show candidate ' . ((int) $dot_idx + 1)); ?>"></button>
+                <?php endfor; ?>
+            </div>
             <div class="cmn-live-kpis" data-live-kpis></div>
             <button type="button" class="cmn-live-broadcast" data-live-broadcast>Broadcast Request</button>
             <aside class="cmn-live-filters-drawer" data-live-filter-drawer hidden>
@@ -78533,6 +78798,7 @@ p{margin:0;line-height:1.5}
         $user_id = get_current_user_id();
         $theme = $this->normalize_theme_scheme($_POST['theme'] ?? 'default');
         $this->update_user_theme_scheme($user_id, $theme);
+        $saved_theme = $this->get_user_theme_scheme($user_id);
         $raw_prefs = isset($_POST['preferences']) ? (array) $_POST['preferences'] : [];
         foreach ($this->get_candidate_notification_pref_defaults() as $meta_key => $default) {
             if (array_key_exists($meta_key, $raw_prefs)) {
@@ -78561,7 +78827,7 @@ p{margin:0;line-height:1.5}
         ], $user_id);
         wp_send_json_success([
             'message' => 'Settings saved.',
-            'theme' => $theme,
+            'theme' => $saved_theme,
             'notification_preferences' => $notification_preferences,
         ]);
     }
@@ -78653,9 +78919,10 @@ p{margin:0;line-height:1.5}
         $user_id = get_current_user_id();
         $theme = $this->normalize_theme_scheme($_POST['theme'] ?? 'default');
         $this->update_user_theme_scheme($user_id, $theme);
+        $saved_theme = $this->get_user_theme_scheme($user_id);
         wp_send_json_success([
             'message' => 'Colour scheme saved.',
-            'theme' => $theme,
+            'theme' => $saved_theme,
         ]);
     }
 
@@ -79351,6 +79618,113 @@ p{margin:0;line-height:1.5}
         ]);
     }
 
+    public function handle_candidate_profile_photo_upload() {
+        if (!check_ajax_referer('cmn_candidate_profile', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in() || !$this->is_candidate_user()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if (empty($_FILES['profile_photo']) || !is_array($_FILES['profile_photo'])) {
+            wp_send_json_error(['message' => 'Please choose a photo to upload.'], 400);
+        }
+        $file = $_FILES['profile_photo'];
+        $max_size = 5 * 1024 * 1024;
+        if (!empty($file['size']) && (int) $file['size'] > $max_size) {
+            wp_send_json_error(['message' => 'Photo is too large. Maximum file size is 5MB.'], 400);
+        }
+
+        $user_id = (int) get_current_user_id();
+        $candidate_id = (int) $this->get_candidate_id_for_user($user_id);
+        if ($candidate_id < 1) {
+            wp_send_json_error(['message' => 'Candidate profile not found.'], 404);
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+        $overrides = [
+            'test_form' => false,
+            'mimes' => [
+                'jpg|jpeg|jpe' => 'image/jpeg',
+                'png' => 'image/png',
+                'webp' => 'image/webp',
+            ],
+        ];
+        $uploaded = wp_handle_upload($file, $overrides);
+        if (!empty($uploaded['error'])) {
+            wp_send_json_error(['message' => sanitize_text_field((string) $uploaded['error'])], 400);
+        }
+
+        $attachment_id = wp_insert_attachment([
+            'post_mime_type' => (string) ($uploaded['type'] ?? ''),
+            'post_title' => sanitize_file_name(pathinfo((string) ($file['name'] ?? 'profile-photo'), PATHINFO_FILENAME)),
+            'post_status' => 'inherit',
+            'guid' => (string) ($uploaded['url'] ?? ''),
+        ], (string) ($uploaded['file'] ?? ''), $candidate_id);
+        if (is_wp_error($attachment_id) || !$attachment_id) {
+            wp_send_json_error(['message' => 'Unable to save profile photo.'], 500);
+        }
+
+        $meta = wp_generate_attachment_metadata($attachment_id, (string) ($uploaded['file'] ?? ''));
+        if (!is_wp_error($meta)) {
+            wp_update_attachment_metadata($attachment_id, $meta);
+        }
+
+        $photo_url = wp_get_attachment_image_url((int) $attachment_id, 'medium');
+        if (!is_string($photo_url) || $photo_url === '') {
+            $photo_url = wp_get_attachment_url((int) $attachment_id);
+        }
+        if (!is_string($photo_url) || $photo_url === '') {
+            $photo_url = $this->get_default_profile_photo_url();
+        }
+        $photo_url = esc_url_raw($photo_url);
+
+        $url_meta_keys = ['cmn_profile_photo', 'cmn_photo_url', 'cmn_avatar_url', 'profile_photo_url'];
+        foreach ($url_meta_keys as $meta_key) {
+            update_user_meta($user_id, $meta_key, $photo_url);
+            update_post_meta($candidate_id, $meta_key, $photo_url);
+        }
+        update_user_meta($user_id, 'cmn_profile_photo_attachment_id', (int) $attachment_id);
+        update_post_meta($candidate_id, 'cmn_profile_photo_attachment_id', (int) $attachment_id);
+        update_post_meta((int) $attachment_id, 'cmn_owner_user_id', $user_id);
+        update_post_meta((int) $attachment_id, 'cmn_candidate_id', $candidate_id);
+        update_post_meta((int) $attachment_id, 'cmn_doc_type', 'profile_photo');
+
+        wp_send_json_success([
+            'photo_url' => add_query_arg('v', (string) time(), $photo_url),
+            'has_photo' => 1,
+            'message' => 'Profile photo updated.',
+        ]);
+    }
+
+    public function handle_candidate_profile_photo_remove() {
+        if (!check_ajax_referer('cmn_candidate_profile', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in() || !$this->is_candidate_user()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $user_id = (int) get_current_user_id();
+        $candidate_id = (int) $this->get_candidate_id_for_user($user_id);
+        if ($candidate_id < 1) {
+            wp_send_json_error(['message' => 'Candidate profile not found.'], 404);
+        }
+
+        $url_meta_keys = ['cmn_profile_photo', 'cmn_photo_url', 'cmn_avatar_url', 'profile_photo_url'];
+        foreach ($url_meta_keys as $meta_key) {
+            delete_user_meta($user_id, $meta_key);
+            delete_post_meta($candidate_id, $meta_key);
+        }
+        delete_user_meta($user_id, 'cmn_profile_photo_attachment_id');
+        delete_post_meta($candidate_id, 'cmn_profile_photo_attachment_id');
+
+        wp_send_json_success([
+            'photo_url' => $this->get_default_profile_photo_url(),
+            'has_photo' => 0,
+            'message' => 'Profile photo removed.',
+        ]);
+    }
+
     public function handle_candidate_update_profile() {
         if (!check_ajax_referer('cmn_candidate_profile', 'nonce', false)) {
             wp_send_json_error(['message' => 'Invalid request.'], 403);
@@ -79476,6 +79850,7 @@ p{margin:0;line-height:1.5}
         $address_display = $address_display_parts ? implode(', ', $address_display_parts) : 'Not set';
 
         $completion = $this->update_candidate_profile_completion($candidate_id, $user_id);
+        $completion_state = $this->get_candidate_profile_completion_state($candidate_id, $user_id);
         $this->maybe_notify_candidate_qts_required($candidate_id, $user_id);
         wp_send_json_success([
             'profile' => [
@@ -79514,6 +79889,7 @@ p{margin:0;line-height:1.5}
                 'address_display' => $address_display,
             ],
             'completion' => $completion,
+            'completion_missing' => (array) ($completion_state['missing'] ?? []),
             'message' => 'Profile updated.',
         ]);
     }
@@ -79629,6 +80005,7 @@ p{margin:0;line-height:1.5}
             $this->mark_candidate_formatted_cv_outdated($candidate_id, true);
         }
         $completion = $this->update_candidate_profile_completion($candidate_id, $user_id);
+        $completion_state = $this->get_candidate_profile_completion_state($candidate_id, $user_id);
         $target_user_id = (int) $this->get_candidate_user_id($candidate_id);
         if (!$target_user_id) {
             $target_user_id = $user_id;
@@ -79671,6 +80048,7 @@ p{margin:0;line-height:1.5}
             'doc_type' => $doc_type,
             'status' => $status,
             'completion' => $completion,
+            'completion_missing' => (array) ($completion_state['missing'] ?? []),
             'verification_status' => $verification_status,
             'compliance' => $compliance,
         ]);
@@ -79739,6 +80117,7 @@ p{margin:0;line-height:1.5}
             wp_delete_attachment((int) $attachment_id, true);
         }
         $completion = $this->update_candidate_profile_completion($candidate_id, $user_id);
+        $completion_state = $this->get_candidate_profile_completion_state($candidate_id, $user_id);
         $status = $this->get_candidate_doc_status($candidate_id, $user_id, $doc_type);
         $docs_for_sync = [];
         foreach ($this->get_candidate_doc_types() as $sync_doc_type) {
@@ -79752,6 +80131,7 @@ p{margin:0;line-height:1.5}
             'doc_type' => $doc_type,
             'status' => $status,
             'completion' => $completion,
+            'completion_missing' => (array) ($completion_state['missing'] ?? []),
             'verification_status' => $verification_status,
             'compliance' => $compliance,
         ]);
@@ -86958,6 +87338,20 @@ p{margin:0;line-height:1.5}
         }
         $redirect = $this->handle_login_redirect($this->get_portal_base_url(), $this->get_portal_base_url(), $user);
         $this->portal_safe_redirect($redirect);
+    }
+
+    public function handle_portal_logout() {
+        $nonce = isset($_REQUEST['_wpnonce']) ? sanitize_text_field((string) wp_unslash($_REQUEST['_wpnonce'])) : '';
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_portal_logout')) {
+            $this->portal_safe_redirect($this->get_portal_login_url());
+        }
+
+        $default_redirect = $this->get_portal_login_url();
+        $redirect_to = isset($_REQUEST['redirect_to']) ? (string) wp_unslash($_REQUEST['redirect_to']) : '';
+        $redirect_to = wp_validate_redirect($redirect_to, $default_redirect);
+
+        wp_logout();
+        $this->portal_safe_redirect($redirect_to);
     }
 
     public function handle_portal_login_fallback_admin_post() {
