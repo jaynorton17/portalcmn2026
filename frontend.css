@@ -20103,6 +20103,230 @@ body.cmn-portal-page .cmn-portal-light .cmn-compliance-reject-btn {
   color: #fecaca !important;
 }
 
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-page {
+  display: grid;
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-header {
+  margin-bottom: 0;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-header .cmn-invoices-console-header-main {
+  display: grid;
+  gap: 5px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-filters {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(9, 14, 22, 0.78);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-filters label {
+  display: grid;
+  gap: 4px;
+  min-width: 170px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-filters label span {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(212, 223, 239, 0.72);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-filter-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-message {
+  padding: 11px 14px !important;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(165deg, rgba(10, 15, 23, 0.9), rgba(7, 11, 18, 0.9));
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.3);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-card-head h3 {
+  margin: 0;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-card-actions form {
+  margin: 0;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-advanced-actions {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 13, 20, 0.64);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-advanced-actions summary {
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(233, 239, 247, 0.9);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-advanced-actions-grid {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 11px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-tabs {
+  margin-bottom: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-tabs .cmn-booking-tab {
+  font-size: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-metrics {
+  margin-bottom: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-tab-copy {
+  margin: 0 0 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-table-wrap {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  overflow: auto;
+  max-height: 520px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(9, 13, 20, 0.98);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-table th,
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-table td {
+  padding: 10px 9px !important;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-pagination {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-email-centre-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-email-centre-page-header h2 {
+  margin-bottom: 4px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-email-centre-page-header .cmn-header-actions {
+  margin-left: auto;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-email-log-detail-row td {
+  background: rgba(9, 14, 22, 0.72) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-email-log-detail {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(219, 228, 240, 0.86);
+  padding: 4px 0;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-system-health-page-header .cmn-header-row {
+  align-items: flex-start;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-system-health-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-system-health-service-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-system-health-service-card {
+  padding: 12px !important;
+  border-radius: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-system-health-service-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-system-health-service-head h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-system-health-service-card > strong {
+  display: block;
+  font-size: 20px;
+  line-height: 1.15;
+  margin-bottom: 4px;
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-system-health-detail-card {
+  margin-top: 2px;
+}
+
 @media (max-width: 1220px) {
   body.cmn-portal-page .cmn-portal-light .cmn-doc-actions-premium {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -20114,6 +20338,24 @@ body.cmn-portal-page .cmn-portal-light .cmn-compliance-reject-btn {
 
   body.cmn-portal-page .cmn-portal-light .cmn-compliance-centre-stats {
     min-width: 100%;
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-card-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-card-actions {
+    justify-content: flex-start;
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-email-centre-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-system-health-service-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -20133,6 +20375,23 @@ body.cmn-portal-page .cmn-portal-light .cmn-compliance-reject-btn {
   body.cmn-portal-page .cmn-portal-light .cmn-candidate-settings-snapshot-grid-full {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-filter-actions {
+    margin-left: 0;
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-system-health-service-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-system-health-header-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 760px) {
@@ -20151,5 +20410,13 @@ body.cmn-portal-page .cmn-portal-light .cmn-compliance-reject-btn {
 
   body.cmn-portal-page .cmn-portal-light .cmn-compliance-review-filters {
     display: grid;
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-invoices-console-filters {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light .cmn-system-health-service-grid {
+    grid-template-columns: 1fr;
   }
 }

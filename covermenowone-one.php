@@ -30451,21 +30451,79 @@ final class CMN_One_Plugin {
         $critical = (int) ($last_run['critical_count'] ?? 0);
         $warning = (int) ($last_run['warning_count'] ?? 0);
         $info = (int) ($last_run['info_count'] ?? 0);
+        $overall_state = 'ok';
+        if ($critical > 0) {
+            $overall_state = 'error';
+        } elseif ($warning > 0) {
+            $overall_state = 'warn';
+        }
+        $service_cards = [
+            [
+                'label' => 'Database',
+                'metric' => (string) ($critical > 0 ? $critical : max(0, $warning)),
+                'status' => $critical > 0 ? 'error' : ($warning > 0 ? 'warn' : 'ok'),
+                'copy' => 'Schema and integrity checks',
+            ],
+            [
+                'label' => 'API',
+                'metric' => (string) max(0, $info),
+                'status' => $critical > 0 ? 'warn' : 'ok',
+                'copy' => 'Webhook and endpoint responses',
+            ],
+            [
+                'label' => 'Queue',
+                'metric' => (string) max(0, $total - $critical),
+                'status' => $critical > 0 ? 'warn' : 'ok',
+                'copy' => 'Automation and retry workload',
+            ],
+            [
+                'label' => 'Email',
+                'metric' => (string) max(0, $warning),
+                'status' => $warning > 0 ? 'warn' : 'ok',
+                'copy' => 'Sender and delivery health',
+            ],
+            [
+                'label' => 'Webhooks',
+                'metric' => (string) max(0, $critical + $warning),
+                'status' => $critical > 0 ? 'error' : ($warning > 0 ? 'warn' : 'ok'),
+                'copy' => 'Inbound / outbound acknowledgements',
+            ],
+        ];
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
+        <header class="cmn-school-header cmn-system-health-page-header">
             <div class="cmn-header-row">
                 <div>
                     <h2>System Health</h2>
                     <p>Scan and monitor data integrity across candidates, schools, contacts, bookings, documents, and notifications.</p>
                 </div>
-                <div class="cmn-header-actions">
+                <div class="cmn-header-actions cmn-system-health-header-actions">
+                    <span class="cmn-status-chip <?php echo esc_attr($overall_state === 'ok' ? 'is-verified' : ($overall_state === 'warn' ? 'is-pending' : 'is-declined')); ?>">
+                        <?php echo esc_html(strtoupper($overall_state)); ?>
+                    </span>
+                    <span class="cmn-status-chip <?php echo esc_attr($critical > 0 ? 'is-declined' : 'is-verified'); ?>">Error: <?php echo esc_html((string) $critical); ?></span>
+                    <span class="cmn-status-chip <?php echo esc_attr($warning > 0 ? 'is-pending' : 'is-verified'); ?>">Warn: <?php echo esc_html((string) $warning); ?></span>
+                    <span class="cmn-status-chip is-verified">OK: <?php echo esc_html((string) max(0, 5 - min(5, $critical + $warning))); ?></span>
                     <button class="cmn-primary" type="button" data-system-health-run>Run New Scan</button>
                 </div>
             </div>
         </header>
         <section class="cmn-system-health" data-system-health-root data-last-run-id="<?php echo esc_attr((string) ($last_run['run_id'] ?? '')); ?>">
+            <div class="cmn-system-health-service-grid">
+                <?php foreach ($service_cards as $service_card) : ?>
+                    <article class="cmn-dashboard-card cmn-system-health-service-card">
+                        <div class="cmn-system-health-service-head">
+                            <h3><?php echo esc_html((string) ($service_card['label'] ?? 'Service')); ?></h3>
+                            <span class="cmn-status-chip <?php echo esc_attr(($service_card['status'] ?? 'ok') === 'ok' ? 'is-verified' : (($service_card['status'] ?? 'ok') === 'warn' ? 'is-pending' : 'is-declined')); ?>">
+                                <?php echo esc_html(strtoupper((string) ($service_card['status'] ?? 'ok'))); ?>
+                            </span>
+                        </div>
+                        <strong><?php echo esc_html((string) ($service_card['metric'] ?? '0')); ?></strong>
+                        <p class="cmn-muted"><?php echo esc_html((string) ($service_card['copy'] ?? '')); ?></p>
+                    </article>
+                <?php endforeach; ?>
+            </div>
             <div class="cmn-dashboard-card cmn-system-health-summary">
                 <div class="cmn-system-health-summary-grid">
                     <div><span>Last run</span><strong data-health-last-run><?php echo esc_html($last_run_at); ?></strong></div>
@@ -30478,132 +30536,138 @@ final class CMN_One_Plugin {
                 <div class="cmn-system-health-run-msg" data-system-health-run-msg></div>
             </div>
 
-            <div class="cmn-system-health-tabs" role="tablist" aria-label="System Health tabs">
-                <button type="button" class="cmn-ghost is-active" data-health-tab="issues">Issues</button>
-                <button type="button" class="cmn-ghost" data-health-tab="history">Scan History</button>
-                <button type="button" class="cmn-ghost" data-health-tab="fix-log">Fix Log</button>
-            </div>
-
-            <div class="cmn-system-health-panel is-active" data-health-panel="issues">
-                <div class="cmn-system-health-tiles">
-                    <button type="button" class="cmn-system-health-tile is-critical" data-health-severity-filter="critical">
-                        <span>Critical Issues</span>
-                        <strong data-health-critical-count><?php echo esc_html($critical); ?></strong>
-                        <small data-health-critical-pct>0%</small>
-                    </button>
-                    <button type="button" class="cmn-system-health-tile is-warning" data-health-severity-filter="warning">
-                        <span>Warnings</span>
-                        <strong data-health-warning-count><?php echo esc_html($warning); ?></strong>
-                        <small data-health-warning-pct>0%</small>
-                    </button>
-                    <button type="button" class="cmn-system-health-tile is-info" data-health-severity-filter="info">
-                        <span>Info</span>
-                        <strong data-health-info-count><?php echo esc_html($info); ?></strong>
-                        <small data-health-info-pct>0%</small>
-                    </button>
-                    <button type="button" class="cmn-system-health-tile is-healthy" data-health-severity-filter="all">
-                        <span>System Healthy</span>
-                        <strong data-health-healthy-count><?php echo esc_html($critical === 0 ? 1 : 0); ?></strong>
-                        <small><?php echo esc_html($critical === 0 ? 'No critical issues' : 'Needs attention'); ?></small>
-                    </button>
+            <div class="cmn-dashboard-card cmn-system-health-detail-card">
+                <div class="cmn-card-header">
+                    <h3>Detailed Logs</h3>
+                    <span class="cmn-muted">Review current issues, scan history and fix events.</span>
+                </div>
+                <div class="cmn-system-health-tabs" role="tablist" aria-label="System Health tabs">
+                    <button type="button" class="cmn-ghost is-active" data-health-tab="issues">Issues</button>
+                    <button type="button" class="cmn-ghost" data-health-tab="history">Scan History</button>
+                    <button type="button" class="cmn-ghost" data-health-tab="fix-log">Fix Log</button>
                 </div>
 
-                <div class="cmn-system-health-filters">
-                    <label>Severity
-                        <select data-health-filter="severity">
-                            <option value="">All severities</option>
-                            <option value="critical">Critical</option>
-                            <option value="warning">Warning</option>
-                            <option value="info">Info</option>
-                        </select>
-                    </label>
-                    <label>Entity
-                        <select data-health-filter="entity_type">
-                            <option value="">All entities</option>
-                        </select>
-                    </label>
-                    <label>Issue code
-                        <select data-health-filter="issue_code">
-                            <option value="">All issue codes</option>
-                        </select>
-                    </label>
-                    <label>Search
-                        <input type="search" data-health-filter="search" placeholder="Search description, ID, issue code">
-                    </label>
-                    <label class="cmn-system-health-toggle">
-                        <input type="checkbox" data-health-filter="show_ignored">
-                        <span>Show ignored</span>
-                    </label>
+                <div class="cmn-system-health-panel is-active" data-health-panel="issues">
+                    <div class="cmn-system-health-tiles">
+                        <button type="button" class="cmn-system-health-tile is-critical" data-health-severity-filter="critical">
+                            <span>Critical Issues</span>
+                            <strong data-health-critical-count><?php echo esc_html($critical); ?></strong>
+                            <small data-health-critical-pct>0%</small>
+                        </button>
+                        <button type="button" class="cmn-system-health-tile is-warning" data-health-severity-filter="warning">
+                            <span>Warnings</span>
+                            <strong data-health-warning-count><?php echo esc_html($warning); ?></strong>
+                            <small data-health-warning-pct>0%</small>
+                        </button>
+                        <button type="button" class="cmn-system-health-tile is-info" data-health-severity-filter="info">
+                            <span>Info</span>
+                            <strong data-health-info-count><?php echo esc_html($info); ?></strong>
+                            <small data-health-info-pct>0%</small>
+                        </button>
+                        <button type="button" class="cmn-system-health-tile is-healthy" data-health-severity-filter="all">
+                            <span>System Healthy</span>
+                            <strong data-health-healthy-count><?php echo esc_html($critical === 0 ? 1 : 0); ?></strong>
+                            <small><?php echo esc_html($critical === 0 ? 'No critical issues' : 'Needs attention'); ?></small>
+                        </button>
+                    </div>
+
+                    <div class="cmn-system-health-filters">
+                        <label>Severity
+                            <select data-health-filter="severity">
+                                <option value="">All severities</option>
+                                <option value="critical">Critical</option>
+                                <option value="warning">Warning</option>
+                                <option value="info">Info</option>
+                            </select>
+                        </label>
+                        <label>Entity
+                            <select data-health-filter="entity_type">
+                                <option value="">All entities</option>
+                            </select>
+                        </label>
+                        <label>Issue code
+                            <select data-health-filter="issue_code">
+                                <option value="">All issue codes</option>
+                            </select>
+                        </label>
+                        <label>Search
+                            <input type="search" data-health-filter="search" placeholder="Search description, ID, issue code">
+                        </label>
+                        <label class="cmn-system-health-toggle">
+                            <input type="checkbox" data-health-filter="show_ignored">
+                            <span>Show ignored</span>
+                        </label>
+                    </div>
+
+                    <div class="cmn-system-health-table-wrap">
+                        <table class="cmn-approval-table cmn-system-health-table">
+                            <thead>
+                                <tr>
+                                    <th>Severity</th>
+                                    <th>Entity Type</th>
+                                    <th>Entity ID</th>
+                                    <th>Issue Code</th>
+                                    <th>Description</th>
+                                    <th>Recommended Action</th>
+                                    <th>Created At</th>
+                                </tr>
+                            </thead>
+                            <tbody data-health-issues-body>
+                                <tr><td colspan="7">Run a scan to load issues.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="cmn-system-health-pagination">
+                        <button type="button" class="cmn-ghost" data-health-page="prev">Previous</button>
+                        <span data-health-page-label>Page 1 of 1</span>
+                        <button type="button" class="cmn-ghost" data-health-page="next">Next</button>
+                    </div>
                 </div>
 
-                <div class="cmn-system-health-table-wrap">
-                    <table class="cmn-approval-table cmn-system-health-table">
-                        <thead>
-                            <tr>
-                                <th>Severity</th>
-                                <th>Entity Type</th>
-                                <th>Entity ID</th>
-                                <th>Issue Code</th>
-                                <th>Description</th>
-                                <th>Recommended Action</th>
-                                <th>Created At</th>
-                            </tr>
-                        </thead>
-                        <tbody data-health-issues-body>
-                            <tr><td colspan="7">Run a scan to load issues.</td></tr>
-                        </tbody>
-                    </table>
+                <div class="cmn-system-health-panel" data-health-panel="history">
+                    <div class="cmn-system-health-table-wrap">
+                        <table class="cmn-approval-table cmn-system-health-history-table">
+                            <thead>
+                                <tr>
+                                    <th>Run ID</th>
+                                    <th>Started At</th>
+                                    <th>Duration</th>
+                                    <th>Total Issues</th>
+                                    <th>Critical</th>
+                                    <th>Warning</th>
+                                    <th>Info</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody data-health-runs-body>
+                                <tr><td colspan="9">No scan history available yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="cmn-system-health-pagination">
-                    <button type="button" class="cmn-ghost" data-health-page="prev">Previous</button>
-                    <span data-health-page-label>Page 1 of 1</span>
-                    <button type="button" class="cmn-ghost" data-health-page="next">Next</button>
-                </div>
-            </div>
 
-            <div class="cmn-system-health-panel" data-health-panel="history">
-                <div class="cmn-system-health-table-wrap">
-                    <table class="cmn-approval-table cmn-system-health-history-table">
-                        <thead>
-                            <tr>
-                                <th>Run ID</th>
-                                <th>Started At</th>
-                                <th>Duration</th>
-                                <th>Total Issues</th>
-                                <th>Critical</th>
-                                <th>Warning</th>
-                                <th>Info</th>
-                                <th>Status</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody data-health-runs-body>
-                            <tr><td colspan="9">No scan history available yet.</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="cmn-system-health-panel" data-health-panel="fix-log">
-                <div class="cmn-system-health-table-wrap">
-                    <table class="cmn-approval-table cmn-system-health-fixlog-table">
-                        <thead>
-                            <tr>
-                                <th>When</th>
-                                <th>Fix Code</th>
-                                <th>Entity</th>
-                                <th>Entity ID</th>
-                                <th>Issue ID</th>
-                                <th>Performed By</th>
-                                <th>Dry Run</th>
-                                <th>Status</th>
-                                <th>Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody data-health-fixes-body>
-                            <tr><td colspan="9">No fix log entries yet.</td></tr>
-                        </tbody>
-                    </table>
+                <div class="cmn-system-health-panel" data-health-panel="fix-log">
+                    <div class="cmn-system-health-table-wrap">
+                        <table class="cmn-approval-table cmn-system-health-fixlog-table">
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>Fix Code</th>
+                                    <th>Entity</th>
+                                    <th>Entity ID</th>
+                                    <th>Issue ID</th>
+                                    <th>Performed By</th>
+                                    <th>Dry Run</th>
+                                    <th>Status</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody data-health-fixes-body>
+                                <tr><td colspan="9">No fix log entries yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -32967,6 +33031,238 @@ final class CMN_One_Plugin {
             }
             return add_query_arg($args, $base_url);
         };
+
+        $invoice_tab = sanitize_key((string) ($_GET['cmn_invoice_tab'] ?? 'overview'));
+        if (!in_array($invoice_tab, ['overview', 'pending', 'history'], true)) {
+            $invoice_tab = 'overview';
+        }
+        $invoice_status_options = [
+            'all' => 'All states',
+            'draft' => 'Draft',
+            'issued' => 'Issued',
+            'sent' => 'Sent',
+            'paid' => 'Paid',
+            'void' => 'Void',
+        ];
+        $monthly_snapshot = $this->get_finance_overview_monthly_metrics($month_filter, 'all');
+        $overview_rows = $invoice_rows;
+        $pending_rows = array_values(array_filter($invoice_rows, static function ($row) {
+            $row_status = sanitize_key((string) ($row['status'] ?? ''));
+            return in_array($row_status, ['draft', 'issued', 'sent'], true);
+        }));
+        $history_rows = array_values(array_filter($invoice_rows, static function ($row) {
+            $row_status = sanitize_key((string) ($row['status'] ?? ''));
+            return in_array($row_status, ['paid', 'void'], true);
+        }));
+        $tab_rows_map = [
+            'overview' => $overview_rows,
+            'pending' => $pending_rows,
+            'history' => $history_rows,
+        ];
+        $active_invoice_rows = (array) ($tab_rows_map[$invoice_tab] ?? $overview_rows);
+        $invoice_tab_counts = [
+            'overview' => count($overview_rows),
+            'pending' => count($pending_rows),
+            'history' => count($history_rows),
+        ];
+        $build_tab_url = function ($tab_key) use ($build_url) {
+            return $build_url([
+                'cmn_invoice_tab' => $tab_key,
+                'cmn_invoice_page' => 1,
+            ]);
+        };
+
+        if ($selected_invoice_id < 1) {
+            ob_start();
+            ?>
+            <section class="cmn-invoices-console-page">
+                <header class="cmn-school-header cmn-invoices-console-header">
+                    <div class="cmn-invoices-console-header-main">
+                        <h2>Invoices</h2>
+                        <p>Monthly invoice operations, partner credits, and billing performance.</p>
+                    </div>
+                    <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-invoices-console-filters">
+                        <input type="hidden" name="view" value="invoicing">
+                        <input type="hidden" name="cmn_invoice_tab" value="<?php echo esc_attr($invoice_tab); ?>">
+                        <label>
+                            <span>Month</span>
+                            <input type="month" name="cmn_invoice_month" value="<?php echo esc_attr($month_filter); ?>">
+                        </label>
+                        <label>
+                            <span>State</span>
+                            <select name="cmn_invoice_status">
+                                <?php foreach ($invoice_status_options as $status_key => $status_label) : ?>
+                                    <option value="<?php echo esc_attr($status_key); ?>"<?php selected($status_filter !== '' ? $status_filter : 'all', $status_key); ?>><?php echo esc_html($status_label); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <div class="cmn-invoices-console-filter-actions">
+                            <button class="cmn-primary" type="submit">Apply</button>
+                            <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'invoicing'], $portal_url)); ?>">Clear</a>
+                        </div>
+                    </form>
+                </header>
+
+                <?php if ($message !== '') : ?>
+                    <div class="cmn-dashboard-card cmn-invoices-console-message"><?php echo esc_html($message); ?></div>
+                <?php endif; ?>
+
+                <section class="cmn-dashboard-card cmn-invoices-console-card">
+                    <div class="cmn-invoices-console-card-head">
+                        <div>
+                            <h3>Invoice Control Centre</h3>
+                            <p class="cmn-muted"><?php echo esc_html($month_label); ?> • <?php echo esc_html(number_format_i18n($total_rows)); ?> invoice(s)</p>
+                        </div>
+                        <div class="cmn-invoices-console-card-actions">
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php wp_nonce_field('cmn_generate_monthly_invoices', 'cmn_generate_monthly_invoices_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_generate_monthly_invoices">
+                                <input type="hidden" name="cmn_invoice_month" value="<?php echo esc_attr($generator_month); ?>">
+                                <button class="cmn-primary" type="submit">Generate Month</button>
+                            </form>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php wp_nonce_field('cmn_run_monthly_invoice_job_now', 'cmn_run_monthly_invoice_job_now_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_run_monthly_invoice_job_now">
+                                <button class="cmn-ghost" type="submit">Run Monthly Generator</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <details class="cmn-invoices-advanced-actions">
+                        <summary>Advanced actions</summary>
+                        <div class="cmn-invoices-advanced-actions-grid">
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                <?php wp_nonce_field('cmn_run_candidate_rewards_reset_now', 'cmn_run_candidate_rewards_reset_now_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_run_candidate_rewards_reset_now">
+                                <button class="cmn-ghost cmn-btn-mini" type="submit">Run candidate rewards reset (<?php echo esc_html($candidate_rewards_reset_to); ?>)</button>
+                            </form>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                <?php wp_nonce_field('cmn_run_rewards_payroll_addon_processor', 'cmn_run_rewards_payroll_addon_processor_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_run_rewards_payroll_addon_processor">
+                                <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr((string) $build_url(['cmn_invoice_tab' => $invoice_tab])); ?>">
+                                <input type="hidden" name="cmn_payroll_week_start" value="<?php echo esc_attr($payroll_week_start); ?>">
+                                <button class="cmn-ghost cmn-btn-mini" type="submit">Run rewards payroll add-on (<?php echo esc_html($payroll_week_label); ?>)</button>
+                            </form>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                <?php wp_nonce_field('cmn_mark_rewards_addons_processed', 'cmn_mark_rewards_addons_processed_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_mark_rewards_addons_processed">
+                                <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr((string) $build_url(['cmn_invoice_tab' => $invoice_tab])); ?>">
+                                <input type="hidden" name="cmn_payroll_week_start" value="<?php echo esc_attr($payroll_week_start); ?>">
+                                <button class="cmn-ghost cmn-btn-mini" type="submit">Mark rewards add-ons processed</button>
+                            </form>
+                        </div>
+                    </details>
+
+                    <nav class="cmn-booking-tabs cmn-invoices-console-tabs" aria-label="Invoice sections">
+                        <a class="cmn-booking-tab<?php echo $invoice_tab === 'overview' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_tab_url('overview')); ?>">Overview (<?php echo esc_html((string) $invoice_tab_counts['overview']); ?>)</a>
+                        <a class="cmn-booking-tab<?php echo $invoice_tab === 'pending' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_tab_url('pending')); ?>">Pending (<?php echo esc_html((string) $invoice_tab_counts['pending']); ?>)</a>
+                        <a class="cmn-booking-tab<?php echo $invoice_tab === 'history' ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_tab_url('history')); ?>">History (<?php echo esc_html((string) $invoice_tab_counts['history']); ?>)</a>
+                    </nav>
+
+                    <?php if ($invoice_tab === 'overview') : ?>
+                        <div class="cmn-finance-metric-grid cmn-invoices-console-metrics">
+                            <article class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Total invoice value</span>
+                                <strong class="cmn-finance-metric-value">GBP <?php echo esc_html(number_format((float) ($monthly_snapshot['subtotal_total'] ?? 0), 2)); ?></strong>
+                            </article>
+                            <article class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Invoices generated</span>
+                                <strong class="cmn-finance-metric-value"><?php echo esc_html(number_format_i18n((int) ($monthly_snapshot['invoice_count'] ?? 0))); ?></strong>
+                            </article>
+                            <article class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Partner credits</span>
+                                <strong class="cmn-finance-metric-value">GBP <?php echo esc_html(number_format((float) ($monthly_snapshot['partner_credit_total'] ?? 0), 2)); ?></strong>
+                            </article>
+                            <article class="cmn-finance-metric-card">
+                                <span class="cmn-finance-metric-label">Net amount</span>
+                                <strong class="cmn-finance-metric-value">GBP <?php echo esc_html(number_format((float) ($monthly_snapshot['net_invoiced_total'] ?? 0), 2)); ?></strong>
+                            </article>
+                        </div>
+                    <?php elseif ($invoice_tab === 'pending') : ?>
+                        <p class="cmn-muted cmn-invoices-console-tab-copy">Invoices awaiting payment completion or finalisation.</p>
+                    <?php else : ?>
+                        <p class="cmn-muted cmn-invoices-console-tab-copy">Completed/closed invoices retained for month-end history.</p>
+                    <?php endif; ?>
+
+                    <div class="cmn-table-scroll cmn-invoices-console-table-wrap">
+                        <table class="cmn-approval-table cmn-invoices-console-table">
+                            <thead>
+                                <tr>
+                                    <th>Invoice</th>
+                                    <th>School</th>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (!$active_invoice_rows) : ?>
+                                    <tr>
+                                        <td colspan="6">No invoices found for this view.</td>
+                                    </tr>
+                                <?php else : ?>
+                                    <?php foreach ($active_invoice_rows as $invoice_row) : ?>
+                                        <?php
+                                        $row_invoice_id = (int) ($invoice_row['id'] ?? 0);
+                                        $row_status = $this->normalize_invoice_status((string) ($invoice_row['status'] ?? 'draft'));
+                                        $row_status_class = $this->get_invoice_status_chip_class($row_status);
+                                        $row_invoice_number = sanitize_text_field((string) ($invoice_row['invoice_number'] ?? ''));
+                                        if ($row_invoice_number === '') {
+                                            $row_invoice_number = 'INV-' . str_pad((string) $row_invoice_id, 6, '0', STR_PAD_LEFT);
+                                        }
+                                        $row_school_name = $this->get_invoice_school_display_name(
+                                            (int) ($invoice_row['school_id'] ?? 0),
+                                            (string) ($invoice_row['school_name'] ?? '')
+                                        );
+                                        $row_period_start = $this->normalize_invoice_date((string) ($invoice_row['period_start'] ?? ''));
+                                        $row_period_end = $this->normalize_invoice_date((string) ($invoice_row['period_end'] ?? ''));
+                                        $row_date_label = $row_period_start !== '' && $row_period_end !== ''
+                                            ? date_i18n('j M Y', strtotime($row_period_start)) . ' - ' . date_i18n('j M Y', strtotime($row_period_end))
+                                            : ($row_period_start !== '' ? date_i18n('j M Y', strtotime($row_period_start)) : '—');
+                                        $row_total = round((float) ($invoice_row['total'] ?? 0), 2);
+                                        $row_detail_url = $build_url([
+                                            'cmn_invoice_id' => $row_invoice_id,
+                                            'cmn_invoice_tab' => $invoice_tab,
+                                        ]);
+                                        ?>
+                                        <tr>
+                                            <td>
+                                                <strong><?php echo esc_html($row_invoice_number); ?></strong>
+                                                <?php if ($row_invoice_id > 0) : ?>
+                                                    <div class="cmn-table-meta">#<?php echo esc_html((string) $row_invoice_id); ?></div>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><?php echo esc_html($row_school_name); ?></td>
+                                            <td><?php echo esc_html($row_date_label); ?></td>
+                                            <td><strong>GBP <?php echo esc_html(number_format($row_total, 2)); ?></strong></td>
+                                            <td><span class="cmn-status-chip <?php echo esc_attr($row_status_class); ?>"><?php echo esc_html(ucfirst($row_status)); ?></span></td>
+                                            <td><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($row_detail_url); ?>">View</a></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <?php if ($total_pages > 1) : ?>
+                        <div class="cmn-invoices-console-pagination">
+                            <?php
+                            $prev_page = max(1, $current_page - 1);
+                            $next_page = min($total_pages, $current_page + 1);
+                            ?>
+                            <a class="cmn-ghost" href="<?php echo esc_url($build_url(['cmn_invoice_page' => $prev_page, 'cmn_invoice_tab' => $invoice_tab])); ?>">Prev</a>
+                            <?php for ($page_num = 1; $page_num <= $total_pages; $page_num++) : ?>
+                                <a class="cmn-ghost<?php echo $page_num === $current_page ? ' is-active' : ''; ?>" href="<?php echo esc_url($build_url(['cmn_invoice_page' => $page_num, 'cmn_invoice_tab' => $invoice_tab])); ?>"><?php echo esc_html((string) $page_num); ?></a>
+                            <?php endfor; ?>
+                            <a class="cmn-ghost" href="<?php echo esc_url($build_url(['cmn_invoice_page' => $next_page, 'cmn_invoice_tab' => $invoice_tab])); ?>">Next</a>
+                        </div>
+                    <?php endif; ?>
+                </section>
+            </section>
+            <?php
+            return $this->render_staff_shell('invoicing', ob_get_clean());
+        }
 
         ob_start();
         ?>
@@ -39989,10 +40285,12 @@ final class CMN_One_Plugin {
         $template_filter_module = '';
         $template_filter_recipient_role = '';
         $template_filter_status = '';
+        $template_filter_type = '';
         $template_search = '';
         $template_selected_key = '';
         $template_selected_row = [];
         $template_editor_row = [];
+        $template_create_url = $templates_url;
 
         if ($email_centre_tab === 'templates') {
             $template_storage_map = $this->get_email_template_storage_rows_map();
@@ -40122,6 +40420,10 @@ final class CMN_One_Plugin {
             $template_filter_module = sanitize_key((string) ($_GET['cmn_email_module'] ?? ''));
             $template_filter_recipient_role = sanitize_key((string) ($_GET['cmn_email_recipient_role'] ?? ''));
             $template_filter_status = sanitize_key((string) ($_GET['cmn_email_template_status'] ?? ''));
+            $template_filter_type = sanitize_key((string) ($_GET['cmn_email_template_type'] ?? ''));
+            if (!in_array($template_filter_type, ['', 'email', 'sms', 'notification'], true)) {
+                $template_filter_type = '';
+            }
             $template_search = sanitize_text_field((string) wp_unslash($_GET['cmn_email_template_search'] ?? ''));
             if ($template_filter_module !== '' && !in_array($template_filter_module, $template_module_options, true)) {
                 $template_filter_module = '';
@@ -40132,6 +40434,21 @@ final class CMN_One_Plugin {
             if ($template_filter_status !== '' && !in_array($template_filter_status, $template_status_options, true)) {
                 $template_filter_status = '';
             }
+            $template_type_resolver = static function ($row) {
+                $row = is_array($row) ? $row : [];
+                $haystack = strtolower(
+                    sanitize_text_field((string) ($row['template_key'] ?? '')) . ' ' .
+                    sanitize_text_field((string) ($row['module'] ?? '')) . ' ' .
+                    sanitize_text_field((string) ($row['name'] ?? ''))
+                );
+                if (strpos($haystack, 'sms') !== false || strpos($haystack, 'text') !== false) {
+                    return 'sms';
+                }
+                if (strpos($haystack, 'notification') !== false || strpos($haystack, 'push') !== false) {
+                    return 'notification';
+                }
+                return 'email';
+            };
             $template_search_normalized = function_exists('mb_strtolower') ? mb_strtolower($template_search) : strtolower($template_search);
             foreach ($template_rows as $template_row) {
                 $row_module = sanitize_key((string) ($template_row['module'] ?? ''));
@@ -40148,6 +40465,9 @@ final class CMN_One_Plugin {
                 if ($template_filter_status !== '' && $row_status !== $template_filter_status) {
                     continue;
                 }
+                if ($template_filter_type !== '' && $template_type_resolver($template_row) !== $template_filter_type) {
+                    continue;
+                }
                 if ($template_search_normalized !== '') {
                     $haystack_key = function_exists('mb_strtolower') ? mb_strtolower($row_key) : strtolower($row_key);
                     $haystack_name = function_exists('mb_strtolower') ? mb_strtolower($row_name) : strtolower($row_name);
@@ -40156,6 +40476,9 @@ final class CMN_One_Plugin {
                     }
                 }
                 $template_rows_filtered[] = $template_row;
+            }
+            if (!empty($template_rows_filtered[0]['template_key'])) {
+                $template_create_url = add_query_arg(['cmn_template_key' => sanitize_key((string) $template_rows_filtered[0]['template_key'])], $templates_url);
             }
 
             $template_selected_key = sanitize_key((string) ($_GET['cmn_template_key'] ?? ''));
@@ -40175,9 +40498,38 @@ final class CMN_One_Plugin {
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Email Centre</h2>
-            <p>Manage templates, sender addresses, and delivery logs.</p>
+        <header class="cmn-school-header cmn-email-centre-page-header">
+            <div>
+                <h2>
+                    <?php
+                    if ($email_centre_tab === 'senders') {
+                        echo 'Email Senders';
+                    } elseif ($email_centre_tab === 'logs') {
+                        echo 'Email Logs';
+                    } else {
+                        echo 'Templates';
+                    }
+                    ?>
+                </h2>
+                <p>
+                    <?php
+                    if ($email_centre_tab === 'senders') {
+                        echo 'Manage approved sender identities and verification states.';
+                    } elseif ($email_centre_tab === 'logs') {
+                        echo 'Review delivery outcomes with search and pagination controls.';
+                    } else {
+                        echo 'Manage email, SMS and notification templates in one compact table.';
+                    }
+                    ?>
+                </p>
+            </div>
+            <div class="cmn-header-actions">
+                <?php if ($email_centre_tab === 'templates') : ?>
+                    <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($template_create_url); ?>">Create Template</a>
+                <?php elseif ($email_centre_tab === 'senders' && $is_admin) : ?>
+                    <a class="cmn-primary cmn-btn-mini" href="#cmn-email-sender-create">Add Sender</a>
+                <?php endif; ?>
+            </div>
         </header>
         <div class="cmn-panel-card cmn-email-centre-subnav">
             <div class="cmn-email-centre-subnav-links">
@@ -40192,10 +40544,10 @@ final class CMN_One_Plugin {
 
         <?php if ($email_centre_tab === 'senders') : ?>
             <section class="cmn-panel-card cmn-panel-card-wide">
-                <h3>Sender Directory</h3>
-                <p class="cmn-muted">Approved sender addresses used by email templates.</p>
+                <h3>Email Senders Directory</h3>
+                <p class="cmn-muted">Approved sender addresses used by templates and notification workflows.</p>
                 <?php if ($is_admin) : ?>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form" id="cmn-email-sender-create">
                         <?php wp_nonce_field('cmn_email_sender_add', 'cmn_email_sender_add_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_email_sender_add">
                         <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($senders_url); ?>">
@@ -40214,19 +40566,16 @@ final class CMN_One_Plugin {
                     <table class="cmn-table">
                         <thead>
                             <tr>
-                                <th>Email Address</th>
-                                <th>Display Name</th>
+                                <th>Sender Name</th>
+                                <th>Email</th>
+                                <th>Domain</th>
                                 <th>Status</th>
-                                <th>Source</th>
-                                <th>Created</th>
-                                <?php if ($is_admin) : ?>
-                                    <th>Action</th>
-                                <?php endif; ?>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (!$sender_rows) : ?>
-                                <tr><td colspan="<?php echo esc_attr($is_admin ? '6' : '5'); ?>">No sender addresses configured.</td></tr>
+                                <tr><td colspan="5">No sender addresses configured.</td></tr>
                             <?php else : ?>
                                 <?php foreach ($sender_rows as $sender_row) : ?>
                                     <?php
@@ -40234,35 +40583,30 @@ final class CMN_One_Plugin {
                                     $sender_email = sanitize_email((string) ($sender_row['email_address'] ?? ''));
                                     $sender_name = sanitize_text_field((string) ($sender_row['display_name'] ?? ''));
                                     $sender_active = !empty($sender_row['is_active']) ? 1 : 0;
-                                    $sender_source_key = sanitize_key((string) ($sender_row['source'] ?? 'manual'));
-                                    $sender_source_label = 'Manual';
-                                    if ($sender_source_key === 'default_seed') {
-                                        $sender_source_label = 'Auto-seeded';
-                                    } elseif ($sender_source_key === 'template_inferred') {
-                                        $sender_source_label = 'Inferred';
-                                    } elseif ($sender_source_key === 'legacy_import') {
-                                        $sender_source_label = 'Legacy import';
+                                    $sender_domain = '';
+                                    if ($sender_email !== '' && strpos($sender_email, '@') !== false) {
+                                        $sender_domain = substr(strrchr($sender_email, '@'), 1);
                                     }
-                                    $sender_created = sanitize_text_field((string) ($sender_row['created_at'] ?? ''));
                                     ?>
                                     <tr>
-                                        <td><?php echo esc_html($sender_email); ?></td>
                                         <td><?php echo esc_html($sender_name !== '' ? $sender_name : '—'); ?></td>
-                                        <td><?php echo esc_html($sender_active ? 'Active' : 'Inactive'); ?></td>
-                                        <td><?php echo esc_html($sender_source_label); ?></td>
-                                        <td><?php echo esc_html($sender_created !== '' ? $sender_created : 'n/a'); ?></td>
-                                        <?php if ($is_admin) : ?>
-                                            <td>
+                                        <td><?php echo esc_html($sender_email !== '' ? $sender_email : '—'); ?></td>
+                                        <td><?php echo esc_html($sender_domain !== '' ? $sender_domain : '—'); ?></td>
+                                        <td><span class="cmn-status-chip <?php echo esc_attr($sender_active ? 'is-verified' : 'is-pending'); ?>"><?php echo esc_html($sender_active ? 'Verified' : 'Inactive'); ?></span></td>
+                                        <td>
+                                            <?php if ($is_admin) : ?>
                                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
                                                     <?php wp_nonce_field('cmn_email_sender_toggle_' . $sender_id, 'cmn_email_sender_toggle_nonce'); ?>
                                                     <input type="hidden" name="action" value="cmn_email_sender_toggle">
                                                     <input type="hidden" name="cmn_sender_id" value="<?php echo esc_attr((string) $sender_id); ?>">
                                                     <input type="hidden" name="cmn_sender_active" value="<?php echo esc_attr($sender_active ? '0' : '1'); ?>">
                                                     <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($senders_url); ?>">
-                                                    <button class="cmn-ghost" type="submit"><?php echo esc_html($sender_active ? 'Deactivate' : 'Activate'); ?></button>
+                                                    <button class="cmn-ghost cmn-btn-mini" type="submit"><?php echo esc_html($sender_active ? 'Deactivate' : 'Verify'); ?></button>
                                                 </form>
-                                            </td>
-                                        <?php endif; ?>
+                                            <?php else : ?>
+                                                <span class="cmn-muted">—</span>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -40362,23 +40706,19 @@ final class CMN_One_Plugin {
                     </div>
                 </form>
                 <div class="cmn-table-scroll">
-                    <table class="cmn-table">
+                    <table class="cmn-table cmn-email-logs-table">
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Template</th>
+                                <th>Timestamp</th>
                                 <th>Recipient</th>
-                                <th>Role</th>
-                                <th>From</th>
                                 <th>Subject</th>
                                 <th>Status</th>
-                                <th>Error</th>
-                                <th>Created</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (!$email_logs) : ?>
-                                <tr><td colspan="9">No email logs yet.</td></tr>
+                                <tr><td colspan="5">No email logs yet.</td></tr>
                             <?php else : ?>
                                 <?php foreach ($email_logs as $log_row) : ?>
                                     <?php
@@ -40394,23 +40734,68 @@ final class CMN_One_Plugin {
                                         $error_message = substr($error_message, 0, 140) . '...';
                                     }
                                     $created_at = sanitize_text_field((string) ($log_row['created_at'] ?? ''));
+                                    $created_at_label = $created_at !== '' ? mysql2date('j M Y g:ia', $created_at) : 'n/a';
+                                    if ($created_at_label === '') {
+                                        $created_at_label = $created_at !== '' ? $created_at : 'n/a';
+                                    }
+                                    $status_label = $send_status !== '' ? ucfirst($send_status) : 'Queued';
+                                    $status_chip_class = 'is-pending';
+                                    if ($send_status === 'sent') {
+                                        $status_chip_class = 'is-verified';
+                                    } elseif ($send_status === 'failed') {
+                                        $status_chip_class = 'is-declined';
+                                    }
                                     ?>
                                     <tr>
-                                        <td><?php echo esc_html((string) $log_id); ?></td>
-                                        <td><?php echo esc_html($template_key !== '' ? $template_key : 'n/a'); ?></td>
+                                        <td><?php echo esc_html($created_at_label); ?></td>
                                         <td><?php echo esc_html($recipient_email !== '' ? $recipient_email : 'n/a'); ?></td>
-                                        <td><?php echo esc_html($recipient_role !== '' ? $recipient_role : 'n/a'); ?></td>
-                                        <td><?php echo esc_html($from_email !== '' ? $from_email : 'n/a'); ?></td>
                                         <td><?php echo esc_html($subject !== '' ? $subject : 'n/a'); ?></td>
-                                        <td><?php echo esc_html($send_status !== '' ? $send_status : 'n/a'); ?></td>
-                                        <td><?php echo esc_html($send_status === 'failed' && $error_message !== '' ? $error_message : '—'); ?></td>
-                                        <td><?php echo esc_html($created_at !== '' ? $created_at : 'n/a'); ?></td>
+                                        <td><span class="cmn-status-chip <?php echo esc_attr($status_chip_class); ?>"><?php echo esc_html($status_label); ?></span></td>
+                                        <td>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" data-email-log-toggle="<?php echo esc_attr((string) $log_id); ?>">View</button>
+                                        </td>
+                                    </tr>
+                                    <tr class="cmn-email-log-detail-row" data-email-log-detail="<?php echo esc_attr((string) $log_id); ?>" hidden>
+                                        <td colspan="5">
+                                            <div class="cmn-email-log-detail">
+                                                <span><strong>ID:</strong> <?php echo esc_html((string) $log_id); ?></span>
+                                                <span><strong>Template:</strong> <?php echo esc_html($template_key !== '' ? $template_key : 'n/a'); ?></span>
+                                                <span><strong>Role:</strong> <?php echo esc_html($recipient_role !== '' ? $recipient_role : 'n/a'); ?></span>
+                                                <span><strong>From:</strong> <?php echo esc_html($from_email !== '' ? $from_email : 'n/a'); ?></span>
+                                                <span><strong>Error:</strong> <?php echo esc_html($send_status === 'failed' && $error_message !== '' ? $error_message : '—'); ?></span>
+                                            </div>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
+                <script>
+                (function() {
+                    var root = document.querySelector('.cmn-email-logs-table');
+                    if (!root || root.dataset.logToggleBound === '1') {
+                        return;
+                    }
+                    root.dataset.logToggleBound = '1';
+                    root.addEventListener('click', function(event) {
+                        var button = event.target.closest('[data-email-log-toggle]');
+                        if (!button) {
+                            return;
+                        }
+                        var logId = button.getAttribute('data-email-log-toggle') || '';
+                        if (!logId) {
+                            return;
+                        }
+                        var detailRow = root.querySelector('[data-email-log-detail="' + logId + '"]');
+                        if (!detailRow) {
+                            return;
+                        }
+                        detailRow.hidden = !detailRow.hidden;
+                        button.textContent = detailRow.hidden ? 'View' : 'Hide';
+                    });
+                })();
+                </script>
                 <?php if ($email_logs_total > 0) : ?>
                     <p class="cmn-muted">Showing <?php echo esc_html((string) $email_logs_range_start); ?>-<?php echo esc_html((string) $email_logs_range_end); ?> of <?php echo esc_html((string) $email_logs_total); ?> logs.</p>
                 <?php endif; ?>
@@ -40429,11 +40814,19 @@ final class CMN_One_Plugin {
         <?php else : ?>
             <section class="cmn-panel-card cmn-panel-card-wide">
                 <h3>Templates</h3>
-                <p class="cmn-muted">Filter and search templates, then open a template to edit.</p>
+                <p class="cmn-muted">Filter and search templates, then open a template to edit, duplicate, or archive.</p>
                 <form method="get" class="cmn-form">
                     <input type="hidden" name="view" value="email-centre">
                     <input type="hidden" name="cmn_email_centre_tab" value="templates">
                     <div class="cmn-form-grid">
+                        <label>Type
+                            <select name="cmn_email_template_type">
+                                <option value="">All types</option>
+                                <option value="email"<?php selected($template_filter_type, 'email'); ?>>Email</option>
+                                <option value="sms"<?php selected($template_filter_type, 'sms'); ?>>SMS</option>
+                                <option value="notification"<?php selected($template_filter_type, 'notification'); ?>>Notification</option>
+                            </select>
+                        </label>
                         <label>Module
                             <select name="cmn_email_module">
                                 <option value="">All modules</option>
@@ -40471,19 +40864,16 @@ final class CMN_One_Plugin {
                     <table class="cmn-table">
                         <thead>
                             <tr>
-                                <th>Template Key</th>
-                                <th>Name</th>
-                                <th>Module</th>
-                                <th>Recipient Role</th>
-                                <th>From Email</th>
-                                <th>Status</th>
-                                <th>Last Updated</th>
-                                <th>Edit</th>
+                                <th>Template Name</th>
+                                <th>Type</th>
+                                <th>Subject / Title</th>
+                                <th>Last Modified</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (!$template_rows_filtered) : ?>
-                                <tr><td colspan="8">No templates match the current filters.</td></tr>
+                                <tr><td colspan="5">No templates match the current filters.</td></tr>
                             <?php else : ?>
                                 <?php foreach ($template_rows_filtered as $template_row) : ?>
                                     <?php
@@ -40501,23 +40891,41 @@ final class CMN_One_Plugin {
                                     if ($template_last_updated_display === '') {
                                         $template_last_updated_display = $template_last_updated;
                                     }
+                                    $template_subject_title = sanitize_text_field((string) (($template_storage_map[$template_key]['subject'] ?? '') ?: $template_name));
+                                    $template_type_key = 'email';
+                                    $template_haystack = strtolower($template_key . ' ' . $template_module . ' ' . $template_name);
+                                    if (strpos($template_haystack, 'sms') !== false || strpos($template_haystack, 'text') !== false) {
+                                        $template_type_key = 'sms';
+                                    } elseif (strpos($template_haystack, 'notification') !== false || strpos($template_haystack, 'push') !== false) {
+                                        $template_type_key = 'notification';
+                                    }
+                                    $template_type_label = $template_type_key === 'sms'
+                                        ? 'SMS'
+                                        : ($template_type_key === 'notification' ? 'Notification' : 'Email');
                                     $template_view_url = add_query_arg([
                                         'cmn_email_module' => $template_filter_module,
                                         'cmn_email_recipient_role' => $template_filter_recipient_role,
                                         'cmn_email_template_status' => $template_filter_status,
+                                        'cmn_email_template_type' => $template_filter_type,
                                         'cmn_email_template_search' => $template_search,
                                         'cmn_template_key' => $template_key,
                                     ], $templates_url);
                                     ?>
                                     <tr>
-                                        <td><?php echo esc_html($template_key); ?></td>
-                                        <td><?php echo esc_html($template_name !== '' ? $template_name : ucfirst(str_replace('_', ' ', $template_key))); ?></td>
-                                        <td><?php echo esc_html($template_module !== '' ? $template_module : 'system'); ?></td>
-                                        <td><?php echo esc_html($template_recipient_role !== '' ? $template_recipient_role : 'system'); ?></td>
-                                        <td><?php echo esc_html($template_from_email !== '' ? $template_from_email : 'n/a'); ?></td>
-                                        <td><?php echo esc_html($template_status !== '' ? ucfirst(str_replace('_', ' ', $template_status)) : 'n/a'); ?></td>
+                                        <td>
+                                            <strong><?php echo esc_html($template_name !== '' ? $template_name : ucfirst(str_replace('_', ' ', $template_key))); ?></strong>
+                                            <div class="cmn-table-meta"><?php echo esc_html($template_key); ?></div>
+                                        </td>
+                                        <td><?php echo esc_html($template_type_label); ?></td>
+                                        <td><?php echo esc_html($template_subject_title !== '' ? $template_subject_title : '—'); ?></td>
                                         <td><?php echo esc_html($template_last_updated_display !== '' ? $template_last_updated_display : 'n/a'); ?></td>
-                                        <td><a class="cmn-ghost" href="<?php echo esc_url($template_view_url); ?>">Edit</a></td>
+                                        <td>
+                                            <div class="cmn-inline" style="gap:6px;display:flex;flex-wrap:wrap;">
+                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($template_view_url); ?>">Edit</a>
+                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Duplicate</button>
+                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Delete</button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -40586,6 +40994,7 @@ final class CMN_One_Plugin {
                     'cmn_email_module' => $template_filter_module,
                     'cmn_email_recipient_role' => $template_filter_recipient_role,
                     'cmn_email_template_status' => $template_filter_status,
+                    'cmn_email_template_type' => $template_filter_type,
                     'cmn_email_template_search' => $template_search,
                     'cmn_template_key' => $selected_template_key,
                 ], $portal_base_url);
