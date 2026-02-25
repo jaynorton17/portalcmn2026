@@ -24694,7 +24694,7 @@ final class CMN_One_Plugin {
             <h2>Candidates CRM</h2>
             <p>Front-end CRM for staff. No WordPress admin required.</p>
         </header>
-        <form method="get" class="cmn-filters">
+        <form method="get" class="cmn-filters cmn-candidates-filters">
             <input type="hidden" name="view" value="candidates">
             <input type="search" name="s" placeholder="Search candidates..." value="<?php echo esc_attr($search); ?>">
             <input type="hidden" name="cmn_doc_review" value="<?php echo esc_attr($doc_review); ?>">
@@ -24704,11 +24704,15 @@ final class CMN_One_Plugin {
                     <option value="<?php echo esc_attr($opt); ?>"<?php echo $status === $opt ? ' selected' : ''; ?>><?php echo esc_html(ucfirst(str_replace('_', ' ', $opt))); ?></option>
                 <?php endforeach; ?>
             </select>
-            <button class="cmn-ghost" type="submit">Filter</button>
+            <div class="cmn-candidates-filter-actions">
+                <button class="cmn-ghost" type="submit">Filter</button>
+                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates']), home_url('/portal'))); ?>">Clear</a>
+            </div>
             <?php if ($doc_review === 'pending') : ?>
                 <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates']), home_url('/portal'))); ?>">Clear pending-doc filter</a>
             <?php endif; ?>
         </form>
+        <div class="cmn-table-scroll cmn-candidates-table-wrap">
         <table class="cmn-approval-table cmn-candidates-table">
             <thead>
                 <tr>
@@ -24717,9 +24721,9 @@ final class CMN_One_Plugin {
                     <th>Email</th>
                     <th>Documents</th>
                     <th>Status</th>
-                    <th>Profile</th>
+                    <th>Actions</th>
                     <?php if ($this->can_manage_staff_users()) : ?>
-                        <th>Actions</th>
+                        <th>Admin</th>
                     <?php endif; ?>
                 </tr>
             </thead>
@@ -24727,6 +24731,7 @@ final class CMN_One_Plugin {
             <?php if ($query->have_posts()) : ?>
                 <?php while ($query->have_posts()) : $query->the_post(); ?>
                     <?php
+                    $candidate_post_id = (int) get_the_ID();
                     $candidate_user_id = (int) get_post_meta(get_the_ID(), 'cmn_user_id', true);
                     $deletion_requested = $candidate_user_id ? get_user_meta($candidate_user_id, 'cmn_deletion_requested', true) : '';
                     $status_value = strtolower((string) get_post_meta(get_the_ID(), 'cmn_status', true));
@@ -24760,20 +24765,47 @@ final class CMN_One_Plugin {
                             $doc_rejected_count++;
                         }
                     }
+                    $doc_outstanding_count = max(0, 3 - (int) $doc_uploaded_count);
+                    $candidate_email = trim((string) get_post_meta($candidate_post_id, 'cmn_email', true));
+                    $candidate_location = trim((string) get_post_meta($candidate_post_id, 'cmn_location', true));
+                    $status_chip_class = 'is-pending';
+                    if (in_array($status_value, ['approved', 'active', 'live'], true)) {
+                        $status_chip_class = 'is-verified';
+                    } elseif (in_array($status_value, ['rejected', 'deletion_requested', 'declined', 'archived'], true)) {
+                        $status_chip_class = 'is-declined';
+                    }
+                    $status_label = ucfirst(str_replace('_', ' ', $status_value));
+                    $profile_url = add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => $candidate_post_id]), home_url('/portal'));
                     ?>
                     <tr class="cmn-candidates-row">
-                        <td><?php the_title(); ?></td>
-                        <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_location', true)); ?></td>
-                        <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_email', true)); ?></td>
-                        <td class="cmn-candidate-docs-cell">
-                            <span class="cmn-muted"><?php echo esc_html($doc_uploaded_count); ?>/3 uploaded</span><br>
-                            <span class="cmn-muted">A: <?php echo esc_html($doc_approved_count); ?> - P: <?php echo esc_html($doc_pending_count); ?> - R: <?php echo esc_html($doc_rejected_count); ?></span>
+                        <td class="cmn-candidate-cell">
+                            <strong class="cmn-candidate-name"><?php the_title(); ?></strong>
+                            <?php if ($candidate_post_id > 0) : ?>
+                                <span class="cmn-candidate-subline">ID #<?php echo esc_html((string) $candidate_post_id); ?></span>
+                            <?php endif; ?>
                         </td>
-                        <td><?php echo esc_html(str_replace('_', ' ', ucfirst($status_value))); ?></td>
+                        <td>
+                            <span class="cmn-candidate-location-chip"><?php echo esc_html($candidate_location !== '' ? $candidate_location : 'Location not set'); ?></span>
+                        </td>
+                        <td>
+                            <span class="cmn-candidate-email" title="<?php echo esc_attr($candidate_email !== '' ? $candidate_email : 'No email provided'); ?>"><?php echo esc_html($candidate_email !== '' ? $candidate_email : 'No email'); ?></span>
+                        </td>
+                        <td class="cmn-candidate-docs-cell">
+                            <span class="cmn-pill cmn-candidate-docs-pill">Docs: <?php echo esc_html($doc_uploaded_count); ?>/3</span>
+                            <span class="cmn-candidate-docs-breakdown">
+                                <span>A<?php echo esc_html((string) $doc_approved_count); ?></span>
+                                <span>P<?php echo esc_html((string) $doc_pending_count); ?></span>
+                                <span>O<?php echo esc_html((string) $doc_outstanding_count); ?></span>
+                                <span>R<?php echo esc_html((string) $doc_rejected_count); ?></span>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="cmn-status-chip <?php echo esc_attr($status_chip_class); ?>"><?php echo esc_html($status_label); ?></span>
+                        </td>
                         <td class="cmn-candidate-profile-cell">
-                            <div class="cmn-candidate-row-actions">
-                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), home_url('/portal'))); ?>">View profile</a>
-                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), home_url('/portal')) . '#candidate-documents'); ?>">View docs</a>
+                            <div class="cmn-candidate-row-actions cmn-candidate-action-group">
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url); ?>">View profile</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($profile_url . '#candidate-documents'); ?>">View docs</a>
                             </div>
                         </td>
                         <?php if ($this->can_manage_staff_users()) : ?>
@@ -24781,7 +24813,7 @@ final class CMN_One_Plugin {
                                 <?php if ($deletion_requested && $candidate_user_id) : ?>
                                     <button class="cmn-danger" type="button" data-candidate-delete-btn data-candidate-id="<?php echo esc_attr(get_the_ID()); ?>" data-candidate-name="<?php echo esc_attr(get_the_title()); ?>" data-candidate-email="<?php echo esc_attr(get_post_meta(get_the_ID(), 'cmn_email', true)); ?>">Delete candidate</button>
                                 <?php else : ?>
-                                    <span class="cmn-muted">-</span>
+                                    <span class="cmn-muted">—</span>
                                 <?php endif; ?>
                             </td>
                         <?php endif; ?>
@@ -24792,6 +24824,7 @@ final class CMN_One_Plugin {
             <?php endif; ?>
             </tbody>
         </table>
+        </div>
         <?php
         $inner = ob_get_clean();
         $active_nav = ($doc_review === 'pending' && in_array($current_view, ['compliance-review', 'compliance_review'], true)) ? 'compliance_review' : 'candidates';
