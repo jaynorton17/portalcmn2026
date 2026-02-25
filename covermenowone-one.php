@@ -60387,6 +60387,105 @@ final class CMN_One_Plugin {
         return date_i18n('l', strtotime($target_date)) . ' morning';
     }
 
+    private function get_morning_window_bounds_for_date_utc($target_date) {
+        $target_date = (string) $target_date;
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
+            return [];
+        }
+        $timezone = wp_timezone();
+        $start_local = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $target_date . ' 00:00:00', $timezone);
+        $end_local = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $target_date . ' 11:59:59', $timezone);
+        if (!$start_local || !$end_local) {
+            return [];
+        }
+        $utc_tz = new DateTimeZone('UTC');
+        return [
+            'target_date' => $target_date,
+            'slot' => 'morning',
+            'window_start_wp' => $start_local->format('Y-m-d H:i:s T'),
+            'window_end_wp' => $end_local->format('Y-m-d H:i:s T'),
+            'window_start_utc' => $start_local->setTimezone($utc_tz)->format('Y-m-d H:i:s'),
+            'window_end_utc' => $end_local->setTimezone($utc_tz)->format('Y-m-d H:i:s'),
+        ];
+    }
+
+    private function touch_availability_last_changed_marker() {
+        update_option('cmn_availability_last_changed_utc', gmdate('Y-m-d H:i:s'), false);
+    }
+
+    private function get_availability_last_changed_marker() {
+        $value = trim((string) get_option('cmn_availability_last_changed_utc', ''));
+        if ($value === '') {
+            $value = gmdate('Y-m-d H:i:s');
+        }
+        return $value;
+    }
+
+    private function set_candidate_morning_availability($candidate_id, $target_date, $is_available = true) {
+        $candidate_id = (int) $candidate_id;
+        $target_date = (string) $target_date;
+        if ($candidate_id < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
+            return [
+                'ok' => false,
+                'action' => 'invalid',
+                'affected' => 0,
+                'insert_id' => 0,
+                'confirmed_count' => 0,
+            ];
+        }
+        global $wpdb;
+        $table = $this->get_candidate_availability_table();
+        if (!$table) {
+            return [
+                'ok' => false,
+                'action' => 'missing_table',
+                'affected' => 0,
+                'insert_id' => 0,
+                'confirmed_count' => 0,
+            ];
+        }
+        $is_available = (bool) $is_available;
+        $result = false;
+        $action = $is_available ? 'set_available' : 'set_unavailable';
+        if ($is_available) {
+            // Canonicalize legacy rows before upsert to avoid duplicate candidate/day records.
+            $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$table} WHERE candidate_id = %d AND available_date = %s AND available_type = ''",
+                $candidate_id,
+                $target_date
+            ));
+            $result = $wpdb->replace($table, [
+                'candidate_id' => $candidate_id,
+                'available_date' => $target_date,
+                'available_type' => 'morning',
+                'created_at' => gmdate('Y-m-d H:i:s'),
+            ], ['%d', '%s', '%s', '%s']);
+        } else {
+            $result = $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$table} WHERE candidate_id = %d AND available_date = %s AND (available_type = 'morning' OR available_type = '')",
+                $candidate_id,
+                $target_date
+            ));
+        }
+        if ($result === false) {
+            return [
+                'ok' => false,
+                'action' => $action,
+                'affected' => 0,
+                'insert_id' => 0,
+                'confirmed_count' => $this->count_available_candidates_for_date($target_date),
+            ];
+        }
+        $this->touch_availability_last_changed_marker();
+        return [
+            'ok' => true,
+            'action' => $action,
+            'affected' => (int) $result,
+            'insert_id' => (int) $wpdb->insert_id,
+            'confirmed_count' => $this->count_available_candidates_for_date($target_date),
+        ];
+    }
+
     private function has_candidate_availability($candidate_id, $date) {
         if (!$candidate_id || !$date) {
             return false;
@@ -63196,7 +63295,7 @@ final class CMN_One_Plugin {
             return 0;
         }
         $count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table} WHERE available_date = %s AND available_type = %s",
+            "SELECT COUNT(DISTINCT candidate_id) FROM {$table} WHERE available_date = %s AND (available_type = %s OR available_type = '')",
             $tomorrow,
             'morning'
         ));
@@ -63211,7 +63310,7 @@ final class CMN_One_Plugin {
             return 0;
         }
         $count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table} WHERE available_date = %s AND available_type = %s",
+            "SELECT COUNT(DISTINCT candidate_id) FROM {$table} WHERE available_date = %s AND (available_type = %s OR available_type = '')",
             $date,
             'morning'
         ));
@@ -73528,8 +73627,8 @@ final class CMN_One_Plugin {
             return [];
         }
         $assigned_count = 0;
-        $params = [$date, 'morning'];
-        $where = "ca.available_date = %s AND ca.available_type = %s";
+        $params = [$date];
+        $where = "ca.available_date = %s AND (ca.available_type = 'morning' OR ca.available_type = '')";
         if ($school_id) {
             $assigned = $this->get_assigned_candidates($school_id);
             if ($assigned) {
@@ -73542,21 +73641,32 @@ final class CMN_One_Plugin {
         }
         $limit_sql = $limit ? ' LIMIT ' . intval($limit) : '';
         $calendar_table = $this->get_candidate_calendar_table();
+        $sql = '';
         if ($calendar_table) {
             $params[] = $date;
-            $sql = "SELECT ca.candidate_id, ca.created_at FROM {$table} ca WHERE {$where} AND NOT EXISTS (SELECT 1 FROM {$calendar_table} cc WHERE cc.candidate_id = ca.candidate_id AND cc.date = %s AND cc.status = 'unavailable') ORDER BY ca.created_at DESC{$limit_sql}";
+            $sql = "SELECT ca.candidate_id, MAX(ca.created_at) AS created_at FROM {$table} ca WHERE {$where} AND NOT EXISTS (SELECT 1 FROM {$calendar_table} cc WHERE cc.candidate_id = ca.candidate_id AND cc.date = %s AND cc.status = 'unavailable') GROUP BY ca.candidate_id ORDER BY created_at DESC{$limit_sql}";
         } else {
-            $sql = "SELECT ca.candidate_id, ca.created_at FROM {$table} ca WHERE {$where} ORDER BY ca.created_at DESC{$limit_sql}";
+            $sql = "SELECT ca.candidate_id, MAX(ca.created_at) AS created_at FROM {$table} ca WHERE {$where} GROUP BY ca.candidate_id ORDER BY created_at DESC{$limit_sql}";
         }
         $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        $window_bounds = $this->get_morning_window_bounds_for_date_utc($date);
         $this->log_availability_debug('school_dashboard_available_candidates_query', [
             'school_id' => (int) $school_id,
             'target_date' => (string) $date,
             'target_slot' => 'morning',
+            'availability_type_filter' => 'morning_or_blank',
             'limit' => (int) $limit,
             'assigned_filter_count' => (int) $assigned_count,
             'calendar_exclusion_enabled' => $calendar_table ? 1 : 0,
+            'window_start_wp' => (string) ($window_bounds['window_start_wp'] ?? ''),
+            'window_end_wp' => (string) ($window_bounds['window_end_wp'] ?? ''),
+            'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
+            'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
+            'wp_now' => current_time('mysql'),
+            'utc_now' => gmdate('Y-m-d H:i:s'),
+            'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
             'query_arg_count' => count($params),
+            'query_sql' => $sql,
             'result_count' => is_array($rows) ? count($rows) : 0,
         ]);
         return $rows;
@@ -73589,16 +73699,26 @@ final class CMN_One_Plugin {
 
 
     private function get_school_dashboard_available_candidates($school_id = 0, $limit = 24) {
-        $today = function_exists('cmn_today_ymd') ? cmn_today_ymd() : current_time('Y-m-d');
-        if (function_exists('cmn_now')) {
-            $tomorrow = cmn_now()->setTimezone(wp_timezone())->modify('+1 day')->format('Y-m-d');
-        } else {
-            $tomorrow = $this->get_tomorrow_date();
-        }
+        $timezone = wp_timezone();
+        $wp_now = function_exists('cmn_now')
+            ? cmn_now()->setTimezone($timezone)
+            : new DateTimeImmutable('now', $timezone);
+        $today = $wp_now->format('Y-m-d');
+        $tomorrow = (clone $wp_now)->modify('+1 day')->format('Y-m-d');
+        $today_bounds = $this->get_morning_window_bounds_for_date_utc($today);
+        $tomorrow_bounds = $this->get_morning_window_bounds_for_date_utc($tomorrow);
         $this->log_availability_debug('school_dashboard_availability_window', [
             'school_id' => (int) $school_id,
+            'wp_timezone' => $timezone->getName(),
+            'wp_now' => $wp_now->format('Y-m-d H:i:s T'),
+            'utc_now' => gmdate('Y-m-d H:i:s'),
             'target_today_slot' => $today !== '' ? ($today . ' morning') : '',
             'target_tomorrow_slot' => $tomorrow !== '' ? ($tomorrow . ' morning') : '',
+            'today_window_start_utc' => (string) ($today_bounds['window_start_utc'] ?? ''),
+            'today_window_end_utc' => (string) ($today_bounds['window_end_utc'] ?? ''),
+            'tomorrow_window_start_utc' => (string) ($tomorrow_bounds['window_start_utc'] ?? ''),
+            'tomorrow_window_end_utc' => (string) ($tomorrow_bounds['window_end_utc'] ?? ''),
+            'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
             'limit' => (int) $limit,
         ]);
 
@@ -73640,6 +73760,9 @@ final class CMN_One_Plugin {
 
         $this->log_availability_debug('school_dashboard_availability_results', [
             'school_id' => (int) $school_id,
+            'wp_timezone' => $timezone->getName(),
+            'wp_now' => $wp_now->format('Y-m-d H:i:s T'),
+            'utc_now' => gmdate('Y-m-d H:i:s'),
             'today_row_count' => count((array) $today_rows),
             'tomorrow_row_count' => count((array) $tomorrow_rows),
             'final_candidate_count' => count((array) $out),
@@ -81630,42 +81753,47 @@ p{margin:0;line-height:1.5}
                 $target_date = $now->format('Y-m-d');
             }
             $period_label = $this->get_availability_period_label($target_date, $now);
+            $window_bounds = $this->get_morning_window_bounds_for_date_utc($target_date);
             $this->log_availability_debug('candidate_confirm_availability_form_attempt', [
                 'action' => 'cmn_toggle_availability',
                 'candidate_id' => (int) $candidate_id,
                 'session_user_id' => (int) get_current_user_id(),
+                'wp_timezone' => wp_timezone()->getName(),
+                'wp_now' => $now->format('Y-m-d H:i:s T'),
+                'utc_now' => gmdate('Y-m-d H:i:s'),
                 'target_date' => (string) $target_date,
                 'target_slot' => 'morning',
+                'target_period' => (string) $period_label,
                 'period_label' => (string) $period_label,
                 'window_open' => $window_open ? 1 : 0,
                 'window_open_at' => (string) ($availability_window['window_open_at'] ?? ''),
                 'window_close_at' => (string) ($availability_window['window_close_at'] ?? ''),
+                'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
+                'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
                 'intended_available' => $value === '1' ? 1 : 0,
             ]);
             if (!$window_open) {
                 wp_redirect(add_query_arg('cmn_error', 'window', wp_get_referer() ?: home_url()));
                 exit;
             }
-            global $wpdb;
-            $table = $this->get_candidate_availability_table();
-
             if ($value === '1') {
-                $written = $wpdb->replace($table, [
-                    'candidate_id' => $candidate_id,
-                    'available_date' => $target_date,
-                    'available_type' => 'morning',
-                    'created_at' => current_time('mysql'),
-                ], ['%d', '%s', '%s', '%s']);
+                $write_result = $this->set_candidate_morning_availability($candidate_id, $target_date, true);
                 $this->log_availability_debug('candidate_confirm_availability_form_write', [
                     'action' => 'cmn_toggle_availability',
                     'candidate_id' => (int) $candidate_id,
                     'session_user_id' => (int) get_current_user_id(),
                     'target_date' => (string) $target_date,
                     'target_slot' => 'morning',
-                    'write_target' => (string) $table,
-                    'write_result' => ($written === false ? 'failed' : 'saved'),
+                    'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
+                    'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
+                    'write_fields' => 'candidate_id,available_date,available_type,created_at',
+                    'write_result' => !empty($write_result['ok']) ? 'saved' : 'failed',
+                    'rows_affected' => (int) ($write_result['affected'] ?? 0),
+                    'insert_id' => (int) ($write_result['insert_id'] ?? 0),
+                    'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
+                    'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
                 ]);
-                if ($written === false) {
+                if (empty($write_result['ok'])) {
                     wp_redirect(add_query_arg('cmn_error', 'save', wp_get_referer() ?: home_url()));
                     exit;
                 }
@@ -81674,20 +81802,20 @@ p{margin:0;line-height:1.5}
                 $message = "Candidate {$candidate[0]->post_title} has marked available for {$period_label}.\n\nReview in the CRM.";
                 wp_mail($admin_email, $subject, $message);
             } else {
-                $deleted = $wpdb->delete($table, [
-                    'candidate_id' => $candidate_id,
-                    'available_date' => $target_date,
-                    'available_type' => 'morning',
-                ], ['%d', '%s', '%s']);
+                $write_result = $this->set_candidate_morning_availability($candidate_id, $target_date, false);
                 $this->log_availability_debug('candidate_confirm_availability_form_write', [
                     'action' => 'cmn_toggle_availability',
                     'candidate_id' => (int) $candidate_id,
                     'session_user_id' => (int) get_current_user_id(),
                     'target_date' => (string) $target_date,
                     'target_slot' => 'morning',
-                    'write_target' => (string) $table,
-                    'write_result' => ($deleted === false ? 'failed' : 'deleted'),
-                    'rows_affected' => ($deleted === false ? 0 : (int) $deleted),
+                    'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
+                    'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
+                    'write_fields' => 'candidate_id,available_date,available_type',
+                    'write_result' => !empty($write_result['ok']) ? 'deleted' : 'failed',
+                    'rows_affected' => (int) ($write_result['affected'] ?? 0),
+                    'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
+                    'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
                 ]);
             }
         }
@@ -81776,28 +81904,35 @@ p{margin:0;line-height:1.5}
         }
         $already_marked = $this->has_candidate_availability($candidate_id, $target_date);
         $period_label = $this->get_availability_period_label($target_date, $now);
-        $table = $this->get_candidate_availability_table();
+        $window_bounds = $this->get_morning_window_bounds_for_date_utc($target_date);
         $this->log_availability_debug('candidate_confirm_availability_ajax_attempt', [
             'action' => 'cmn_mark_available',
             'candidate_id' => (int) $candidate_id,
             'session_user_id' => (int) get_current_user_id(),
+            'wp_timezone' => wp_timezone()->getName(),
+            'wp_now' => $now->format('Y-m-d H:i:s T'),
+            'utc_now' => gmdate('Y-m-d H:i:s'),
             'target_date' => (string) $target_date,
             'target_slot' => 'morning',
+            'target_period' => (string) $period_label,
+            'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
+            'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
             'period_label' => (string) $period_label,
             'already_marked' => $already_marked ? 1 : 0,
             'window_open' => $allowed ? 1 : 0,
             'window_open_at' => (string) ($availability_window['window_open_at'] ?? ''),
             'window_close_at' => (string) ($availability_window['window_close_at'] ?? ''),
-            'write_target' => (string) $table,
+            'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
         ]);
         if (!$allowed) {
             $closed_message = !empty($availability_window['closed_message']) ? (string) $availability_window['closed_message'] : 'You can confirm availability from 7:00pm on the previous day until 7:30am.';
             wp_send_json_error([
                 'message' => $closed_message,
                 'available' => $already_marked,
-                'button_text' => $already_marked ? ('I\'m NOT available ' . $period_label) : ('I\'m available ' . $period_label),
+                'button_text' => 'Confirm availability for ' . $period_label,
                 'button_enabled' => false,
-                'status_text' => $already_marked ? 'I\'m available' : 'Not confirmed yet',
+                'status_text' => $already_marked ? 'Availability confirmed' : 'Not confirmed yet',
+                'confirmed_count' => $this->count_available_candidates_for_date($target_date),
             ], 400);
         }
 
@@ -81805,52 +81940,58 @@ p{margin:0;line-height:1.5}
             wp_send_json_error([
                 'message' => 'You have marked yourself unavailable for ' . $period_label . ' in your calendar.',
                 'available' => false,
-                'button_text' => 'I\'m available ' . $period_label,
+                'button_text' => 'Confirm availability for ' . $period_label,
                 'button_enabled' => true,
                 'status_text' => 'I\'m not available',
+                'confirmed_count' => $this->count_available_candidates_for_date($target_date),
             ], 400);
         }
-        global $wpdb;
         if ($already_marked) {
-            $deleted = $wpdb->delete($table, [
-                'candidate_id' => $candidate_id,
-                'available_date' => $target_date,
-                'available_type' => 'morning',
-            ], ['%d', '%s', '%s']);
+            $write_result = $this->set_candidate_morning_availability($candidate_id, $target_date, false);
             $this->log_availability_debug('candidate_confirm_availability_ajax_write', [
                 'action' => 'cmn_mark_available',
                 'candidate_id' => (int) $candidate_id,
                 'session_user_id' => (int) get_current_user_id(),
                 'target_date' => (string) $target_date,
                 'target_slot' => 'morning',
-                'write_result' => ($deleted === false ? 'failed' : 'deleted'),
-                'rows_affected' => ($deleted === false ? 0 : (int) $deleted),
+                'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
+                'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
+                'write_fields' => 'candidate_id,available_date,available_type',
+                'write_result' => !empty($write_result['ok']) ? 'deleted' : 'failed',
+                'rows_affected' => (int) ($write_result['affected'] ?? 0),
+                'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
+                'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
             ]);
+            if (empty($write_result['ok'])) {
+                wp_send_json_error(['message' => 'Unable to save availability.'], 500);
+            }
             wp_send_json_success([
                 'message' => 'You\'re now marked as unavailable for ' . $period_label . '.',
                 'available' => false,
                 'button_enabled' => true,
                 'status_text' => 'Not confirmed yet',
-                'button_text' => 'I\'m available ' . $period_label,
+                'button_text' => 'Confirm availability for ' . $period_label,
+                'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
             ]);
         }
 
-        $inserted = $wpdb->insert($table, [
-            'candidate_id' => $candidate_id,
-            'available_date' => $target_date,
-            'available_type' => 'morning',
-            'created_at' => current_time('mysql'),
-        ], ['%d', '%s', '%s', '%s']);
-
+        $write_result = $this->set_candidate_morning_availability($candidate_id, $target_date, true);
         $this->log_availability_debug('candidate_confirm_availability_ajax_write', [
             'action' => 'cmn_mark_available',
             'candidate_id' => (int) $candidate_id,
             'session_user_id' => (int) get_current_user_id(),
             'target_date' => (string) $target_date,
             'target_slot' => 'morning',
-            'write_result' => ($inserted ? 'saved' : 'failed'),
+            'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
+            'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
+            'write_fields' => 'candidate_id,available_date,available_type,created_at',
+            'write_result' => !empty($write_result['ok']) ? 'saved' : 'failed',
+            'rows_affected' => (int) ($write_result['affected'] ?? 0),
+            'insert_id' => (int) ($write_result['insert_id'] ?? 0),
+            'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
+            'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
         ]);
-        if (!$inserted) {
+        if (empty($write_result['ok'])) {
             wp_send_json_error(['message' => 'Unable to save availability.'], 500);
         }
 
@@ -81859,8 +82000,9 @@ p{margin:0;line-height:1.5}
             'date' => $target_date,
             'available' => true,
             'button_enabled' => true,
-            'status_text' => 'I\'m available',
-            'button_text' => 'I\'m NOT available ' . $period_label,
+            'status_text' => 'Availability confirmed',
+            'button_text' => 'Confirm availability for ' . $period_label,
+            'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
         ]);
     }
 
@@ -81884,30 +82026,38 @@ p{margin:0;line-height:1.5}
         if (!$target_date || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
             wp_send_json_error(['message' => 'Invalid date.'], 400);
         }
-
-        global $wpdb;
-        $table = $this->get_candidate_availability_table();
-        $deleted = $wpdb->delete($table, [
-            'candidate_id' => $candidate_id,
-            'available_date' => $target_date,
-            'available_type' => 'morning',
-        ], ['%d', '%s', '%s']);
+        $period_label = $this->get_availability_period_label($target_date, $now);
+        $window_bounds = $this->get_morning_window_bounds_for_date_utc($target_date);
+        $write_result = $this->set_candidate_morning_availability($candidate_id, $target_date, false);
         $this->log_availability_debug('candidate_confirm_availability_ajax_write', [
             'action' => 'cmn_mark_unavailable_morning',
             'candidate_id' => (int) $candidate_id,
             'session_user_id' => (int) get_current_user_id(),
+            'wp_timezone' => wp_timezone()->getName(),
+            'wp_now' => $now->format('Y-m-d H:i:s T'),
+            'utc_now' => gmdate('Y-m-d H:i:s'),
             'target_date' => (string) $target_date,
             'target_slot' => 'morning',
-            'write_result' => ($deleted === false ? 'failed' : 'deleted'),
-            'rows_affected' => ($deleted === false ? 0 : (int) $deleted),
+            'target_period' => (string) $period_label,
+            'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
+            'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
+            'write_fields' => 'candidate_id,available_date,available_type',
+            'write_result' => !empty($write_result['ok']) ? 'deleted' : 'failed',
+            'rows_affected' => (int) ($write_result['affected'] ?? 0),
+            'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
+            'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
         ]);
+        if (empty($write_result['ok'])) {
+            wp_send_json_error(['message' => 'Unable to update availability.'], 500);
+        }
 
         wp_send_json_success([
             'message' => 'Marked unavailable.',
             'available' => false,
             'button_enabled' => true,
             'status_text' => 'I\'m not available',
-            'button_text' => 'I\'m available ' . $this->get_availability_period_label($target_date, $now),
+            'button_text' => 'Confirm availability for ' . $period_label,
+            'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
         ]);
     }
 
