@@ -8686,7 +8686,7 @@ final class CMN_One_Plugin {
                     $is_admin ? ['key' => 'system_health', 'label' => 'System Health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url), 'active_when' => ['view' => ['system-health', 'system_health']]] : null,
                     $is_admin ? ['key' => 'system_logs', 'label' => 'Error Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
                     $is_admin ? ['key' => 'audit', 'label' => 'Audit Log', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
-                    ['key' => 'tools', 'label' => 'Tools', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url), 'active_keys' => ['data_integrity']],
+                    ['key' => 'tools', 'label' => 'Tools', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'tools'], $portal_url)],
                     ['key' => 'data_integrity', 'label' => 'Data Integrity', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url)],
                     $is_admin ? ['key' => 'settings', 'label' => 'General Settings', 'icon' => 'settings', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => false], $portal_url)] : null,
                     $is_admin ? ['key' => 'feature_flags', 'label' => 'Feature Flags', 'icon' => 'settings', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => 'feature_flags'], $portal_url), 'active_when' => ['view' => 'settings', 'query' => ['cmn_settings_tab' => 'feature_flags']]] : null,
@@ -23385,6 +23385,9 @@ final class CMN_One_Plugin {
         if ($view === 'system-health' || $view === 'system_health') {
             return $this->ensure_staff_shell_render('system_health', $this->render_staff_system_health_shortcode(), 'system-health');
         }
+        if ($view === 'tools') {
+            return $this->ensure_staff_shell_render('tools', $this->render_staff_tools_shortcode(), 'tools');
+        }
         if ($view === 'data-integrity' || $view === 'data_integrity') {
             return $this->ensure_staff_shell_render('data_integrity', $this->render_staff_data_integrity_auditor_shortcode(), 'data-integrity');
         }
@@ -29714,6 +29717,78 @@ final class CMN_One_Plugin {
         <?php
         $inner = ob_get_clean();
         return $this->render_staff_shell('audit', $inner);
+    }
+
+    public function render_staff_tools_shortcode() {
+        if (!is_user_logged_in()) {
+            return $this->render_login_shortcode();
+        }
+        if (!$this->is_staff_user()) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>System Tools are available to staff and admins only.</p></div></section>';
+        }
+        $portal_url = $this->get_portal_base_url();
+        $tool_cards = [
+            [
+                'title' => 'Data Import',
+                'description' => 'Load contacts and registration records using existing CSV import workflows.',
+                'action' => 'Open Contact Import',
+                'url' => add_query_arg(['view' => 'contacts', 'cmn_bucket' => 'all'], $portal_url),
+            ],
+            [
+                'title' => 'Data Integrity',
+                'description' => 'Run candidate/school profile mapping checks and export integrity reports.',
+                'action' => 'Open Integrity Checks',
+                'url' => add_query_arg(['view' => 'data-integrity'], $portal_url),
+            ],
+            [
+                'title' => 'System Health',
+                'description' => 'Launch health scans, review critical issues and inspect repair previews.',
+                'action' => 'Open System Health',
+                'url' => add_query_arg(['view' => 'system-health'], $portal_url),
+            ],
+            [
+                'title' => 'Email Logs',
+                'description' => 'Inspect message delivery outcomes, failures and recent sender activity.',
+                'action' => 'Open Email Logs',
+                'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'logs'], $portal_url),
+            ],
+            [
+                'title' => 'Audit Log',
+                'description' => 'Review staff/user actions, filters and entity-level operational changes.',
+                'action' => 'Open Audit Log',
+                'url' => add_query_arg(['view' => 'audit'], $portal_url),
+            ],
+            [
+                'title' => 'Trigger Logs',
+                'description' => 'Monitor automation execution history and failed/queued rule processing.',
+                'action' => 'Open Trigger Logs',
+                'url' => add_query_arg(['view' => 'automation', 'cmn_automation_tab' => 'trigger_logs'], $portal_url),
+            ],
+        ];
+        ob_start();
+        ?>
+        <header class="cmn-school-header">
+            <div class="cmn-header-row">
+                <div>
+                    <h2>System Tools</h2>
+                    <p>Operational shortcuts for imports, diagnostics, logging and system verification.</p>
+                </div>
+            </div>
+        </header>
+        <section class="cmn-tools-grid" data-cmn-fade-in>
+            <?php foreach ($tool_cards as $tool_card) : ?>
+                <article class="cmn-dashboard-card cmn-tools-card">
+                    <h3><?php echo esc_html((string) ($tool_card['title'] ?? 'Tool')); ?></h3>
+                    <p><?php echo esc_html((string) ($tool_card['description'] ?? '')); ?></p>
+                    <a class="cmn-ghost cmn-button-link" href="<?php echo esc_url((string) ($tool_card['url'] ?? '#')); ?>">
+                        <?php echo esc_html((string) ($tool_card['action'] ?? 'Open')); ?>
+                    </a>
+                </article>
+            <?php endforeach; ?>
+        </section>
+        <?php
+        $inner = ob_get_clean();
+        return $this->render_staff_shell('tools', $inner);
     }
 
     public function render_staff_system_health_shortcode() {

@@ -1580,6 +1580,39 @@ body.cmn-portal-page img[src*="fasthosts"] {
   padding: 6px 10px;
 }
 
+.cmn-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.cmn-tools-card {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(165deg, rgba(22, 28, 39, 0.9), rgba(13, 18, 29, 0.88));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.cmn-tools-card h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--cmn-text);
+}
+
+.cmn-tools-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--cmn-muted);
+}
+
+.cmn-tools-card .cmn-button-link {
+  justify-self: start;
+}
+
 .cmn-doc-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
