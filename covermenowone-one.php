@@ -39964,7 +39964,7 @@ final class CMN_One_Plugin {
             $lead_profile_fields = $this->get_lead_fields_for_context('profile');
             $quick_edit_visible_fields = [
                 'school_name' => ['label' => 'School name', 'type' => 'text', 'required' => true],
-                'email' => ['label' => 'Email', 'type' => 'email', 'required' => true],
+                'email' => ['label' => 'Email', 'type' => 'email', 'required' => !$is_lead_profile],
                 'phone' => ['label' => 'Phone', 'type' => 'text', 'required' => false],
                 'location' => ['label' => 'Location', 'type' => 'text', 'required' => false],
                 'postcode' => ['label' => 'Postcode', 'type' => 'text', 'required' => false],
@@ -85412,7 +85412,20 @@ p{margin:0;line-height:1.5}
 
         $school_name = (string) ($values['school_name'] ?? '');
         $school_email = (string) ($values['email'] ?? '');
-        if ($school_name === '' || $school_email === '') {
+        $school_phone = trim((string) ($values['phone'] ?? ''));
+        $status_key = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+        $pipeline_stage_key = sanitize_key((string) get_post_meta($school_id, 'cmn_pipeline_stage', true));
+        $request_status_key = sanitize_key((string) $this->get_school_access_request_status($school_id));
+        $is_lead_profile = $this->is_school_lead_like_status($status_key, $pipeline_stage_key, $request_status_key);
+
+        if ($school_name === '') {
+            wp_die('School name is required.');
+        }
+        if ($is_lead_profile) {
+            if ($school_email === '' && $school_phone === '') {
+                wp_die('Lead profiles require either an email or phone number.');
+            }
+        } elseif ($school_email === '') {
             wp_die('School name and email are required.');
         }
 
