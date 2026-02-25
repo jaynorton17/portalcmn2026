@@ -39,7 +39,7 @@ try {
 
     $assert(($unconfirmed['state_key'] ?? '') === 'unconfirmed', 'Unconfirmed state key mismatch.');
     $assert(!empty($unconfirmed['show_primary_action']), 'Unconfirmed state should show primary action.');
-    $assert(empty($unconfirmed['show_unavailable_action']), 'Unconfirmed state should hide unavailable action.');
+    $assert(!empty($unconfirmed['show_unavailable_action']), 'Unconfirmed state should show the not-available secondary action.');
 
     $assert(($confirmed['state_key'] ?? '') === 'confirmed_available', 'Confirmed state key mismatch.');
     $assert(empty($confirmed['show_primary_action']), 'Confirmed state should hide primary action.');
@@ -48,7 +48,7 @@ try {
 
     $assert(($blocked['state_key'] ?? '') === 'confirmed_not_available', 'Blocked state key mismatch.');
     $assert(empty($blocked['show_primary_action']), 'Blocked state should hide primary action.');
-    $assert(empty($blocked['show_unavailable_action']), 'Blocked state should not show unavailable action.');
+    $assert(!empty($blocked['show_unavailable_action']), 'Blocked state should keep a single change action.');
 
     $assert(($window_closed['state_key'] ?? '') === 'window_closed', 'Window-closed state key mismatch.');
     $assert(!empty($window_closed['show_primary_action']), 'Window-closed state should keep primary action visible (disabled by render logic).');

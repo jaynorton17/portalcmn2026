@@ -61980,10 +61980,10 @@ final class CMN_One_Plugin {
         return date_i18n('l', strtotime($target_date)) . ' morning';
     }
 
-    private function get_candidate_availability_ui_state($availability_allowed, $already_marked, $calendar_blocked, $period_label) {
+    private function get_candidate_availability_ui_state($availability_allowed, $already_marked, $marked_not_available, $period_label) {
         $availability_allowed = (bool) $availability_allowed;
         $already_marked = (bool) $already_marked;
-        $calendar_blocked = (bool) $calendar_blocked;
+        $marked_not_available = (bool) $marked_not_available;
         $period_label = trim((string) $period_label);
         if ($period_label === '') {
             $period_label = 'this morning';
@@ -61992,19 +61992,21 @@ final class CMN_One_Plugin {
         $state = [
             'state_key' => 'unconfirmed',
             'state_class' => 'is-neutral',
-            'status_text' => 'Not confirmed yet',
-            'primary_label' => "CONFIRM I'M AVAILABLE {$upper_period_label}",
+            'status_text' => 'Not responded yet',
+            'primary_label' => "I'M AVAILABLE {$upper_period_label}",
             'show_primary_action' => true,
             'show_confirmed_pill' => false,
             'confirmed_pill_label' => 'AVAILABILITY CONFIRMED',
-            'show_unavailable_action' => false,
-            'unavailable_label' => 'Change to NOT AVAILABLE',
+            'show_unavailable_action' => true,
+            'unavailable_label' => "I'M NOT AVAILABLE {$upper_period_label}",
         ];
-        if ($calendar_blocked) {
+        if ($marked_not_available) {
             $state['state_key'] = 'confirmed_not_available';
             $state['state_class'] = 'is-blocked';
-            $state['status_text'] = "I'm not available";
+            $state['status_text'] = 'Marked as not available';
             $state['show_primary_action'] = false;
+            $state['show_unavailable_action'] = true;
+            $state['unavailable_label'] = 'Change availability';
             return $state;
         }
         if ($already_marked) {
@@ -62014,12 +62016,14 @@ final class CMN_One_Plugin {
             $state['show_primary_action'] = false;
             $state['show_confirmed_pill'] = true;
             $state['show_unavailable_action'] = true;
+            $state['unavailable_label'] = 'Change to NOT AVAILABLE';
             return $state;
         }
         if (!$availability_allowed) {
             $state['state_key'] = 'window_closed';
             $state['state_class'] = 'is-window-closed';
             $state['status_text'] = 'Window closed';
+            $state['show_unavailable_action'] = false;
             return $state;
         }
         return $state;
@@ -62084,7 +62088,7 @@ final class CMN_One_Plugin {
         }
         $is_available = (bool) $is_available;
         $result = false;
-        $action = $is_available ? 'set_available' : 'set_unavailable';
+        $action = $is_available ? 'set_available' : 'set_not_available';
         if ($is_available) {
             // Canonicalize legacy rows before upsert to avoid duplicate candidate/day records.
             $wpdb->query($wpdb->prepare(
@@ -62099,11 +62103,12 @@ final class CMN_One_Plugin {
                 'created_at' => gmdate('Y-m-d H:i:s'),
             ], ['%d', '%s', '%s', '%s']);
         } else {
-            $result = $wpdb->query($wpdb->prepare(
-                "DELETE FROM {$table} WHERE candidate_id = %d AND available_date = %s AND (available_type = 'morning' OR available_type = '')",
-                $candidate_id,
-                $target_date
-            ));
+            $result = $wpdb->replace($table, [
+                'candidate_id' => $candidate_id,
+                'available_date' => $target_date,
+                'available_type' => 'not_available',
+                'created_at' => gmdate('Y-m-d H:i:s'),
+            ], ['%d', '%s', '%s', '%s']);
         }
         if ($result === false) {
             return [
@@ -62140,6 +62145,40 @@ final class CMN_One_Plugin {
             $date
         ));
         return !empty($exists);
+    }
+
+    private function has_candidate_marked_not_available($candidate_id, $date) {
+        if (!$candidate_id || !$date) {
+            return false;
+        }
+        global $wpdb;
+        $table = $this->get_candidate_availability_table();
+        $exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT id
+             FROM {$table}
+             WHERE candidate_id = %d
+               AND available_date = %s
+               AND available_type IN ('not_available', 'unavailable')
+             LIMIT 1",
+            $candidate_id,
+            $date
+        ));
+        return !empty($exists);
+    }
+
+    private function get_candidate_morning_response_state($candidate_id, $date) {
+        $candidate_id = (int) $candidate_id;
+        $date = (string) $date;
+        if ($candidate_id < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return 'not_responded';
+        }
+        if ($this->has_candidate_availability($candidate_id, $date)) {
+            return 'confirmed_available';
+        }
+        if ($this->has_candidate_marked_not_available($candidate_id, $date) || $this->is_candidate_unavailable($candidate_id, $date)) {
+            return 'confirmed_not_available';
+        }
+        return 'not_responded';
     }
 
     private function is_candidate_unavailable($candidate_id, $date) {
@@ -66382,6 +66421,17 @@ final class CMN_One_Plugin {
             $tab = 'finance';
         }
         $availability_candidates = $this->get_school_dashboard_available_candidates($user_school_id ?: 0, 24);
+        $school_dashboard_target_date = $this->get_school_dashboard_target_date();
+        $availability_confirmed_candidate_ids = [];
+        foreach ((array) $availability_candidates as $availability_candidate_item) {
+            $availability_candidate_post = $availability_candidate_item['post'] ?? null;
+            if ($availability_candidate_post instanceof WP_Post) {
+                $availability_confirmed_candidate_ids[] = (int) $availability_candidate_post->ID;
+            }
+        }
+        $availability_confirmed_candidate_ids = array_values(array_unique(array_filter(array_map('intval', $availability_confirmed_candidate_ids))));
+        $availability_other_candidates = $this->get_school_dashboard_other_candidates($user_school_id ?: 0, $school_dashboard_target_date, $availability_confirmed_candidate_ids, 32);
+        $candidate_feed_candidates = array_merge((array) $availability_candidates, (array) $availability_other_candidates);
         $availability_debug_report = null;
         if ($this->is_school_debug_enabled() && $this->is_staff_user() && $user_school_id > 0) {
             $availability_debug_report = $this->collect_school_availability_debug_report($user_school_id, $availability_candidates);
@@ -66527,20 +66577,18 @@ final class CMN_One_Plugin {
                 'tone' => $can_request ? 'ok' : 'info',
             ],
         ];
-        $dashboard_postcode_missing = trim((string) $school_postcode) === '';
-        $dashboard_candidate_rows = [];
-        foreach ((array) $availability_candidates as $candidate_item) {
+        $build_dashboard_candidate_row = function ($candidate_item, $default_label = 'Available Morning', $default_response_state = 'not_responded') use ($can_request, $user_school_id) {
             $candidate_post = $candidate_item['post'] ?? null;
             if (!($candidate_post instanceof WP_Post)) {
-                continue;
+                return null;
             }
             $candidate_id = (int) $candidate_post->ID;
             if ($candidate_id < 1) {
-                continue;
+                return null;
             }
             $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
             if ($candidate_status !== '' && $candidate_status !== 'approved') {
-                continue;
+                return null;
             }
             $role_labels = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_role_labels($candidate_id))));
             if (!$role_labels) {
@@ -66557,23 +66605,106 @@ final class CMN_One_Plugin {
             } elseif ($existing_request_id > 0) {
                 $request_message = 'Request already sent.';
             }
-            $dashboard_candidate_rows[] = [
+            return [
                 'candidate_id' => $candidate_id,
                 'name' => sanitize_text_field((string) $candidate_post->post_title),
                 'subject' => (string) ($role_labels[0] ?? 'General Cover'),
                 'location' => sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_location', true)),
-                'availability_label' => sanitize_text_field((string) ($candidate_item['availability_label'] ?? 'Available Morning')),
+                'availability_label' => sanitize_text_field((string) ($candidate_item['availability_label'] ?? $default_label)),
                 'availability_date' => $availability_date,
+                'response_state' => sanitize_key((string) ($candidate_item['response_state'] ?? $default_response_state)),
                 'profile_url' => (string) $this->get_school_candidate_profile_url($candidate_id, get_current_user_id()),
                 'can_request_booking' => $can_request_booking,
                 'existing_request_id' => $existing_request_id,
                 'request_message' => $request_message,
             ];
-            if (count($dashboard_candidate_rows) >= 8) {
+        };
+
+        $dashboard_candidate_rows_confirmed = [];
+        foreach ((array) $availability_candidates as $candidate_item) {
+            $candidate_row = $build_dashboard_candidate_row($candidate_item, 'Available Morning', 'confirmed_available');
+            if (!is_array($candidate_row)) {
+                continue;
+            }
+            $dashboard_candidate_rows_confirmed[] = $candidate_row;
+            if (count($dashboard_candidate_rows_confirmed) >= 8) {
                 break;
             }
         }
+
+        $dashboard_candidate_rows_other = [];
+        foreach ((array) $availability_other_candidates as $candidate_item) {
+            $candidate_row = $build_dashboard_candidate_row($candidate_item, 'Not responded yet', 'not_responded');
+            if (!is_array($candidate_row)) {
+                continue;
+            }
+            $dashboard_candidate_rows_other[] = $candidate_row;
+            if (count($dashboard_candidate_rows_other) >= 12) {
+                break;
+            }
+        }
+
+        $dashboard_candidate_rows = array_merge($dashboard_candidate_rows_confirmed, $dashboard_candidate_rows_other);
+        $dashboard_candidate_count_confirmed = count($dashboard_candidate_rows_confirmed);
+        $dashboard_candidate_count_other = count($dashboard_candidate_rows_other);
         $dashboard_candidate_count = count($dashboard_candidate_rows);
+        $render_school_candidate_table = static function ($candidate_rows) {
+            $candidate_rows = is_array($candidate_rows) ? $candidate_rows : [];
+            ob_start();
+            ?>
+            <div class="cmn-table-scroll">
+                <table class="cmn-approval-table cmn-school-candidates-table cmn-school-dashboard-candidates-table">
+                    <thead>
+                        <tr>
+                            <th>Candidate</th>
+                            <th>Role</th>
+                            <th>Availability</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($candidate_rows as $candidate_row) : ?>
+                            <?php
+                            $candidate_profile_url = (string) ($candidate_row['profile_url'] ?? '');
+                            $existing_request_id = (int) ($candidate_row['existing_request_id'] ?? 0);
+                            $request_enabled = !empty($candidate_row['can_request_booking']);
+                            ?>
+                            <tr>
+                                <td>
+                                    <div class="cmn-school-candidates-name">
+                                        <strong><?php echo esc_html((string) ($candidate_row['name'] ?? 'Candidate')); ?></strong>
+                                        <?php if (!empty($candidate_row['location'])) : ?>
+                                            <span><?php echo esc_html((string) $candidate_row['location']); ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                                <td><?php echo esc_html((string) ($candidate_row['subject'] ?? 'General Cover')); ?></td>
+                                <td><span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($candidate_row['availability_label'] ?? 'Available')); ?></span></td>
+                                <td class="cmn-school-candidates-actions-cell">
+                                    <div class="cmn-school-candidates-actions">
+                                        <?php if ($candidate_profile_url !== '') : ?>
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View profile</a>
+                                        <?php else : ?>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View profile</button>
+                                        <?php endif; ?>
+                                        <?php if ($request_enabled) : ?>
+                                            <button class="cmn-primary cmn-btn-mini" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr((int) ($candidate_row['candidate_id'] ?? 0)); ?>" data-request-date="<?php echo esc_attr((string) ($candidate_row['availability_date'] ?? '')); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>>
+                                                <?php echo $existing_request_id > 0 ? 'Request sent' : 'Request booking'; ?>
+                                            </button>
+                                        <?php else : ?>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Request booking</button>
+                                        <?php endif; ?>
+                                        <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($candidate_row['request_message'] ?? '')); ?></span>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php
+            return (string) ob_get_clean();
+        };
         $nav_items = [
             [
                 'key' => 'dashboard',
@@ -66718,66 +66849,46 @@ final class CMN_One_Plugin {
                             <article class="cmn-dashboard-card cmn-school-dashboard-panel cmn-school-dashboard-priority-candidates">
                                 <div class="cmn-card-header">
                                     <div>
-                                        <h3>Available / Confirmed Candidates</h3>
-                                        <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> confirmed candidates. Candidates who have confirmed availability appear here first.</p>
+                                        <h3>Candidates near you</h3>
+                                        <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> candidates shown. Confirmed candidates are prioritised first.</p>
                                     </div>
                                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Open Candidates</a>
                                 </div>
                                 <?php if ($dashboard_candidate_rows) : ?>
-                                    <div class="cmn-table-scroll">
-                                        <table class="cmn-approval-table cmn-school-candidates-table cmn-school-dashboard-candidates-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>Candidate</th>
-                                                    <th>Role</th>
-                                                    <th>Availability</th>
-                                                    <th>Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php foreach ($dashboard_candidate_rows as $candidate_row) : ?>
-                                                    <?php
-                                                    $candidate_profile_url = (string) ($candidate_row['profile_url'] ?? '');
-                                                    $existing_request_id = (int) ($candidate_row['existing_request_id'] ?? 0);
-                                                    $request_enabled = !empty($candidate_row['can_request_booking']);
-                                                    ?>
-                                                    <tr>
-                                                        <td>
-                                                            <div class="cmn-school-candidates-name">
-                                                                <strong><?php echo esc_html((string) ($candidate_row['name'] ?? 'Candidate')); ?></strong>
-                                                                <?php if (!empty($candidate_row['location'])) : ?>
-                                                                    <span><?php echo esc_html((string) $candidate_row['location']); ?></span>
-                                                                <?php endif; ?>
-                                                            </div>
-                                                        </td>
-                                                        <td><?php echo esc_html((string) ($candidate_row['subject'] ?? 'General Cover')); ?></td>
-                                                        <td><span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($candidate_row['availability_label'] ?? 'Available')); ?></span></td>
-                                                        <td class="cmn-school-candidates-actions-cell">
-                                                            <div class="cmn-school-candidates-actions">
-                                                                <?php if ($candidate_profile_url !== '') : ?>
-                                                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View profile</a>
-                                                                <?php else : ?>
-                                                                    <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View profile</button>
-                                                                <?php endif; ?>
-                                                                <?php if ($request_enabled) : ?>
-                                                                    <button class="cmn-primary cmn-btn-mini" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr((int) ($candidate_row['candidate_id'] ?? 0)); ?>" data-request-date="<?php echo esc_attr((string) ($candidate_row['availability_date'] ?? '')); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>>
-                                                                        <?php echo $existing_request_id > 0 ? 'Request sent' : 'Request booking'; ?>
-                                                                    </button>
-                                                                <?php else : ?>
-                                                                    <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Request booking</button>
-                                                                <?php endif; ?>
-                                                                <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($candidate_row['request_message'] ?? '')); ?></span>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                <?php endforeach; ?>
-                                            </tbody>
-                                        </table>
+                                    <div class="cmn-school-dashboard-candidate-groups">
+                                        <div class="cmn-school-dashboard-candidate-group">
+                                            <div class="cmn-card-header cmn-school-dashboard-candidate-group-header">
+                                                <h4>Confirmed available now</h4>
+                                                <span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) $dashboard_candidate_count_confirmed); ?></span>
+                                            </div>
+                                            <?php if ($dashboard_candidate_rows_confirmed) : ?>
+                                                <?php echo $render_school_candidate_table($dashboard_candidate_rows_confirmed); ?>
+                                            <?php else : ?>
+                                                <div class="cmn-school-dashboard-candidates-empty">
+                                                    <strong>No confirmed candidates yet.</strong>
+                                                    <p>Keep this view open to see real-time confirmations.</p>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="cmn-school-dashboard-candidate-group">
+                                            <div class="cmn-card-header cmn-school-dashboard-candidate-group-header">
+                                                <h4>Other nearby candidates (not yet confirmed)</h4>
+                                                <span class="cmn-pill"><?php echo esc_html((string) $dashboard_candidate_count_other); ?></span>
+                                            </div>
+                                            <?php if ($dashboard_candidate_rows_other) : ?>
+                                                <?php echo $render_school_candidate_table($dashboard_candidate_rows_other); ?>
+                                            <?php else : ?>
+                                                <div class="cmn-school-dashboard-candidates-empty">
+                                                    <strong>No nearby candidates pending response.</strong>
+                                                    <p>Try widening your search filters in Candidates.</p>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
                                     </div>
                                 <?php else : ?>
                                     <div class="cmn-school-dashboard-candidates-empty">
                                         <strong>No confirmed candidates yet.</strong>
-                                        <p>When candidates confirm availability, they will appear here automatically.</p>
+                                        <p>No nearby candidates are visible right now.</p>
                                         <div class="cmn-settings-actions">
                                             <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Broadcast request</a>
                                         </div>
@@ -66878,7 +66989,7 @@ final class CMN_One_Plugin {
 
                         $candidate_subject_options = ['all' => 'All subjects'];
                         $candidate_rows = [];
-                        foreach ((array) $availability_candidates as $candidate_item) {
+                        foreach ((array) $candidate_feed_candidates as $candidate_item) {
                             $candidate_post = $candidate_item['post'] ?? null;
                             if (!($candidate_post instanceof WP_Post)) {
                                 continue;
@@ -68493,61 +68604,41 @@ final class CMN_One_Plugin {
                         <article class="cmn-dashboard-card cmn-school-dashboard-panel cmn-school-dashboard-priority-candidates cmn-school-profile-priority-candidates">
                             <div class="cmn-card-header">
                                 <div>
-                                    <h3>Available / Confirmed Candidates Right Now</h3>
-                                    <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> candidates confirmed for morning cover.</p>
+                                    <h3>Candidates available right now</h3>
+                                    <p class="cmn-muted"><?php echo esc_html((string) $dashboard_candidate_count); ?> candidates shown. Confirmed candidates are listed first.</p>
                                 </div>
                                 <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Open Candidates</a>
                             </div>
                             <?php if ($dashboard_candidate_rows) : ?>
-                                <div class="cmn-table-scroll">
-                                    <table class="cmn-approval-table cmn-school-candidates-table cmn-school-dashboard-candidates-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Candidate</th>
-                                                <th>Role</th>
-                                                <th>Availability</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($dashboard_candidate_rows as $candidate_row) : ?>
-                                                <?php
-                                                $candidate_profile_url = (string) ($candidate_row['profile_url'] ?? '');
-                                                $existing_request_id = (int) ($candidate_row['existing_request_id'] ?? 0);
-                                                $request_enabled = !empty($candidate_row['can_request_booking']);
-                                                ?>
-                                                <tr>
-                                                    <td>
-                                                        <div class="cmn-school-candidates-name">
-                                                            <strong><?php echo esc_html((string) ($candidate_row['name'] ?? 'Candidate')); ?></strong>
-                                                            <?php if (!empty($candidate_row['location'])) : ?>
-                                                                <span><?php echo esc_html((string) $candidate_row['location']); ?></span>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                    </td>
-                                                    <td><?php echo esc_html((string) ($candidate_row['subject'] ?? 'General Cover')); ?></td>
-                                                    <td><span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($candidate_row['availability_label'] ?? 'Available')); ?></span></td>
-                                                    <td class="cmn-school-candidates-actions-cell">
-                                                        <div class="cmn-school-candidates-actions">
-                                                            <?php if ($candidate_profile_url !== '') : ?>
-                                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View profile</a>
-                                                            <?php else : ?>
-                                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View profile</button>
-                                                            <?php endif; ?>
-                                                            <?php if ($request_enabled) : ?>
-                                                                <button class="cmn-primary cmn-btn-mini" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr((int) ($candidate_row['candidate_id'] ?? 0)); ?>" data-request-date="<?php echo esc_attr((string) ($candidate_row['availability_date'] ?? '')); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>>
-                                                                    <?php echo $existing_request_id > 0 ? 'Request sent' : 'Request booking'; ?>
-                                                                </button>
-                                                            <?php else : ?>
-                                                                <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Request booking</button>
-                                                            <?php endif; ?>
-                                                            <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($candidate_row['request_message'] ?? '')); ?></span>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
+                                <div class="cmn-school-dashboard-candidate-groups">
+                                    <div class="cmn-school-dashboard-candidate-group">
+                                        <div class="cmn-card-header cmn-school-dashboard-candidate-group-header">
+                                            <h4>Confirmed available now</h4>
+                                            <span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) $dashboard_candidate_count_confirmed); ?></span>
+                                        </div>
+                                        <?php if ($dashboard_candidate_rows_confirmed) : ?>
+                                            <?php echo $render_school_candidate_table($dashboard_candidate_rows_confirmed); ?>
+                                        <?php else : ?>
+                                            <div class="cmn-school-dashboard-candidates-empty">
+                                                <strong>No confirmed candidates yet.</strong>
+                                                <p>Confirmed candidates will appear here as they respond.</p>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="cmn-school-dashboard-candidate-group">
+                                        <div class="cmn-card-header cmn-school-dashboard-candidate-group-header">
+                                            <h4>Other nearby candidates (not yet confirmed)</h4>
+                                            <span class="cmn-pill"><?php echo esc_html((string) $dashboard_candidate_count_other); ?></span>
+                                        </div>
+                                        <?php if ($dashboard_candidate_rows_other) : ?>
+                                            <?php echo $render_school_candidate_table($dashboard_candidate_rows_other); ?>
+                                        <?php else : ?>
+                                            <div class="cmn-school-dashboard-candidates-empty">
+                                                <strong>No nearby candidates pending response.</strong>
+                                                <p>Use candidate search to broaden results.</p>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             <?php else : ?>
                                 <div class="cmn-school-dashboard-candidates-empty">
@@ -68556,12 +68647,6 @@ final class CMN_One_Plugin {
                                     <div class="cmn-settings-actions">
                                         <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Broadcast request</a>
                                     </div>
-                                </div>
-                            <?php endif; ?>
-                            <?php if ($dashboard_postcode_missing) : ?>
-                                <div class="cmn-school-dashboard-match-hint">
-                                    <span>Add postcode to improve matching.</span>
-                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_school_profile_tab_url('settings')); ?>">Add postcode</a>
                                 </div>
                             <?php endif; ?>
                         </article>
@@ -69567,8 +69652,9 @@ final class CMN_One_Plugin {
             $target_date = date_i18n('Y-m-d', strtotime('+1 day', current_time('timestamp')));
             error_log('CMN availability fallback target_date used in candidate dashboard render.');
         }
-        $already_marked = $candidate_id ? $this->has_candidate_availability($candidate_id, $target_date) : false;
-        $calendar_blocked = $candidate_id ? $this->is_candidate_unavailable($candidate_id, $target_date) : false;
+        $availability_response_state = $candidate_id ? $this->get_candidate_morning_response_state($candidate_id, $target_date) : 'not_responded';
+        $already_marked = $availability_response_state === 'confirmed_available';
+        $marked_not_available = $availability_response_state === 'confirmed_not_available';
 
         $calendar_start = $now->format('Y-m-01');
         $calendar_end = (clone $now)->modify('+1 month')->format('Y-m-t');
@@ -69858,21 +69944,21 @@ final class CMN_One_Plugin {
                         $legacy_profile_section_map = [
                             'contact' => 'overview',
                             'payment' => 'payments',
+                            'address' => 'address_roles',
+                            'roles' => 'address_roles',
+                            'admin_notes' => 'admin_verification',
                         ];
                         if (isset($legacy_profile_section_map[$profile_section_tab])) {
                             $profile_section_tab = (string) $legacy_profile_section_map[$profile_section_tab];
                         }
                         $candidate_profile_tabs = [
                             'overview' => 'Overview',
-                            'address' => 'Address',
-                            'roles' => 'Roles & Preferences',
+                            'address_roles' => 'Address & Roles',
                             'documents' => 'Documents',
-                            'payments' => 'Payments',
                             'compliance' => 'Compliance',
+                            'payments' => 'Payments',
+                            'admin_verification' => 'Admin / Verification',
                         ];
-                        if ($profile_notes !== '') {
-                            $candidate_profile_tabs['admin_notes'] = 'Admin Notes';
-                        }
                         if (!isset($candidate_profile_tabs[$profile_section_tab])) {
                             $profile_section_tab = 'overview';
                         }
@@ -69952,7 +70038,7 @@ final class CMN_One_Plugin {
                                     <input type="hidden" name="notes" value="<?php echo esc_attr($profile_notes); ?>">
                                 </form>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-role-card<?php echo $profile_section_tab !== 'roles' ? ' hidden' : ''; ?>>
+                            <div class="cmn-dashboard-card" data-profile-role-card<?php echo $profile_section_tab !== 'address_roles' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Role & Preferences</h3>
                                 </div>
@@ -70075,7 +70161,7 @@ final class CMN_One_Plugin {
                                     </fieldset>
                                 </form>
                             </div>
-                            <div class="cmn-dashboard-card"<?php echo $profile_section_tab !== 'address' ? ' hidden' : ''; ?>>
+                            <div class="cmn-dashboard-card"<?php echo $profile_section_tab !== 'address_roles' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Address</h3>
                                 </div>
@@ -70139,19 +70225,17 @@ final class CMN_One_Plugin {
                                     </label>
                                 </form>
                             </div>
-                            <?php if ($profile_notes !== '') : ?>
-                                <div class="cmn-dashboard-card" data-profile-readonly-only<?php echo $profile_section_tab !== 'admin_notes' ? ' hidden' : ''; ?>>
-                                    <div class="cmn-card-header">
-                                        <h3>Admin Notes</h3>
-                                    </div>
-                                    <div class="cmn-profile-definition-grid">
-                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
-                                            <span class="cmn-profile-definition-label">Profile notes</span>
-                                            <span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes); ?></span>
-                                        </div>
+                            <div class="cmn-dashboard-card" data-profile-readonly-only<?php echo $profile_section_tab !== 'admin_verification' ? ' hidden' : ''; ?>>
+                                <div class="cmn-card-header">
+                                    <h3>Admin Notes</h3>
+                                </div>
+                                <div class="cmn-profile-definition-grid">
+                                    <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                        <span class="cmn-profile-definition-label">Profile notes</span>
+                                        <span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes !== '' ? $profile_notes : 'No admin notes yet.'); ?></span>
                                     </div>
                                 </div>
-                            <?php endif; ?>
+                            </div>
                             <div class="cmn-dashboard-card"<?php echo $profile_section_tab !== 'compliance' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Compliance Status</h3>
@@ -70295,7 +70379,7 @@ final class CMN_One_Plugin {
                                     <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['cmn_tab' => 'candidate_finance', 'candidate' => false], $portal_url)); ?>">Open Finance</a>
                                 </div>
                             </div>
-                            <div class="cmn-dashboard-card cmn-dashboard-card-wide" data-profile-readonly-only<?php echo $profile_section_tab !== 'compliance' ? ' hidden' : ''; ?>>
+                            <div class="cmn-dashboard-card cmn-dashboard-card-wide" data-profile-readonly-only<?php echo $profile_section_tab !== 'admin_verification' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Admin Verification Status</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>" data-admin-verification-status><?php echo esc_html($doc_summary['badge_label']); ?></span>
@@ -71104,20 +71188,20 @@ final class CMN_One_Plugin {
                         $availability_button_helper = '';
                         if (!$availability_allowed) {
                             $availability_button_helper = $closed_message;
-                        } elseif ($calendar_blocked) {
-                            $availability_button_helper = 'You have marked yourself unavailable for ' . $period_label . ' in your calendar.';
+                        } elseif ($marked_not_available) {
+                            $availability_button_helper = 'You are currently marked as not available for ' . $period_label . '.';
                         }
-                        $availability_ui_state = $this->get_candidate_availability_ui_state($availability_allowed, $already_marked, $calendar_blocked, $period_label);
+                        $availability_ui_state = $this->get_candidate_availability_ui_state($availability_allowed, $already_marked, $marked_not_available, $period_label);
                         $availability_state_key = (string) ($availability_ui_state['state_key'] ?? 'unconfirmed');
                         $availability_state_class = (string) ($availability_ui_state['state_class'] ?? 'is-neutral');
-                        $availability_state_text = (string) ($availability_ui_state['status_text'] ?? 'Not confirmed yet');
-                        $availability_primary_label = (string) ($availability_ui_state['primary_label'] ?? ("CONFIRM I'M AVAILABLE " . strtoupper($period_label)));
+                        $availability_state_text = (string) ($availability_ui_state['status_text'] ?? 'Not responded yet');
+                        $availability_primary_label = (string) ($availability_ui_state['primary_label'] ?? ("I'M AVAILABLE " . strtoupper($period_label)));
                         $availability_unavailable_label = (string) ($availability_ui_state['unavailable_label'] ?? 'Change to NOT AVAILABLE');
                         $availability_confirmed_pill_label = (string) ($availability_ui_state['confirmed_pill_label'] ?? 'AVAILABILITY CONFIRMED');
                         $availability_show_primary_action = !empty($availability_ui_state['show_primary_action']);
                         $availability_show_unavailable_action = !empty($availability_ui_state['show_unavailable_action']);
                         $availability_show_confirmed_pill = !empty($availability_ui_state['show_confirmed_pill']);
-                        $availability_button_disabled = (!$availability_allowed || $calendar_blocked);
+                        $availability_button_disabled = (!$availability_allowed);
                         $confirmed_count = $this->count_available_candidates_for_date($target_date);
                         $dashboard_bookings_tab = sanitize_key((string) ($_GET['cmn_dash_bookings_tab'] ?? 'upcoming'));
                         if (!in_array($dashboard_bookings_tab, ['upcoming', 'history'], true)) {
@@ -71140,7 +71224,7 @@ final class CMN_One_Plugin {
                                                                 <div class="cmn-availability-countdown" data-availability-countdown></div>
                             </div>
                             <div class="cmn-availability-hero-action confirm-actions">
-                                <button id="cmn-tomorrow-availability-btn" class="cmn-availability-btn btn-confirm cmn-primary cmn-candidate-primary-action" type="button" data-availability-button data-availability-primary-action data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>"<?php echo $availability_button_disabled ? ' disabled' : ''; ?><?php echo !$availability_show_primary_action ? ' hidden aria-hidden="true"' : ''; ?> data-availability-date="<?php echo esc_attr($target_date); ?>" data-available="<?php echo $already_marked ? '1' : '0'; ?>" data-calendar-blocked="<?php echo $calendar_blocked ? '1' : '0'; ?>" data-availability-period-label="<?php echo esc_attr($period_label); ?>"<?php echo $availability_next_press_label !== '' ? ' data-availability-next-open-label="' . esc_attr($availability_next_press_label) . '"' : ''; ?><?php echo !empty($availability_window['window_open_at']) ? ' data-availability-open-at="' . esc_attr((string) $availability_window['window_open_at']) . '"' : ''; ?><?php echo !empty($availability_window['window_close_at']) ? ' data-availability-close-at="' . esc_attr((string) $availability_window['window_close_at']) . '"' : ''; ?>>
+                                <button id="cmn-tomorrow-availability-btn" class="cmn-availability-btn btn-confirm cmn-primary cmn-candidate-primary-action" type="button" data-availability-button data-availability-primary-action data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>"<?php echo $availability_button_disabled ? ' disabled' : ''; ?><?php echo !$availability_show_primary_action ? ' hidden aria-hidden="true"' : ''; ?> data-availability-date="<?php echo esc_attr($target_date); ?>" data-available="<?php echo $already_marked ? '1' : '0'; ?>" data-availability-response-state="<?php echo esc_attr($availability_response_state); ?>" data-availability-period-label="<?php echo esc_attr($period_label); ?>"<?php echo $availability_next_press_label !== '' ? ' data-availability-next-open-label="' . esc_attr($availability_next_press_label) . '"' : ''; ?><?php echo !empty($availability_window['window_open_at']) ? ' data-availability-open-at="' . esc_attr((string) $availability_window['window_open_at']) . '"' : ''; ?><?php echo !empty($availability_window['window_close_at']) ? ' data-availability-close-at="' . esc_attr((string) $availability_window['window_close_at']) . '"' : ''; ?>>
                                     <?php echo esc_html($availability_primary_label); ?>
                                 </button>
                                 <div class="cmn-availability-confirmed-pill" data-availability-confirmed-pill<?php echo $availability_show_confirmed_pill ? '' : ' hidden'; ?>><?php echo esc_html($availability_confirmed_pill_label); ?></div>
@@ -75704,64 +75788,53 @@ final class CMN_One_Plugin {
     }
 
 
+    private function get_school_dashboard_target_date(DateTimeImmutable $wp_now = null) {
+        $timezone = wp_timezone();
+        if (!($wp_now instanceof DateTimeImmutable)) {
+            $wp_now = function_exists('cmn_now')
+                ? cmn_now()->setTimezone($timezone)
+                : new DateTimeImmutable('now', $timezone);
+        }
+        $window_now = DateTime::createFromInterface($wp_now);
+        $availability_window = $this->get_candidate_availability_window($window_now);
+        $target_date = sanitize_text_field((string) ($availability_window['target_date'] ?? ''));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
+            $target_date = $wp_now->format('Y-m-d');
+        }
+        return $target_date;
+    }
+
     private function get_school_dashboard_available_candidates($school_id = 0, $limit = 24) {
         $timezone = wp_timezone();
         $wp_now = function_exists('cmn_now')
             ? cmn_now()->setTimezone($timezone)
             : new DateTimeImmutable('now', $timezone);
-        $today = $wp_now->format('Y-m-d');
-        $tomorrow = (clone $wp_now)->modify('+1 day')->format('Y-m-d');
-        $today_bounds = $this->get_morning_window_bounds_for_date_utc($today);
-        $tomorrow_bounds = $this->get_morning_window_bounds_for_date_utc($tomorrow);
+        $target_date = $this->get_school_dashboard_target_date($wp_now);
+        $target_bounds = $this->get_morning_window_bounds_for_date_utc($target_date);
+        $period_label = $this->get_availability_period_label($target_date, DateTime::createFromInterface($wp_now));
         $this->log_availability_debug('school_dashboard_availability_window', [
             'school_id' => (int) $school_id,
             'wp_timezone' => $timezone->getName(),
             'wp_now' => $wp_now->format('Y-m-d H:i:s T'),
             'utc_now' => gmdate('Y-m-d H:i:s'),
-            'target_today_slot' => $today !== '' ? ($today . ' morning') : '',
-            'target_tomorrow_slot' => $tomorrow !== '' ? ($tomorrow . ' morning') : '',
-            'today_window_start_utc' => (string) ($today_bounds['window_start_utc'] ?? ''),
-            'today_window_end_utc' => (string) ($today_bounds['window_end_utc'] ?? ''),
-            'tomorrow_window_start_utc' => (string) ($tomorrow_bounds['window_start_utc'] ?? ''),
-            'tomorrow_window_end_utc' => (string) ($tomorrow_bounds['window_end_utc'] ?? ''),
+            'target_slot' => (string) ($target_date . ' morning'),
+            'target_period' => (string) $period_label,
+            'window_start_utc' => (string) ($target_bounds['window_start_utc'] ?? ''),
+            'window_end_utc' => (string) ($target_bounds['window_end_utc'] ?? ''),
             'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
             'limit' => (int) $limit,
         ]);
 
-        $today_rows = $today ? $this->get_available_candidates_with_times($today, $school_id, $limit) : [];
-        $tomorrow_rows = $tomorrow ? $this->get_available_candidates_with_times($tomorrow, $school_id, $limit) : [];
-
+        $rows = $target_date ? $this->get_available_candidates_with_times($target_date, $school_id, $limit) : [];
+        $availability_label = stripos($period_label, 'tomorrow') !== false
+            ? 'Available Tomorrow Morning'
+            : 'Available This Morning';
         $out = [];
-        $seen = [];
-
-        foreach ($today_rows as $item) {
-            $post = $item['post'] ?? null;
-            $candidate_id = ($post && isset($post->ID)) ? (int) $post->ID : 0;
-            if ($candidate_id < 1 || isset($seen[$candidate_id])) {
-                continue;
-            }
-            $item['availability_label'] = 'Available Today Morning';
-            $item['availability_date'] = $today;
+        foreach ((array) $rows as $item) {
+            $item['availability_label'] = $availability_label;
+            $item['availability_date'] = $target_date;
+            $item['response_state'] = 'confirmed_available';
             $out[] = $item;
-            $seen[$candidate_id] = true;
-            if ($limit > 0 && count($out) >= $limit) {
-                return $out;
-            }
-        }
-
-        foreach ($tomorrow_rows as $item) {
-            $post = $item['post'] ?? null;
-            $candidate_id = ($post && isset($post->ID)) ? (int) $post->ID : 0;
-            if ($candidate_id < 1 || isset($seen[$candidate_id])) {
-                continue;
-            }
-            $item['availability_label'] = 'Available Tomorrow Morning';
-            $item['availability_date'] = $tomorrow;
-            $out[] = $item;
-            $seen[$candidate_id] = true;
-            if ($limit > 0 && count($out) >= $limit) {
-                break;
-            }
         }
 
         $this->log_availability_debug('school_dashboard_availability_results', [
@@ -75769,13 +75842,122 @@ final class CMN_One_Plugin {
             'wp_timezone' => $timezone->getName(),
             'wp_now' => $wp_now->format('Y-m-d H:i:s T'),
             'utc_now' => gmdate('Y-m-d H:i:s'),
-            'today_row_count' => count((array) $today_rows),
-            'tomorrow_row_count' => count((array) $tomorrow_rows),
+            'target_date' => (string) $target_date,
+            'target_period' => (string) $period_label,
+            'confirmed_row_count' => count((array) $rows),
             'final_candidate_count' => count((array) $out),
             'role_filter' => 'none',
             'role_filter_excluded_count' => 0,
         ]);
         return $out;
+    }
+
+    private function get_candidate_ids_marked_not_available_for_date($date) {
+        $date = sanitize_text_field((string) $date);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return [];
+        }
+        global $wpdb;
+        $table = $this->get_candidate_availability_table();
+        if (!$table) {
+            return [];
+        }
+        $rows = (array) $wpdb->get_col($wpdb->prepare(
+            "SELECT DISTINCT candidate_id
+             FROM {$table}
+             WHERE available_date = %s
+               AND available_type IN ('not_available', 'unavailable')",
+            $date
+        ));
+        return array_values(array_unique(array_filter(array_map('intval', $rows))));
+    }
+
+    private function get_school_dashboard_other_candidates($school_id, $target_date, $exclude_candidate_ids = [], $limit = 24) {
+        $school_id = (int) $school_id;
+        $target_date = sanitize_text_field((string) $target_date);
+        $limit = max(1, (int) $limit);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
+            return [];
+        }
+        $exclude_map = [];
+        foreach ((array) $exclude_candidate_ids as $exclude_candidate_id) {
+            $exclude_candidate_id = (int) $exclude_candidate_id;
+            if ($exclude_candidate_id > 0) {
+                $exclude_map[$exclude_candidate_id] = true;
+            }
+        }
+        $blocked_ids = $this->get_candidate_ids_marked_not_available_for_date($target_date);
+        foreach ($blocked_ids as $blocked_id) {
+            $exclude_map[(int) $blocked_id] = true;
+        }
+
+        $candidate_posts = get_posts([
+            'post_type' => 'cmn_candidate',
+            'posts_per_page' => max(120, $limit * 10),
+            'orderby' => 'date',
+            'order' => 'DESC',
+            'post_status' => 'publish',
+        ]);
+
+        $timezone = wp_timezone();
+        $wp_now = function_exists('cmn_now')
+            ? cmn_now()->setTimezone($timezone)
+            : new DateTimeImmutable('now', $timezone);
+        $period_label = $this->get_availability_period_label($target_date, DateTime::createFromInterface($wp_now));
+        $availability_label = stripos($period_label, 'tomorrow') !== false
+            ? 'Not responded (tomorrow morning)'
+            : 'Not responded (this morning)';
+
+        $rows = [];
+        $excluded_status = 0;
+        $excluded_not_available = 0;
+        $excluded_location = 0;
+        foreach ((array) $candidate_posts as $candidate_post) {
+            if (!($candidate_post instanceof WP_Post)) {
+                continue;
+            }
+            $candidate_id = (int) $candidate_post->ID;
+            if ($candidate_id < 1 || isset($exclude_map[$candidate_id])) {
+                $excluded_not_available++;
+                continue;
+            }
+            $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+            if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                $excluded_status++;
+                continue;
+            }
+            if ($this->is_candidate_unavailable($candidate_id, $target_date)) {
+                $excluded_not_available++;
+                continue;
+            }
+            if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
+                $excluded_location++;
+                continue;
+            }
+            $rows[] = [
+                'post' => $candidate_post,
+                'created_at' => (string) ($candidate_post->post_date_gmt ?: $candidate_post->post_date ?: ''),
+                'availability_label' => $availability_label,
+                'availability_date' => $target_date,
+                'response_state' => 'not_responded',
+            ];
+            if (count($rows) >= $limit) {
+                break;
+            }
+        }
+
+        $this->log_availability_debug('school_dashboard_other_candidates', [
+            'school_id' => $school_id,
+            'target_date' => (string) $target_date,
+            'input_candidates' => count((array) $candidate_posts),
+            'excluded_status' => (int) $excluded_status,
+            'excluded_not_available' => (int) $excluded_not_available,
+            'excluded_location' => (int) $excluded_location,
+            'output_candidates' => count((array) $rows),
+            'search_radius_miles' => $this->get_school_candidate_search_radius_miles(),
+        ]);
+
+        return $rows;
     }
     private function get_available_candidates_with_times($date, $school_id = 0, $limit = 6) {
         $rows = $this->get_available_candidate_rows($date, 0, $limit);
@@ -75914,6 +76096,14 @@ final class CMN_One_Plugin {
         return $this->parse_distance_miles($travel_radius);
     }
 
+    private function get_school_candidate_search_radius_miles() {
+        $radius = (float) apply_filters('cmn_school_candidate_search_radius_miles', 30.0);
+        if ($radius < 1) {
+            $radius = 30.0;
+        }
+        return max(5.0, min(100.0, $radius));
+    }
+
     private function candidate_matches_school_for_dashboard($candidate_id, $school_id) {
         $candidate_id = (int) $candidate_id;
         $school_id = (int) $school_id;
@@ -75931,24 +76121,26 @@ final class CMN_One_Plugin {
             return true;
         }
 
-        $location_match = $this->candidate_matches_school_location_fallback($candidate_id, $school_id);
-
-        $travel_miles = $this->get_candidate_travel_radius_miles($candidate_id);
         $candidate_coords = $this->get_geo_coordinates_for_post($candidate_id);
         $school_coords = $this->ensure_school_geo_coordinates($school_id);
-        if ($travel_miles > 0 && $candidate_coords && $school_coords) {
+        if ($candidate_coords && $school_coords) {
+            $radius_miles = $this->get_school_candidate_search_radius_miles();
             $distance = $this->marketing_haversine_miles(
                 (float) $candidate_coords['lat'],
                 (float) $candidate_coords['lng'],
                 (float) $school_coords['lat'],
                 (float) $school_coords['lng']
             );
-            return $distance <= $travel_miles;
+            return $distance <= $radius_miles;
         }
 
         // When coordinate data is incomplete, do not collapse to zero results.
-        // Fall back to location/town/postcode matching until geocoding is available.
-        return $location_match;
+        // Keep matching permissive so schools always see supply candidates.
+        $location_match = $this->candidate_matches_school_location_fallback($candidate_id, $school_id);
+        if ($location_match) {
+            return true;
+        }
+        return !$school_coords || !$candidate_coords;
     }
 
     private function extract_uk_postcode_outward_code($postcode) {
@@ -84108,7 +84300,7 @@ p{margin:0;line-height:1.5}
                     'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
                     'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
                     'write_fields' => 'candidate_id,available_date,available_type',
-                    'write_result' => !empty($write_result['ok']) ? 'deleted' : 'failed',
+                    'write_result' => !empty($write_result['ok']) ? 'saved' : 'failed',
                     'rows_affected' => (int) ($write_result['affected'] ?? 0),
                     'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
                     'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
@@ -84198,7 +84390,8 @@ p{margin:0;line-height:1.5}
             $target_date = date_i18n('Y-m-d', strtotime('+1 day', current_time('timestamp')));
             error_log('CMN availability AJAX fallback target_date used.');
         }
-        $already_marked = $this->has_candidate_availability($candidate_id, $target_date);
+        $response_state = $this->get_candidate_morning_response_state($candidate_id, $target_date);
+        $already_marked = $response_state === 'confirmed_available';
         $period_label = $this->get_availability_period_label($target_date, $now);
         $window_bounds = $this->get_morning_window_bounds_for_date_utc($target_date);
         $this->log_availability_debug('candidate_confirm_availability_ajax_attempt', [
@@ -84215,6 +84408,7 @@ p{margin:0;line-height:1.5}
             'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
             'period_label' => (string) $period_label,
             'already_marked' => $already_marked ? 1 : 0,
+            'response_state' => (string) $response_state,
             'window_open' => $allowed ? 1 : 0,
             'window_open_at' => (string) ($availability_window['window_open_at'] ?? ''),
             'window_close_at' => (string) ($availability_window['window_close_at'] ?? ''),
@@ -84225,9 +84419,10 @@ p{margin:0;line-height:1.5}
             wp_send_json_error([
                 'message' => $closed_message,
                 'available' => $already_marked,
-                'button_text' => 'Confirm availability for ' . $period_label,
+                'response_state' => (string) $response_state,
+                'button_text' => "I'M AVAILABLE " . strtoupper($period_label),
                 'button_enabled' => false,
-                'status_text' => $already_marked ? 'Availability confirmed' : 'Not confirmed yet',
+                'status_text' => $already_marked ? 'Availability confirmed' : ($response_state === 'confirmed_not_available' ? 'Marked as not available' : 'Not responded yet'),
                 'confirmed_count' => $this->count_available_candidates_for_date($target_date),
             ], 400);
         }
@@ -84236,39 +84431,12 @@ p{margin:0;line-height:1.5}
             wp_send_json_error([
                 'message' => 'You have marked yourself unavailable for ' . $period_label . ' in your calendar.',
                 'available' => false,
-                'button_text' => 'Confirm availability for ' . $period_label,
+                'response_state' => 'confirmed_not_available',
+                'button_text' => "I'M AVAILABLE " . strtoupper($period_label),
                 'button_enabled' => true,
-                'status_text' => 'I\'m not available',
+                'status_text' => 'Marked as not available',
                 'confirmed_count' => $this->count_available_candidates_for_date($target_date),
             ], 400);
-        }
-        if ($already_marked) {
-            $write_result = $this->set_candidate_morning_availability($candidate_id, $target_date, false);
-            $this->log_availability_debug('candidate_confirm_availability_ajax_write', [
-                'action' => 'cmn_mark_available',
-                'candidate_id' => (int) $candidate_id,
-                'session_user_id' => (int) get_current_user_id(),
-                'target_date' => (string) $target_date,
-                'target_slot' => 'morning',
-                'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
-                'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
-                'write_fields' => 'candidate_id,available_date,available_type',
-                'write_result' => !empty($write_result['ok']) ? 'deleted' : 'failed',
-                'rows_affected' => (int) ($write_result['affected'] ?? 0),
-                'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
-                'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
-            ]);
-            if (empty($write_result['ok'])) {
-                wp_send_json_error(['message' => 'Unable to save availability.'], 500);
-            }
-            wp_send_json_success([
-                'message' => 'You\'re now marked as unavailable for ' . $period_label . '.',
-                'available' => false,
-                'button_enabled' => true,
-                'status_text' => 'Not confirmed yet',
-                'button_text' => 'Confirm availability for ' . $period_label,
-                'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
-            ]);
         }
 
         $write_result = $this->set_candidate_morning_availability($candidate_id, $target_date, true);
@@ -84295,9 +84463,10 @@ p{margin:0;line-height:1.5}
             'message' => 'You\'re marked as available for ' . $period_label . '.',
             'date' => $target_date,
             'available' => true,
+            'response_state' => 'confirmed_available',
             'button_enabled' => true,
             'status_text' => 'Availability confirmed',
-            'button_text' => 'Confirm availability for ' . $period_label,
+            'button_text' => "I'M AVAILABLE " . strtoupper($period_label),
             'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
         ]);
     }
@@ -84338,7 +84507,7 @@ p{margin:0;line-height:1.5}
             'window_start_utc' => (string) ($window_bounds['window_start_utc'] ?? ''),
             'window_end_utc' => (string) ($window_bounds['window_end_utc'] ?? ''),
             'write_fields' => 'candidate_id,available_date,available_type',
-            'write_result' => !empty($write_result['ok']) ? 'deleted' : 'failed',
+            'write_result' => !empty($write_result['ok']) ? 'saved' : 'failed',
             'rows_affected' => (int) ($write_result['affected'] ?? 0),
             'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
             'availability_last_changed_utc' => (string) $this->get_availability_last_changed_marker(),
@@ -84350,9 +84519,10 @@ p{margin:0;line-height:1.5}
         wp_send_json_success([
             'message' => 'Marked unavailable.',
             'available' => false,
+            'response_state' => 'confirmed_not_available',
             'button_enabled' => true,
-            'status_text' => 'I\'m not available',
-            'button_text' => 'Confirm availability for ' . $period_label,
+            'status_text' => 'Marked as not available',
+            'button_text' => "I'M AVAILABLE " . strtoupper($period_label),
             'confirmed_count' => (int) ($write_result['confirmed_count'] ?? 0),
         ]);
     }

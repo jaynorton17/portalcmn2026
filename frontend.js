@@ -3266,7 +3266,12 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!confirmActionLabel) {
         confirmActionLabel = "CONFIRM I'M AVAILABLE " + availabilityPeriodLabel.toUpperCase();
       }
+      var unavailableActionLabel = unavailableButton ? (unavailableButton.textContent || '').trim() : '';
+      if (!unavailableActionLabel) {
+        unavailableActionLabel = "I'M NOT AVAILABLE " + availabilityPeriodLabel.toUpperCase();
+      }
       var changeActionLabel = 'Change to NOT AVAILABLE';
+      var changeFromUnavailableLabel = 'Change availability';
       var confirmedPillLabel = 'AVAILABILITY CONFIRMED';
       var countdownEl = document.querySelector('[data-availability-countdown]');
       var openAtRaw = availabilityButton.getAttribute('data-availability-open-at') || '';
@@ -3346,10 +3351,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         availabilitySocial.textContent = '🔥 ' + availabilityConfirmedCount + ' candidates have already confirmed';
       };
-      var setAvailabilityActionVisibility = function (isAvailable, options) {
-        options = options || {};
-        var isBlockedState = !!options.blocked;
-        if (isAvailable || isBlockedState) {
+      var setAvailabilityActionVisibility = function (stateKey) {
+        var isConfirmedAvailable = stateKey === 'confirmed_available';
+        var isConfirmedNotAvailable = stateKey === 'confirmed_not_available';
+        var isWindowClosed = stateKey === 'window_closed';
+        if (isConfirmedAvailable || isConfirmedNotAvailable) {
           availabilityButton.setAttribute('hidden', 'hidden');
           availabilityButton.setAttribute('aria-hidden', 'true');
         } else {
@@ -3358,7 +3364,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (availabilityConfirmedPill) {
           availabilityConfirmedPill.textContent = confirmedPillLabel;
-          if (isAvailable) {
+          if (isConfirmedAvailable) {
             availabilityConfirmedPill.removeAttribute('hidden');
           } else {
             availabilityConfirmedPill.setAttribute('hidden', 'hidden');
@@ -3367,13 +3373,20 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!unavailableButton) {
           return;
         }
-        unavailableButton.textContent = changeActionLabel;
-        if (isAvailable) {
-          unavailableButton.removeAttribute('hidden');
-          unavailableButton.removeAttribute('aria-hidden');
-        } else {
+        if (isWindowClosed) {
           unavailableButton.setAttribute('hidden', 'hidden');
           unavailableButton.setAttribute('aria-hidden', 'true');
+          unavailableButton.textContent = unavailableActionLabel;
+          return;
+        }
+        unavailableButton.removeAttribute('hidden');
+        unavailableButton.removeAttribute('aria-hidden');
+        if (isConfirmedAvailable) {
+          unavailableButton.textContent = changeActionLabel;
+        } else if (isConfirmedNotAvailable) {
+          unavailableButton.textContent = changeFromUnavailableLabel;
+        } else {
+          unavailableButton.textContent = unavailableActionLabel;
         }
       };
       var renderAvailabilityCountdown = function () {
@@ -3421,8 +3434,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (availabilityHelper) {
           availabilityHelper.textContent = '';
         }
-        if (availabilityMessage && availabilityMessage.textContent.trim().toLowerCase() === 'not confirmed yet.') {
-          availabilityMessage.textContent = 'Not confirmed yet';
+        if (availabilityMessage && availabilityMessage.textContent.trim().toLowerCase() === 'not responded yet.') {
+          availabilityMessage.textContent = 'Not responded yet';
         }
         if (availabilityUnlockTimer) {
           window.clearInterval(availabilityUnlockTimer);
@@ -3449,27 +3462,38 @@ document.addEventListener('DOMContentLoaded', function () {
         availabilityDotLabel.textContent = text;
       };
 
-      var setAvailabilityVisualState = function (isAvailable, options) {
+      var setAvailabilityVisualState = function (stateKey, options) {
         options = options || {};
-        var wasAvailable = availabilityButton.getAttribute('data-available') === '1';
-        var stateKey = options.stateKey || (isAvailable ? 'confirmed_available' : 'unconfirmed');
+        var previousState = '';
+        if (availabilityCard) {
+          previousState = (availabilityCard.getAttribute('data-availability-state') || '').trim();
+        }
+        if (!previousState) {
+          previousState = (availabilityButton.getAttribute('data-availability-response-state') || '').trim();
+        }
+        var wasAvailable = previousState
+          ? previousState === 'confirmed_available'
+          : availabilityButton.getAttribute('data-available') === '1';
+        if (!stateKey) {
+          stateKey = previousState || (wasAvailable ? 'confirmed_available' : 'unconfirmed');
+        }
+        var isAvailable = stateKey === 'confirmed_available';
         var isBlockedState = stateKey === 'confirmed_not_available';
         var isWindowClosedState = stateKey === 'window_closed';
         availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
+        availabilityButton.setAttribute('data-availability-response-state', stateKey);
         setAvailabilityButtonLabel(confirmActionLabel);
-        setAvailabilityActionVisibility(isAvailable, { blocked: isBlockedState });
+        setAvailabilityActionVisibility(stateKey);
         if (availabilityCard) {
           availabilityCard.setAttribute('data-availability-state', stateKey);
-          availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
+          availabilityCard.classList.toggle('is-confirmed', isAvailable);
           availabilityCard.classList.toggle('is-blocked', isBlockedState);
-          if (!isAvailable && !isBlockedState) {
-            availabilityCard.classList.remove('is-confirmed');
-          }
+          availabilityCard.classList.toggle('is-window-closed', isWindowClosedState);
         }
         if (isBlockedState) {
-          setStatusDot('is-blocked', "I'm not available");
+          setStatusDot('is-blocked', 'Marked as not available');
           if (availabilityMessage) {
-            availabilityMessage.textContent = "I'm not available";
+            availabilityMessage.textContent = 'Marked as not available';
           }
           if (availabilityImpact) {
             availabilityImpact.textContent = 'You will appear lower in manager searches.';
@@ -3482,13 +3506,21 @@ document.addEventListener('DOMContentLoaded', function () {
           if (availabilityImpact) {
             availabilityImpact.textContent = 'You will appear lower in manager searches.';
           }
-        } else {
-          setStatusDot(isAvailable ? 'is-confirmed' : 'is-neutral', isAvailable ? 'Confirmed' : 'Not confirmed yet');
+        } else if (isAvailable) {
+          setStatusDot('is-confirmed', 'Confirmed');
           if (availabilityMessage) {
-            availabilityMessage.textContent = isAvailable ? 'Availability confirmed' : 'Not confirmed yet';
+            availabilityMessage.textContent = 'Availability confirmed';
           }
           if (availabilityImpact) {
-            availabilityImpact.textContent = isAvailable ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.';
+            availabilityImpact.textContent = 'You appear at the top of manager searches.';
+          }
+        } else {
+          setStatusDot('is-neutral', 'Not responded yet');
+          if (availabilityMessage) {
+            availabilityMessage.textContent = 'Not responded yet';
+          }
+          if (availabilityImpact) {
+            availabilityImpact.textContent = 'You will appear lower in manager searches.';
           }
         }
         if (typeof options.confirmedCount === 'number' && !Number.isNaN(options.confirmedCount)) {
@@ -3500,21 +3532,31 @@ document.addEventListener('DOMContentLoaded', function () {
       };
       setAvailabilityButtonLabel(confirmActionLabel);
       if (unavailableButton) {
-        unavailableButton.textContent = changeActionLabel;
+        unavailableButton.textContent = unavailableActionLabel;
       }
       var initialStateKey = availabilityCard ? (availabilityCard.getAttribute('data-availability-state') || '').trim() : '';
-      if (initialStateKey === 'confirmed_not_available' || (availabilityCard && availabilityCard.classList.contains('is-blocked'))) {
-        setAvailabilityVisualState(false, { confirmedCount: availabilityConfirmedCount, stateKey: 'confirmed_not_available' });
-      } else if (availabilityButton.getAttribute('data-available') === '1') {
-        setAvailabilityVisualState(true, { confirmedCount: availabilityConfirmedCount, stateKey: 'confirmed_available' });
-      } else {
-        setAvailabilityVisualState(false, { confirmedCount: availabilityConfirmedCount, stateKey: (initialStateKey === 'window_closed' ? 'window_closed' : 'unconfirmed') });
+      if (!initialStateKey) {
+        initialStateKey = (availabilityButton.getAttribute('data-availability-response-state') || '').trim();
       }
+      if (!initialStateKey) {
+        initialStateKey = availabilityButton.getAttribute('data-available') === '1' ? 'confirmed_available' : 'unconfirmed';
+      }
+      setAvailabilityVisualState(initialStateKey, { confirmedCount: availabilityConfirmedCount });
       if (unavailableButton) {
         unavailableButton.addEventListener('click', function () {
           unavailableButton.disabled = true;
+          var currentStateKey = '';
+          if (availabilityCard) {
+            currentStateKey = (availabilityCard.getAttribute('data-availability-state') || '').trim();
+          }
+          if (!currentStateKey) {
+            currentStateKey = (availabilityButton.getAttribute('data-availability-response-state') || '').trim();
+          }
+          var unavailableAction = currentStateKey === 'confirmed_not_available'
+            ? 'cmn_mark_available'
+            : 'cmn_mark_unavailable_morning';
           var formDataUnavailable = new FormData();
-          formDataUnavailable.append('action', 'cmn_mark_unavailable_morning');
+          formDataUnavailable.append('action', unavailableAction);
           formDataUnavailable.append('nonce', availabilityNonce);
           fetch(availabilityAjaxUrl, {
             method: 'POST',
@@ -3525,10 +3567,22 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (data) {
               unavailableButton.disabled = false;
               if (data && data.success) {
-                setAvailabilityVisualState(false, { confirmedCount: getConfirmedCountFromPayload(data.data), stateKey: 'unconfirmed' });
+                var nextState = (data.data && data.data.response_state) || (unavailableAction === 'cmn_mark_available' ? 'confirmed_available' : 'confirmed_not_available');
+                setAvailabilityVisualState(nextState, { confirmedCount: getConfirmedCountFromPayload(data.data) });
+                if (data.data && typeof data.data.button_enabled !== 'undefined') {
+                  availabilityButton.disabled = !data.data.button_enabled;
+                } else {
+                  availabilityButton.disabled = false;
+                }
+                if (availabilityHelper) {
+                  availabilityHelper.textContent = '';
+                }
                 syncAvailabilityButtonLabel();
               } else if (availabilityMessage) {
                 availabilityMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to update availability.';
+                if (data && data.data && typeof data.data.response_state === 'string') {
+                  setAvailabilityVisualState(data.data.response_state, { confirmedCount: getConfirmedCountFromPayload(data.data) });
+                }
               }
             })
             .catch(function () {
@@ -3561,15 +3615,10 @@ document.addEventListener('DOMContentLoaded', function () {
           })
           .then(function (data) {
             if (data && data.success) {
-              if (data.data && typeof data.data.available !== 'undefined') {
-                var nextAvailableState = !!data.data.available;
-                setAvailabilityVisualState(nextAvailableState, {
-                  confirmedCount: getConfirmedCountFromPayload(data.data),
-                  stateKey: nextAvailableState ? 'confirmed_available' : 'unconfirmed'
-                });
-              } else {
-                setAvailabilityVisualState(true, { confirmedCount: getConfirmedCountFromPayload(data.data), stateKey: 'confirmed_available' });
-              }
+              var nextStateKey = (data.data && typeof data.data.response_state === 'string' && data.data.response_state)
+                ? data.data.response_state
+                : 'confirmed_available';
+              setAvailabilityVisualState(nextStateKey, { confirmedCount: getConfirmedCountFromPayload(data.data) });
               if (data.data && typeof data.data.button_enabled !== 'undefined') {
                 availabilityButton.disabled = !data.data.button_enabled;
               } else {
@@ -3587,6 +3636,9 @@ document.addEventListener('DOMContentLoaded', function () {
               availabilityButton.disabled = false;
               if (availabilityMessage) {
                 availabilityMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to save availability.';
+              }
+              if (data && data.data && typeof data.data.response_state === 'string') {
+                setAvailabilityVisualState(data.data.response_state, { confirmedCount: getConfirmedCountFromPayload(data.data) });
               }
               if (data && data.data && typeof data.data.button_enabled !== 'undefined') {
                 availabilityButton.disabled = !data.data.button_enabled;
