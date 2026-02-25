@@ -59456,22 +59456,30 @@ final class CMN_One_Plugin {
         return $rows;
     }
 
-    private function get_school_candidate_requests($school_domain, $limit = 20) {
+    private function get_school_candidate_requests($school_id = 0, $school_domain = '', $limit = 20) {
         global $wpdb;
         $table = $this->get_candidate_requests_table();
+        $school_id = (int) $school_id;
         $school_domain = strtolower(trim((string) $school_domain));
-        if ($school_domain === '') {
-            return [];
-        }
         $limit = (int) $limit;
         if ($limit < 1) {
             $limit = 20;
         }
-        $sql = $wpdb->prepare(
-            "SELECT * FROM {$table} WHERE school_email_domain = %s ORDER BY requested_at DESC LIMIT %d",
-            $school_domain,
-            $limit
-        );
+        if ($school_id > 0) {
+            $sql = $wpdb->prepare(
+                "SELECT * FROM {$table} WHERE school_id = %d ORDER BY requested_at DESC LIMIT %d",
+                $school_id,
+                $limit
+            );
+        } elseif ($school_domain !== '') {
+            $sql = $wpdb->prepare(
+                "SELECT * FROM {$table} WHERE school_email_domain = %s ORDER BY requested_at DESC LIMIT %d",
+                $school_domain,
+                $limit
+            );
+        } else {
+            return [];
+        }
         $rows = $wpdb->get_results($sql, ARRAY_A);
         foreach ($rows as &$row) {
             $this->maybe_mark_request_expired($row);
@@ -63589,7 +63597,7 @@ final class CMN_One_Plugin {
             $school_email = get_post_meta($user_school_id, 'cmn_email', true);
             $school_domain = $this->get_email_domain($school_email);
         }
-        $school_requests = $school_domain ? $this->get_school_candidate_requests($school_domain, 20) : [];
+        $school_requests = $this->get_school_candidate_requests((int) $user_school_id, (string) $school_domain, 20);
         $school_status_key = sanitize_key((string) $school_status);
         $school_is_active_status = in_array($school_status_key, ['active', 'client', 'active_client', 'live'], true);
         $has_open_request = false;
