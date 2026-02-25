@@ -7759,9 +7759,9 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
 }
 
 .cmn-school-candidate-deck-stack {
-  position: relative;
-  min-height: 456px;
-  overflow: hidden;
+  display: grid;
+  gap: 12px;
+  min-height: 0;
 }
 
 .cmn-school-candidate-deck-nav {
@@ -7790,10 +7790,9 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
 }
 
 .cmn-school-candidate-card {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: min(860px, calc(100% - 320px));
+  position: relative;
+  width: min(860px, 100%);
+  margin-inline: auto;
   display: grid;
   grid-template-rows: auto auto auto auto;
   gap: 12px;
@@ -7810,11 +7809,32 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   isolation: isolate;
 }
 
-.cmn-school-candidate-card.is-active {
+.cmn-school-candidate-deck.is-ready .cmn-school-candidate-deck-stack {
+  position: relative;
+  min-height: 456px;
+  overflow: hidden;
+  display: block;
+  gap: 0;
+}
+
+.cmn-school-candidate-deck.is-ready .cmn-school-candidate-card {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(860px, calc(100% - 320px));
+  margin-inline: 0;
+}
+
+.cmn-school-candidate-deck.is-ready .cmn-school-candidate-card.is-active {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(-50%, 0, 0) scale(1);
   z-index: 500;
+}
+
+.cmn-school-candidate-deck:not(.is-ready) .cmn-school-candidate-card.is-active {
+  transform: none;
+  z-index: auto;
 }
 
 .cmn-school-candidate-card:active {
@@ -7843,7 +7863,7 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
     0 0 0 1px rgba(234, 179, 8, 0.18) inset;
 }
 
-.cmn-school-candidate-card.is-hidden {
+.cmn-school-candidate-deck.is-ready .cmn-school-candidate-card.is-hidden {
   opacity: 0;
   pointer-events: none;
 }

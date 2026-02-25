@@ -3736,6 +3736,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!cards.length) {
         return;
       }
+      deckRoot.classList.add('is-ready');
       var dotsWrap = deckRoot.querySelector('[data-deck-dots]');
       var dots = dotsWrap ? Array.prototype.slice.call(dotsWrap.querySelectorAll('[data-deck-dot]')) : [];
       var activeIndex = 0;

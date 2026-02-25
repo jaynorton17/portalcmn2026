@@ -68418,8 +68418,6 @@ final class CMN_One_Plugin {
                                 $card_classes = 'cmn-school-candidate-card cmn-available-card ' . ($response_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending');
                                 if ((int) $card_index === 0) {
                                     $card_classes .= ' is-active';
-                                } else {
-                                    $card_classes .= ' is-hidden';
                                 }
                                 $review_count = max(0, (int) ($candidate_row['review_count'] ?? 0));
                                 $avg_rating = (float) ($candidate_row['avg_rating'] ?? 0);
