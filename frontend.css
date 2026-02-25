@@ -1613,6 +1613,89 @@ body.cmn-portal-page img[src*="fasthosts"] {
   justify-self: start;
 }
 
+.cmn-staff-profile-summary-card,
+.cmn-staff-profile-tabs-card {
+  padding: 14px;
+}
+
+.cmn-staff-profile-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.cmn-staff-profile-summary > div,
+.cmn-staff-profile-activity-grid > div {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(14, 20, 31, 0.68);
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-staff-profile-summary span,
+.cmn-staff-profile-activity-grid span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cmn-muted);
+}
+
+.cmn-staff-profile-summary strong,
+.cmn-staff-profile-activity-grid strong {
+  color: var(--cmn-text);
+  font-size: 13px;
+}
+
+.cmn-staff-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-staff-profile-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cmn-staff-profile-tabs .cmn-ghost.is-active {
+  border-color: rgba(208, 42, 42, 0.5);
+  background: rgba(208, 42, 42, 0.14);
+  color: #fff;
+}
+
+.cmn-staff-profile-panel h3 {
+  margin: 0 0 8px;
+}
+
+.cmn-staff-profile-activity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cmn-staff-profile-pill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-staff-profile-pill-list li {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(22, 29, 43, 0.84);
+  font-size: 12px;
+  color: var(--cmn-text);
+}
+
 .cmn-doc-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1823,6 +1906,11 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
     justify-content: flex-start;
   }
 
+  .cmn-staff-profile-summary,
+  .cmn-staff-profile-activity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .cmn-doc-row {
     flex-direction: column;
     align-items: flex-start;
@@ -1831,6 +1919,11 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
 
 @media (max-width: 767px) {
   .cmn-staff-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-staff-profile-summary,
+  .cmn-staff-profile-activity-grid {
     grid-template-columns: 1fr;
   }
 }

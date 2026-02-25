@@ -5821,13 +5821,14 @@ document.addEventListener('DOMContentLoaded', function () {
             var row = button.closest('tr');
             var statusCell = row ? row.querySelector('.cmn-staff-status') : null;
             var isDeactivated = data.data && data.data.status === 'deactivated';
-            if (statusCell) {
-              var statusChip = statusCell.querySelector('.cmn-status-chip');
-              if (statusChip) {
-                statusChip.classList.remove('is-declined', 'is-approved');
-                statusChip.classList.add(isDeactivated ? 'is-declined' : 'is-approved');
-                statusChip.textContent = isDeactivated ? 'Deactivated' : 'Active';
-              }
+            var statusChip = statusCell ? statusCell.querySelector('.cmn-status-chip') : null;
+            if (!statusChip && userId) {
+              statusChip = document.querySelector('[data-staff-status-chip][data-staff-id="' + userId + '"]');
+            }
+            if (statusChip) {
+              statusChip.classList.remove('is-declined', 'is-approved');
+              statusChip.classList.add(isDeactivated ? 'is-declined' : 'is-approved');
+              statusChip.textContent = isDeactivated ? 'Deactivated' : 'Active';
             }
             button.textContent = isDeactivated ? 'Activate' : 'Deactivate';
             button.setAttribute('data-staff-active', isDeactivated ? '0' : '1');
