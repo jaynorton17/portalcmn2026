@@ -33663,6 +33663,12 @@ final class CMN_One_Plugin {
         }
         $allowed_tiers = array_keys((array) $this->get_school_partner_tier_definitions());
         $tier_filter = ($tier_raw !== '' && in_array($tier_raw, $allowed_tiers, true)) ? $tier_raw : '';
+        $status_raw = isset($_GET['cmn_partner_status']) ? sanitize_key(wp_unslash((string) $_GET['cmn_partner_status'])) : '';
+        if ($status_raw === 'all') {
+            $status_raw = '';
+        }
+        $allowed_statuses = $this->get_school_list_post_statuses();
+        $status_filter = ($status_raw !== '' && in_array($status_raw, $allowed_statuses, true)) ? $status_raw : '';
         $search_filter = isset($_GET['cmn_partner_search'])
             ? sanitize_text_field(wp_unslash((string) $_GET['cmn_partner_search']))
             : '';
@@ -33686,6 +33692,7 @@ final class CMN_One_Plugin {
 
         $list_payload = $this->get_staff_partner_programme_list_results([
             'tier' => $tier_filter,
+            'status' => $status_filter,
             'search' => $search_filter,
             'sort' => $sort_filter,
             'page' => $current_page,
@@ -33696,12 +33703,14 @@ final class CMN_One_Plugin {
         $total_pages = (int) ($list_payload['total_pages'] ?? 1);
         $current_page = (int) ($list_payload['page'] ?? $current_page);
         $tier_filter = (string) ($list_payload['tier_filter'] ?? $tier_filter);
+        $status_filter = (string) ($list_payload['status_filter'] ?? $status_filter);
         $search_filter = (string) ($list_payload['search_filter'] ?? $search_filter);
         $sort_filter = (string) ($list_payload['sort_filter'] ?? $sort_filter);
 
-        $build_url = function ($overrides = []) use ($base_url, $tier_filter, $search_filter, $sort_filter, $current_page, $selected_school_id) {
+        $build_url = function ($overrides = []) use ($base_url, $tier_filter, $status_filter, $search_filter, $sort_filter, $current_page, $selected_school_id) {
             $args = [
                 'cmn_partner_tier' => $tier_filter !== '' ? $tier_filter : 'all',
+                'cmn_partner_status' => $status_filter !== '' ? $status_filter : 'all',
                 'cmn_partner_sort' => $sort_filter,
             ];
             if ($search_filter !== '') {
@@ -33783,22 +33792,29 @@ final class CMN_One_Plugin {
             return 'GBP ' . number_format((float) $value, 2);
         };
         $is_admin_user = $this->is_admin_user($user_id);
+        $add_partner_url = admin_url('post-new.php?post_type=cmn_school');
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>CMN Partner Programme</h2>
-            <p>Internal overview of partner tiers, lifetime credits, discounts and invoice-linked savings.</p>
+        <header class="cmn-school-header cmn-partner-programme-header">
+            <div class="cmn-partner-programme-header-main">
+                <h2>Partner Programme</h2>
+                <p>Partner tiers, discounts, and commercial performance by school.</p>
+            </div>
+            <div class="cmn-partner-programme-header-actions">
+                <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($add_partner_url); ?>">Add Partner</a>
+            </div>
         </header>
         <?php if ($message !== '') : ?>
             <div class="cmn-dashboard-card" style="margin-bottom:12px;">
                 <p class="<?php echo $message_type === 'error' ? 'cmn-register-error' : ($message_type === 'warning' ? 'cmn-register-warning' : 'cmn-register-success'); ?>"><?php echo esc_html($message); ?></p>
             </div>
         <?php endif; ?>
-        <div class="cmn-dashboard-card" style="margin-bottom:16px;">
-            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-inline cmn-partner-admin-toolbar" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+        <div class="cmn-dashboard-card cmn-partner-programme-filter-card">
+            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-partner-programme-filter-form">
                 <input type="hidden" name="view" value="partner-programme">
-                <label style="display:flex;flex-direction:column;gap:4px;">
+                <input type="hidden" name="cmn_partner_sort" value="<?php echo esc_attr($sort_filter); ?>">
+                <label class="cmn-partner-programme-filter-control">
                     <span>Tier</span>
                     <select name="cmn_partner_tier">
                         <option value="all"<?php selected($tier_filter, ''); ?>>All tiers</option>
@@ -33807,73 +33823,80 @@ final class CMN_One_Plugin {
                         <?php endforeach; ?>
                     </select>
                 </label>
-                <label style="display:flex;flex-direction:column;gap:4px;min-width:240px;">
+                <label class="cmn-partner-programme-filter-control">
+                    <span>Status</span>
+                    <select name="cmn_partner_status">
+                        <option value="all"<?php selected($status_filter, ''); ?>>All statuses</option>
+                        <?php foreach ((array) $allowed_statuses as $post_status_key) : ?>
+                            <option value="<?php echo esc_attr($post_status_key); ?>"<?php selected($status_filter, $post_status_key); ?>><?php echo esc_html(ucfirst(str_replace('_', ' ', (string) $post_status_key))); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label class="cmn-partner-programme-filter-control is-search">
                     <span>School search</span>
                     <input type="text" name="cmn_partner_search" value="<?php echo esc_attr($search_filter); ?>" placeholder="School name or ID">
                 </label>
-                <label style="display:flex;flex-direction:column;gap:4px;">
-                    <span>Sort by</span>
-                    <select name="cmn_partner_sort">
-                        <option value="credits"<?php selected($sort_filter, 'credits'); ?>>Credits</option>
-                        <option value="savings"<?php selected($sort_filter, 'savings'); ?>>Savings</option>
-                        <option value="tier"<?php selected($sort_filter, 'tier'); ?>>Tier</option>
-                        <option value="activity"<?php selected($sort_filter, 'activity'); ?>>Latest activity</option>
-                        <option value="name"<?php selected($sort_filter, 'name'); ?>>School name</option>
-                    </select>
-                </label>
-                <button class="cmn-primary" type="submit">Filter</button>
-                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'partner-programme'], $portal_url)); ?>">Clear</a>
+                <div class="cmn-partner-programme-filter-actions">
+                    <button class="cmn-primary" type="submit">Apply</button>
+                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'partner-programme'], $portal_url)); ?>">Clear</a>
+                </div>
             </form>
         </div>
-        <div class="cmn-portal-grid" style="align-items:start;">
-            <div class="cmn-dashboard-card">
-                <h3>Schools in Partner Programme</h3>
-                <p class="cmn-muted"><?php echo esc_html((string) $total_rows); ?> school(s) found.</p>
-                <?php if (!$rows) : ?>
-                    <div class="cmn-empty">No schools found for current filters.</div>
-                <?php else : ?>
-                    <table class="cmn-approval-table">
+        <div class="cmn-partner-programme-layout">
+            <div class="cmn-dashboard-card cmn-partner-programme-list-card">
+                <div class="cmn-partner-programme-list-head">
+                    <h3>Partner Schools</h3>
+                    <p class="cmn-muted"><?php echo esc_html((string) $total_rows); ?> school(s)</p>
+                </div>
+                <div class="cmn-partner-programme-table-wrap">
+                    <table class="cmn-approval-table cmn-partner-programme-table">
                         <thead>
                             <tr>
-                                <th>School</th>
+                                <th>School Name</th>
                                 <th>Tier</th>
                                 <th>Discount</th>
                                 <th>Lifetime Credits</th>
                                 <th>Lifetime Savings</th>
-                                <th>Academic Year Savings</th>
-                                <th>Last Invoice</th>
+                                <th>Year Savings</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ((array) $rows as $row) : ?>
-                                <?php
-                                $row_school_id = (int) ($row['school_id'] ?? 0);
-                                $row_tier = sanitize_key((string) ($row['tier'] ?? 'standard'));
-                                $row_tier_label = $this->get_school_partner_tier_label($row_tier);
-                                $row_link = $build_url([
-                                    'cmn_partner_school_id' => $row_school_id,
-                                    'cmn_partner_page' => $current_page,
-                                ]);
-                                $row_last_invoice = (string) ($row['last_invoice_date'] ?? '');
-                                $row_last_invoice_label = $row_last_invoice !== '' ? date_i18n('M j, Y', strtotime($row_last_invoice)) : '—';
-                                ?>
-                                <tr>
-                                    <td><?php echo esc_html((string) ($row['school_name'] ?? ('School #' . $row_school_id))); ?></td>
-                                    <td><span class="cmn-status-chip cmn-partner-tier-chip is-<?php echo esc_attr($row_tier); ?>"><?php echo esc_html($row_tier_label); ?></span></td>
-                                    <td><?php echo esc_html(rtrim(rtrim(number_format((float) ($row['discount_percent'] ?? 0), 2, '.', ''), '0'), '.')); ?>%</td>
-                                    <td><?php echo esc_html(number_format((float) ($row['lifetime_credits'] ?? 0), 0)); ?></td>
-                                    <td><?php echo esc_html($format_money((float) ($row['lifetime_savings'] ?? 0))); ?></td>
-                                    <td><?php echo esc_html($format_money((float) ($row['academic_year_savings'] ?? 0))); ?></td>
-                                    <td><?php echo esc_html($row_last_invoice_label); ?></td>
-                                    <td><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($row_link); ?>">View</a></td>
+                            <?php if (!$rows) : ?>
+                                <tr class="cmn-partner-programme-empty-row">
+                                    <td colspan="7">No partner schools found for the selected filters.</td>
                                 </tr>
-                            <?php endforeach; ?>
+                            <?php else : ?>
+                                <?php foreach ((array) $rows as $row) : ?>
+                                    <?php
+                                    $row_school_id = (int) ($row['school_id'] ?? 0);
+                                    $row_tier = sanitize_key((string) ($row['tier'] ?? 'standard'));
+                                    $row_tier_label = $this->get_school_partner_tier_label($row_tier);
+                                    $row_profile_url = add_query_arg(['view' => 'schools', 'school_id' => $row_school_id], $portal_url);
+                                    $row_manage_url = $build_url([
+                                        'cmn_partner_school_id' => $row_school_id,
+                                        'cmn_partner_page' => $current_page,
+                                    ]);
+                                    ?>
+                                    <tr>
+                                        <td><?php echo esc_html((string) ($row['school_name'] ?? ('School #' . $row_school_id))); ?></td>
+                                        <td><span class="cmn-status-chip cmn-partner-tier-chip is-<?php echo esc_attr($row_tier); ?>"><?php echo esc_html($row_tier_label); ?></span></td>
+                                        <td><?php echo esc_html(rtrim(rtrim(number_format((float) ($row['discount_percent'] ?? 0), 2, '.', ''), '0'), '.')); ?>%</td>
+                                        <td><?php echo esc_html(number_format((float) ($row['lifetime_credits'] ?? 0), 0)); ?></td>
+                                        <td><?php echo esc_html($format_money((float) ($row['lifetime_savings'] ?? 0))); ?></td>
+                                        <td><?php echo esc_html($format_money((float) ($row['academic_year_savings'] ?? 0))); ?></td>
+                                        <td class="cmn-partner-programme-row-actions">
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($row_profile_url); ?>">View Profile</a>
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($row_manage_url); ?>">Manage</a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
-                <?php endif; ?>
+                </div>
                 <?php if ($total_pages > 1) : ?>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                    <div class="cmn-partner-programme-pagination">
                         <?php
                         $prev_page = max(1, $current_page - 1);
                         $next_page = min($total_pages, $current_page + 1);
@@ -33887,11 +33910,10 @@ final class CMN_One_Plugin {
                 <?php endif; ?>
             </div>
 
-            <div class="cmn-dashboard-card">
+            <?php if ($selected_school_id > 0) : ?>
+            <div class="cmn-dashboard-card cmn-partner-programme-detail-card">
                 <h3>School Partner Detail</h3>
-                <?php if ($selected_school_id < 1) : ?>
-                    <div class="cmn-empty">Select a school from the list to view partner details.</div>
-                <?php elseif ($selected_partner_error !== '') : ?>
+                <?php if ($selected_partner_error !== '') : ?>
                     <div class="cmn-empty"><?php echo esc_html($selected_partner_error); ?></div>
                 <?php else : ?>
                     <?php
@@ -34066,6 +34088,7 @@ final class CMN_One_Plugin {
                     <?php endif; ?>
                 <?php endif; ?>
             </div>
+            <?php endif; ?>
         </div>
         <?php
         $inner = ob_get_clean();
@@ -54988,6 +55011,14 @@ final class CMN_One_Plugin {
         if ($tier_filter !== '' && !in_array($tier_filter, $allowed_tiers, true)) {
             $tier_filter = '';
         }
+        $status_filter = sanitize_key((string) ($filters['status'] ?? ''));
+        if ($status_filter === 'all') {
+            $status_filter = '';
+        }
+        $allowed_statuses = $this->get_school_list_post_statuses();
+        if ($status_filter !== '' && !in_array($status_filter, $allowed_statuses, true)) {
+            $status_filter = '';
+        }
         $search_filter = sanitize_text_field((string) ($filters['search'] ?? ''));
         $sort_filter = sanitize_key((string) ($filters['sort'] ?? 'credits'));
         if (!in_array($sort_filter, ['credits', 'savings', 'tier', 'activity', 'name'], true)) {
@@ -55018,6 +55049,10 @@ final class CMN_One_Plugin {
         if ($tier_filter !== '') {
             $where[] = "COALESCE(sp.tier, 'standard') = %s";
             $params[] = $tier_filter;
+        }
+        if ($status_filter !== '') {
+            $where[] = "p.post_status = %s";
+            $params[] = $status_filter;
         }
 
         if ($search_filter !== '') {
@@ -55107,6 +55142,7 @@ final class CMN_One_Plugin {
             'per_page' => $per_page,
             'total_pages' => $total_pages,
             'tier_filter' => $tier_filter,
+            'status_filter' => $status_filter,
             'search_filter' => $search_filter,
             'sort_filter' => $sort_filter,
         ];

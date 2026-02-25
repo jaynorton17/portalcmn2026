@@ -7547,6 +7547,137 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   gap: 10px;
 }
 
+.cmn-partner-programme-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 14px;
+}
+
+.cmn-partner-programme-header-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cmn-partner-programme-header-main p {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.82);
+}
+
+.cmn-partner-programme-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cmn-partner-programme-filter-card {
+  margin-bottom: 14px;
+}
+
+.cmn-partner-programme-filter-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 220px)) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.cmn-partner-programme-filter-control {
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-partner-programme-filter-control > span {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(203, 213, 225, 0.72);
+  font-weight: 650;
+}
+
+.cmn-partner-programme-filter-control.is-search {
+  min-width: 0;
+}
+
+.cmn-partner-programme-filter-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cmn-partner-programme-layout {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+}
+
+.cmn-partner-programme-list-card {
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-partner-programme-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-partner-programme-list-head h3 {
+  margin: 0;
+}
+
+.cmn-partner-programme-table-wrap {
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(9, 14, 25, 0.62);
+}
+
+.cmn-partner-programme-table th,
+.cmn-partner-programme-table td {
+  white-space: nowrap;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.cmn-partner-programme-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(10, 16, 28, 0.95);
+}
+
+.cmn-partner-programme-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cmn-partner-programme-empty-row td {
+  text-align: center;
+  color: rgba(191, 201, 217, 0.82);
+  font-weight: 560;
+  letter-spacing: 0.01em;
+  padding: 16px 12px;
+}
+
+.cmn-partner-programme-pagination {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.cmn-partner-programme-detail-card {
+  display: grid;
+  gap: 12px;
+}
+
 .cmn-partner-tier-chip {
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -8783,6 +8914,19 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
     margin-left: 0;
     width: 100%;
   }
+
+  .cmn-partner-programme-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cmn-partner-programme-filter-control.is-search {
+    grid-column: 1 / -1;
+  }
+
+  .cmn-partner-programme-filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 900px) {
@@ -8814,6 +8958,23 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   }
 
   .cmn-credit-ledger-filter-actions {
+    justify-content: flex-start;
+  }
+
+  .cmn-partner-programme-header {
+    align-items: flex-start;
+  }
+
+  .cmn-partner-programme-filter-form {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-partner-programme-filter-control.is-search,
+  .cmn-partner-programme-filter-actions {
+    grid-column: auto;
+  }
+
+  .cmn-partner-programme-filter-actions {
     justify-content: flex-start;
   }
 }
