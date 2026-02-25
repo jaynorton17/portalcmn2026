@@ -140,6 +140,157 @@ document.addEventListener('DOMContentLoaded', function () {
   };
   bindSchoolContactSearch();
 
+  var initSchoolProfileControlPanel = function () {
+    var profileRoot = document.querySelector('[data-school-profile-root]');
+    if (!profileRoot) {
+      return;
+    }
+    var tabNav = document.querySelector('[data-school-profile-tabs]');
+    var tabLinks = tabNav ? Array.prototype.slice.call(tabNav.querySelectorAll('[data-school-profile-tab]')) : [];
+    var quickEditPanel = profileRoot.querySelector('[data-school-quick-edit-panel]');
+    var quickEditToggles = Array.prototype.slice.call(document.querySelectorAll('[data-school-quick-edit-toggle]'));
+    var quickEditCancel = profileRoot.querySelector('[data-school-quick-edit-cancel]');
+    var activityTypeField = profileRoot.querySelector('[data-school-activity-type]');
+    var activityTitleField = profileRoot.querySelector('[data-school-activity-title]');
+    var activityPresetButtons = Array.prototype.slice.call(profileRoot.querySelectorAll('[data-school-activity-preset]'));
+    var activityFilter = profileRoot.querySelector('[data-school-activity-filter]');
+    var activityRows = Array.prototype.slice.call(profileRoot.querySelectorAll('[data-school-activity-item]'));
+    var logActivityButtons = Array.prototype.slice.call(document.querySelectorAll('[data-school-log-activity]'));
+    var initialUrl = null;
+    try {
+      initialUrl = new URL(window.location.href);
+    } catch (error) {
+      initialUrl = null;
+    }
+
+    var syncQuickEditState = function (isOpen) {
+      if (quickEditPanel) {
+        quickEditPanel.hidden = !isOpen;
+      }
+      quickEditToggles.forEach(function (btn) {
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      if (isOpen) {
+        var focusField = quickEditPanel ? quickEditPanel.querySelector('input:not([type="hidden"]), select, textarea') : null;
+        if (focusField && typeof focusField.focus === 'function') {
+          focusField.focus();
+        }
+      }
+    };
+
+    var applyTabState = function (nextTab, updateUrl) {
+      var target = String(nextTab || '').trim() || 'overview';
+      profileRoot.setAttribute('data-school-active-tab', target);
+      tabLinks.forEach(function (link) {
+        var linkTab = link.getAttribute('data-school-profile-tab') || '';
+        link.classList.toggle('is-active', linkTab === target);
+      });
+      if (target !== 'overview') {
+        syncQuickEditState(false);
+      }
+      if (!updateUrl) {
+        return;
+      }
+      var url = null;
+      try {
+        url = new URL(window.location.href);
+      } catch (error) {
+        return;
+      }
+      url.searchParams.set('cmn_school_tab', target);
+      if (target !== 'activity') {
+        url.searchParams.delete('cmn_focus_activity');
+      }
+      window.history.replaceState({}, '', url.toString());
+    };
+
+    var focusActivityForm = function () {
+      applyTabState('activity', false);
+      if (activityTitleField && typeof activityTitleField.focus === 'function') {
+        activityTitleField.focus();
+      }
+    };
+
+    tabLinks.forEach(function (link) {
+      link.addEventListener('click', function (event) {
+        event.preventDefault();
+        var targetTab = link.getAttribute('data-school-profile-tab') || 'overview';
+        applyTabState(targetTab, true);
+      });
+    });
+
+    quickEditToggles.forEach(function (toggle) {
+      toggle.addEventListener('click', function () {
+        var willOpen = !quickEditPanel || quickEditPanel.hidden;
+        applyTabState('overview', true);
+        syncQuickEditState(willOpen);
+      });
+    });
+
+    if (quickEditCancel) {
+      quickEditCancel.addEventListener('click', function () {
+        syncQuickEditState(false);
+      });
+    }
+
+    activityPresetButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        var nextType = button.getAttribute('data-school-activity-preset') || 'note';
+        if (activityTypeField) {
+          activityTypeField.value = nextType;
+        }
+        focusActivityForm();
+      });
+    });
+
+    if (activityFilter && activityRows.length) {
+      var applyActivityFilter = function () {
+        var selected = String(activityFilter.value || 'all').toLowerCase();
+        activityRows.forEach(function (row) {
+          var category = String(row.getAttribute('data-activity-category') || 'notes').toLowerCase();
+          row.style.display = (selected === 'all' || selected === category) ? '' : 'none';
+        });
+      };
+      activityFilter.addEventListener('change', applyActivityFilter);
+      applyActivityFilter();
+    }
+
+    logActivityButtons.forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        applyTabState('activity', true);
+        var url = null;
+        try {
+          url = new URL(window.location.href);
+        } catch (error) {
+          url = null;
+        }
+        if (url) {
+          url.searchParams.set('cmn_school_tab', 'activity');
+          url.searchParams.set('cmn_focus_activity', '1');
+          url.hash = 'cmn-school-add-activity';
+          window.history.replaceState({}, '', url.toString());
+        }
+        focusActivityForm();
+      });
+    });
+
+    if (initialUrl) {
+      var initialTab = initialUrl.searchParams.get('cmn_school_tab') || profileRoot.getAttribute('data-school-active-tab') || 'overview';
+      applyTabState(initialTab, false);
+      if (initialUrl.hash === '#cmn-school-quick-edit-panel') {
+        applyTabState('overview', false);
+        syncQuickEditState(true);
+      }
+      if (initialUrl.searchParams.get('cmn_focus_activity') === '1' || initialUrl.hash === '#cmn-school-add-activity') {
+        window.setTimeout(function () {
+          focusActivityForm();
+        }, 20);
+      }
+    }
+  };
+  initSchoolProfileControlPanel();
+
   var portal = document.querySelector('.cmn-portal-light');
   var themeButtons = document.querySelectorAll('[data-theme]');
   var cmnThemeClasses = ['cmn-theme-default', 'cmn-theme-contrast', 'cmn-theme-light', 'cmn-theme-teal'];

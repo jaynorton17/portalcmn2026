@@ -4870,17 +4870,47 @@ body.cmn-booking-feedback-lock {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 12px 18px;
   flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(11, 15, 22, 0.92);
+  position: sticky;
+  top: 8px;
+  z-index: 8;
 }
 
 .cmn-school-profile-header-main {
   display: grid;
   gap: 4px;
+  min-width: min(620px, 100%);
 }
 
 .cmn-school-profile-header-main p {
   margin: 0;
+}
+
+.cmn-school-profile-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmn-school-profile-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.cmn-school-profile-header-actions .cmn-btn-mini {
+  min-height: 34px;
+}
+
+.cmn-school-last-activity-pill {
+  border-color: rgba(208, 42, 42, 0.35);
 }
 
 .cmn-school-profile-status {
@@ -4891,38 +4921,59 @@ body.cmn-booking-feedback-lock {
 }
 
 .cmn-school-profile-tabs {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 0 0 10px;
+  gap: 6px;
+  flex-wrap: nowrap;
+  margin: 0 0 12px;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 2px 0;
 }
 
 .cmn-school-profile-tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: 10px 10px 0 0;
   text-decoration: none;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--cmn-muted);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  color: #b6c2d4;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom-color: transparent;
+  background: rgba(10, 14, 20, 0.88);
+  position: relative;
+  white-space: nowrap;
 }
 
 .cmn-school-profile-tab.is-active {
-  color: #fff;
-  border-color: rgba(224, 61, 61, 0.58);
-  background: rgba(208, 42, 42, 0.22);
+  color: #f7f9ff;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(16, 22, 31, 0.98);
+}
+
+.cmn-school-profile-tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 999px;
+  background: #d02a2a;
 }
 
 .cmn-school-profile-issues-strip {
   margin-bottom: 10px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   gap: 10px;
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .cmn-school-profile-issues-strip-head {
@@ -4933,9 +4984,11 @@ body.cmn-booking-feedback-lock {
   flex-wrap: wrap;
 }
 
-.cmn-school-profile-issues-strip-head .cmn-btn-mini {
+.cmn-school-profile-issues-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
-  min-height: 30px;
 }
 
 .cmn-school-profile-issues-strip-list {
@@ -4966,6 +5019,7 @@ body.cmn-booking-feedback-lock {
 .cmn-school-profile-grid {
   align-items: start;
   gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .cmn-school-profile-grid .cmn-panel-card {
@@ -4976,6 +5030,12 @@ body.cmn-booking-feedback-lock {
 .cmn-school-profile-grid .cmn-school-tab-panel {
   padding: 14px 16px;
   gap: 8px;
+}
+
+.cmn-school-profile-grid .cmn-school-tab-panel--overview.cmn-panel-card-wide,
+.cmn-school-profile-grid .cmn-school-tab-panel--bookings,
+.cmn-school-profile-grid .cmn-school-tab-panel--activity {
+  grid-column: 1 / -1;
 }
 
 .cmn-school-profile-grid .cmn-school-tab-panel h3 {
@@ -5040,6 +5100,62 @@ body.cmn-booking-feedback-lock {
   gap: 8px;
 }
 
+.cmn-school-quick-edit-panel {
+  border: 1px solid rgba(208, 42, 42, 0.35) !important;
+  box-shadow: 0 10px 20px rgba(208, 42, 42, 0.12);
+}
+
+.cmn-school-quick-edit-panel[hidden] {
+  display: none !important;
+}
+
+.cmn-school-quick-edit-form {
+  gap: 10px;
+}
+
+.cmn-school-quick-edit-actions {
+  grid-column: 1 / -1;
+}
+
+.cmn-school-profile-incomplete {
+  border-color: rgba(234, 179, 8, 0.35);
+  background: rgba(50, 39, 12, 0.3);
+}
+
+.cmn-school-activity-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #9eabc0;
+}
+
+.cmn-school-activity-filter select {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.cmn-school-bookings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cmn-school-bookings-block {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cmn-school-bookings-block h4 {
+  margin: 0;
+  font-size: 13px;
+  color: #dbe5f5;
+}
+
 .cmn-school-profile-grid .cmn-school-tab-panel--contacts select {
   color: #f8fafc !important;
   background: rgba(255, 255, 255, 0.06) !important;
@@ -5047,22 +5163,40 @@ body.cmn-booking-feedback-lock {
 }
 
 @media (max-width: 900px) {
+  .cmn-school-profile-grid {
+    grid-template-columns: 1fr;
+  }
+
   .cmn-school-profile-tabs {
     gap: 6px;
   }
 
   .cmn-school-profile-tab {
-    min-height: 32px;
+    min-height: 34px;
     padding: 0 10px;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .cmn-school-profile-header {
     align-items: stretch;
   }
 
+  .cmn-school-profile-header-main {
+    min-width: 100%;
+  }
+
   .cmn-school-profile-status {
     width: 100%;
+  }
+
+  .cmn-school-profile-header-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .cmn-school-bookings-grid {
+    grid-template-columns: 1fr;
   }
 }
 
