@@ -24123,7 +24123,8 @@ final class CMN_One_Plugin {
                 </div>
             </div>
         <?php endif; ?>
-        <div class="cmn-action-panels">
+	        <?php if ($add_active !== '' || $bulk_active !== '') : ?>
+	        <div class="cmn-action-panels">
             <div class="cmn-panel-card cmn-action-panel<?php echo $add_active; ?>" data-panel="add">
                 <h3>Add New School</h3>
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
@@ -24331,8 +24332,9 @@ final class CMN_One_Plugin {
                     </form>
                 <?php endif; ?>
             </div>
-        </div>
-        <form method="get" class="cmn-school-toolbar" data-school-toolbar>
+	        </div>
+	        <?php endif; ?>
+	        <form method="get" class="cmn-school-toolbar" data-school-toolbar>
             <input type="hidden" name="view" value="<?php echo esc_attr($view_param); ?>">
             <input type="hidden" name="cmn_status" value="<?php echo esc_attr($status); ?>">
             <input type="hidden" name="cmn_bucket" value="<?php echo esc_attr($bucket); ?>">

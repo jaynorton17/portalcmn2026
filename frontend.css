@@ -7938,7 +7938,7 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 }
 
 .cmn-school-toolbar {
-  margin: 10px 0 12px;
+  margin: 0 0 12px;
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -14067,6 +14067,12 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-page, .cmn-staff-main, .cmn-scho
   padding: var(--cmn-space-4) !important;
   display: grid;
   gap: var(--cmn-space-3);
+}
+
+body.cmn-portal-page .cmn-portal-light .cmn-staff-main {
+  margin-top: 0 !important;
+  padding-top: var(--cmn-space-4) !important;
+  align-content: start;
 }
 
 body.cmn-portal-page .cmn-portal-light :is(.cmn-page-header, .cmn-school-header, .cmn-candidate-header, .cmn-staff-header) {
