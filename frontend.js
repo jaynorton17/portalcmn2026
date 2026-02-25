@@ -10250,11 +10250,6 @@ document.addEventListener('DOMContentLoaded', function () {
     var tabsEl = root.querySelector('.cmn-live-tabs');
     var kpis = root.querySelector('[data-live-kpis]');
     var drawer = root.querySelector('[data-live-filter-drawer]');
-    var setDrawerOpen = function(isOpen){
-      if (!drawer) { return; }
-      drawer.hidden = !isOpen;
-      root.classList.toggle('is-filter-open', !!isOpen);
-    };
 
     var tabDefs = [
       {key:'all', label:'All Candidates'},
@@ -10310,14 +10305,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var list = getFiltered();
       if (!list.length) { carousel.innerHTML = '<div class="cmn-muted">No candidates in this tab.</div>'; dots.innerHTML=''; renderTabs(); return; }
       if (activeIndex >= list.length) activeIndex = 0;
+      var left = list[(activeIndex - 1 + list.length) % list.length];
       var center = list[activeIndex];
-      if (list.length === 1) {
-        carousel.innerHTML = '<div></div>' + cardHtml(center,'center') + '<div></div>';
-      } else {
-        var left = list[(activeIndex - 1 + list.length) % list.length];
-        var right = list[(activeIndex + 1) % list.length];
-        carousel.innerHTML = cardHtml(left,'side') + cardHtml(center,'center') + cardHtml(right,'side');
-      }
+      var right = list[(activeIndex + 1) % list.length];
+      carousel.innerHTML = cardHtml(left,'side') + cardHtml(center,'center') + cardHtml(right,'side');
       dots.innerHTML = list.map(function(_,idx){ return '<span class="cmn-live-dot'+(idx===activeIndex?' is-active':'')+'" data-live-dot="'+idx+'"></span>'; }).join('');
       renderTabs();
     };
@@ -10337,9 +10328,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (idx >= 0) { activeIndex = idx; render(); }
         return;
       }
-      if (e.target.closest('[data-live-filter-open]')) { setDrawerOpen(true); return; }
-      if (e.target.closest('[data-live-filter-close]')) { setDrawerOpen(false); return; }
-      if (e.target.closest('[data-live-filter-apply]')) { activeIndex = 0; setDrawerOpen(false); render(); return; }
+      if (e.target.closest('[data-live-filter-open]')) { drawer.hidden = false; return; }
+      if (e.target.closest('[data-live-filter-close]')) { drawer.hidden = true; return; }
+      if (e.target.closest('[data-live-filter-apply]')) { activeIndex = 0; drawer.hidden = true; render(); return; }
       if (e.target.closest('[data-live-broadcast]')) { postAction('broadcast_request', 0, {}); return; }
 
       var actionBtn = e.target.closest('[data-live-action]');
@@ -10355,8 +10346,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (action === 'not_interested') {
           datasetAll = datasetAll.filter(function(item){ return Number(item.candidate_id) !== candidateId; });
           activeIndex = 0;
-          setDrawerOpen(false);
-    render();
+          render();
           return;
         }
         if (action === 'shortlist_toggle') {
