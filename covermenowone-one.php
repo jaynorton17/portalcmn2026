@@ -29376,6 +29376,11 @@ final class CMN_One_Plugin {
             $filter = 'top_candidates';
         }
         $days = max(7, min(180, (int) ($_GET['cmn_days'] ?? 30)));
+        $sla_tab = sanitize_key((string) ($_GET['cmn_sla_tab'] ?? 'response_time'));
+        if (!in_array($sla_tab, ['response_time', 'fill_rate', 'on_time_payroll'], true)) {
+            $sla_tab = 'response_time';
+        }
+        $school_filter_id = max(0, (int) ($_GET['cmn_school_id'] ?? 0));
         $portal_url = $this->get_portal_base_url();
         $insights = $this->get_feedback_insights_engine();
 
@@ -29447,22 +29452,106 @@ final class CMN_One_Plugin {
         } elseif ($filter === 'low_schools') {
             $selected_rows = $low_schools;
         }
+        if ($school_filter_id > 0 && in_array($filter, ['reliable_schools', 'low_schools'], true)) {
+            $selected_rows = array_values(array_filter($selected_rows, static function ($row) use ($school_filter_id) {
+                return (int) ($row['entity_id'] ?? 0) === $school_filter_id;
+            }));
+        }
         $selected_rows = array_slice($selected_rows, 0, 50);
 
         $trends = $insights->get_trending_scores($days);
         $tile_urls = [
-            'top_candidates' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'top_candidates', 'cmn_days' => $days], $portal_url),
-            'at_risk_candidates' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'at_risk_candidates', 'cmn_days' => $days], $portal_url),
-            'reliable_schools' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'reliable_schools', 'cmn_days' => $days], $portal_url),
-            'low_schools' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'low_schools', 'cmn_days' => $days], $portal_url),
+            'top_candidates' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'top_candidates', 'cmn_days' => $days, 'cmn_sla_tab' => $sla_tab, 'cmn_school_id' => $school_filter_id ?: false], $portal_url),
+            'at_risk_candidates' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'at_risk_candidates', 'cmn_days' => $days, 'cmn_sla_tab' => $sla_tab, 'cmn_school_id' => $school_filter_id ?: false], $portal_url),
+            'reliable_schools' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'reliable_schools', 'cmn_days' => $days, 'cmn_sla_tab' => $sla_tab, 'cmn_school_id' => $school_filter_id ?: false], $portal_url),
+            'low_schools' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => 'low_schools', 'cmn_days' => $days, 'cmn_sla_tab' => $sla_tab, 'cmn_school_id' => $school_filter_id ?: false], $portal_url),
         ];
+        $sla_tab_urls = [
+            'response_time' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => $filter, 'cmn_days' => $days, 'cmn_school_id' => $school_filter_id ?: false, 'cmn_sla_tab' => 'response_time'], $portal_url),
+            'fill_rate' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => $filter, 'cmn_days' => $days, 'cmn_school_id' => $school_filter_id ?: false, 'cmn_sla_tab' => 'fill_rate'], $portal_url),
+            'on_time_payroll' => add_query_arg(['view' => 'feedback-insights', 'cmn_feedback_filter' => $filter, 'cmn_days' => $days, 'cmn_school_id' => $school_filter_id ?: false, 'cmn_sla_tab' => 'on_time_payroll'], $portal_url),
+        ];
+        $sla_metric_labels = [
+            'response_time' => 'Response Time',
+            'fill_rate' => 'Fill Rate',
+            'on_time_payroll' => 'On-Time Payroll',
+        ];
+        $primary_metric_key = $sla_tab === 'fill_rate' ? 'avg_reliability' : ($sla_tab === 'on_time_payroll' ? 'avg_overall' : 'avg_response_time');
+        $primary_metric_label = (string) ($sla_metric_labels[$sla_tab] ?? 'Response Time');
+        $school_filter_options = [];
+        foreach ($school_scores as $school_row) {
+            $school_id = (int) ($school_row['entity_id'] ?? 0);
+            if ($school_id < 1) {
+                continue;
+            }
+            $school_filter_options[] = [
+                'id' => $school_id,
+                'name' => (string) ($school_row['entity_name'] ?? ('School #' . $school_id)),
+            ];
+        }
+        usort($school_filter_options, static function ($a, $b) {
+            return strcmp(strtolower((string) ($a['name'] ?? '')), strtolower((string) ($b['name'] ?? '')));
+        });
+        $ops_scope = $this->is_admin_user() ? 'all' : 'mine';
+        $ops_metrics = $this->get_operational_analytics_metrics($ops_scope);
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Feedback Insights</h2>
-            <p>Aggregate school and candidate feedback with trend and risk signals.</p>
+        <header class="cmn-school-header cmn-analytics-admin-header">
+            <div class="cmn-analytics-admin-header-main">
+                <h2>Performance &amp; SLA</h2>
+                <p>Response-time quality, fill consistency and payroll reliability across active entities.</p>
+            </div>
+            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-analytics-admin-range">
+                <input type="hidden" name="view" value="feedback-insights">
+                <input type="hidden" name="cmn_feedback_filter" value="<?php echo esc_attr($filter); ?>">
+                <input type="hidden" name="cmn_sla_tab" value="<?php echo esc_attr($sla_tab); ?>">
+                <label class="cmn-analytics-admin-range-control">
+                    <span>Period</span>
+                    <select name="cmn_days">
+                        <?php foreach ([14, 30, 60, 90, 120, 180] as $day_option) : ?>
+                            <option value="<?php echo esc_attr((string) $day_option); ?>" <?php selected($days, $day_option); ?>><?php echo esc_html((string) $day_option . ' days'); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label class="cmn-analytics-admin-range-control">
+                    <span>School</span>
+                    <select name="cmn_school_id">
+                        <option value="0">All schools</option>
+                        <?php foreach ($school_filter_options as $school_option) : ?>
+                            <option value="<?php echo esc_attr((string) ($school_option['id'] ?? 0)); ?>" <?php selected($school_filter_id, (int) ($school_option['id'] ?? 0)); ?>>
+                                <?php echo esc_html((string) ($school_option['name'] ?? 'School')); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <button class="cmn-primary" type="submit">Apply</button>
+            </form>
         </header>
+
+        <div class="cmn-support-filters cmn-analytics-admin-scope">
+            <a class="cmn-ghost<?php echo $sla_tab === 'response_time' ? ' is-active' : ''; ?>" href="<?php echo esc_url($sla_tab_urls['response_time']); ?>">Response Time</a>
+            <a class="cmn-ghost<?php echo $sla_tab === 'fill_rate' ? ' is-active' : ''; ?>" href="<?php echo esc_url($sla_tab_urls['fill_rate']); ?>">Fill Rate</a>
+            <a class="cmn-ghost<?php echo $sla_tab === 'on_time_payroll' ? ' is-active' : ''; ?>" href="<?php echo esc_url($sla_tab_urls['on_time_payroll']); ?>">On-Time Payroll</a>
+        </div>
+
+        <div class="cmn-analytics-admin-metrics">
+            <div class="cmn-dashboard-card cmn-analytics-admin-metric-card">
+                <span><?php echo esc_html($primary_metric_label); ?></span>
+                <strong><?php echo esc_html(number_format((float) ($selected_rows ? array_sum(array_map(static function ($row) use ($primary_metric_key) { return (float) ($row[$primary_metric_key] ?? 0); }, $selected_rows)) / max(1, count($selected_rows)) : 0), 2)); ?>/5</strong>
+                <small>Current filtered set</small>
+            </div>
+            <div class="cmn-dashboard-card cmn-analytics-admin-metric-card">
+                <span>Fill Rate</span>
+                <strong><?php echo esc_html(number_format((float) ($ops_metrics['fill_rate_pct'] ?? 0), 1)); ?>%</strong>
+                <small><?php echo esc_html((int) ($ops_metrics['confirmed_count'] ?? 0)); ?> confirmed</small>
+            </div>
+            <div class="cmn-dashboard-card cmn-analytics-admin-metric-card">
+                <span>On-Time Payroll</span>
+                <strong><?php echo esc_html(number_format((float) ($ops_metrics['response_rate_pct'] ?? 0), 1)); ?>%</strong>
+                <small><?php echo esc_html((int) ($ops_metrics['actioned_count'] ?? 0)); ?> actioned</small>
+            </div>
+        </div>
 
         <div class="cmn-support-filters">
             <a class="cmn-support-tile<?php echo $filter === 'top_candidates' ? ' is-active' : ''; ?>" href="<?php echo esc_url($tile_urls['top_candidates']); ?>">
@@ -29484,14 +29573,13 @@ final class CMN_One_Plugin {
         </div>
 
         <div class="cmn-dashboard-card">
-            <h3>Filtered View</h3>
+            <h3><?php echo esc_html($primary_metric_label); ?> Performance</h3>
             <table class="cmn-approval-table">
                 <thead>
                     <tr>
                         <th>Entity</th>
+                        <th><?php echo esc_html($primary_metric_label); ?></th>
                         <th>Overall</th>
-                        <th>Reliability</th>
-                        <th>Response Time</th>
                         <th>Feedback Count</th>
                         <th>Trend</th>
                         <th>Risk</th>
@@ -29516,16 +29604,15 @@ final class CMN_One_Plugin {
                         ?>
                         <tr>
                             <td><a href="<?php echo esc_url($profile_link); ?>"><?php echo esc_html((string) ($row['entity_name'] ?? 'Unknown')); ?></a></td>
+                            <td><?php echo esc_html(number_format((float) ($row[$primary_metric_key] ?? 0), 2)); ?>/5</td>
                             <td><?php echo esc_html(number_format((float) ($row['avg_overall'] ?? 0), 2)); ?>/5</td>
-                            <td><?php echo esc_html(number_format((float) ($row['avg_reliability'] ?? 0), 2)); ?>/5</td>
-                            <td><?php echo esc_html(number_format((float) ($row['avg_response_time'] ?? 0), 2)); ?>/5</td>
                             <td><?php echo esc_html((string) ((int) ($row['feedback_count'] ?? 0))); ?></td>
                             <td><?php echo esc_html($trend_label); ?></td>
                             <td><?php echo esc_html($risk_label); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else : ?>
-                    <tr><td colspan="7">No feedback data found for this filter.</td></tr>
+                    <tr><td colspan="6">No feedback data found for this filter.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
@@ -29533,7 +29620,7 @@ final class CMN_One_Plugin {
 
         <div class="cmn-portal-grid">
             <div class="cmn-dashboard-card">
-                <h3>Candidate Trend (<?php echo esc_html((string) $days); ?> days)</h3>
+                <h3><?php echo esc_html($primary_metric_label); ?> Trend - Candidates (<?php echo esc_html((string) $days); ?> days)</h3>
                 <div class="cmn-list">
                     <?php foreach ((array) ($trends['candidate'] ?? []) as $trend_row) : ?>
                         <div class="cmn-list-item">
@@ -29544,7 +29631,7 @@ final class CMN_One_Plugin {
                 </div>
             </div>
             <div class="cmn-dashboard-card">
-                <h3>School Trend (<?php echo esc_html((string) $days); ?> days)</h3>
+                <h3><?php echo esc_html($primary_metric_label); ?> Trend - Schools (<?php echo esc_html((string) $days); ?> days)</h3>
                 <div class="cmn-list">
                     <?php foreach ((array) ($trends['school'] ?? []) as $trend_row) : ?>
                         <div class="cmn-list-item">
