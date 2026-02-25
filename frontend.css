@@ -8194,6 +8194,72 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   gap: 12px;
 }
 
+.cmn-rewards-admin-header {
+  margin-bottom: 12px;
+}
+
+.cmn-rewards-admin-filter-card {
+  margin-bottom: 14px;
+}
+
+.cmn-rewards-admin-filter-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(160px, 220px) minmax(160px, 220px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.cmn-rewards-admin-filter-control {
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-rewards-admin-filter-control > span {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(203, 213, 225, 0.72);
+  font-weight: 650;
+}
+
+.cmn-rewards-admin-filter-control.is-search {
+  min-width: 0;
+}
+
+.cmn-rewards-admin-filter-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cmn-rewards-admin-list-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.cmn-rewards-admin-table-wrap {
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(9, 14, 25, 0.62);
+}
+
+.cmn-rewards-admin-table th,
+.cmn-rewards-admin-table td {
+  white-space: nowrap;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.cmn-rewards-admin-pagination {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
 .cmn-rewards-admin-override-section h4 {
   margin: 0;
 }
@@ -8231,6 +8297,19 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
     grid-template-columns: 1fr;
   }
 
+  .cmn-rewards-admin-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cmn-rewards-admin-filter-control.is-search {
+    grid-column: 1 / -1;
+  }
+
+  .cmn-rewards-admin-filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
   .cmn-partner-savings-grid {
     grid-template-columns: 1fr;
   }
@@ -8249,6 +8328,19 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   .cmn-candidate-rewards-conduct-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .cmn-rewards-admin-filter-form {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-rewards-admin-filter-control.is-search,
+  .cmn-rewards-admin-filter-actions {
+    grid-column: auto;
+  }
+
+  .cmn-rewards-admin-filter-actions {
+    justify-content: flex-start;
   }
 
   .cmn-partner-savings-metrics {

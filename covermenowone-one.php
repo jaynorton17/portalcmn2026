@@ -32237,6 +32237,20 @@ final class CMN_One_Plugin {
             current_time('Y-m-d')
         );
         $search_filter = sanitize_text_field((string) ($filters['search'] ?? ''));
+        $status_filter = sanitize_key((string) ($filters['status'] ?? ''));
+        if ($status_filter === 'all') {
+            $status_filter = '';
+        }
+        if (!in_array($status_filter, ['active', 'rewards_suspended', 'terminated'], true)) {
+            $status_filter = '';
+        }
+        $cycle_filter = sanitize_key((string) ($filters['cycle'] ?? ''));
+        if ($cycle_filter === 'all') {
+            $cycle_filter = '';
+        }
+        if (!in_array($cycle_filter, ['0', '1_3', '4_plus'], true)) {
+            $cycle_filter = '';
+        }
         $page = max(1, (int) ($filters['page'] ?? 1));
         $per_page = max(10, min(100, (int) ($filters['per_page'] ?? 25)));
         $offset = ($page - 1) * $per_page;
@@ -32266,6 +32280,20 @@ final class CMN_One_Plugin {
                 $params[] = $search_like;
             }
         }
+        if ($status_filter === 'active') {
+            $where[] = "(COALESCE(cr.status, '') NOT IN ('terminated', 'rewards_suspended') AND COALESCE(cr.conduct_status, 'clear') <> 'terminated' AND COALESCE(cr.rewards_paused, 0) = 0)";
+        } elseif ($status_filter === 'rewards_suspended') {
+            $where[] = "(COALESCE(cr.status, '') = 'rewards_suspended' OR COALESCE(cr.rewards_paused, 0) = 1)";
+        } elseif ($status_filter === 'terminated') {
+            $where[] = "(COALESCE(cr.status, '') = 'terminated' OR COALESCE(cr.conduct_status, 'clear') = 'terminated')";
+        }
+        if ($cycle_filter === '0') {
+            $where[] = "COALESCE(cr.shift_cycle_count, 0) = 0";
+        } elseif ($cycle_filter === '1_3') {
+            $where[] = "COALESCE(cr.shift_cycle_count, 0) BETWEEN 1 AND 3";
+        } elseif ($cycle_filter === '4_plus') {
+            $where[] = "COALESCE(cr.shift_cycle_count, 0) >= 4";
+        }
         $where_sql = implode(' AND ', $where);
 
         $count_sql = "SELECT COUNT(*)
@@ -32282,8 +32310,11 @@ final class CMN_One_Plugin {
                           WHERE pm.meta_key = 'cmn_user_id'
                           GROUP BY pm.post_id
                       ) uid ON uid.post_id = p.ID
+                      LEFT JOIN {$rewards_table} cr
+                          ON cr.candidate_id = p.ID
+                         AND cr.academic_year = %s
                       WHERE {$where_sql}";
-        $count_query = $wpdb->prepare($count_sql, ...$params);
+        $count_query = $wpdb->prepare($count_sql, ...array_merge([$academic_year], $params));
         $total_rows = (int) $wpdb->get_var($count_query);
 
         $list_sql = "SELECT
@@ -32377,6 +32408,8 @@ final class CMN_One_Plugin {
             'total_pages' => $total_pages,
             'academic_year' => $academic_year,
             'search_filter' => $search_filter,
+            'status_filter' => $status_filter,
+            'cycle_filter' => $cycle_filter,
         ];
     }
 
@@ -32936,6 +32969,18 @@ final class CMN_One_Plugin {
         $search_filter = isset($_GET['cmn_rewards_search'])
             ? sanitize_text_field(wp_unslash((string) $_GET['cmn_rewards_search']))
             : '';
+        $status_filter = isset($_GET['cmn_rewards_status'])
+            ? sanitize_key(wp_unslash((string) $_GET['cmn_rewards_status']))
+            : '';
+        if ($status_filter === 'all' || !in_array($status_filter, ['active', 'rewards_suspended', 'terminated'], true)) {
+            $status_filter = '';
+        }
+        $cycle_filter = isset($_GET['cmn_rewards_cycle'])
+            ? sanitize_key(wp_unslash((string) $_GET['cmn_rewards_cycle']))
+            : '';
+        if ($cycle_filter === 'all' || !in_array($cycle_filter, ['0', '1_3', '4_plus'], true)) {
+            $cycle_filter = '';
+        }
         $current_page = max(1, (int) ($_GET['cmn_rewards_page'] ?? 1));
         $selected_candidate_id = max(0, (int) ($_GET['cmn_rewards_candidate_id'] ?? 0));
         $event_page = max(1, (int) ($_GET['cmn_rewards_event_page'] ?? 1));
@@ -32959,6 +33004,8 @@ final class CMN_One_Plugin {
         $list_payload = $this->get_staff_candidate_rewards_list_results([
             'academic_year' => $current_academic_year,
             'search' => $search_filter,
+            'status' => $status_filter,
+            'cycle' => $cycle_filter,
             'page' => $current_page,
             'per_page' => 25,
         ]);
@@ -32968,11 +33015,19 @@ final class CMN_One_Plugin {
         $current_page = (int) ($list_payload['page'] ?? $current_page);
         $search_filter = (string) ($list_payload['search_filter'] ?? $search_filter);
         $current_academic_year = (string) ($list_payload['academic_year'] ?? $current_academic_year);
+        $status_filter = (string) ($list_payload['status_filter'] ?? $status_filter);
+        $cycle_filter = (string) ($list_payload['cycle_filter'] ?? $cycle_filter);
 
-        $build_url = function ($overrides = []) use ($base_url, $search_filter, $current_page, $selected_candidate_id, $selected_year, $event_page) {
+        $build_url = function ($overrides = []) use ($base_url, $search_filter, $status_filter, $cycle_filter, $current_page, $selected_candidate_id, $selected_year, $event_page) {
             $args = [];
             if ($search_filter !== '') {
                 $args['cmn_rewards_search'] = $search_filter;
+            }
+            if ($status_filter !== '') {
+                $args['cmn_rewards_status'] = $status_filter;
+            }
+            if ($cycle_filter !== '') {
+                $args['cmn_rewards_cycle'] = $cycle_filter;
             }
             if ($current_page > 1) {
                 $args['cmn_rewards_page'] = $current_page;
@@ -33116,8 +33171,8 @@ final class CMN_One_Plugin {
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Candidate Rewards</h2>
+        <header class="cmn-school-header cmn-rewards-admin-header">
+            <h2>Candidate Rewards Logic</h2>
             <p>Internal oversight panel for CMN Rewards conduct, cycle progress, and payout audit trails.</p>
         </header>
         <?php if ($message !== '') : ?>
@@ -33126,25 +33181,46 @@ final class CMN_One_Plugin {
             </div>
         <?php endif; ?>
 
-        <div class="cmn-dashboard-card" style="margin-bottom:16px;">
-            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-inline" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+        <div class="cmn-dashboard-card cmn-rewards-admin-filter-card">
+            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-rewards-admin-filter-form">
                 <input type="hidden" name="view" value="candidate-rewards">
-                <label style="display:flex;flex-direction:column;gap:4px;min-width:280px;">
+                <label class="cmn-rewards-admin-filter-control is-search">
                     <span>Candidate search</span>
                     <input type="text" name="cmn_rewards_search" value="<?php echo esc_attr($search_filter); ?>" placeholder="Search by name, email, or candidate ID">
                 </label>
-                <button class="cmn-primary" type="submit">Search</button>
-                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'candidate-rewards'], $portal_url)); ?>">Clear</a>
+                <label class="cmn-rewards-admin-filter-control">
+                    <span>Status</span>
+                    <select name="cmn_rewards_status">
+                        <option value="all"<?php selected($status_filter, ''); ?>>All statuses</option>
+                        <option value="active"<?php selected($status_filter, 'active'); ?>>Active</option>
+                        <option value="rewards_suspended"<?php selected($status_filter, 'rewards_suspended'); ?>>Suspended</option>
+                        <option value="terminated"<?php selected($status_filter, 'terminated'); ?>>Terminated</option>
+                    </select>
+                </label>
+                <label class="cmn-rewards-admin-filter-control">
+                    <span>Cycle</span>
+                    <select name="cmn_rewards_cycle">
+                        <option value="all"<?php selected($cycle_filter, ''); ?>>All cycles</option>
+                        <option value="0"<?php selected($cycle_filter, '0'); ?>>0 shifts</option>
+                        <option value="1_3"<?php selected($cycle_filter, '1_3'); ?>>1-3 shifts</option>
+                        <option value="4_plus"<?php selected($cycle_filter, '4_plus'); ?>>4+ shifts</option>
+                    </select>
+                </label>
+                <div class="cmn-rewards-admin-filter-actions">
+                    <button class="cmn-primary" type="submit">Apply</button>
+                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'candidate-rewards'], $portal_url)); ?>">Clear</a>
+                </div>
             </form>
         </div>
 
-        <div class="cmn-dashboard-card" style="margin-bottom:16px;">
+        <div class="cmn-dashboard-card cmn-rewards-admin-list-card">
             <h3>Candidate Rewards Overview</h3>
             <p class="cmn-muted">Academic year context: <?php echo esc_html($current_academic_year); ?> • <?php echo esc_html((string) $total_rows); ?> candidate(s) found.</p>
             <?php if (!$rows) : ?>
                 <div class="cmn-empty">No candidates matched your search.</div>
             <?php else : ?>
-                <table class="cmn-approval-table">
+                <div class="cmn-rewards-admin-table-wrap">
+                <table class="cmn-approval-table cmn-rewards-admin-table">
                     <thead>
                         <tr>
                             <th>Candidate</th>
@@ -33156,7 +33232,7 @@ final class CMN_One_Plugin {
                             <th>No-shows</th>
                             <th>Rewards status</th>
                             <th>Last payout</th>
-                            <th>Action</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -33214,10 +33290,11 @@ final class CMN_One_Plugin {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
             <?php endif; ?>
 
             <?php if ($total_pages > 1) : ?>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                <div class="cmn-rewards-admin-pagination">
                     <?php
                     $prev_page = max(1, $current_page - 1);
                     $next_page = min($total_pages, $current_page + 1);
@@ -33285,6 +33362,12 @@ final class CMN_One_Plugin {
                             <input type="hidden" name="view" value="candidate-rewards">
                             <?php if ($search_filter !== '') : ?>
                                 <input type="hidden" name="cmn_rewards_search" value="<?php echo esc_attr($search_filter); ?>">
+                            <?php endif; ?>
+                            <?php if ($status_filter !== '') : ?>
+                                <input type="hidden" name="cmn_rewards_status" value="<?php echo esc_attr($status_filter); ?>">
+                            <?php endif; ?>
+                            <?php if ($cycle_filter !== '') : ?>
+                                <input type="hidden" name="cmn_rewards_cycle" value="<?php echo esc_attr($cycle_filter); ?>">
                             <?php endif; ?>
                             <?php if ($current_page > 1) : ?>
                                 <input type="hidden" name="cmn_rewards_page" value="<?php echo esc_attr((string) $current_page); ?>">
