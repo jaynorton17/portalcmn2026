@@ -8627,7 +8627,7 @@ final class CMN_One_Plugin {
                         <?php endforeach; ?>
                     </nav>
                 </aside>
-                <main class="cmn-school-main cmn-staff-main">
+                <main class="cmn-school-main cmn-staff-main cmn-page">
                     <?php echo $inner_html; ?>
                 </main>
             </div>
@@ -39914,6 +39914,9 @@ final class CMN_One_Plugin {
             <div class="cmn-school-profile-header-actions">
                 <button class="cmn-ghost cmn-btn-mini" type="button" data-school-quick-edit-toggle aria-expanded="false" aria-controls="cmn-school-quick-edit-panel">Quick Edit</button>
                 <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($log_activity_url); ?>" data-school-log-activity>Log Activity</a>
+                <?php if ($show_profile_issues) : ?>
+                    <a class="cmn-btn-secondary cmn-btn-mini" href="<?php echo esc_url($build_tab_url('settings')); ?>">Fix Profile</a>
+                <?php endif; ?>
             </div>
             <div class="cmn-school-profile-status">
                 <span class="cmn-status-chip <?php echo esc_attr($request_status_class); ?>"><?php echo esc_html($request_status_label); ?></span>
@@ -62746,7 +62749,7 @@ final class CMN_One_Plugin {
                         <a class="cmn-school-nav-link" href="<?php echo esc_url(wp_logout_url($portal_url)); ?>">Logout</a>
                     </nav>
                 </aside>
-                <main class="cmn-school-main">
+                <main class="cmn-school-main cmn-page cmn-page--school">
                     <?php if ($tab === 'dashboard') : ?>
                         <header class="cmn-school-header">
                             <h2>Candidates Available This and Next Morning</h2>
@@ -64821,7 +64824,7 @@ final class CMN_One_Plugin {
                         <a class="cmn-candidate-nav-link" href="<?php echo esc_url($logout_url); ?>" data-tour-target="logout-nav">Logout</a>
                     </nav>
                 </aside>
-                <main class="cmn-candidate-main cmn-candidate-main--<?php echo esc_attr(sanitize_html_class((string) $tab)); ?>" data-candidate-tour="<?php echo $tour_dismissed ? '0' : '1'; ?>">
+                <main class="cmn-candidate-main cmn-page cmn-page--candidate cmn-candidate-main--<?php echo esc_attr(sanitize_html_class((string) $tab)); ?>" data-candidate-tour="<?php echo $tour_dismissed ? '0' : '1'; ?>">
                     <?php
                     if ($candidate_id) {
                         $invite_query = new WP_Query([
