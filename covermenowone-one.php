@@ -63590,6 +63590,18 @@ final class CMN_One_Plugin {
             $school_domain = $this->get_email_domain($school_email);
         }
         $school_requests = $school_domain ? $this->get_school_candidate_requests($school_domain, 20) : [];
+        $school_status_key = sanitize_key((string) $school_status);
+        $school_is_active_status = in_array($school_status_key, ['active', 'client', 'active_client', 'live'], true);
+        $has_open_request = false;
+        foreach ((array) $school_requests as $school_request_row) {
+            $request_status_key = sanitize_key((string) ($school_request_row['status'] ?? 'requested'));
+            if (!in_array($request_status_key, ['declined', 'expired', 'cancelled', 'closed', 'completed', 'complete', 'rejected'], true)) {
+                $has_open_request = true;
+                break;
+            }
+        }
+        $matching_required = $user_school_id > 0 && $this->school_requires_location_verification($user_school_id);
+        $show_location_warning = $school_is_active_status && $has_open_request && $matching_required && (trim((string) $school_postcode) === '' || !$school_coords);
         $school_bookings = [];
         if ($user_school_id) {
             $booking_query = new WP_Query([
@@ -63814,21 +63826,13 @@ final class CMN_One_Plugin {
                             else :
                             ?>
                                 <?php
-                                $availability_empty_reason = '';
-                                $availability_empty_action_label = '';
-                                $availability_empty_action_url = '';
-                                if (trim((string) $school_postcode) === '') {
-                                    $availability_empty_reason = 'Missing postcode prevents accurate candidate matching.';
-                                    $availability_empty_action_label = 'Update profile';
-                                    $availability_empty_action_url = $school_settings_url;
-                                } elseif (!$school_coords) {
+                                $availability_empty_reason = 'No candidates have confirmed availability for ' . $availability_label . ' yet.';
+                                $availability_empty_action_label = 'Open support';
+                                $availability_empty_action_url = $school_support_url;
+                                if ($show_location_warning) {
                                     $availability_empty_reason = 'Location not verified yet; add a postcode to improve matching.';
                                     $availability_empty_action_label = 'Update profile';
                                     $availability_empty_action_url = $school_settings_url;
-                                } else {
-                                    $availability_empty_reason = 'No candidates have confirmed availability for ' . $availability_label . ' yet.';
-                                    $availability_empty_action_label = 'Open support';
-                                    $availability_empty_action_url = $school_support_url;
                                 }
                                 echo $this->render_empty_explain_panel('No availability yet', $availability_empty_reason, $availability_empty_action_label, $availability_empty_action_url);
                                 ?>
@@ -64000,21 +64004,13 @@ final class CMN_One_Plugin {
                             else :
                             ?>
                                 <?php
-                                $availability_empty_reason = '';
-                                $availability_empty_action_label = '';
-                                $availability_empty_action_url = '';
-                                if (trim((string) $school_postcode) === '') {
-                                    $availability_empty_reason = 'Missing postcode prevents accurate candidate matching.';
-                                    $availability_empty_action_label = 'Update profile';
-                                    $availability_empty_action_url = $school_settings_url;
-                                } elseif (!$school_coords) {
+                                $availability_empty_reason = 'No candidates have confirmed availability for ' . $availability_label . ' yet.';
+                                $availability_empty_action_label = 'Open support';
+                                $availability_empty_action_url = $school_support_url;
+                                if ($show_location_warning) {
                                     $availability_empty_reason = 'Location not verified yet; add a postcode to improve matching.';
                                     $availability_empty_action_label = 'Update profile';
                                     $availability_empty_action_url = $school_settings_url;
-                                } else {
-                                    $availability_empty_reason = 'No candidates have confirmed availability for ' . $availability_label . ' yet.';
-                                    $availability_empty_action_label = 'Open support';
-                                    $availability_empty_action_url = $school_support_url;
                                 }
                                 echo $this->render_empty_explain_panel('No availability yet', $availability_empty_reason, $availability_empty_action_label, $availability_empty_action_url);
                                 ?>
