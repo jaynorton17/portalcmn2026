@@ -59872,6 +59872,58 @@ final class CMN_One_Plugin {
         return array_values(array_unique(array_filter($labels)));
     }
 
+    private function get_candidate_card_job_title_labels($candidate_id) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1) {
+            return ['Cover Supervisor'];
+        }
+
+        $labels = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_role_labels($candidate_id))));
+        if (!$labels) {
+            foreach (['cmn_role_label', 'cmn_role_type', 'cmn_role', 'cmn_role_name'] as $meta_key) {
+                $raw = get_post_meta($candidate_id, $meta_key, true);
+                $parts = [];
+                if (is_array($raw)) {
+                    $parts = $raw;
+                } elseif (is_string($raw)) {
+                    $parts = preg_split('/[\r\n,;|]+/', $raw) ?: [];
+                } else {
+                    $parts = [(string) $raw];
+                }
+                foreach ((array) $parts as $part) {
+                    $label = sanitize_text_field((string) $part);
+                    if ($label === '' || strtolower($label) === 'other') {
+                        continue;
+                    }
+                    $labels[] = $label;
+                }
+            }
+        }
+
+        $labels = array_values(array_unique(array_filter(array_map('sanitize_text_field', $labels))));
+        if (!$labels) {
+            $labels = ['Cover Supervisor'];
+        }
+        return $labels;
+    }
+
+    private function get_candidate_profile_school_charge_rate($candidate_id, $role_label = '') {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1) {
+            return 0.0;
+        }
+
+        $entry = $this->get_candidate_role_rate_entry($candidate_id, (string) $role_label);
+        $school_charge = (float) ($entry['school_charge_rate'] ?? 0);
+        if ($school_charge <= 0) {
+            $school_charge = (float) get_post_meta($candidate_id, 'cmn_school_charge_rate', true);
+        }
+        if ($school_charge <= 0) {
+            return 0.0;
+        }
+        return round($school_charge, 2);
+    }
+
     private function get_teacher_subject_specialism_options() {
         return [
             'Mathematics',
@@ -60254,9 +60306,9 @@ final class CMN_One_Plugin {
             return null;
         }
 
-        $role_labels = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_role_labels($candidate_id))));
+        $role_labels = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_card_job_title_labels($candidate_id))));
         if (!$role_labels) {
-            $role_labels = ['General Cover'];
+            $role_labels = ['Cover Supervisor'];
         }
 
         $candidate_name = sanitize_text_field((string) $candidate_post->post_title);
@@ -60266,6 +60318,11 @@ final class CMN_One_Plugin {
             $bits = preg_split('/\s+/', $candidate_name) ?: [];
             $first_name = sanitize_text_field((string) ($bits[0] ?? ''));
         }
+        if ($first_name === '') {
+            $first_name = 'Candidate';
+        }
+        $first_name_bits = preg_split('/\s+/', trim((string) $first_name)) ?: [];
+        $first_name = sanitize_text_field((string) ($first_name_bits[0] ?? 'Candidate'));
         if ($first_name === '') {
             $first_name = 'Candidate';
         }
@@ -60294,17 +60351,13 @@ final class CMN_One_Plugin {
             ? number_format_i18n((float) $distance_miles, 1) . ' miles'
             : 'Distance unknown';
 
-        $subject = (string) ($role_labels[0] ?? 'General Cover');
-        $role_rate_entry = $this->get_candidate_role_rate_entry($candidate_id, $subject);
-        $day_rate = (float) ($role_rate_entry['school_charge_rate'] ?? 0);
-        if ($day_rate <= 0) {
-            $day_rate = (float) $this->get_candidate_rate($candidate_id, (int) $school_id);
-        }
+        $subject = (string) ($role_labels[0] ?? 'Cover Supervisor');
+        $day_rate = (float) $this->get_candidate_profile_school_charge_rate($candidate_id, $subject);
         $day_rate_label = $day_rate > 0
             ? ('£' . number_format_i18n((float) $day_rate, abs($day_rate - round($day_rate)) < 0.01 ? 0 : 2) . ' Per day')
             : 'Rate on request';
 
-        $availability_label = sanitize_text_field((string) ($candidate_item['availability_label'] ?? 'Available This Morning'));
+        $availability_label = 'AVAILABLE TOMORROW MORNING';
         $availability_date = sanitize_text_field((string) ($candidate_item['availability_date'] ?? ''));
         $confirmed_at = '';
         if ($response_state === 'confirmed_available') {
@@ -60335,7 +60388,7 @@ final class CMN_One_Plugin {
         $status_class = $status_key === 'AVAILABLE_NOW' ? 'is-available' : 'is-not-responded';
         $role_line = implode(' • ', array_slice($role_labels, 0, 2));
         if ($role_line === '') {
-            $role_line = 'Cover Supervisor • HLTA';
+            $role_line = 'Cover Supervisor';
         }
         $profile_url = add_query_arg([
             'school' => 'candidates',
@@ -60358,7 +60411,7 @@ final class CMN_One_Plugin {
             'status_class' => $status_class,
             'distance_miles' => $distance_miles,
             'distance_label' => $distance_badge,
-            'availability_label' => $availability_label !== '' ? $availability_label : 'Available This Morning',
+            'availability_label' => $availability_label !== '' ? $availability_label : 'AVAILABLE TOMORROW MORNING',
             'confirmed_at' => $confirmed_at,
             'day_rate_label' => $day_rate_label,
             'skills' => $skills,
@@ -68233,9 +68286,9 @@ final class CMN_One_Plugin {
             if ($candidate_status !== '' && $candidate_status !== 'approved') {
                 return null;
             }
-            $role_labels = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_role_labels($candidate_id))));
+            $role_labels = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_card_job_title_labels($candidate_id))));
             if (!$role_labels) {
-                $role_labels = ['General Cover'];
+                $role_labels = ['Cover Supervisor'];
             }
             $candidate_name = sanitize_text_field((string) $candidate_post->post_title);
             $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
@@ -68272,18 +68325,14 @@ final class CMN_One_Plugin {
             $avg_rating = (float) ($candidate_rating_payload['avg_rating'] ?? 0);
             $review_count = max(0, (int) ($candidate_rating_payload['feedback_count'] ?? 0));
             $distance_payload = $resolve_candidate_distance($candidate_id);
-            $subject = (string) ($role_labels[0] ?? 'General Cover');
-            $role_rate_entry = $this->get_candidate_role_rate_entry($candidate_id, $subject);
-            $day_rate = (float) ($role_rate_entry['school_charge_rate'] ?? 0);
-            if ($day_rate <= 0) {
-                $day_rate = (float) $this->get_candidate_rate($candidate_id, (int) $user_school_id);
-            }
+            $subject = (string) ($role_labels[0] ?? 'Cover Supervisor');
+            $day_rate = (float) $this->get_candidate_profile_school_charge_rate($candidate_id, $subject);
             $response_state = sanitize_key((string) ($candidate_item['response_state'] ?? $default_response_state));
             if ($response_state === '') {
                 $response_state = $default_response_state;
             }
-            $availability_label = sanitize_text_field((string) ($candidate_item['availability_label'] ?? $default_label));
-            $period_label = stripos($availability_label, 'tomorrow') !== false ? 'Available Tomorrow Morning' : 'Available This Morning';
+            $availability_label = 'AVAILABLE TOMORROW MORNING';
+            $period_label = 'AVAILABLE TOMORROW MORNING';
             $confirmed_at = '';
             if ($response_state === 'confirmed_available') {
                 $created_at_raw = sanitize_text_field((string) ($candidate_item['created_at'] ?? ''));
@@ -68294,7 +68343,7 @@ final class CMN_One_Plugin {
             }
             $confirmation_text = $response_state === 'confirmed_available'
                 ? ($period_label . ($confirmed_at !== '' ? ' - Confirmed at ' . $confirmed_at : ' - Confirmed'))
-                : ('Awaiting response for ' . strtolower(str_replace('Available ', '', $period_label)));
+                : 'Awaiting response for tomorrow morning';
 
             $teacher_subject_specialism = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_teacher_subject_specialism', true));
             if ($teacher_subject_specialism === '') {
@@ -68403,10 +68452,10 @@ final class CMN_One_Plugin {
             if (!is_array($testing_candidate_item)) {
                 continue;
             }
-            $testing_candidate_item['availability_label'] = 'Available Tomorrow Morning';
+            $testing_candidate_item['availability_label'] = 'AVAILABLE TOMORROW MORNING';
             $testing_candidate_item['availability_date'] = $testing_tomorrow_date;
             $testing_candidate_item['response_state'] = 'confirmed_available';
-            $testing_row = $build_dashboard_candidate_row($testing_candidate_item, 'Available Tomorrow Morning', 'confirmed_available');
+            $testing_row = $build_dashboard_candidate_row($testing_candidate_item, 'AVAILABLE TOMORROW MORNING', 'confirmed_available');
             if (!is_array($testing_row)) {
                 continue;
             }
@@ -68472,7 +68521,7 @@ final class CMN_One_Plugin {
                                         </div>
                                         <div class="cmn-school-candidate-top-copy">
                                             <strong class="cmn-school-candidate-first-name"><?php echo esc_html($first_name); ?></strong>
-                                            <span class="cmn-school-candidate-role"><?php echo esc_html((string) ($candidate_row['role_text'] ?? 'General Cover')); ?></span>
+                                            <span class="cmn-school-candidate-role"><?php echo esc_html((string) ($candidate_row['role_text'] ?? 'Cover Supervisor')); ?></span>
                                             <span class="cmn-school-candidate-rating"><?php echo esc_html($rating_line); ?></span>
                                         </div>
                                         <div class="cmn-school-candidate-top-badges">
@@ -68795,7 +68844,7 @@ final class CMN_One_Plugin {
                                             </div>
                                             <div class="cmn-school-candidate-top-copy">
                                                 <strong class="cmn-school-candidate-first-name"><?php echo esc_html($testing_first_name); ?></strong>
-                                                <span class="cmn-school-candidate-role"><?php echo esc_html((string) ($testing_candidate['role_text'] ?? 'General Cover')); ?></span>
+                                                <span class="cmn-school-candidate-role"><?php echo esc_html((string) ($testing_candidate['role_text'] ?? 'Cover Supervisor')); ?></span>
                                                 <span class="cmn-school-candidate-rating"><?php echo esc_html($testing_rating_line); ?></span>
                                             </div>
                                             <div class="cmn-school-candidate-top-badges">
@@ -69057,7 +69106,7 @@ final class CMN_One_Plugin {
                                 $live_profile_avatar = $this->get_user_avatar_url_or_fallback($live_profile_user_id, 144);
                                 $live_profile_roles = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_role_labels($live_profile_candidate_id))));
                                 if (!$live_profile_roles) {
-                                    $live_profile_roles = ['General Cover'];
+                                    $live_profile_roles = ['Cover Supervisor'];
                                 }
                                 $live_profile_role_line = implode(' • ', array_slice($live_profile_roles, 0, 2));
                                 $live_profile_location = sanitize_text_field((string) get_post_meta($live_profile_candidate_id, 'cmn_location', true));
@@ -69072,7 +69121,7 @@ final class CMN_One_Plugin {
                                         </div>
                                         <div class="cmn-live-profile-copy">
                                             <h3><?php echo esc_html($live_profile_name !== '' ? $live_profile_name : ('Candidate #' . $live_profile_candidate_id)); ?></h3>
-                                            <p><?php echo esc_html($live_profile_role_line !== '' ? $live_profile_role_line : 'General Cover'); ?></p>
+                                            <p><?php echo esc_html($live_profile_role_line !== '' ? $live_profile_role_line : 'Cover Supervisor'); ?></p>
                                             <p class="cmn-muted"><?php echo esc_html($live_profile_location !== '' ? $live_profile_location : 'Location not provided'); ?></p>
                                             <p class="cmn-muted">Rating <?php echo esc_html(number_format($live_profile_rating_value, 1)); ?> (<?php echo esc_html(number_format_i18n($live_profile_rating_count)); ?> reviews)</p>
                                         </div>

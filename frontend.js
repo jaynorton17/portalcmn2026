@@ -4294,7 +4294,7 @@ document.addEventListener('DOMContentLoaded', function () {
         firstName = fullName.split(/\s+/).filter(Boolean)[0] || 'Candidate';
       }
       firstName = firstName.split(/\s+/).filter(Boolean)[0] || 'Candidate';
-      var roleLine = String(candidate.role_line || 'Cover Supervisor • HLTA');
+      var roleLine = String(candidate.role_line || 'Cover Supervisor');
       var ratingValue = String(candidate.rating_value || '0.0');
       var ratingFloat = parseFloat(candidate.rating_float || ratingValue || '0');
       if (!isFinite(ratingFloat) || ratingFloat < 0) {
