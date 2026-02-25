@@ -7755,18 +7755,18 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   position: relative;
   overflow: hidden;
   border-radius: 20px;
-  padding: 6px 0;
+  padding: 6px 12px;
 }
 
 .cmn-school-candidate-deck-stack {
   position: relative;
-  min-height: 442px;
+  min-height: 456px;
   overflow: hidden;
 }
 
 .cmn-school-candidate-deck-nav {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.48);
   background: rgba(8, 12, 19, 0.88);
@@ -7793,7 +7793,7 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   position: absolute;
   top: 0;
   left: 50%;
-  width: min(860px, calc(100% - 190px));
+  width: min(860px, calc(100% - 320px));
   display: grid;
   grid-template-rows: auto auto auto auto;
   gap: 12px;
@@ -8082,15 +8082,15 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   }
 
   .cmn-school-candidate-deck-viewport {
-    padding: 0;
+    padding: 0 2px;
   }
 
   .cmn-school-candidate-deck-stack {
-    min-height: 510px;
+    min-height: 520px;
   }
 
   .cmn-school-candidate-card {
-    width: calc(100% - 20px);
+    width: calc(100% - 8px);
   }
 
   .cmn-school-candidate-card-actions {

@@ -3802,14 +3802,15 @@ document.addEventListener('DOMContentLoaded', function () {
         } else if (activeIndex >= cards.length) {
           activeIndex = 0;
         }
+        var isCompactViewport = window.matchMedia('(max-width: 720px)').matches;
         var stackWidth = Math.max(320, stack.clientWidth || 320);
-        var sideOffset = Math.max(230, Math.min(760, Math.round(stackWidth * 0.68)));
+        var sideOffset = Math.max(260, Math.min(620, Math.round(stackWidth * (stackWidth > 1100 ? 0.52 : 0.5))));
         cards.forEach(function (card, idx) {
           var relative = getWrappedRelative(idx);
           var isActive = relative === 0;
           var isPrev = relative === -1;
           var isNext = relative === 1;
-          var isVisible = isActive || isPrev || isNext;
+          var isVisible = isCompactViewport ? isActive : (isActive || isPrev || isNext);
           card.classList.toggle('is-active', isActive);
           card.classList.toggle('is-prev', isPrev);
           card.classList.toggle('is-next', isNext);
@@ -3819,7 +3820,7 @@ document.addEventListener('DOMContentLoaded', function () {
             var hiddenDirection = relative < 0 ? -1 : 1;
             card.style.opacity = '0';
             card.style.pointerEvents = 'none';
-            card.style.transform = 'translate3d(calc(-50% + ' + (hiddenDirection * (sideOffset + 80)) + 'px), 24px, 0) scale(0.84)';
+            card.style.transform = 'translate3d(calc(-50% + ' + (hiddenDirection * (sideOffset + 220)) + 'px), 28px, 0) scale(0.84)';
             card.style.zIndex = '0';
             return;
           }
@@ -3831,9 +3832,9 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           var direction = relative < 0 ? -1 : 1;
-          card.style.opacity = '0.46';
+          card.style.opacity = '0.96';
           card.style.pointerEvents = 'none';
-          card.style.transform = 'translate3d(calc(-50% + ' + (direction * sideOffset) + 'px), 16px, 0) scale(0.92)';
+          card.style.transform = 'translate3d(calc(-50% + ' + (direction * sideOffset) + 'px), 16px, 0) scale(0.9)';
           card.style.zIndex = '320';
         });
         updateArrowState();
