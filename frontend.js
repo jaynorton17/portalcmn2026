@@ -7188,6 +7188,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var listEl = root.querySelector('[data-staff-lounge-messages]');
       var formEl = root.querySelector('[data-staff-lounge-form]');
       var msgEl = root.querySelector('[data-staff-lounge-message]');
+      var focusButtons = document.querySelectorAll('[data-staff-lounge-focus-compose]');
       var inFlight = false;
 
       var setMsg = function (text, isError) {
@@ -7250,6 +7251,24 @@ document.addEventListener('DOMContentLoaded', function () {
           return null;
         });
       };
+
+      if (focusButtons.length && formEl) {
+        var focusComposer = function () {
+          var input = formEl.querySelector('textarea[name="message"]');
+          if (!input) {
+            return;
+          }
+          input.focus();
+          try {
+            input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } catch (error) {
+            input.scrollIntoView();
+          }
+        };
+        focusButtons.forEach(function (button) {
+          button.addEventListener('click', focusComposer);
+        });
+      }
 
       if (formEl) {
         formEl.addEventListener('submit', function (event) {

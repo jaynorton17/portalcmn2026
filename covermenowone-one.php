@@ -37868,31 +37868,52 @@ final class CMN_One_Plugin {
         $messages = $this->get_staff_lounge_messages($thread_type, 120);
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Staff Lounge</h2>
-            <p>Internal communication space for CoverMeNow staff.</p>
-        </header>
-        <div class="cmn-dashboard-card cmn-staff-lounge-card" data-staff-lounge data-thread-type="<?php echo esc_attr($thread_type); ?>">
-            <div class="cmn-support-messages cmn-staff-lounge-messages" data-staff-lounge-messages>
-                <?php if (!$messages) : ?>
-                    <div class="cmn-empty">No messages yet.</div>
-                <?php else : ?>
-                    <?php foreach ($messages as $msg) : ?>
-                        <?php $bubble_class = 'is-admin'; ?>
-                        <?php if (($msg['sender_role'] ?? '') === 'account_manager') { $bubble_class = 'is-user is-school'; } ?>
-                        <?php if (($msg['sender_role'] ?? '') === 'staff') { $bubble_class = 'is-user is-candidate'; } ?>
-                        <div class="cmn-support-bubble cmn-staff-lounge-bubble <?php echo esc_attr($bubble_class); ?>">
-                            <div class="cmn-support-meta"><?php echo esc_html(($msg['sender_name'] ?? 'Staff') . ' - ' . ($msg['created_at'] ?? '')); ?></div>
-                            <div class="cmn-support-text"><?php echo esc_html($msg['message'] ?? ''); ?></div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
+        <header class="cmn-school-header cmn-staff-lounge-header">
+            <div class="cmn-staff-lounge-header-main">
+                <h2>Staff Lounge</h2>
+                <p>Internal communication hub for staff coordination and handover notes.</p>
             </div>
-            <form class="cmn-support-reply cmn-staff-lounge-reply" data-staff-lounge-form>
-                <textarea name="message" rows="3" placeholder="Message the staff team..." required></textarea>
-                <button class="cmn-primary" type="submit">Send</button>
-            </form>
-            <div class="cmn-muted" data-staff-lounge-message></div>
+            <div class="cmn-staff-lounge-header-actions">
+                <button class="cmn-primary cmn-btn-mini" type="button" data-staff-lounge-focus-compose>Start Conversation</button>
+            </div>
+        </header>
+        <div class="cmn-dashboard-card cmn-staff-lounge-shell" data-staff-lounge data-thread-type="<?php echo esc_attr($thread_type); ?>">
+            <aside class="cmn-staff-lounge-sidebar">
+                <h3>Conversations</h3>
+                <div class="cmn-staff-lounge-thread-list">
+                    <button class="cmn-staff-lounge-thread is-active" type="button" aria-current="true">
+                        <strong>Staff Lounge</strong>
+                        <span>Internal team channel</span>
+                    </button>
+                </div>
+                <p class="cmn-muted">1 active thread</p>
+            </aside>
+            <div class="cmn-staff-lounge-thread-panel">
+                <div class="cmn-staff-lounge-thread-head">
+                    <strong>Staff Lounge</strong>
+                    <span class="cmn-muted">Live internal conversation feed</span>
+                </div>
+                <div class="cmn-support-messages cmn-staff-lounge-messages" data-staff-lounge-messages>
+                    <?php if (!$messages) : ?>
+                        <div class="cmn-empty">No messages yet.</div>
+                    <?php else : ?>
+                        <?php foreach ($messages as $msg) : ?>
+                            <?php $bubble_class = 'is-admin'; ?>
+                            <?php if (($msg['sender_role'] ?? '') === 'account_manager') { $bubble_class = 'is-user is-school'; } ?>
+                            <?php if (($msg['sender_role'] ?? '') === 'staff') { $bubble_class = 'is-user is-candidate'; } ?>
+                            <div class="cmn-support-bubble cmn-staff-lounge-bubble <?php echo esc_attr($bubble_class); ?>">
+                                <div class="cmn-support-meta"><?php echo esc_html(($msg['sender_name'] ?? 'Staff') . ' - ' . ($msg['created_at'] ?? '')); ?></div>
+                                <div class="cmn-support-text"><?php echo esc_html($msg['message'] ?? ''); ?></div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+                <form class="cmn-support-reply cmn-staff-lounge-reply" data-staff-lounge-form>
+                    <textarea name="message" rows="3" placeholder="Message the staff team..." required></textarea>
+                    <button class="cmn-primary" type="submit">Send</button>
+                </form>
+                <div class="cmn-muted" data-staff-lounge-message></div>
+            </div>
         </div>
         <?php
         $inner = ob_get_clean();
