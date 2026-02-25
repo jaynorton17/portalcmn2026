@@ -28565,31 +28565,29 @@ final class CMN_One_Plugin {
         ob_start();
         ?>
         <?php if ($message !== '') : ?>
-            <div class="cmn-panel-card"><strong><?php echo esc_html($message); ?></strong></div>
+            <div class="cmn-register-success cmn-rate-cards-message"><strong><?php echo esc_html($message); ?></strong></div>
         <?php endif; ?>
         <section class="cmn-dashboard-card cmn-rate-cards-card">
             <header class="cmn-rate-cards-header">
-                <div>
+                <div class="cmn-rate-cards-header-main">
                     <h2>Rate Cards</h2>
                     <p class="cmn-muted">Margin risk controls and override actions for booking pricing.</p>
+                    <span class="cmn-rate-cards-header-meta cmn-muted">At risk: <?php echo esc_html(number_format_i18n((int) $at_risk_total)); ?><?php echo esc_html($risk_only === 1 ? ' • Filter: at risk only' : ' • Filter: all cached margins'); ?></span>
                 </div>
-                <form method="get" class="cmn-rate-cards-controls">
-                    <input type="hidden" name="view" value="rate-guardrails">
-                    <input type="hidden" name="cmn_risk_only" value="0">
-                    <label class="cmn-rate-cards-toggle">
-                        <input type="checkbox" name="cmn_risk_only" value="1"<?php checked($risk_only === 1); ?>>
-                        <span>Bookings at risk only</span>
-                    </label>
-                    <button class="cmn-primary cmn-btn-mini" type="submit">Apply</button>
-                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Go to Requests</a>
-                </form>
+                <div class="cmn-rate-cards-header-actions">
+                    <form method="get" class="cmn-rate-cards-controls">
+                        <input type="hidden" name="view" value="rate-guardrails">
+                        <input type="hidden" name="cmn_risk_only" value="0">
+                        <label class="cmn-rate-cards-toggle">
+                            <input type="checkbox" name="cmn_risk_only" value="1"<?php checked($risk_only === 1); ?> onchange="this.form.submit()">
+                            <span>Bookings at risk only</span>
+                        </label>
+                    </form>
+                    <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Go to Requests</a>
+                </div>
             </header>
-            <div class="cmn-rate-cards-summary">
-                <span class="cmn-pill cmn-pill--status">At risk: <?php echo esc_html(number_format_i18n((int) $at_risk_total)); ?></span>
-                <span class="cmn-muted"><?php echo esc_html($risk_only === 1 ? 'Showing at-risk and non-compliant bookings only.' : 'Showing all cached booking margins.'); ?></span>
-            </div>
             <div class="cmn-rate-cards-table-wrap">
-                <table class="cmn-approval-table cmn-request-table cmn-rate-cards-table">
+                <table class="cmn-approval-table cmn-rate-cards-table">
                     <thead>
                         <tr>
                             <th>Booking</th>
@@ -28674,7 +28672,7 @@ final class CMN_One_Plugin {
                             </tr>
                         <?php endforeach; ?>
                     <?php else : ?>
-                        <tr><td colspan="9">No bookings found for this filter.</td></tr>
+                        <tr><td colspan="9">No bookings currently flagged for this filter.</td></tr>
                     <?php endif; ?>
                     </tbody>
                 </table>

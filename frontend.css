@@ -10543,6 +10543,11 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
     align-items: stretch;
   }
 
+  .cmn-rate-cards-header-actions {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
   .cmn-rate-cards-controls {
     margin-left: 0;
   }
@@ -10582,36 +10587,77 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   border: 1px solid rgba(208, 42, 42, 0.45);
 }
 
+.cmn-pill.cmn-pill--ok {
+  background: rgba(56, 161, 105, 0.24);
+  color: #c9f2dc;
+  border: 1px solid rgba(56, 161, 105, 0.52);
+}
+
+.cmn-pill.cmn-pill--low {
+  background: rgba(217, 119, 6, 0.22);
+  color: #ffe1b7;
+  border: 1px solid rgba(217, 119, 6, 0.5);
+}
+
+.cmn-pill.cmn-pill--negative {
+  background: rgba(220, 38, 38, 0.22);
+  color: #fecaca;
+  border: 1px solid rgba(220, 38, 38, 0.55);
+}
+
 .cmn-request-table td {
   vertical-align: top;
 }
 
 .cmn-rate-cards-card {
-  padding: 12px 14px;
+  width: 100%;
+  padding: 14px 16px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
+}
+
+.cmn-rate-cards-message {
+  margin: 0 0 10px;
 }
 
 .cmn-rate-cards-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 10px;
+  gap: 14px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--cmn-border);
+}
+
+.cmn-rate-cards-header-main {
+  display: grid;
+  gap: 4px;
 }
 
 .cmn-rate-cards-header h2 {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
+  line-height: 1.1;
 }
 
 .cmn-rate-cards-header p {
   margin: 3px 0 0;
 }
 
-.cmn-rate-cards-controls {
+.cmn-rate-cards-header-meta {
+  font-size: 12px;
+}
+
+.cmn-rate-cards-header-actions {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-rate-cards-controls {
+  margin: 0;
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
@@ -10635,6 +10681,7 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 
 .cmn-rate-cards-toggle input[type='checkbox'] {
   margin: 0;
+  accent-color: #d02a2a;
 }
 
 .cmn-rate-cards-summary {
@@ -10647,26 +10694,29 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 .cmn-rate-cards-table-wrap {
   border: 1px solid var(--cmn-border);
   border-radius: 12px;
-  background: rgba(12, 18, 28, 0.68);
+  background: rgba(9, 13, 20, 0.86);
   overflow: auto;
-  max-height: min(68vh, 760px);
+  max-height: min(70vh, 760px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .cmn-rate-cards-table {
   margin: 0;
+  min-width: 1120px;
 }
 
 .cmn-rate-cards-table thead th {
   position: sticky;
   top: 0;
-  z-index: 4;
-  background: rgba(9, 13, 20, 0.98);
+  z-index: 5;
+  background: rgba(7, 11, 18, 0.98);
   box-shadow: inset 0 -1px 0 var(--cmn-border);
 }
 
 .cmn-rate-cards-table th,
 .cmn-rate-cards-table td {
-  padding: 8px 8px;
+  padding: 9px 10px;
+  vertical-align: top;
 }
 
 .cmn-rate-cards-action-form {
