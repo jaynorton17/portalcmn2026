@@ -28999,58 +28999,117 @@ final class CMN_One_Plugin {
         $feedback_analytics = $this->get_booking_feedback_analytics('all', 50);
         $all_scope_url = add_query_arg(['view' => 'analytics', 'cmn_scope' => 'all'], $this->get_portal_base_url());
         $my_scope_url = add_query_arg(['view' => 'analytics', 'cmn_scope' => 'mine'], $this->get_portal_base_url());
+        $daily_volume_rows = (array) ($metrics['daily_volume'] ?? []);
+        $max_daily_volume = 0;
+        foreach ($daily_volume_rows as $daily_count) {
+            $max_daily_volume = max($max_daily_volume, (int) $daily_count);
+        }
+        $low_feedback_rows = [];
+        foreach ((array) ($feedback_analytics['recent'] ?? []) as $feedback_row) {
+            if ((int) ($feedback_row['stars_overall'] ?? 0) <= 2) {
+                $low_feedback_rows[] = $feedback_row;
+            }
+        }
+        $range_to_default = current_time('Y-m-d');
+        $range_from_default = gmdate('Y-m-d', strtotime($range_to_default . ' -29 days'));
+        $range_from = sanitize_text_field((string) ($_GET['cmn_analytics_from'] ?? $range_from_default));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $range_from)) {
+            $range_from = $range_from_default;
+        }
+        $range_to = sanitize_text_field((string) ($_GET['cmn_analytics_to'] ?? $range_to_default));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $range_to)) {
+            $range_to = $range_to_default;
+        }
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Analytics</h2>
-            <p>Operational metrics for booking performance and delivery quality.</p>
+        <header class="cmn-school-header cmn-analytics-admin-header">
+            <div class="cmn-analytics-admin-header-main">
+                <h2>Analytics Overview</h2>
+                <p>Bookings, fill performance, and service delivery trends across the portal.</p>
+            </div>
+            <form method="get" action="<?php echo esc_url($this->get_portal_base_url()); ?>" class="cmn-analytics-admin-range">
+                <input type="hidden" name="view" value="analytics">
+                <?php if ($this->is_admin_user()) : ?>
+                    <input type="hidden" name="cmn_scope" value="<?php echo esc_attr($scope); ?>">
+                <?php endif; ?>
+                <label class="cmn-analytics-admin-range-control">
+                    <span>From</span>
+                    <input type="date" name="cmn_analytics_from" value="<?php echo esc_attr($range_from); ?>">
+                </label>
+                <label class="cmn-analytics-admin-range-control">
+                    <span>To</span>
+                    <input type="date" name="cmn_analytics_to" value="<?php echo esc_attr($range_to); ?>">
+                </label>
+                <button class="cmn-primary" type="submit">Apply</button>
+            </form>
         </header>
         <?php if ($this->is_admin_user()) : ?>
-            <div class="cmn-support-filters">
+            <div class="cmn-support-filters cmn-analytics-admin-scope">
                 <a class="cmn-ghost<?php echo $scope === 'all' ? ' is-active' : ''; ?>" href="<?php echo esc_url($all_scope_url); ?>">All schools</a>
                 <a class="cmn-ghost<?php echo $scope === 'mine' ? ' is-active' : ''; ?>" href="<?php echo esc_url($my_scope_url); ?>">My schools</a>
             </div>
         <?php endif; ?>
-        <div class="cmn-portal-grid">
-            <div class="cmn-dashboard-card">
-                <h3>Fill rate</h3>
-                <p><?php echo esc_html(number_format((float) ($metrics['fill_rate_pct'] ?? 0), 1)); ?>%</p>
-                <span class="cmn-muted"><?php echo esc_html((int) ($metrics['confirmed_count'] ?? 0)); ?> confirmed of <?php echo esc_html((int) ($metrics['total_requests'] ?? 0)); ?> requests</span>
+        <div class="cmn-analytics-admin-metrics">
+            <div class="cmn-dashboard-card cmn-analytics-admin-metric-card">
+                <span>Total Requests</span>
+                <strong><?php echo esc_html(number_format((int) ($metrics['total_requests'] ?? 0))); ?></strong>
+                <small>Last 30 days</small>
             </div>
-            <div class="cmn-dashboard-card">
-                <h3>Avg time to fill</h3>
-                <p><?php echo esc_html(number_format((float) ($metrics['avg_time_to_fill_minutes'] ?? 0), 1)); ?> mins</p>
-                <span class="cmn-muted">Confirmed requests only</span>
+            <div class="cmn-dashboard-card cmn-analytics-admin-metric-card">
+                <span>Fill Rate</span>
+                <strong><?php echo esc_html(number_format((float) ($metrics['fill_rate_pct'] ?? 0), 1)); ?>%</strong>
+                <small><?php echo esc_html((int) ($metrics['confirmed_count'] ?? 0)); ?> confirmed</small>
             </div>
-            <div class="cmn-dashboard-card">
-                <h3>Booking conversion</h3>
-                <p><?php echo esc_html(number_format((float) ($metrics['booking_conversion_pct'] ?? 0), 1)); ?>%</p>
-                <span class="cmn-muted">Accepted/confirmed over total requests</span>
+            <div class="cmn-dashboard-card cmn-analytics-admin-metric-card">
+                <span>Response Rate</span>
+                <strong><?php echo esc_html(number_format((float) ($metrics['response_rate_pct'] ?? 0), 1)); ?>%</strong>
+                <small><?php echo esc_html((int) ($metrics['actioned_count'] ?? 0)); ?> actioned</small>
             </div>
-        </div>
-        <div class="cmn-portal-grid">
-            <div class="cmn-dashboard-card">
-                <h3>Repeat school rate</h3>
-                <p><?php echo esc_html(number_format((float) ($metrics['repeat_school_rate_pct'] ?? 0), 1)); ?>%</p>
-                <span class="cmn-muted"><?php echo esc_html((int) ($metrics['repeat_school_count'] ?? 0)); ?> repeat schools</span>
+            <div class="cmn-dashboard-card cmn-analytics-admin-metric-card">
+                <span>Avg Time To Fill</span>
+                <strong><?php echo esc_html(number_format((float) ($metrics['avg_time_to_fill_minutes'] ?? 0), 1)); ?>m</strong>
+                <small>Confirmed requests</small>
             </div>
-            <div class="cmn-dashboard-card">
-                <h3>Requests tomorrow</h3>
-                <p><?php echo esc_html((int) ($metrics['requests_tomorrow'] ?? 0)); ?></p>
-                <span class="cmn-muted">Confirmed tomorrow: <?php echo esc_html((int) ($metrics['confirmed_tomorrow'] ?? 0)); ?></span>
-            </div>
-            <div class="cmn-dashboard-card">
-                <h3>Response rate</h3>
-                <p><?php echo esc_html(number_format((float) ($metrics['response_rate_pct'] ?? 0), 1)); ?>%</p>
-                <span class="cmn-muted">Actioned within request lifecycle</span>
+            <div class="cmn-dashboard-card cmn-analytics-admin-metric-card">
+                <span>Repeat School Rate</span>
+                <strong><?php echo esc_html(number_format((float) ($metrics['repeat_school_rate_pct'] ?? 0), 1)); ?>%</strong>
+                <small><?php echo esc_html((int) ($metrics['repeat_school_count'] ?? 0)); ?> repeat schools</small>
             </div>
         </div>
-        <div class="cmn-portal-grid">
-            <div class="cmn-dashboard-card cmn-dashboard-card-wide">
-                <h3>Top performing candidates</h3>
-                <?php if (!empty($metrics['top_candidates'])) : ?>
-                    <table class="cmn-approval-table">
+
+        <div class="cmn-dashboard-card cmn-analytics-admin-chart-card">
+            <div class="cmn-analytics-admin-chart-head">
+                <h3>Daily Booking Trend</h3>
+                <p class="cmn-muted">Request volume over the recent 14-day window.</p>
+            </div>
+            <?php if ($daily_volume_rows) : ?>
+                <div class="cmn-analytics-admin-bar-list">
+                    <?php foreach ($daily_volume_rows as $date => $count) : ?>
+                        <?php
+                        $bar_count = max(0, (int) $count);
+                        $bar_width = $max_daily_volume > 0 ? max(2, round(($bar_count / $max_daily_volume) * 100, 2)) : 2;
+                        ?>
+                        <div class="cmn-analytics-admin-bar-row">
+                            <span><?php echo esc_html(date_i18n('M j', strtotime((string) $date))); ?></span>
+                            <div class="cmn-analytics-admin-bar-track"><i style="width: <?php echo esc_attr((string) $bar_width); ?>%;"></i></div>
+                            <strong><?php echo esc_html((string) $bar_count); ?></strong>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php else : ?>
+                <div class="cmn-empty">No booking trend data available yet.</div>
+            <?php endif; ?>
+        </div>
+
+        <div class="cmn-dashboard-card cmn-analytics-admin-chart-card">
+            <div class="cmn-analytics-admin-chart-head">
+                <h3>Top Candidate Performance</h3>
+                <p class="cmn-muted">Highest performing candidates by confirmed bookings and feedback.</p>
+            </div>
+            <?php if (!empty($metrics['top_candidates'])) : ?>
+                <div class="cmn-analytics-admin-table-wrap">
+                    <table class="cmn-approval-table cmn-analytics-admin-table">
                         <thead>
                             <tr>
                                 <th>Candidate</th>
@@ -29070,39 +29129,29 @@ final class CMN_One_Plugin {
                         <?php endforeach; ?>
                         </tbody>
                     </table>
-                <?php else : ?>
-                    <div class="cmn-empty">No candidate performance data yet.</div>
-                <?php endif; ?>
-            </div>
+                </div>
+            <?php else : ?>
+                <div class="cmn-empty">No candidate performance data yet.</div>
+            <?php endif; ?>
         </div>
-        <div class="cmn-portal-grid">
-            <div class="cmn-dashboard-card">
-                <h3>Daily booking volume (14 days)</h3>
-                <div class="cmn-list">
-                    <?php foreach ((array) ($metrics['daily_volume'] ?? []) as $date => $count) : ?>
-                        <div class="cmn-list-item">
-                            <strong><?php echo esc_html(date_i18n('M j', strtotime((string) $date))); ?></strong>
-                            <span><?php echo esc_html((int) $count); ?> request(s)</span>
+
+        <div class="cmn-dashboard-card cmn-analytics-admin-chart-card">
+            <div class="cmn-analytics-admin-chart-head">
+                <h3>Low Feedback Alerts (<=2)</h3>
+                <p class="cmn-muted">Recent low-score feedback requiring service review.</p>
+            </div>
+            <?php if ($low_feedback_rows) : ?>
+                <div class="cmn-analytics-admin-alert-list">
+                    <?php foreach ($low_feedback_rows as $feedback_row) : ?>
+                        <div class="cmn-analytics-admin-alert-row">
+                            <strong><?php echo esc_html((string) ($feedback_row['school_name'] ?? 'School') . ' - ' . (string) ($feedback_row['candidate_name'] ?? 'Candidate')); ?></strong>
+                            <span><?php echo esc_html((int) ($feedback_row['stars_overall'] ?? 0)); ?>/5 • <?php echo esc_html((string) ($feedback_row['created_at'] ?? '')); ?></span>
                         </div>
                     <?php endforeach; ?>
                 </div>
-            </div>
-            <div class="cmn-dashboard-card">
-                <h3>Low feedback alerts (<=2)</h3>
-                <?php if (!empty($feedback_analytics['recent'])) : ?>
-                    <div class="cmn-list">
-                        <?php foreach ((array) $feedback_analytics['recent'] as $feedback_row) : ?>
-                            <?php if ((int) ($feedback_row['stars_overall'] ?? 0) > 2) { continue; } ?>
-                            <div class="cmn-list-item">
-                                <strong><?php echo esc_html((string) ($feedback_row['school_name'] ?? 'School') . ' - ' . (string) ($feedback_row['candidate_name'] ?? 'Candidate')); ?></strong>
-                                <span><?php echo esc_html((int) ($feedback_row['stars_overall'] ?? 0)); ?>/5 - <?php echo esc_html((string) ($feedback_row['created_at'] ?? '')); ?></span>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else : ?>
-                    <div class="cmn-empty">No low ratings found.</div>
-                <?php endif; ?>
-            </div>
+            <?php else : ?>
+                <div class="cmn-empty">No low feedback alerts in the sampled period.</div>
+            <?php endif; ?>
         </div>
         <?php
         $inner = ob_get_clean();
