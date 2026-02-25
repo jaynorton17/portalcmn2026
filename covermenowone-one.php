@@ -39919,50 +39919,13 @@ final class CMN_One_Plugin {
             $build_tab_url = function ($tab_key) use ($portal_url, $tab_base_query) {
                 return add_query_arg(array_merge($tab_base_query, ['cmn_school_tab' => $tab_key]), $portal_url);
             };
-            $lead_issue_phone = trim((string) $meta('cmn_phone'));
-            if ($lead_issue_phone === '') {
-                $lead_issue_phone = trim((string) $meta('cmn_contact_phone'));
-            }
-            if ($lead_issue_phone === '') {
-                $lead_issue_phone = trim((string) $meta('cmn_primary_contact_phone'));
-            }
-            $lead_issue_email = sanitize_email((string) $meta('cmn_email'));
-            if ($lead_issue_email === '') {
-                $lead_issue_email = sanitize_email((string) $meta('cmn_contact1_email'));
-            }
-            if ($lead_issue_email === '') {
-                $lead_issue_email = sanitize_email((string) $meta('cmn_contact_email'));
-            }
-            $lead_missing_phone_and_email = ($lead_issue_phone === '' && $lead_issue_email === '');
-            $profile_issues = [];
-            $lead_requires_location_verification = $is_lead_profile && $this->school_requires_location_verification($school_id);
-            if ($is_lead_profile) {
-                if ($lead_missing_phone_and_email) {
-                    $profile_issues[] = 'Missing contact details';
-                    if ($lead_requires_location_verification && $school_postcode === '') {
-                        $profile_issues[] = 'Postcode missing';
-                    }
-                    if ($lead_requires_location_verification && !$school_coords) {
-                        $profile_issues[] = 'Location not verified';
-                    }
-                }
-            } else {
-                if ($missing_profile_fields) {
-                    $profile_issues[] = 'Missing fields: ' . implode(', ', array_slice(array_values($missing_profile_fields), 0, 3)) . (count($missing_profile_fields) > 3 ? ' +' . (count($missing_profile_fields) - 3) . ' more' : '');
-                }
-                if ($school_postcode === '') {
-                    $profile_issues[] = 'Postcode missing';
-                }
-                if (!$school_coords) {
-                    $profile_issues[] = 'Location not verified';
-                }
-                if (!$domain_valid) {
-                    $profile_issues[] = 'School domain missing';
-                }
-                if ($critical_meta_missing && !$profile_issues) {
-                    $profile_issues[] = 'Profile data incomplete';
-                }
-            }
+            $profile_issues = $this->cmn_school_get_issues($school_id, $status_key, $pipeline_stage_raw, $request_status, [
+                'missing_profile_fields' => $missing_profile_fields,
+                'school_postcode' => $school_postcode,
+                'school_coords' => $school_coords,
+                'domain_valid' => $domain_valid,
+                'critical_meta_missing' => $critical_meta_missing,
+            ]);
             $show_profile_issues = !empty($profile_issues);
             $booking_counts = $this->get_school_profile_booking_counts($school_id);
             $recent_bookings = $this->get_school_profile_recent_bookings($school_id, 8);
@@ -60430,6 +60393,84 @@ final class CMN_One_Plugin {
             }
         }
         return false;
+    }
+
+    private function cmn_school_get_issues($school_id, $status_key = '', $pipeline_stage_key = '', $request_status = '', $context = []) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return [];
+        }
+
+        $status_key = sanitize_key((string) $status_key);
+        $pipeline_stage_key = sanitize_key((string) $pipeline_stage_key);
+        $request_status = sanitize_key((string) $request_status);
+        $context = is_array($context) ? $context : [];
+
+        if ($this->is_school_lead_like_status($status_key, $pipeline_stage_key, $request_status)) {
+            return $this->school_lead_has_contact_method($school_id) ? [] : ['Missing contact details'];
+        }
+
+        $issues = [];
+        $add_issue = function ($label) use (&$issues) {
+            $label = trim((string) $label);
+            if ($label === '' || in_array($label, $issues, true)) {
+                return;
+            }
+            $issues[] = $label;
+        };
+
+        $missing_profile_fields = isset($context['missing_profile_fields']) && is_array($context['missing_profile_fields'])
+            ? array_values(array_filter(array_map('sanitize_text_field', (array) $context['missing_profile_fields'])))
+            : $this->get_school_profile_missing_fields($school_id);
+        if ($missing_profile_fields) {
+            $missing_field_preview = array_slice($missing_profile_fields, 0, 3);
+            $missing_label = 'Missing fields: ' . implode(', ', $missing_field_preview);
+            if (count($missing_profile_fields) > 3) {
+                $missing_label .= ' +' . (count($missing_profile_fields) - 3) . ' more';
+            }
+            $add_issue($missing_label);
+        }
+
+        $school_postcode = '';
+        if (array_key_exists('school_postcode', $context)) {
+            $school_postcode = trim((string) $context['school_postcode']);
+        } else {
+            $school_postcode = trim((string) get_post_meta($school_id, 'cmn_postcode', true));
+        }
+        $has_school_coords = array_key_exists('school_coords', $context)
+            ? !empty($context['school_coords'])
+            : !empty($this->get_geo_coordinates_for_post($school_id));
+
+        $domain_valid = array_key_exists('domain_valid', $context)
+            ? !empty($context['domain_valid'])
+            : false;
+        if (!array_key_exists('domain_valid', $context)) {
+            $school_email = (string) get_post_meta($school_id, 'cmn_email', true);
+            $school_domain = $this->get_email_domain($school_email);
+            if ($school_domain === '') {
+                $school_domain = (string) get_post_meta($school_id, 'cmn_school_email_domain', true);
+            }
+            $domain_valid = ($school_domain !== '' && $this->is_school_registration_domain($school_domain));
+        }
+
+        if ($school_postcode === '') {
+            $add_issue('Postcode missing');
+        }
+        if (!$has_school_coords) {
+            $add_issue('Location not verified');
+        }
+        if (!$domain_valid) {
+            $add_issue('School domain missing');
+        }
+
+        $critical_meta_missing = array_key_exists('critical_meta_missing', $context)
+            ? !empty($context['critical_meta_missing'])
+            : (!$domain_valid || ($school_postcode === '' && !$has_school_coords));
+        if ($critical_meta_missing && !$issues) {
+            $add_issue('Profile data incomplete');
+        }
+
+        return $issues;
     }
 
     private function get_candidate_registration_profile_mapping_matrix() {
