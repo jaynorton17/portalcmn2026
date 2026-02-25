@@ -68391,6 +68391,25 @@ final class CMN_One_Plugin {
             }
         }
         $dashboard_candidate_count = count($dashboard_candidate_rows);
+        $testing_tomorrow_date = $this->get_tomorrow_date();
+        $testing_tomorrow_candidates = $this->get_available_candidates_with_times($testing_tomorrow_date, $user_school_id ?: 0, 6);
+        $testing_candidate_rows = [];
+        foreach ((array) $testing_tomorrow_candidates as $testing_candidate_item) {
+            if (!is_array($testing_candidate_item)) {
+                continue;
+            }
+            $testing_candidate_item['availability_label'] = 'Available Tomorrow Morning';
+            $testing_candidate_item['availability_date'] = $testing_tomorrow_date;
+            $testing_candidate_item['response_state'] = 'confirmed_available';
+            $testing_row = $build_dashboard_candidate_row($testing_candidate_item, 'Available Tomorrow Morning', 'confirmed_available');
+            if (!is_array($testing_row)) {
+                continue;
+            }
+            $testing_candidate_rows[] = $testing_row;
+            if (count($testing_candidate_rows) >= 1) {
+                break;
+            }
+        }
         $render_school_candidate_deck = static function ($candidate_rows, $confirmed_count, $other_count) {
             $candidate_rows = is_array($candidate_rows) ? $candidate_rows : [];
             ob_start();
@@ -68516,6 +68535,11 @@ final class CMN_One_Plugin {
                 'key' => 'candidates',
                 'label' => 'Candidates',
                 'args' => ['school' => 'candidates', 'cmn_tab' => false],
+            ],
+            [
+                'key' => 'testing',
+                'label' => 'Testing',
+                'args' => ['school' => 'testing', 'cmn_tab' => false],
             ],
             [
                 'key' => 'calendar',
@@ -68708,6 +68732,29 @@ final class CMN_One_Plugin {
                                     </ul>
                                 <?php else : ?>
                                     <div class="cmn-empty">No recent activity yet.</div>
+                                <?php endif; ?>
+                            </article>
+                        </section>
+                    <?php elseif ($tab === 'testing') : ?>
+                        <section class="cmn-school-dashboard-console">
+                            <header class="cmn-school-header">
+                                <h2>Testing</h2>
+                                <p>Single candidate card render for a candidate who declared available tomorrow morning.</p>
+                            </header>
+                            <article class="cmn-dashboard-card cmn-school-dashboard-panel cmn-school-dashboard-priority-candidates">
+                                <div class="cmn-card-header">
+                                    <div>
+                                        <h3>Cards</h3>
+                                        <p class="cmn-muted">Showing one candidate only.</p>
+                                    </div>
+                                </div>
+                                <?php if ($testing_candidate_rows) : ?>
+                                    <?php echo $render_school_candidate_deck([$testing_candidate_rows[0]], 1, 0); ?>
+                                <?php else : ?>
+                                    <div class="cmn-school-dashboard-candidates-empty">
+                                        <strong>No candidate has declared available tomorrow yet.</strong>
+                                        <p>When one does, their card will show here.</p>
+                                    </div>
                                 <?php endif; ?>
                             </article>
                         </section>
