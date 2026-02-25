@@ -9526,6 +9526,116 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   resize: vertical;
 }
 
+.cmn-staff-candidate-profile .cmn-candidate-activity-card {
+  width: 100%;
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 14px 16px !important;
+  gap: 10px;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-form {
+  margin-top: 4px;
+  gap: 8px;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-form textarea {
+  min-height: 90px;
+  padding: 10px 12px;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-counter {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-submit {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-notes-list {
+  margin-top: 2px;
+  gap: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(9, 13, 18, 0.42);
+  overflow: hidden;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-notes-empty-state {
+  padding: 15px 14px;
+  display: grid;
+  gap: 4px;
+  color: #dbe3f2;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-notes-empty-state h4,
+.cmn-staff-candidate-profile .cmn-candidate-notes-empty-state p {
+  margin: 0;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-notes-empty-state h4 {
+  font-size: 14px;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-notes-empty-state p {
+  color: rgba(233, 238, 247, 0.74);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-item {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 11px 12px;
+  gap: 8px;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-item + .cmn-candidate-note-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-meta strong {
+  font-size: 13px;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-meta .cmn-muted {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cmn-staff-candidate-profile .cmn-candidate-note-body {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #e7edf8;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 1200px) {
   .cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -9546,6 +9656,24 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 
   .cmn-staff-candidate-profile .cmn-meta-grid--staff-candidate-overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .cmn-staff-candidate-profile .cmn-candidate-note-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cmn-staff-candidate-profile .cmn-candidate-note-actions {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .cmn-staff-candidate-profile .cmn-candidate-note-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
   }
 }
 

@@ -26217,29 +26217,37 @@ final class CMN_One_Plugin {
                     </details>
                 </div>
             <?php elseif ($active_candidate_tab === 'activity') : ?>
-                <div class="cmn-dashboard-card cmn-dashboard-card-wide">
+                <div class="cmn-dashboard-card cmn-dashboard-card-wide cmn-candidate-activity-card">
                     <div class="cmn-card-header">
                         <h3>Internal Candidate Notes</h3>
                         <span class="cmn-muted">Staff/Admin only</span>
                     </div>
-                    <form class="cmn-doc-review-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <form class="cmn-doc-review-form cmn-candidate-note-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php wp_nonce_field('cmn_add_candidate_internal_note', 'cmn_add_candidate_internal_note_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_add_candidate_internal_note">
                         <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
-                        <textarea name="note" rows="3" placeholder="Add private note for internal team..." required></textarea>
-                        <div class="cmn-doc-review-actions">
-                            <button class="cmn-primary" type="submit">Add Note</button>
+                        <textarea name="note" rows="4" placeholder="Add private note for internal team..." data-candidate-note-input required></textarea>
+                        <div class="cmn-candidate-note-footer">
+                            <span class="cmn-candidate-note-counter cmn-muted" data-candidate-note-counter>0 characters</span>
+                            <div class="cmn-doc-review-actions cmn-candidate-note-actions">
+                                <button class="cmn-primary cmn-candidate-note-submit" type="submit">Add Note</button>
+                            </div>
                         </div>
                     </form>
-                    <div class="cmn-list">
+                    <div class="cmn-list cmn-candidate-notes-list">
                         <?php if (!$internal_notes) : ?>
-                            <div class="cmn-empty">No internal notes yet.</div>
+                            <div class="cmn-candidate-notes-empty-state" role="status" aria-live="polite">
+                                <h4>No notes yet</h4>
+                                <p>Add internal notes for call outcomes, preferences, red flags, reliability.</p>
+                            </div>
                         <?php else : ?>
                             <?php foreach ($internal_notes as $note_item) : ?>
-                                <div class="cmn-list-item">
-                                    <strong><?php echo esc_html((string) ($note_item['author_name'] ?? 'Staff')); ?></strong>
-                                    <span class="cmn-muted"><?php echo esc_html((string) ($note_item['created_at_label'] ?? '')); ?></span>
-                                    <div><?php echo esc_html((string) ($note_item['note'] ?? '')); ?></div>
+                                <div class="cmn-list-item cmn-candidate-note-item">
+                                    <div class="cmn-candidate-note-meta">
+                                        <strong><?php echo esc_html((string) ($note_item['author_name'] ?? 'Staff')); ?></strong>
+                                        <span class="cmn-muted"><?php echo esc_html((string) ($note_item['created_at_label'] ?? '')); ?></span>
+                                    </div>
+                                    <div class="cmn-candidate-note-body"><?php echo esc_html((string) ($note_item['note'] ?? '')); ?></div>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>

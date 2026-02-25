@@ -140,6 +140,28 @@ document.addEventListener('DOMContentLoaded', function () {
   };
   bindSchoolContactSearch();
 
+  var initCandidateNoteCounter = function () {
+    var noteInputs = document.querySelectorAll('[data-candidate-note-input]');
+    if (!noteInputs.length) {
+      return;
+    }
+    noteInputs.forEach(function (input) {
+      var form = input.closest('form');
+      var counter = form ? form.querySelector('[data-candidate-note-counter]') : null;
+      if (!counter) {
+        return;
+      }
+      var updateCounter = function () {
+        var value = String(input.value || '');
+        var count = value.length;
+        counter.textContent = count + (count === 1 ? ' character' : ' characters');
+      };
+      input.addEventListener('input', updateCounter);
+      updateCounter();
+    });
+  };
+  initCandidateNoteCounter();
+
   var initSchoolProfileControlPanel = function () {
     var profileRoot = document.querySelector('[data-school-profile-root]');
     if (!profileRoot) {
