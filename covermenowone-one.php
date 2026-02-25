@@ -68501,7 +68501,7 @@ final class CMN_One_Plugin {
                                         <?php else : ?>
                                             <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Book Now</button>
                                         <?php endif; ?>
-                                        <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="maybe">Maybe</button>
+                                        <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="maybe">Shortlist</button>
                                         <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="dismiss">Not Interested</button>
                                         <?php if ($candidate_profile_url !== '') : ?>
                                             <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View Profile</a>
@@ -68819,7 +68819,7 @@ final class CMN_One_Plugin {
                                             <?php else : ?>
                                                 <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Book Now</button>
                                             <?php endif; ?>
-                                            <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="maybe">Maybe</button>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="maybe">Shortlist</button>
                                             <button class="cmn-ghost cmn-btn-mini" type="button" data-deck-action="dismiss">Not Interested</button>
                                             <?php if ($testing_candidate_profile_url !== '') : ?>
                                                 <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($testing_candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View Profile</a>
