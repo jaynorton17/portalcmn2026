@@ -869,6 +869,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_update_candidate_rate', [$this, 'handle_update_candidate_rate']);
         add_action('admin_post_cmn_update_status', [$this, 'handle_update_status']);
         add_action('admin_post_cmn_add_candidate_internal_note', [$this, 'handle_add_candidate_internal_note']);
+        add_action('admin_post_cmn_staff_seed_candidate_feedback', [$this, 'handle_staff_seed_candidate_feedback']);
         add_action('admin_post_cmn_staff_candidate_compliance_decision', [$this, 'handle_staff_candidate_compliance_decision']);
         add_action('admin_post_cmn_save_release_version', [$this, 'handle_save_release_version']);
         add_action('admin_post_cmn_save_staff_availability_settings', [$this, 'handle_save_staff_availability_settings']);
@@ -26625,6 +26626,7 @@ final class CMN_One_Plugin {
         $feedback_risk_tag = (string) get_post_meta($candidate_id, 'cmn_feedback_risk', true);
         $doc_review_message = isset($_GET['cmn_doc_review_msg']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_doc_review_msg'])) : '';
         $internal_note_message = isset($_GET['cmn_note_msg']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_note_msg'])) : '';
+        $feedback_seed_message = isset($_GET['cmn_feedback_seed_msg']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_feedback_seed_msg'])) : '';
         $internal_notes = $this->get_candidate_internal_notes($candidate_id);
 
         $completion_percent = $candidate_user_id ? (int) get_user_meta($candidate_user_id, 'cmn_profile_completion_pct', true) : 0;
@@ -26658,6 +26660,21 @@ final class CMN_One_Plugin {
                 'comments' => sanitize_textarea_field((string) ($formatted_feedback['comments'] ?? '')),
                 'module_scores' => (array) ($formatted_feedback['module_scores'] ?? []),
             ];
+        }
+        $initial_feedback_seed_row = $this->get_candidate_initial_feedback_seed_row($candidate_user_id);
+        $initial_feedback_seed_payload = $initial_feedback_seed_row ? $this->format_candidate_feedback_row($initial_feedback_seed_row) : [];
+        $initial_feedback_seed_rating = (int) round((float) ($initial_feedback_seed_payload['average_rating'] ?? 0));
+        if ($initial_feedback_seed_rating < 1 || $initial_feedback_seed_rating > 5) {
+            $initial_feedback_seed_rating = 4;
+        }
+        $initial_feedback_seed_notes = sanitize_textarea_field((string) ($initial_feedback_seed_payload['comments'] ?? ''));
+        $initial_feedback_seed_updated_label = '';
+        $initial_feedback_seed_updated_raw = sanitize_text_field((string) ($initial_feedback_seed_payload['updated_at'] ?? ''));
+        if ($initial_feedback_seed_updated_raw !== '') {
+            $initial_feedback_seed_updated_ts = strtotime($initial_feedback_seed_updated_raw);
+            if ($initial_feedback_seed_updated_ts) {
+                $initial_feedback_seed_updated_label = date_i18n('j M Y g:ia', $initial_feedback_seed_updated_ts);
+            }
         }
 
         $doc_map = [
@@ -26778,10 +26795,23 @@ final class CMN_One_Plugin {
         $qts_boolean_class = $qts_status === 'yes' ? 'is-true' : 'is-false';
         $available_tomorrow_label = $available_tomorrow ? 'Yes' : 'No';
         $available_tomorrow_class = $available_tomorrow ? 'is-true' : 'is-false';
-        $candidate_feedback_count = (int) ($feedback_summary['feedback_count'] ?? 0);
+        $candidate_feedback_count = max(
+            (int) ($feedback_summary['feedback_count'] ?? 0),
+            (int) ($feedback_rating_payload['feedback_count'] ?? 0)
+        );
         $candidate_feedback_empty = $candidate_feedback_count < 1;
-        $candidate_feedback_avg_label = number_format((float) ($feedback_summary['avg_overall'] ?? 0), 1) . ' / 5';
-        $candidate_feedback_reliability_label = number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 1) . ' / 5';
+        $candidate_feedback_average_value = (float) ($feedback_rating_payload['avg_rating_raw'] ?? 0);
+        if ($candidate_feedback_average_value <= 0) {
+            $candidate_feedback_average_value = (float) ($feedback_summary['avg_overall'] ?? 0);
+        }
+        $candidate_feedback_average_value = max(0.0, min(5.0, $candidate_feedback_average_value));
+        $candidate_feedback_reliability_value = (float) ($feedback_summary['avg_reliability'] ?? 0);
+        if ($candidate_feedback_reliability_value <= 0 && $candidate_feedback_count > 0) {
+            $candidate_feedback_reliability_value = $candidate_feedback_average_value;
+        }
+        $candidate_feedback_reliability_value = max(0.0, min(5.0, $candidate_feedback_reliability_value));
+        $candidate_feedback_avg_label = number_format($candidate_feedback_average_value, 1) . ' / 5';
+        $candidate_feedback_reliability_label = number_format($candidate_feedback_reliability_value, 1) . ' / 5';
         $candidate_feedback_trend_url = $build_candidate_tab_url('feedback') . '#cmn-candidate-feedback-categories';
         $compliance_items_remaining = (int) ($compliance_status_payload['vetting']['docs_pending_count'] ?? 0);
         if ($completion_percent < 100) {
@@ -26810,6 +26840,9 @@ final class CMN_One_Plugin {
         <?php endif; ?>
         <?php if ($internal_note_message !== '') : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($internal_note_message); ?></strong></div>
+        <?php endif; ?>
+        <?php if ($feedback_seed_message !== '') : ?>
+            <div class="cmn-panel-card"><strong><?php echo esc_html($feedback_seed_message); ?></strong></div>
         <?php endif; ?>
 
         <div class="cmn-profile-progress cmn-staff-candidate-progress">
@@ -26888,13 +26921,40 @@ final class CMN_One_Plugin {
                     <?php if ($candidate_feedback_empty) : ?>
                         <section class="cmn-candidate-feedback-empty-state" role="status" aria-live="polite">
                             <h4>No feedback yet</h4>
-                            <p>Ratings will appear after completed bookings receive school feedback.</p>
+                            <p>Add a starter rating below or wait for school feedback from completed bookings.</p>
                         </section>
+                    <?php endif; ?>
+                    <?php if ($this->is_staff_user()) : ?>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-feedback-seed-form">
+                            <?php wp_nonce_field('cmn_staff_seed_candidate_feedback', 'cmn_staff_seed_candidate_feedback_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_staff_seed_candidate_feedback">
+                            <input type="hidden" name="candidate_id" value="<?php echo esc_attr($candidate_id); ?>">
+                            <div class="cmn-candidate-feedback-seed-head">
+                                <h4>Initial Feedback (Staff)</h4>
+                                <?php if ($initial_feedback_seed_updated_label !== '') : ?>
+                                    <span class="cmn-muted">Last updated <?php echo esc_html($initial_feedback_seed_updated_label); ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <p class="cmn-muted">Set a starter rating from your onboarding call. School feedback will layer on top over time.</p>
+                            <div class="cmn-candidate-feedback-seed-fields">
+                                <label for="cmn-initial-feedback-rating-<?php echo esc_attr($candidate_id); ?>">Starting stars</label>
+                                <select id="cmn-initial-feedback-rating-<?php echo esc_attr($candidate_id); ?>" name="initial_rating" required>
+                                    <?php for ($star_option = 5; $star_option >= 1; $star_option--) : ?>
+                                        <option value="<?php echo esc_attr((string) $star_option); ?>"<?php selected($initial_feedback_seed_rating, $star_option); ?>><?php echo esc_html((string) $star_option); ?> star<?php echo $star_option === 1 ? '' : 's'; ?></option>
+                                    <?php endfor; ?>
+                                </select>
+                                <label for="cmn-initial-feedback-notes-<?php echo esc_attr($candidate_id); ?>">Conversation notes (optional)</label>
+                                <textarea id="cmn-initial-feedback-notes-<?php echo esc_attr($candidate_id); ?>" name="initial_notes" rows="3" placeholder="Example: Strong communicator, punctual, classroom confidence."><?php echo esc_textarea($initial_feedback_seed_notes); ?></textarea>
+                            </div>
+                            <div class="cmn-candidate-feedback-seed-actions">
+                                <button class="cmn-primary" type="submit"><?php echo $initial_feedback_seed_payload ? 'Update starter rating' : 'Save starter rating'; ?></button>
+                            </div>
+                        </form>
                     <?php endif; ?>
                 </div>
                 <div class="cmn-dashboard-card cmn-dashboard-card-wide cmn-staff-candidate-feedback-detail-card" id="cmn-candidate-feedback-categories">
                     <div class="cmn-card-header">
-                        <h3>School Feedback (All Entries)</h3>
+                        <h3>Feedback History (All Entries)</h3>
                         <span class="cmn-pill cmn-candidate-feedback-rating-pill"><?php echo esc_html(number_format((float) ($feedback_rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
                     </div>
                     <p class="cmn-muted"><?php echo esc_html((string) ((int) ($feedback_rating_payload['feedback_count'] ?? 0))); ?> total review(s).</p>
@@ -26925,7 +26985,11 @@ final class CMN_One_Plugin {
                                         <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($entry_row['average_rating'] ?? 0), 1)); ?>/5</span>
                                     </div>
                                     <p class="cmn-muted">
-                                        Booking <?php echo esc_html((int) ($entry_row['booking_id'] ?? 0) > 0 ? ('#' . (int) ($entry_row['booking_id'] ?? 0)) : '—'); ?>
+                                        <?php if ((int) ($entry_row['booking_id'] ?? 0) > 0) : ?>
+                                            Booking <?php echo esc_html('#' . (int) ($entry_row['booking_id'] ?? 0)); ?>
+                                        <?php else : ?>
+                                            Initial staff rating
+                                        <?php endif; ?>
                                         <?php if ($entry_booking_date_display !== '') : ?>
                                             • <?php echo esc_html($entry_booking_date_display); ?>
                                         <?php endif; ?>
@@ -26945,7 +27009,7 @@ final class CMN_One_Plugin {
                             <?php endforeach; ?>
                         </div>
                     <?php else : ?>
-                        <div class="cmn-empty">No school feedback entries yet.</div>
+                        <div class="cmn-empty">No feedback entries yet.</div>
                     <?php endif; ?>
                 </div>
             <?php elseif ($active_candidate_tab === 'documents') : ?>
@@ -27286,6 +27350,116 @@ final class CMN_One_Plugin {
         ], $this->get_portal_base_url());
         wp_safe_redirect($redirect);
         exit;
+    }
+
+    public function handle_staff_seed_candidate_feedback() {
+        if (
+            !isset($_POST['cmn_staff_seed_candidate_feedback_nonce']) ||
+            !wp_verify_nonce((string) $_POST['cmn_staff_seed_candidate_feedback_nonce'], 'cmn_staff_seed_candidate_feedback')
+        ) {
+            wp_die('Invalid request');
+        }
+        if (!is_user_logged_in() || !$this->is_staff_user()) {
+            wp_die('Unauthorized');
+        }
+
+        $candidate_id = isset($_POST['candidate_id']) ? (int) $_POST['candidate_id'] : 0;
+        if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
+            wp_die('Candidate not found');
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $redirect_url = add_query_arg([
+            'view' => 'candidates',
+            'candidate_id' => $candidate_id,
+            'cmn_candidate_tab' => 'feedback',
+        ], $portal_url);
+        $redirect_with_message = function ($message) use ($redirect_url) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_feedback_seed_msg' => rawurlencode((string) $message),
+            ], $redirect_url));
+            exit;
+        };
+
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        if ($candidate_user_id < 1) {
+            $redirect_with_message('Candidate account is not linked.');
+        }
+
+        $initial_rating = (int) ($_POST['initial_rating'] ?? 0);
+        if ($initial_rating < 1 || $initial_rating > 5) {
+            $redirect_with_message('Please choose a valid starter star rating.');
+        }
+        $initial_notes = sanitize_textarea_field((string) ($_POST['initial_notes'] ?? ''));
+
+        global $wpdb;
+        $table = $this->get_candidate_feedback_table();
+        if (!self::table_exists($table)) {
+            $redirect_with_message('Candidate feedback storage is not ready yet.');
+        }
+
+        $actor_user_id = (int) get_current_user_id();
+        $timestamp = current_time('mysql');
+        $existing_seed = $this->get_candidate_initial_feedback_seed_row($candidate_user_id);
+        $seed_id = (int) ($existing_seed['id'] ?? 0);
+        $created_at = sanitize_text_field((string) ($existing_seed['created_at'] ?? ''));
+        if ($created_at === '') {
+            $created_at = $timestamp;
+        }
+
+        $write_payload = [
+            'booking_id' => 0,
+            'school_user_id' => $actor_user_id,
+            'candidate_user_id' => $candidate_user_id,
+            'score_punctuality' => $initial_rating,
+            'score_classroom_management' => $initial_rating,
+            'score_professionalism' => $initial_rating,
+            'score_communication' => $initial_rating,
+            'score_adaptability' => $initial_rating,
+            'score_lesson_delivery' => $initial_rating,
+            'score_safeguarding' => $initial_rating,
+            'average_rating' => (float) $initial_rating,
+            'comments' => $initial_notes !== '' ? $initial_notes : null,
+            'created_at' => $created_at,
+            'updated_at' => $timestamp,
+        ];
+        $write_formats = ['%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%f', '%s', '%s', '%s'];
+
+        $is_update = $seed_id > 0;
+        if ($is_update) {
+            $write_result = $wpdb->update($table, $write_payload, ['id' => $seed_id], $write_formats, ['%d']);
+        } else {
+            $write_result = $wpdb->insert($table, $write_payload, $write_formats);
+        }
+        if ($write_result === false) {
+            $redirect_with_message('Unable to save starter feedback right now.');
+        }
+
+        $this->upsert_candidate_rating_stats($candidate_user_id);
+
+        $this->add_audit_log('candidate_initial_feedback_seeded', 'candidate', (string) $candidate_id, [
+            'candidate_user_id' => $candidate_user_id,
+            'initial_rating' => $initial_rating,
+            'initial_notes' => $initial_notes,
+            'mode' => $is_update ? 'update' : 'create',
+            'seed_feedback_id' => $is_update ? $seed_id : (int) $wpdb->insert_id,
+        ], $actor_user_id);
+        if (function_exists('cmn_audit_log_event')) {
+            cmn_audit_log_event([
+                'module' => 'feedback',
+                'entity_type' => 'candidate',
+                'entity_id' => $candidate_id,
+                'event_type' => 'candidate_initial_feedback_seeded',
+                'actor_user_id' => $actor_user_id,
+                'metadata' => [
+                    'candidate_user_id' => $candidate_user_id,
+                    'initial_rating' => $initial_rating,
+                    'mode' => $is_update ? 'update' : 'create',
+                ],
+            ]);
+        }
+
+        $redirect_with_message($is_update ? 'Starter feedback updated.' : 'Starter feedback saved.');
     }
 
     private function get_war_room_column_key($request) {
@@ -62597,6 +62771,70 @@ final class CMN_One_Plugin {
         ];
     }
 
+    private function get_candidate_initial_feedback_seed_row($candidate_user_id) {
+        global $wpdb;
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id < 1) {
+            return [];
+        }
+        $table = $this->get_candidate_feedback_table();
+        if (!self::table_exists($table)) {
+            return [];
+        }
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE booking_id = 0
+               AND candidate_user_id = %d
+             ORDER BY id DESC
+             LIMIT 1",
+            $candidate_user_id
+        ), ARRAY_A);
+        return is_array($row) ? $row : [];
+    }
+
+    private function get_candidate_rating_aggregate_row($candidate_user_id) {
+        global $wpdb;
+        $candidate_user_id = (int) $candidate_user_id;
+        $empty = [
+            'avg_rating' => 0.0,
+            'feedback_count' => 0,
+        ];
+        if ($candidate_user_id < 1) {
+            return $empty;
+        }
+        $feedback_table = $this->get_candidate_feedback_table();
+        if (!self::table_exists($feedback_table)) {
+            return $empty;
+        }
+
+        $aggregate = $wpdb->get_row($wpdb->prepare(
+            "SELECT
+                COALESCE(
+                    AVG(CASE WHEN booking_id > 0 THEN average_rating END),
+                    AVG(CASE WHEN booking_id = 0 THEN average_rating END),
+                    0
+                ) AS avg_rating,
+                CASE
+                    WHEN SUM(CASE WHEN booking_id > 0 THEN 1 ELSE 0 END) > 0
+                        THEN SUM(CASE WHEN booking_id > 0 THEN 1 ELSE 0 END)
+                    ELSE SUM(CASE WHEN booking_id = 0 THEN 1 ELSE 0 END)
+                END AS feedback_count
+             FROM {$feedback_table}
+             WHERE candidate_user_id = %d",
+            $candidate_user_id
+        ), ARRAY_A);
+
+        if (!is_array($aggregate)) {
+            return $empty;
+        }
+
+        return [
+            'avg_rating' => round((float) ($aggregate['avg_rating'] ?? 0), 2),
+            'feedback_count' => max(0, (int) ($aggregate['feedback_count'] ?? 0)),
+        ];
+    }
+
     private function upsert_candidate_rating_stats($candidate_user_id) {
         global $wpdb;
         $candidate_user_id = (int) $candidate_user_id;
@@ -62610,13 +62848,7 @@ final class CMN_One_Plugin {
             return false;
         }
 
-        $aggregate = $wpdb->get_row($wpdb->prepare(
-            "SELECT AVG(average_rating) AS avg_rating, COUNT(1) AS feedback_count
-             FROM {$feedback_table}
-             WHERE candidate_user_id = %d",
-            $candidate_user_id
-        ), ARRAY_A);
-
+        $aggregate = $this->get_candidate_rating_aggregate_row($candidate_user_id);
         $avg_rating = round((float) ($aggregate['avg_rating'] ?? 0), 2);
         $feedback_count = max(0, (int) ($aggregate['feedback_count'] ?? 0));
         $wpdb->replace($stats_table, [
@@ -62668,20 +62900,10 @@ final class CMN_One_Plugin {
             }
         }
 
-        if ($feedback_count < 1) {
-            $feedback_table = $this->get_candidate_feedback_table();
-            if (self::table_exists($feedback_table)) {
-                $aggregate = $wpdb->get_row($wpdb->prepare(
-                    "SELECT AVG(average_rating) AS avg_rating, COUNT(1) AS feedback_count
-                     FROM {$feedback_table}
-                     WHERE candidate_user_id = %d",
-                    $candidate_user_id
-                ), ARRAY_A);
-                if (is_array($aggregate)) {
-                    $avg_rating = (float) ($aggregate['avg_rating'] ?? 0);
-                    $feedback_count = max(0, (int) ($aggregate['feedback_count'] ?? 0));
-                }
-            }
+        $aggregate = $this->get_candidate_rating_aggregate_row($candidate_user_id);
+        if ($aggregate['feedback_count'] > 0 || $feedback_count < 1) {
+            $avg_rating = (float) ($aggregate['avg_rating'] ?? 0);
+            $feedback_count = max(0, (int) ($aggregate['feedback_count'] ?? 0));
         }
 
         if ($avg_rating < 0) {

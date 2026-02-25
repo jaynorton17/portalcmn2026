@@ -14804,6 +14804,66 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   color: rgba(233, 238, 247, 0.76);
 }
 
+.cmn-candidate-feedback-seed-form {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(226, 43, 58, 0.28);
+  background: linear-gradient(155deg, rgba(226, 43, 58, 0.08), rgba(19, 26, 44, 0.58));
+  display: grid;
+  gap: 8px;
+}
+
+.cmn-candidate-feedback-seed-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cmn-candidate-feedback-seed-head h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #f4f7ff;
+}
+
+.cmn-candidate-feedback-seed-fields {
+  display: grid;
+  gap: 6px;
+}
+
+.cmn-candidate-feedback-seed-fields label {
+  font-size: 12px;
+  color: rgba(233, 238, 247, 0.88);
+  font-weight: 600;
+}
+
+.cmn-candidate-feedback-seed-fields select,
+.cmn-candidate-feedback-seed-fields textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 31, 0.82);
+  color: #edf3ff;
+  padding: 8px 10px;
+}
+
+.cmn-candidate-feedback-seed-fields textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.cmn-candidate-feedback-seed-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.cmn-candidate-feedback-seed-actions .cmn-primary {
+  min-height: 34px;
+  padding-inline: 14px;
+}
+
 .cmn-candidate-feedback-categories {
   list-style: none;
   margin: 0;
