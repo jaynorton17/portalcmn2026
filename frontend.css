@@ -6694,6 +6694,57 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   gap: 10px;
 }
 
+.cmn-school-dashboard-priority-candidates .cmn-card-header {
+  align-items: flex-start;
+}
+
+.cmn-school-dashboard-priority-candidates .cmn-card-header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-school-dashboard-priority-candidates .cmn-card-header .cmn-muted {
+  margin: 0;
+}
+
+.cmn-school-dashboard-candidates-table {
+  margin: 0;
+}
+
+.cmn-school-dashboard-candidates-empty {
+  border: 1px dashed rgba(148, 163, 184, 0.34);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+  display: grid;
+  gap: 6px;
+  background: rgba(8, 12, 18, 0.62);
+}
+
+.cmn-school-dashboard-candidates-empty strong {
+  color: #f8fbff;
+  font-size: 14px;
+}
+
+.cmn-school-dashboard-candidates-empty p {
+  margin: 0;
+  color: rgba(190, 202, 223, 0.84);
+  font-size: 12px;
+}
+
+.cmn-school-dashboard-match-hint {
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  margin-top: 8px;
+  padding-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: rgba(190, 202, 223, 0.82);
+}
+
 .cmn-school-bookings-header {
   margin: 0;
   padding: 12px 14px;
@@ -8831,6 +8882,10 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
 
   .cmn-school-dashboard-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cmn-school-dashboard-match-hint {
+    justify-content: flex-start;
   }
 
   .cmn-school-bookings-filters {

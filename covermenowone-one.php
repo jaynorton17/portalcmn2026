@@ -64932,34 +64932,51 @@ final class CMN_One_Plugin {
                 'tone' => $can_request ? 'ok' : 'info',
             ],
         ];
-        $dashboard_announcements = [];
-        if ($open_cover_requests_count > 0) {
-            $dashboard_announcements[] = [
-                'tone' => 'ok',
-                'title' => 'Open requests in progress',
-                'message' => sprintf('%d request(s) are currently active in the queue.', $open_cover_requests_count),
+        $dashboard_postcode_missing = trim((string) $school_postcode) === '';
+        $dashboard_candidate_rows = [];
+        foreach ((array) $availability_candidates as $candidate_item) {
+            $candidate_post = $candidate_item['post'] ?? null;
+            if (!($candidate_post instanceof WP_Post)) {
+                continue;
+            }
+            $candidate_id = (int) $candidate_post->ID;
+            if ($candidate_id < 1) {
+                continue;
+            }
+            $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+            if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                continue;
+            }
+            $role_labels = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_role_labels($candidate_id))));
+            if (!$role_labels) {
+                $role_labels = ['General Cover'];
+            }
+            $availability_date = sanitize_text_field((string) ($candidate_item['availability_date'] ?? ''));
+            $existing_request_id = $can_request ? $this->get_school_candidate_request_id_for_date((int) $user_school_id, $candidate_id, $availability_date) : 0;
+            $can_request_booking = ($can_request && $availability_date !== '');
+            $request_message = '';
+            if (!$can_request) {
+                $request_message = 'Requests are available to client schools.';
+            } elseif ($availability_date === '') {
+                $request_message = 'Availability date not set.';
+            } elseif ($existing_request_id > 0) {
+                $request_message = 'Request already sent.';
+            }
+            $dashboard_candidate_rows[] = [
+                'candidate_id' => $candidate_id,
+                'name' => sanitize_text_field((string) $candidate_post->post_title),
+                'subject' => (string) ($role_labels[0] ?? 'General Cover'),
+                'location' => sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_location', true)),
+                'availability_label' => sanitize_text_field((string) ($candidate_item['availability_label'] ?? 'Available Morning')),
+                'availability_date' => $availability_date,
+                'profile_url' => (string) $this->get_school_candidate_profile_url($candidate_id, get_current_user_id()),
+                'can_request_booking' => $can_request_booking,
+                'existing_request_id' => $existing_request_id,
+                'request_message' => $request_message,
             ];
-        }
-        if ($open_cover_requests_count < 1 && $active_bookings_count < 1) {
-            $dashboard_announcements[] = [
-                'tone' => 'info',
-                'title' => 'No bookings yet',
-                'message' => 'No active bookings or open requests yet. Create your first booking from the Bookings tab.',
-            ];
-        }
-        if ($credits_balance > 0) {
-            $dashboard_announcements[] = [
-                'tone' => 'ok',
-                'title' => 'Credits available',
-                'message' => sprintf('You currently hold %d partner credit(s).', $credits_balance),
-            ];
-        }
-        if (!$dashboard_announcements) {
-            $dashboard_announcements[] = [
-                'tone' => 'info',
-                'title' => 'No new alerts',
-                'message' => 'Everything looks stable. Use Bookings to create new cover activity.',
-            ];
+            if (count($dashboard_candidate_rows) >= 8) {
+                break;
+            }
         }
         $nav_items = [
             [
@@ -65102,6 +65119,78 @@ final class CMN_One_Plugin {
                                     <pre style="max-height:280px;overflow:auto;background:rgba(8,11,17,0.76);border:1px solid rgba(255,255,255,0.12);padding:12px;border-radius:10px;"><?php echo esc_html(wp_json_encode($availability_debug_report, JSON_PRETTY_PRINT)); ?></pre>
                                 </div>
                             <?php endif; ?>
+                            <article class="cmn-dashboard-card cmn-school-dashboard-panel cmn-school-dashboard-priority-candidates">
+                                <div class="cmn-card-header">
+                                    <div>
+                                        <h3>Available / Confirmed Candidates</h3>
+                                        <p class="cmn-muted">Candidates who have confirmed availability appear here first.</p>
+                                    </div>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_cover_url); ?>">Open Candidates</a>
+                                </div>
+                                <?php if ($dashboard_candidate_rows) : ?>
+                                    <div class="cmn-table-scroll">
+                                        <table class="cmn-approval-table cmn-school-candidates-table cmn-school-dashboard-candidates-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Candidate</th>
+                                                    <th>Role</th>
+                                                    <th>Availability</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($dashboard_candidate_rows as $candidate_row) : ?>
+                                                    <?php
+                                                    $candidate_profile_url = (string) ($candidate_row['profile_url'] ?? '');
+                                                    $existing_request_id = (int) ($candidate_row['existing_request_id'] ?? 0);
+                                                    $request_enabled = !empty($candidate_row['can_request_booking']);
+                                                    ?>
+                                                    <tr>
+                                                        <td>
+                                                            <div class="cmn-school-candidates-name">
+                                                                <strong><?php echo esc_html((string) ($candidate_row['name'] ?? 'Candidate')); ?></strong>
+                                                                <?php if (!empty($candidate_row['location'])) : ?>
+                                                                    <span><?php echo esc_html((string) $candidate_row['location']); ?></span>
+                                                                <?php endif; ?>
+                                                            </div>
+                                                        </td>
+                                                        <td><?php echo esc_html((string) ($candidate_row['subject'] ?? 'General Cover')); ?></td>
+                                                        <td><span class="cmn-pill cmn-pill--available"><?php echo esc_html((string) ($candidate_row['availability_label'] ?? 'Available')); ?></span></td>
+                                                        <td class="cmn-school-candidates-actions-cell">
+                                                            <div class="cmn-school-candidates-actions">
+                                                                <?php if ($candidate_profile_url !== '') : ?>
+                                                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($candidate_profile_url); ?>" target="_blank" rel="noopener noreferrer">View profile</a>
+                                                                <?php else : ?>
+                                                                    <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View profile</button>
+                                                                <?php endif; ?>
+                                                                <?php if ($request_enabled) : ?>
+                                                                    <button class="cmn-primary cmn-btn-mini" type="button" data-request-candidate data-candidate-id="<?php echo esc_attr((int) ($candidate_row['candidate_id'] ?? 0)); ?>" data-request-date="<?php echo esc_attr((string) ($candidate_row['availability_date'] ?? '')); ?>"<?php echo $existing_request_id > 0 ? ' disabled data-requested="1"' : ''; ?>>
+                                                                        <?php echo $existing_request_id > 0 ? 'Request sent' : 'Request booking'; ?>
+                                                                    </button>
+                                                                <?php else : ?>
+                                                                    <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Request booking</button>
+                                                                <?php endif; ?>
+                                                                <span class="cmn-request-message" data-request-message><?php echo esc_html((string) ($candidate_row['request_message'] ?? '')); ?></span>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <?php else : ?>
+                                    <div class="cmn-school-dashboard-candidates-empty">
+                                        <strong>No confirmed candidates yet.</strong>
+                                        <p>When candidates confirm availability, they will appear here automatically.</p>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if ($dashboard_postcode_missing) : ?>
+                                    <div class="cmn-school-dashboard-match-hint">
+                                        <span>Add postcode to improve matching quality and distance ordering.</span>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($school_settings_url); ?>">Add postcode</a>
+                                    </div>
+                                <?php endif; ?>
+                            </article>
                             <div class="cmn-school-dashboard-metrics">
                                 <article class="cmn-dashboard-card cmn-school-metric-card">
                                     <span class="cmn-school-metric-label">Upcoming Cover Requests</span>
@@ -65144,24 +65233,6 @@ final class CMN_One_Plugin {
                                 <?php else : ?>
                                     <div class="cmn-empty">No recent activity yet.</div>
                                 <?php endif; ?>
-                            </article>
-                            <article class="cmn-dashboard-card cmn-school-dashboard-panel">
-                                <div class="cmn-card-header">
-                                    <h3>Announcements</h3>
-                                </div>
-                                <ul class="cmn-school-announcements" role="list">
-                                    <?php foreach ($dashboard_announcements as $announcement_item) : ?>
-                                        <?php
-                                        $announcement_tone = sanitize_html_class((string) ($announcement_item['tone'] ?? 'info'));
-                                        $announcement_title = (string) ($announcement_item['title'] ?? 'Update');
-                                        $announcement_message = (string) ($announcement_item['message'] ?? '');
-                                        ?>
-                                        <li class="cmn-school-announcement is-<?php echo esc_attr($announcement_tone); ?>">
-                                            <strong><?php echo esc_html($announcement_title); ?></strong>
-                                            <p><?php echo esc_html($announcement_message); ?></p>
-                                        </li>
-                                    <?php endforeach; ?>
-                                </ul>
                             </article>
                         </section>
                     <?php elseif ($tab === 'candidates') : ?>
