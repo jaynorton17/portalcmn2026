@@ -4987,6 +4987,8 @@ body.cmn-booking-feedback-lock {
   -webkit-overflow-scrolling: touch;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 0 2px 0;
+  visibility: visible;
+  opacity: 1;
 }
 
 .cmn-school-profile-tab {
@@ -5005,6 +5007,8 @@ body.cmn-booking-feedback-lock {
   background: rgba(10, 14, 20, 0.88);
   position: relative;
   white-space: nowrap;
+  visibility: visible;
+  opacity: 1;
 }
 
 .cmn-school-profile-tab.is-active {
@@ -5058,6 +5062,7 @@ body.cmn-booking-feedback-lock {
 }
 
 .cmn-school-profile-grid[data-school-active-tab="overview"] .cmn-school-tab-panel--overview,
+.cmn-school-profile-grid[data-school-active-tab="address"] .cmn-school-tab-panel--address,
 .cmn-school-profile-grid[data-school-active-tab="contacts"] .cmn-school-tab-panel--contacts,
 .cmn-school-profile-grid[data-school-active-tab="activity"] .cmn-school-tab-panel--activity,
 .cmn-school-profile-grid[data-school-active-tab="bookings"] .cmn-school-tab-panel--bookings,
@@ -14121,18 +14126,20 @@ body.cmn-portal-page .cmn-portal-light :is(.cmn-tabs, .cmn-school-profile-tabs, 
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 8px;
-  background: rgba(11, 15, 22, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 9px;
+  background: rgba(8, 12, 18, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
 }
 
 body.cmn-portal-page .cmn-portal-light :is(.cmn-tab, .cmn-school-profile-tab, .cmn-booking-tab, .cmn-marketing-tabs .cmn-ghost, .cmn-system-health-tabs .cmn-ghost) {
   border-radius: 10px !important;
-  border: 1px solid rgba(255, 255, 255, 0.09) !important;
-  background: rgba(255, 255, 255, 0.03) !important;
-  color: #c4d0e3 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #dbe4f4 !important;
   text-decoration: none;
   min-height: 34px;
   padding: 8px 12px;

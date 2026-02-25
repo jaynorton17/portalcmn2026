@@ -39858,7 +39858,7 @@ final class CMN_One_Plugin {
             $convert_msg = isset($_GET['cmn_convert_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_convert_msg'])) : '';
             $request_msg = isset($_GET['cmn_school_request_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_request_msg'])) : '';
             $profile_msg = isset($_GET['cmn_school_profile_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_profile_msg'])) : '';
-            $allowed_profile_tabs = ['overview', 'contacts', 'activity', 'bookings', 'commercial', 'marketing', 'documents', 'settings'];
+            $allowed_profile_tabs = ['overview', 'address', 'contacts', 'activity', 'bookings', 'commercial', 'marketing', 'documents', 'settings'];
             $active_profile_tab = isset($_GET['cmn_school_tab']) ? sanitize_key((string) $_GET['cmn_school_tab']) : 'overview';
             if (!in_array($active_profile_tab, $allowed_profile_tabs, true)) {
                 $active_profile_tab = 'overview';
@@ -40071,14 +40071,14 @@ final class CMN_One_Plugin {
 	                        <span class="cmn-status-chip <?php echo esc_attr($request_status_class); ?>"><?php echo esc_html($request_status_label); ?></span>
 	                    <?php endif; ?>
 	                </div>
-	                <button class="cmn-school-feedback-stars" type="button" data-school-feedback-open aria-label="Open feedback summary" title="<?php echo esc_attr($feedback_summary_label); ?>">
+	                <a class="cmn-school-feedback-stars" href="<?php echo esc_url($build_tab_url('overview') . '#cmn-school-feedback-summary'); ?>" data-school-feedback-open aria-label="Open feedback summary" title="<?php echo esc_attr($feedback_summary_label); ?>">
 	                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
 	                        <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
 	                            <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>">★</span>
 	                        <?php endfor; ?>
 	                    </span>
 	                    <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
-	                </button>
+	                </a>
 	            </div>
 	        </header>
         <?php if ($watchdog('after_header')) { return ob_get_clean(); } ?>
@@ -40086,6 +40086,7 @@ final class CMN_One_Plugin {
             <?php
             $profile_tabs = [
                 'overview' => 'Overview',
+                'address' => 'Address',
                 'contacts' => 'Contacts',
                 'activity' => 'Activity',
                 'bookings' => 'Bookings',
@@ -40222,12 +40223,25 @@ final class CMN_One_Plugin {
 	                <?php if ($request_note !== '') : ?>
 	                    <p class="cmn-muted">Latest note: <?php echo esc_html($request_note); ?></p>
 	                <?php endif; ?>
-                <?php if ($latest_school_reply !== '') : ?>
-                    <p class="cmn-muted">Latest school reply<?php echo $latest_school_reply_at !== '' ? (' (' . esc_html(date_i18n('M j, Y g:ia', strtotime($latest_school_reply_at))) . ')') : ''; ?>: <?php echo esc_html($latest_school_reply); ?></p>
-                <?php endif; ?>
-            </div>
-            <?php if ($has_application_context) : ?>
-                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
+	                <?php if ($latest_school_reply !== '') : ?>
+	                    <p class="cmn-muted">Latest school reply<?php echo $latest_school_reply_at !== '' ? (' (' . esc_html(date_i18n('M j, Y g:ia', strtotime($latest_school_reply_at))) . ')') : ''; ?>: <?php echo esc_html($latest_school_reply); ?></p>
+	                <?php endif; ?>
+	            </div>
+	            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-feedback-summary" data-school-feedback-panel>
+	                <?php if ($watchdog('panel_feedback_summary')) { return ob_get_clean(); } ?>
+	                <h3>Feedback Summary</h3>
+	                <?php if ($feedback_count < 1) : ?>
+	                    <p class="cmn-muted">No feedback yet.</p>
+	                <?php endif; ?>
+	                <div class="cmn-meta-grid">
+	                    <div><strong>Average Rating:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_overall'] ?? 0), 2)); ?>/5</div>
+	                    <div><strong>Reliability Rating:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 2)); ?>/5</div>
+	                    <div><strong>Total Feedback Count:</strong> <?php echo esc_html((string) ((int) ($feedback_summary['feedback_count'] ?? 0))); ?></div>
+	                    <div><strong>Trend:</strong> <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></div>
+	                </div>
+	            </div>
+	            <?php if ($has_application_context) : ?>
+	                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview">
                     <h3>Application Timeline</h3>
                     <?php if ($critical_meta_missing) : ?>
                         <p class="cmn-muted">Timeline hidden until domain + postcode are saved.</p>
@@ -40312,20 +40326,7 @@ final class CMN_One_Plugin {
                     </form>
                 </div>
             <?php endif; ?>
-	            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-feedback-summary" data-school-feedback-panel>
-	                <?php if ($watchdog('panel_feedback_summary')) { return ob_get_clean(); } ?>
-	                <h3>Feedback Summary</h3>
-	                <?php if ($feedback_count < 1) : ?>
-	                    <p class="cmn-muted">No feedback yet.</p>
-	                <?php endif; ?>
-	                <div class="cmn-meta-grid">
-	                    <div><strong>Average Rating:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_overall'] ?? 0), 2)); ?>/5</div>
-	                    <div><strong>Reliability Rating:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 2)); ?>/5</div>
-                    <div><strong>Total Feedback Count:</strong> <?php echo esc_html((string) ((int) ($feedback_summary['feedback_count'] ?? 0))); ?></div>
-                    <div><strong>Trend:</strong> <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></div>
-                </div>
-            </div>
-            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--contacts">
+	            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--contacts">
                 <?php if ($watchdog('panel_contacts')) { return ob_get_clean(); } ?>
                 <h3>Contacts</h3>
                 <div class="cmn-meta-grid">
@@ -40386,10 +40387,10 @@ final class CMN_One_Plugin {
                     <p class="cmn-muted">Assign contact hidden until domain + postcode are saved.</p>
                 <?php endif; ?>
             </div>
-            <div class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview">
-                <?php if ($watchdog('panel_address')) { return ob_get_clean(); } ?>
-                <h3>Address</h3>
-                <div class="cmn-meta-grid">
+	            <div class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--address">
+	                <?php if ($watchdog('panel_address')) { return ob_get_clean(); } ?>
+	                <h3>Address</h3>
+	                <div class="cmn-meta-grid">
                     <div><strong>House / Number:</strong> <?php echo esc_html($display($meta('cmn_house_number'))); ?></div>
                     <div><strong>Address Line 1:</strong> <?php echo esc_html($display($meta('cmn_address_line1'))); ?></div>
                     <div><strong>Address Line 2:</strong> <?php echo esc_html($display($meta('cmn_address_line2'))); ?></div>
