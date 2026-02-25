@@ -156,6 +156,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var activityFilter = profileRoot.querySelector('[data-school-activity-filter]');
     var activityRows = Array.prototype.slice.call(profileRoot.querySelectorAll('[data-school-activity-item]'));
     var logActivityButtons = Array.prototype.slice.call(document.querySelectorAll('[data-school-log-activity]'));
+    var feedbackJumpLinks = Array.prototype.slice.call(document.querySelectorAll('[data-school-feedback-jump]'));
+    var feedbackPanel = profileRoot.querySelector('[data-school-feedback-panel]');
     var initialUrl = null;
     try {
       initialUrl = new URL(window.location.href);
@@ -200,6 +202,7 @@ document.addEventListener('DOMContentLoaded', function () {
       url.searchParams.set('cmn_school_tab', target);
       if (target !== 'activity') {
         url.searchParams.delete('cmn_focus_activity');
+        url.searchParams.delete('cmn_focus_feedback');
       }
       window.history.replaceState({}, '', url.toString());
     };
@@ -208,6 +211,13 @@ document.addEventListener('DOMContentLoaded', function () {
       applyTabState('activity', false);
       if (activityTitleField && typeof activityTitleField.focus === 'function') {
         activityTitleField.focus();
+      }
+    };
+
+    var focusFeedbackPanel = function () {
+      applyTabState('activity', false);
+      if (feedbackPanel && typeof feedbackPanel.scrollIntoView === 'function') {
+        feedbackPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     };
 
@@ -275,6 +285,26 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     });
 
+    feedbackJumpLinks.forEach(function (link) {
+      link.addEventListener('click', function (event) {
+        event.preventDefault();
+        applyTabState('activity', true);
+        var url = null;
+        try {
+          url = new URL(window.location.href);
+        } catch (error) {
+          url = null;
+        }
+        if (url) {
+          url.searchParams.set('cmn_school_tab', 'activity');
+          url.searchParams.set('cmn_focus_feedback', '1');
+          url.hash = 'cmn-school-feedback-panel';
+          window.history.replaceState({}, '', url.toString());
+        }
+        focusFeedbackPanel();
+      });
+    });
+
     if (initialUrl) {
       var initialTab = initialUrl.searchParams.get('cmn_school_tab') || profileRoot.getAttribute('data-school-active-tab') || 'overview';
       applyTabState(initialTab, false);
@@ -285,6 +315,11 @@ document.addEventListener('DOMContentLoaded', function () {
       if (initialUrl.searchParams.get('cmn_focus_activity') === '1' || initialUrl.hash === '#cmn-school-add-activity') {
         window.setTimeout(function () {
           focusActivityForm();
+        }, 20);
+      }
+      if (initialUrl.searchParams.get('cmn_focus_feedback') === '1' || initialUrl.hash === '#cmn-school-feedback-panel') {
+        window.setTimeout(function () {
+          focusFeedbackPanel();
         }, 20);
       }
     }

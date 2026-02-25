@@ -39810,7 +39810,10 @@ final class CMN_One_Plugin {
                 'missing_fields' => $missing_profile_fields,
             ]);
             $request_status = $this->get_school_access_request_status($school_id);
-            $request_status_label = 'Not requested';
+            if (in_array($request_status, ['not_requested', 'none'], true)) {
+                $request_status = '';
+            }
+            $request_status_label = '';
             $request_status_class = 'is-muted';
             if ($request_status === 'approved') {
                 $request_status_label = 'Approved';
@@ -39913,17 +39916,32 @@ final class CMN_One_Plugin {
             $build_tab_url = function ($tab_key) use ($portal_url, $tab_base_query) {
                 return add_query_arg(array_merge($tab_base_query, ['cmn_school_tab' => $tab_key]), $portal_url);
             };
+            $lead_issue_phone = trim((string) $meta('cmn_phone'));
+            if ($lead_issue_phone === '') {
+                $lead_issue_phone = trim((string) $meta('cmn_contact_phone'));
+            }
+            if ($lead_issue_phone === '') {
+                $lead_issue_phone = trim((string) $meta('cmn_primary_contact_phone'));
+            }
+            $lead_issue_email = sanitize_email((string) $meta('cmn_email'));
+            if ($lead_issue_email === '') {
+                $lead_issue_email = sanitize_email((string) $meta('cmn_contact1_email'));
+            }
+            if ($lead_issue_email === '') {
+                $lead_issue_email = sanitize_email((string) $meta('cmn_contact_email'));
+            }
+            $lead_missing_phone_and_email = ($lead_issue_phone === '' && $lead_issue_email === '');
             $profile_issues = [];
             $lead_requires_location_verification = $is_lead_profile && $this->school_requires_location_verification($school_id);
             if ($is_lead_profile) {
-                if (!$this->school_lead_has_contact_method($school_id)) {
+                if ($lead_missing_phone_and_email) {
                     $profile_issues[] = 'Missing contact details';
-                }
-                if ($lead_requires_location_verification && $school_postcode === '') {
-                    $profile_issues[] = 'Postcode missing';
-                }
-                if ($lead_requires_location_verification && !$school_coords) {
-                    $profile_issues[] = 'Location not verified';
+                    if ($lead_requires_location_verification && $school_postcode === '') {
+                        $profile_issues[] = 'Postcode missing';
+                    }
+                    if ($lead_requires_location_verification && !$school_coords) {
+                        $profile_issues[] = 'Location not verified';
+                    }
                 }
             } else {
                 if ($missing_profile_fields) {
@@ -39960,25 +39978,35 @@ final class CMN_One_Plugin {
                 'cmn_school_tab' => 'activity',
                 'cmn_focus_activity' => '1',
             ]), $portal_url) . '#cmn-school-add-activity';
+            $feedback_jump_url = add_query_arg(array_merge($tab_base_query, [
+                'cmn_school_tab' => 'activity',
+                'cmn_focus_feedback' => '1',
+            ]), $portal_url) . '#cmn-school-feedback-panel';
+            $can_quick_edit_profile = $this->is_staff_user($current_user_id);
             $profile_field_contract = $this->get_school_profile_field_contract();
-            $lead_profile_fields = $this->get_lead_fields_for_context('profile');
-            $quick_edit_visible_fields = [
-                'school_name' => ['label' => 'School name', 'type' => 'text', 'required' => true],
-                'email' => ['label' => 'Email', 'type' => 'email', 'required' => !$is_lead_profile],
-                'phone' => ['label' => 'Phone', 'type' => 'text', 'required' => false],
-                'location' => ['label' => 'Location', 'type' => 'text', 'required' => false],
-                'postcode' => ['label' => 'Postcode', 'type' => 'text', 'required' => false],
-                'contact1' => ['label' => 'Primary contact', 'type' => 'text', 'required' => false],
-            ];
-            foreach ($this->get_lead_fields_for_context('quick_edit') as $field_key => $field_config) {
-                if (!isset($profile_field_contract[$field_key]) || empty($field_config['editable'])) {
-                    continue;
+            $quick_edit_visible_fields = [];
+            if ($can_quick_edit_profile) {
+                foreach ($this->get_school_quick_edit_field_whitelist(true) as $field_key => $field_config) {
+                    if (!isset($profile_field_contract[$field_key])) {
+                        continue;
+                    }
+                    $quick_edit_visible_fields[$field_key] = [
+                        'label' => (string) ($field_config['label'] ?? ucfirst(str_replace('_', ' ', (string) $field_key))),
+                        'type' => (string) ($field_config['type'] ?? 'text'),
+                        'required' => !empty($field_config['required']),
+                    ];
                 }
-                $quick_edit_visible_fields[$field_key] = [
-                    'label' => (string) ($field_config['label'] ?? ucfirst(str_replace('_', ' ', (string) $field_key))),
-                    'type' => (string) ($field_config['type'] ?? 'text'),
-                    'required' => !empty($field_config['required']),
-                ];
+                foreach ($this->get_lead_fields_for_context('quick_edit') as $field_key => $field_config) {
+                    if (!isset($quick_edit_visible_fields[$field_key]) || empty($field_config['editable'])) {
+                        continue;
+                    }
+                    $quick_edit_visible_fields[$field_key]['label'] = (string) ($field_config['label'] ?? $quick_edit_visible_fields[$field_key]['label']);
+                    $quick_edit_visible_fields[$field_key]['type'] = (string) ($field_config['type'] ?? $quick_edit_visible_fields[$field_key]['type']);
+                    $quick_edit_visible_fields[$field_key]['required'] = !empty($field_config['required']);
+                }
+                if (isset($quick_edit_visible_fields['email'])) {
+                    $quick_edit_visible_fields['email']['required'] = !$is_lead_profile;
+                }
             }
             $quick_edit_field_values = [];
             foreach ($profile_field_contract as $field_key => $field_config) {
@@ -40023,11 +40051,18 @@ final class CMN_One_Plugin {
             if ($details_primary_contact === '') {
                 $details_primary_contact = trim((string) $meta('cmn_contact_name'));
             }
-            $details_manager_or_contact = $details_cover_manager !== '' ? $details_cover_manager : $details_primary_contact;
-            if ($details_manager_or_contact === '' && $assigned_manager_name !== '') {
-                $details_manager_or_contact = $assigned_manager_name;
+            $details_manager_or_contact_parts = [];
+            if ($details_cover_manager !== '') {
+                $details_manager_or_contact_parts[] = 'Cover Manager: ' . $details_cover_manager;
             }
-            $pipeline_stage_label = $pipeline_stage_raw !== '' ? ucwords(str_replace('_', ' ', $pipeline_stage_raw)) : 'Not set';
+            if ($details_primary_contact !== '' && strcasecmp($details_primary_contact, $details_cover_manager) !== 0) {
+                $details_manager_or_contact_parts[] = 'Primary Contact: ' . $details_primary_contact;
+            }
+            $details_manager_or_contact = implode(' | ', $details_manager_or_contact_parts);
+            $status_pill_label = trim((string) ucwords(str_replace(['_', '-'], ' ', (string) $status_display)));
+            if ($status_pill_label === '') {
+                $status_pill_label = 'Pending';
+            }
             $feedback_avg_overall = (float) ($feedback_summary['avg_overall'] ?? 0);
             $feedback_count = (int) ($feedback_summary['feedback_count'] ?? 0);
             $feedback_fallback_average = (float) $meta('cmn_feedback_average');
@@ -40036,8 +40071,9 @@ final class CMN_One_Plugin {
             }
             $feedback_rating_for_stars = $feedback_avg_overall > 0 ? $feedback_avg_overall : $feedback_fallback_average;
             $feedback_rating_for_stars = max(0.0, min(5.0, $feedback_rating_for_stars));
-            $feedback_stars_filled = max(0, min(5, (int) round($feedback_rating_for_stars)));
+            $feedback_stars_filled = max(0, min(5, (int) floor($feedback_rating_for_stars)));
             $feedback_summary_label = number_format($feedback_rating_for_stars, 1) . '/5';
+            $feedback_has_entries = $feedback_count > 0;
             $latest_call_activity = null;
             $latest_email_activity = null;
             $latest_note_activity = null;
@@ -40093,9 +40129,6 @@ final class CMN_One_Plugin {
             $last_email_time = $format_activity_time($latest_email_activity);
             $last_note_time = $format_activity_time($latest_note_activity);
             $issues_preview = array_slice(array_values($profile_issues), 0, 3);
-            if (count($profile_issues) > 3) {
-                $issues_preview[] = '+' . (count($profile_issues) - 3) . ' more';
-            }
             $booking_groups = [
                 'upcoming' => [],
                 'completed' => [],
@@ -40144,41 +40177,42 @@ final class CMN_One_Plugin {
                 return false;
             };
         ?>
-	        <header class="cmn-school-header cmn-school-profile-header">
-	            <div class="cmn-school-profile-header-main">
-	                <h2><?php echo esc_html($school->post_title); ?></h2>
-	                <p>School profile control panel</p>
-	                <div class="cmn-school-profile-header-meta">
-	                    <span class="cmn-pill">Domain: <?php echo esc_html($display_school_domain); ?></span>
-	                    <span class="cmn-pill">Manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></span>
-	                    <span class="cmn-pill cmn-school-last-activity-pill" title="<?php echo esc_attr($last_activity_exact !== '' ? $last_activity_exact : 'No timestamp available'); ?>">
-	                        Last Activity: <?php echo esc_html($last_activity_label); ?>
-	                    </span>
-	                </div>
-	            </div>
-	            <div class="cmn-school-profile-header-actions">
-	                <button class="cmn-ghost cmn-btn-mini" type="button" data-school-quick-edit-toggle aria-expanded="false" aria-controls="cmn-school-quick-edit-panel">Quick Edit</button>
-	                <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($log_activity_url); ?>" data-school-log-activity>Log Activity</a>
-	                <?php if ($show_profile_issues) : ?>
-	                    <a class="cmn-btn-secondary cmn-btn-mini" href="<?php echo esc_url($build_tab_url('settings')); ?>">Fix Profile</a>
-	                <?php endif; ?>
-	            </div>
-	            <div class="cmn-school-profile-status-wrap">
-	                <div class="cmn-school-profile-status">
-	                    <span class="cmn-pill cmn-pill--school-id">ID: <?php echo esc_html($display_school_identifier); ?></span>
-	                    <span class="cmn-pill cmn-pill--status"><?php echo esc_html(ucfirst($status_display)); ?></span>
-	                    <span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($pipeline_stage_label); ?></span>
-	                </div>
-	                <div class="cmn-school-feedback-stars" aria-label="School rating" title="<?php echo esc_attr($feedback_summary_label); ?>">
-	                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
-	                        <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
-	                            <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>">★</span>
-	                        <?php endfor; ?>
-	                    </span>
-	                    <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
-	                </div>
-	            </div>
-	        </header>
+        <header class="cmn-school-header cmn-school-profile-header">
+            <div class="cmn-school-profile-header-main">
+                <h2><?php echo esc_html($school->post_title); ?></h2>
+                <p>School profile control panel</p>
+                <div class="cmn-school-profile-header-meta">
+                    <span class="cmn-pill">Domain: <?php echo esc_html($display_school_domain); ?></span>
+                    <span class="cmn-pill">Manager: <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></span>
+                    <span class="cmn-pill cmn-school-last-activity-pill" title="<?php echo esc_attr($last_activity_exact !== '' ? $last_activity_exact : 'No timestamp available'); ?>">
+                        Last Activity: <?php echo esc_html($last_activity_label); ?>
+                    </span>
+                </div>
+            </div>
+            <div class="cmn-school-profile-header-actions">
+                <?php if ($can_quick_edit_profile) : ?>
+                    <button class="cmn-ghost cmn-btn-mini" type="button" data-school-quick-edit-toggle aria-expanded="false" aria-controls="cmn-school-quick-edit-panel">Quick Edit</button>
+                <?php endif; ?>
+                <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($log_activity_url); ?>" data-school-log-activity>Log Activity</a>
+                <?php if ($show_profile_issues) : ?>
+                    <a class="cmn-btn-secondary cmn-btn-mini" href="<?php echo esc_url($build_tab_url('settings')); ?>">Fix Profile</a>
+                <?php endif; ?>
+            </div>
+            <div class="cmn-school-profile-status-wrap">
+                <div class="cmn-school-profile-status">
+                    <span class="cmn-pill cmn-pill--school-id">School ID: <?php echo esc_html($display_school_identifier); ?></span>
+                    <span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_pill_label); ?></span>
+                </div>
+                <a class="cmn-school-feedback-stars<?php echo !$feedback_has_entries ? ' is-empty' : ''; ?>" href="<?php echo esc_url($feedback_jump_url); ?>" data-school-feedback-jump aria-label="Open school feedback details" title="<?php echo esc_attr($feedback_has_entries ? ($feedback_summary_label . ' (' . $feedback_count . ' total)') : 'No feedback submitted yet'); ?>">
+                    <span class="cmn-school-feedback-stars-row" aria-hidden="true">
+                        <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
+                            <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>">★</span>
+                        <?php endfor; ?>
+                    </span>
+                    <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
+                </a>
+            </div>
+        </header>
         <?php if ($watchdog('after_header')) { return ob_get_clean(); } ?>
         <nav class="cmn-school-profile-tabs" aria-label="School profile sections" data-school-profile-tabs>
             <?php
@@ -40200,15 +40234,17 @@ final class CMN_One_Plugin {
                 </a>
             <?php endforeach; ?>
         </nav>
-        <?php if ($show_profile_issues) : ?>
-            <section class="cmn-panel-card cmn-school-profile-issues-strip">
-                <div class="cmn-school-profile-issues-strip-head">
-                    <strong>Issues</strong>
-                    <div class="cmn-school-profile-issues-actions">
-                        <button class="cmn-ghost cmn-btn-mini" type="button" data-school-quick-edit-toggle aria-expanded="false" aria-controls="cmn-school-quick-edit-panel">Quick fix</button>
-                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_tab_url('settings')); ?>">Settings</a>
-                    </div>
-                </div>
+	        <?php if ($show_profile_issues && $issues_preview) : ?>
+	            <section class="cmn-panel-card cmn-school-profile-issues-strip">
+	                <div class="cmn-school-profile-issues-strip-head">
+	                    <strong>Issues</strong>
+	                    <div class="cmn-school-profile-issues-actions">
+	                        <?php if ($can_quick_edit_profile) : ?>
+	                            <button class="cmn-ghost cmn-btn-mini" type="button" data-school-quick-edit-toggle aria-expanded="false" aria-controls="cmn-school-quick-edit-panel">Quick fix</button>
+	                        <?php endif; ?>
+	                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_tab_url('settings')); ?>">Settings</a>
+	                    </div>
+	                </div>
                 <div class="cmn-school-profile-issues-strip-list">
                     <?php foreach ($issues_preview as $issue_text) : ?>
                         <span class="cmn-pill cmn-pill--pending"><?php echo esc_html($issue_text); ?></span>
@@ -40232,99 +40268,75 @@ final class CMN_One_Plugin {
             </section>
         <?php endif; ?>
         <?php if ($watchdog('before_profile_grid')) { return ob_get_clean(); } ?>
-        <div class="cmn-profile-grid cmn-school-profile-grid" data-school-profile-root="1" data-school-active-tab="<?php echo esc_attr($active_profile_tab); ?>">
-            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-quick-edit-panel" id="cmn-school-quick-edit-panel" data-school-quick-edit-panel hidden>
-                <div class="cmn-school-profile-panel-head">
-                    <h3>Quick Edit</h3>
-                    <button class="cmn-ghost cmn-btn-mini" type="button" data-school-quick-edit-cancel>Cancel</button>
-                </div>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form cmn-form-grid cmn-school-quick-edit-form">
-                    <?php wp_nonce_field('cmn_school_profile_update', 'cmn_school_profile_nonce'); ?>
-                    <input type="hidden" name="action" value="cmn_school_update_profile">
-                    <input type="hidden" name="cmn_school_id" value="<?php echo esc_attr((string) $school_id); ?>">
-                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($quick_edit_redirect_url); ?>">
-                    <?php foreach ($profile_field_contract as $field_key => $field_config) : ?>
-                        <?php
-                        $input_name = 'cmn_' . $field_key;
-                        $input_value = (string) ($quick_edit_field_values[$field_key] ?? '');
-                        $visible_config = $quick_edit_visible_fields[$field_key] ?? null;
-                        ?>
-                        <?php if (!is_array($visible_config)) : ?>
-                            <input type="hidden" name="<?php echo esc_attr($input_name); ?>" value="<?php echo esc_attr($input_value); ?>">
-                            <?php continue; ?>
-                        <?php endif; ?>
-                        <label><?php echo esc_html((string) ($visible_config['label'] ?? ucfirst(str_replace('_', ' ', $field_key)))); ?>
-                            <input type="<?php echo esc_attr((string) ($visible_config['type'] ?? 'text')); ?>" name="<?php echo esc_attr($input_name); ?>" value="<?php echo esc_attr($input_value); ?>"<?php echo !empty($visible_config['required']) ? ' required' : ''; ?>>
-                        </label>
-                    <?php endforeach; ?>
-                    <div class="cmn-school-quick-edit-actions">
-                        <button class="cmn-primary" type="submit">Save quick edit</button>
-                    </div>
-                </form>
-            </div>
+	        <div class="cmn-profile-grid cmn-school-profile-grid" data-school-profile-root="1" data-school-active-tab="<?php echo esc_attr($active_profile_tab); ?>">
+	            <?php if ($can_quick_edit_profile) : ?>
+	                <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-quick-edit-panel" id="cmn-school-quick-edit-panel" data-school-quick-edit-panel hidden>
+	                    <div class="cmn-school-profile-panel-head">
+	                        <h3>Quick Edit</h3>
+	                        <button class="cmn-ghost cmn-btn-mini" type="button" data-school-quick-edit-cancel>Cancel</button>
+	                    </div>
+	                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form cmn-form-grid cmn-school-quick-edit-form">
+	                        <?php wp_nonce_field('cmn_school_profile_update', 'cmn_school_profile_nonce'); ?>
+	                        <input type="hidden" name="action" value="cmn_school_update_profile">
+	                        <input type="hidden" name="cmn_school_id" value="<?php echo esc_attr((string) $school_id); ?>">
+	                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($quick_edit_redirect_url); ?>">
+	                        <?php foreach ($quick_edit_visible_fields as $field_key => $visible_config) : ?>
+	                            <?php
+	                            $input_name = 'cmn_' . $field_key;
+	                            $input_value = (string) ($quick_edit_field_values[$field_key] ?? '');
+	                            ?>
+	                            <label><?php echo esc_html((string) ($visible_config['label'] ?? ucfirst(str_replace('_', ' ', $field_key)))); ?>
+	                                <input type="<?php echo esc_attr((string) ($visible_config['type'] ?? 'text')); ?>" name="<?php echo esc_attr($input_name); ?>" value="<?php echo esc_attr($input_value); ?>"<?php echo !empty($visible_config['required']) ? ' required' : ''; ?>>
+	                            </label>
+	                        <?php endforeach; ?>
+	                        <div class="cmn-school-quick-edit-actions">
+	                            <button class="cmn-primary" type="submit">Save quick edit</button>
+	                        </div>
+	                    </form>
+	                </div>
+	            <?php endif; ?>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-details">
                 <?php if ($watchdog('panel_details')) { return ob_get_clean(); } ?>
                 <div class="cmn-school-profile-panel-head">
                     <h3>Details</h3>
-                    <button class="cmn-ghost cmn-btn-mini cmn-school-inline-edit-link" type="button" data-school-quick-edit-toggle aria-expanded="false" aria-controls="cmn-school-quick-edit-panel" aria-label="Quick edit school details" title="Quick edit school details">✎</button>
+                    <?php if ($can_quick_edit_profile) : ?>
+                        <button class="cmn-ghost cmn-btn-mini cmn-school-inline-edit-link" type="button" data-school-quick-edit-toggle aria-expanded="false" aria-controls="cmn-school-quick-edit-panel" aria-label="Quick edit school details" title="Quick edit school details">✎</button>
+                    <?php endif; ?>
                 </div>
-	                <div class="cmn-school-details-summary">
-	                    <h4 class="cmn-school-details-name"><?php echo esc_html((string) $school->post_title); ?></h4>
-	                    <span class="cmn-muted"><?php echo $status_raw === '' ? 'Status inferred from profile data' : 'Status set in profile'; ?></span>
-	                </div>
-	                <div class="cmn-meta-grid cmn-meta-grid--school-details-compact">
-	                    <div class="cmn-school-detail-item">
-	                        <span class="cmn-school-detail-label">Location</span>
-	                        <strong class="cmn-school-detail-value"><?php echo esc_html($display($details_location)); ?></strong>
-	                    </div>
-	                    <div class="cmn-school-detail-item">
-	                        <span class="cmn-school-detail-label">Cover Manager / Primary Contact</span>
-	                        <strong class="cmn-school-detail-value"><?php echo esc_html($display($details_manager_or_contact)); ?></strong>
-	                    </div>
-	                    <div class="cmn-school-detail-item">
-	                        <span class="cmn-school-detail-label">Contact number</span>
-	                        <strong class="cmn-school-detail-value"><?php echo esc_html($display($details_phone)); ?></strong>
-	                    </div>
-	                    <div class="cmn-school-detail-item">
-	                        <span class="cmn-school-detail-label">Email</span>
-	                        <strong class="cmn-school-detail-value"><?php echo esc_html($display($details_email)); ?></strong>
-	                    </div>
-	                    <div class="cmn-school-detail-item">
-	                        <span class="cmn-school-detail-label">Last contacted</span>
-	                        <strong class="cmn-school-detail-value" title="<?php echo esc_attr($last_activity_exact !== '' ? $last_activity_exact : 'No timestamp available'); ?>">
-	                            <?php echo esc_html($last_activity_label); ?>
-	                        </strong>
-	                    </div>
-	                </div>
-	                <?php
-	                $extra_lead_fields = [];
-	                foreach ($lead_profile_fields as $field_key => $field_config) {
-	                    if (in_array($field_key, ['cover_manager', 'cover_manager_email'], true)) {
-	                        continue;
-	                    }
-	                    $field_value = $this->get_lead_field_value_for_school($school_id, $field_key, $field_config);
-	                    $field_label = (string) ($field_config['label'] ?? ucfirst(str_replace('_', ' ', (string) $field_key)));
-	                    $field_empty = (string) ($field_config['empty_label'] ?? 'Not set');
-	                    $extra_lead_fields[] = [
-	                        'label' => $field_label,
-	                        'value' => $field_value !== '' ? $field_value : $field_empty,
-	                    ];
-	                }
-	                ?>
-	                <?php if ($extra_lead_fields) : ?>
-	                    <div class="cmn-meta-grid cmn-meta-grid--school-extra-fields">
-	                        <?php foreach ($extra_lead_fields as $extra_field) : ?>
-	                            <div><strong><?php echo esc_html((string) $extra_field['label']); ?>:</strong> <?php echo esc_html((string) $extra_field['value']); ?></div>
-	                        <?php endforeach; ?>
-	                    </div>
-	                <?php endif; ?>
-	                <?php if ($request_note !== '') : ?>
-	                    <p class="cmn-muted">Latest note: <?php echo esc_html($request_note); ?></p>
-	                <?php endif; ?>
-	                <?php if ($latest_school_reply !== '') : ?>
-	                    <p class="cmn-muted">Latest school reply<?php echo $latest_school_reply_at !== '' ? (' (' . esc_html(date_i18n('M j, Y g:ia', strtotime($latest_school_reply_at))) . ')') : ''; ?>: <?php echo esc_html($latest_school_reply); ?></p>
-	                <?php endif; ?>
-	            </div>
+                <div class="cmn-school-details-summary">
+                    <h4 class="cmn-school-details-name"><?php echo esc_html((string) $school->post_title); ?></h4>
+                </div>
+                <div class="cmn-meta-grid cmn-meta-grid--school-details-compact">
+                    <div class="cmn-school-detail-item">
+                        <span class="cmn-school-detail-label">Location</span>
+                        <strong class="cmn-school-detail-value"><?php echo esc_html($display($details_location)); ?></strong>
+                    </div>
+                    <?php if ($details_manager_or_contact !== '') : ?>
+                        <div class="cmn-school-detail-item">
+                            <span class="cmn-school-detail-label">Cover Manager / Primary Contact</span>
+                            <strong class="cmn-school-detail-value"><?php echo esc_html($details_manager_or_contact); ?></strong>
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($details_phone !== '') : ?>
+                        <div class="cmn-school-detail-item">
+                            <span class="cmn-school-detail-label">Contact number</span>
+                            <strong class="cmn-school-detail-value"><?php echo esc_html($details_phone); ?></strong>
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($details_email !== '') : ?>
+                        <div class="cmn-school-detail-item">
+                            <span class="cmn-school-detail-label">Email</span>
+                            <strong class="cmn-school-detail-value"><?php echo esc_html($details_email); ?></strong>
+                        </div>
+                    <?php endif; ?>
+                    <div class="cmn-school-detail-item">
+                        <span class="cmn-school-detail-label">Last contacted</span>
+                        <strong class="cmn-school-detail-value" title="<?php echo esc_attr($last_activity_exact !== '' ? $last_activity_exact : 'No timestamp available'); ?>">
+                            <?php echo esc_html($last_activity_label); ?>
+                        </strong>
+                    </div>
+                </div>
+            </div>
 	            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-overview-ops">
 	                <?php if ($watchdog('panel_ops_snapshot')) { return ob_get_clean(); } ?>
 	                <h3>Operational Snapshot</h3>
@@ -40380,9 +40392,6 @@ final class CMN_One_Plugin {
                         </ul>
 	                    <?php else : ?>
 	                        <div class="cmn-meta-grid cmn-meta-grid--school-app-compact">
-	                            <?php if ($request_status !== '') : ?>
-	                                <div><strong>Request status:</strong> <?php echo esc_html($request_status_label); ?></div>
-	                            <?php endif; ?>
 	                            <?php if ($application_ref !== '') : ?>
 	                                <div><strong>Reference:</strong> <?php echo esc_html($application_ref); ?></div>
 	                            <?php endif; ?>
@@ -40653,6 +40662,26 @@ final class CMN_One_Plugin {
                     <p class="cmn-muted">No activity yet. Use quick actions above to log the first update.</p>
                 <?php endif; ?>
             </div>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity" id="cmn-school-feedback-panel" data-school-feedback-panel>
+                <h3>Feedback</h3>
+                <div class="cmn-school-feedback-inline">
+                    <span class="cmn-school-feedback-stars<?php echo !$feedback_has_entries ? ' is-empty' : ''; ?>" aria-hidden="true">
+                        <span class="cmn-school-feedback-stars-row">
+                            <?php for ($star_i = 1; $star_i <= 5; $star_i++) : ?>
+                                <span class="cmn-school-feedback-star<?php echo $star_i <= $feedback_stars_filled ? ' is-active' : ''; ?>">★</span>
+                            <?php endfor; ?>
+                        </span>
+                        <span class="cmn-school-feedback-stars-label"><?php echo esc_html($feedback_summary_label); ?></span>
+                    </span>
+                    <span class="cmn-muted"><?php echo esc_html((string) $feedback_count); ?> feedback entr<?php echo $feedback_count === 1 ? 'y' : 'ies'; ?></span>
+                </div>
+                <div class="cmn-meta-grid cmn-meta-grid--school-feedback-summary">
+                    <div><strong>Overall rating:</strong> <?php echo esc_html(number_format($feedback_rating_for_stars, 1)); ?>/5</div>
+                    <div><strong>Reliability:</strong> <?php echo esc_html(number_format((float) ($feedback_summary['avg_reliability'] ?? 0), 1)); ?>/5</div>
+                    <div><strong>Trend:</strong> <?php echo esc_html((string) ($feedback_summary['trend_label'] ?? '->')); ?></div>
+                    <div><strong>Total feedback:</strong> <?php echo esc_html((string) $feedback_count); ?></div>
+                </div>
+            </div>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--bookings">
                 <h3>Bookings</h3>
                 <div class="cmn-school-profile-summary-strip">
@@ -40785,7 +40814,7 @@ final class CMN_One_Plugin {
 	                <h3>Settings: Access & Ownership</h3>
 	                <div class="cmn-meta-grid">
 	                    <div><strong>Account manager:</strong> <?php echo esc_html($assigned_manager_name !== '' ? $assigned_manager_name : 'Unassigned'); ?></div>
-	                    <?php if ($request_status !== '') : ?>
+	                    <?php if ($request_status_label !== '') : ?>
 	                        <div><strong>Request status:</strong> <?php echo esc_html($request_status_label); ?></div>
 	                    <?php endif; ?>
 	                    <div><strong>Lifecycle:</strong> <?php echo esc_html($display($meta('cmn_account_lifecycle'))); ?></div>
@@ -60166,6 +60195,53 @@ final class CMN_One_Plugin {
                 'key' => 'cmn_notes',
                 'sanitize' => 'textarea',
             ],
+        ];
+    }
+
+    private function get_school_quick_edit_field_whitelist($internal_editor = false) {
+        $internal_editor = (bool) $internal_editor;
+        if ($internal_editor) {
+            return [
+                'school_name' => ['label' => 'School name', 'type' => 'text', 'required' => true],
+                'email' => ['label' => 'Email', 'type' => 'email', 'required' => true],
+                'phone' => ['label' => 'Phone', 'type' => 'text', 'required' => false],
+                'location' => ['label' => 'Location', 'type' => 'text', 'required' => false],
+                'postcode' => ['label' => 'Postcode', 'type' => 'text', 'required' => false],
+                'town' => ['label' => 'Town / City', 'type' => 'text', 'required' => false],
+                'contact1' => ['label' => 'Primary contact', 'type' => 'text', 'required' => false],
+                'contact1_email' => ['label' => 'Primary contact email', 'type' => 'email', 'required' => false],
+                'primary_contact_phone' => ['label' => 'Primary contact phone', 'type' => 'text', 'required' => false],
+                'cover_manager' => ['label' => 'Cover Manager', 'type' => 'text', 'required' => false],
+                'cover_manager_email' => ['label' => 'Cover Manager Email', 'type' => 'email', 'required' => false],
+            ];
+        }
+
+        return [
+            'school_name' => ['label' => 'School name', 'type' => 'text', 'required' => true],
+            'location' => ['label' => 'Location', 'type' => 'text', 'required' => false],
+            'email' => ['label' => 'Email', 'type' => 'email', 'required' => true],
+            'phone' => ['label' => 'Phone', 'type' => 'text', 'required' => false],
+            'website' => ['label' => 'Website', 'type' => 'url', 'required' => false],
+            'contact1' => ['label' => 'Primary contact', 'type' => 'text', 'required' => false],
+            'contact_role' => ['label' => 'Primary contact role', 'type' => 'text', 'required' => false],
+            'contact1_email' => ['label' => 'Primary contact email', 'type' => 'email', 'required' => false],
+            'primary_contact_phone' => ['label' => 'Primary contact phone', 'type' => 'text', 'required' => false],
+            'cover_manager' => ['label' => 'Cover Manager', 'type' => 'text', 'required' => false],
+            'cover_manager_email' => ['label' => 'Cover Manager Email', 'type' => 'email', 'required' => false],
+            'email_name' => ['label' => 'Email greeting name', 'type' => 'text', 'required' => false],
+            'house_number' => ['label' => 'House / Number', 'type' => 'text', 'required' => false],
+            'address_line1' => ['label' => 'Address line 1', 'type' => 'text', 'required' => false],
+            'address_line2' => ['label' => 'Address line 2', 'type' => 'text', 'required' => false],
+            'address_line3' => ['label' => 'Address line 3', 'type' => 'text', 'required' => false],
+            'town' => ['label' => 'Town / City', 'type' => 'text', 'required' => false],
+            'county' => ['label' => 'County', 'type' => 'text', 'required' => false],
+            'postcode' => ['label' => 'Postcode', 'type' => 'text', 'required' => false],
+            'school_type' => ['label' => 'School type', 'type' => 'text', 'required' => false],
+            'pupil_count' => ['label' => 'Pupil count', 'type' => 'text', 'required' => false],
+            'supply_frequency' => ['label' => 'Supply frequency', 'type' => 'text', 'required' => false],
+            'use_agencies' => ['label' => 'Use agencies', 'type' => 'text', 'required' => false],
+            'agency_count' => ['label' => 'Agency count', 'type' => 'text', 'required' => false],
+            'notes' => ['label' => 'Notes', 'type' => 'text', 'required' => false],
         ];
     }
 
@@ -85403,16 +85479,22 @@ p{margin:0;line-height:1.5}
         }
 
         $field_contract = $this->get_school_profile_field_contract();
+        $can_edit_internal_fields = $this->is_staff_user($current_user_id);
+        $allowed_edit_fields = $this->get_school_quick_edit_field_whitelist($can_edit_internal_fields);
         $values = [];
-        foreach ($field_contract as $field_key => $field_config) {
+        foreach ($allowed_edit_fields as $field_key => $field_ui_config) {
+            if (!isset($field_contract[$field_key])) {
+                continue;
+            }
+            $field_config = (array) $field_contract[$field_key];
             $post_key = 'cmn_' . $field_key;
             $raw_value = $_POST[$post_key] ?? '';
             $values[$field_key] = $this->sanitize_profile_contract_value($raw_value, $field_config);
         }
 
-        $school_name = (string) ($values['school_name'] ?? '');
-        $school_email = (string) ($values['email'] ?? '');
-        $school_phone = trim((string) ($values['phone'] ?? ''));
+        $school_name = (string) ($values['school_name'] ?? get_the_title($school_id));
+        $school_email = (string) ($values['email'] ?? get_post_meta($school_id, 'cmn_email', true));
+        $school_phone = trim((string) ($values['phone'] ?? get_post_meta($school_id, 'cmn_phone', true)));
         $status_key = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
         $pipeline_stage_key = sanitize_key((string) get_post_meta($school_id, 'cmn_pipeline_stage', true));
         $request_status_key = sanitize_key((string) $this->get_school_access_request_status($school_id));
@@ -85434,7 +85516,8 @@ p{margin:0;line-height:1.5}
             'post_title' => $school_name,
         ]);
 
-        foreach ($field_contract as $field_key => $field_config) {
+        foreach ($values as $field_key => $value) {
+            $field_config = (array) ($field_contract[$field_key] ?? []);
             $storage = (string) ($field_config['storage'] ?? '');
             if ($storage !== 'post_meta') {
                 continue;
@@ -85443,7 +85526,6 @@ p{margin:0;line-height:1.5}
             if ($meta_key === '') {
                 continue;
             }
-            $value = $values[$field_key] ?? '';
             if ($value === '' && !is_array($value)) {
                 delete_post_meta($school_id, $meta_key);
             } else {
@@ -85451,27 +85533,39 @@ p{margin:0;line-height:1.5}
             }
         }
 
-        $primary_contact_email = (string) ($values['contact1_email'] ?? '');
+        $primary_contact_name = array_key_exists('contact1', $values)
+            ? (string) ($values['contact1'] ?? '')
+            : (string) get_post_meta($school_id, 'cmn_primary_contact_name', true);
+        $primary_contact_role = array_key_exists('contact_role', $values)
+            ? (string) ($values['contact_role'] ?? '')
+            : (string) get_post_meta($school_id, 'cmn_primary_contact_role', true);
+        $primary_contact_email = array_key_exists('contact1_email', $values)
+            ? (string) ($values['contact1_email'] ?? '')
+            : (string) get_post_meta($school_id, 'cmn_primary_contact_email', true);
         if ($primary_contact_email === '') {
             $primary_contact_email = $school_email;
         }
-        $primary_contact_phone = (string) ($values['primary_contact_phone'] ?? '');
+        $primary_contact_phone = array_key_exists('primary_contact_phone', $values)
+            ? (string) ($values['primary_contact_phone'] ?? '')
+            : (string) get_post_meta($school_id, 'cmn_primary_contact_phone', true);
         if ($primary_contact_phone === '') {
-            $primary_contact_phone = (string) ($values['phone'] ?? '');
+            $primary_contact_phone = (string) ($values['phone'] ?? get_post_meta($school_id, 'cmn_phone', true));
         }
 
-        update_post_meta($school_id, 'cmn_primary_contact_name', (string) ($values['contact1'] ?? ''));
-        update_post_meta($school_id, 'cmn_primary_contact_role', (string) ($values['contact_role'] ?? ''));
+        update_post_meta($school_id, 'cmn_primary_contact_name', $primary_contact_name);
+        update_post_meta($school_id, 'cmn_primary_contact_role', $primary_contact_role);
         update_post_meta($school_id, 'cmn_primary_contact_email', $primary_contact_email);
         update_post_meta($school_id, 'cmn_primary_contact_phone', $primary_contact_phone);
         update_post_meta($school_id, 'cmn_contact1_email', $primary_contact_email);
 
-        $cover_manager_name = (string) ($values['cover_manager'] ?? '');
-        if ($cover_manager_name !== '') {
-            $this->store_cover_manager_split($school_id, $cover_manager_name);
-        } else {
-            update_post_meta($school_id, 'cmn_cover_manager_first_name', '');
-            update_post_meta($school_id, 'cmn_cover_manager_last_name', '');
+        if (array_key_exists('cover_manager', $values)) {
+            $cover_manager_name = (string) ($values['cover_manager'] ?? '');
+            if ($cover_manager_name !== '') {
+                $this->store_cover_manager_split($school_id, $cover_manager_name);
+            } else {
+                update_post_meta($school_id, 'cmn_cover_manager_first_name', '');
+                update_post_meta($school_id, 'cmn_cover_manager_last_name', '');
+            }
         }
 
         $email_domain = $this->get_email_domain($school_email);

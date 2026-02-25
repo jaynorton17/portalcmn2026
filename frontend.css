@@ -4944,8 +4944,18 @@ body.cmn-booking-feedback-lock {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(8, 11, 17, 0.9);
   color: #d4dde9;
-  cursor: default;
+  cursor: pointer;
   text-decoration: none;
+}
+
+.cmn-school-feedback-stars:hover {
+  border-color: rgba(208, 42, 42, 0.5);
+  background: rgba(12, 17, 25, 0.95);
+}
+
+.cmn-school-feedback-stars.is-empty {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(212, 221, 233, 0.8);
 }
 
 .cmn-school-feedback-stars:focus-visible {
@@ -4975,6 +4985,17 @@ body.cmn-booking-feedback-lock {
   font-size: 12px;
   color: #c7d0df;
   white-space: nowrap;
+}
+
+.cmn-school-feedback-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cmn-school-profile-grid .cmn-meta-grid--school-feedback-summary {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .cmn-school-profile-tabs {
