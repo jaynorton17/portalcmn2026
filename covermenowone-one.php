@@ -40762,6 +40762,52 @@ final class CMN_One_Plugin {
         $admin_recipient_notice_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_admin_recipient_msg'] ?? '')));
         $admin_recipient_value = $this->get_admin_recipient_email();
         $admin_recipient_constant = defined('CMN_ADMIN_RECIPIENT_EMAIL');
+        $settings_tab_raw = sanitize_key((string) ($_GET['cmn_settings_tab'] ?? ''));
+        $settings_tab = in_array($settings_tab_raw, ['general', 'feature_flags', 'permissions'], true) ? $settings_tab_raw : 'general';
+        $settings_tab_urls = [
+            'general' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => false], $portal_url),
+            'feature_flags' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => 'feature_flags'], $portal_url),
+            'permissions' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => 'permissions'], $portal_url),
+        ];
+        $active_nav_key = $settings_tab === 'feature_flags'
+            ? 'feature_flags'
+            : ($settings_tab === 'permissions' ? 'permissions' : 'settings');
+        $feature_flag_rows = [
+            ['key' => 'cmn_feature_automation_console', 'label' => 'Automation Console', 'description' => 'Workflow and trigger management modules.'],
+            ['key' => 'cmn_feature_partner_programme', 'label' => 'Partner Programme', 'description' => 'Commercial tiering and partner savings workflows.'],
+            ['key' => 'cmn_feature_emergency_broadcast', 'label' => 'Emergency Broadcast', 'description' => 'Mass candidate communication capability.'],
+            ['key' => 'cmn_feature_candidate_rewards', 'label' => 'Candidate Rewards', 'description' => 'Rewards lifecycle and payout logic.'],
+            ['key' => 'cmn_feature_system_health', 'label' => 'System Health Tooling', 'description' => 'Health scans and safe-fix operations interface.'],
+        ];
+        foreach ($feature_flag_rows as &$feature_flag_row) {
+            $option_value = (string) get_option((string) ($feature_flag_row['key'] ?? ''), '');
+            $feature_flag_row['status'] = ($option_value === '1' || $option_value === 'yes' || $option_value === 'on') ? 'enabled' : 'disabled';
+            $feature_flag_row['environments'] = 'portal';
+        }
+        unset($feature_flag_row);
+        $role_rows = [];
+        if ($can_manage_admin_tools) {
+            $wp_roles_obj = wp_roles();
+            $role_defs = is_object($wp_roles_obj) && is_array($wp_roles_obj->roles) ? $wp_roles_obj->roles : [];
+            $role_counts = (array) (count_users()['avail_roles'] ?? []);
+            foreach ($role_defs as $role_key => $role_def) {
+                $role_key = sanitize_key((string) $role_key);
+                if ($role_key === '') {
+                    continue;
+                }
+                $capabilities = (array) ($role_def['capabilities'] ?? []);
+                $role_rows[] = [
+                    'key' => $role_key,
+                    'name' => sanitize_text_field((string) ($role_def['name'] ?? $role_key)),
+                    'description' => ucfirst(str_replace('_', ' ', $role_key)),
+                    'permissions_count' => count(array_filter($capabilities)),
+                    'members' => (int) ($role_counts[$role_key] ?? 0),
+                ];
+            }
+            usort($role_rows, static function ($a, $b) {
+                return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+            });
+        }
 
         ob_start();
         ?>
@@ -40769,6 +40815,136 @@ final class CMN_One_Plugin {
             <h2>Settings</h2>
             <p>Personal colour scheme and admin tools.</p>
         </header>
+        <div class="cmn-profile-tabs cmn-settings-tabs-nav">
+            <a class="cmn-school-profile-tab<?php echo $settings_tab === 'general' ? ' is-active' : ''; ?>" href="<?php echo esc_url($settings_tab_urls['general']); ?>">General Settings</a>
+            <a class="cmn-school-profile-tab<?php echo $settings_tab === 'feature_flags' ? ' is-active' : ''; ?>" href="<?php echo esc_url($settings_tab_urls['feature_flags']); ?>">Feature Flags</a>
+            <a class="cmn-school-profile-tab<?php echo $settings_tab === 'permissions' ? ' is-active' : ''; ?>" href="<?php echo esc_url($settings_tab_urls['permissions']); ?>">Roles &amp; Permissions</a>
+        </div>
+        <?php if ($settings_tab === 'feature_flags') : ?>
+        <section class="cmn-dashboard-card cmn-settings-tab-card">
+            <div class="cmn-panel-header">
+                <h3>Feature Flags</h3>
+                <?php if ($can_manage_admin_tools) : ?>
+                    <button class="cmn-primary" type="button" disabled>Add Flag</button>
+                <?php endif; ?>
+            </div>
+            <?php if (!$can_manage_admin_tools) : ?>
+                <p class="cmn-register-warning">Only admins can manage feature flags.</p>
+            <?php endif; ?>
+            <div class="cmn-table-scroll">
+                <table class="cmn-approval-table">
+                    <thead>
+                        <tr>
+                            <th>Flag Name</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                            <th>Environments</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($feature_flag_rows as $feature_flag_row) : ?>
+                            <tr>
+                                <td><?php echo esc_html((string) ($feature_flag_row['label'] ?? 'Flag')); ?></td>
+                                <td><?php echo esc_html((string) ($feature_flag_row['description'] ?? '')); ?></td>
+                                <td><span class="cmn-status-chip"><?php echo esc_html((string) ($feature_flag_row['status'] ?? 'disabled')); ?></span></td>
+                                <td><?php echo esc_html((string) ($feature_flag_row['environments'] ?? 'portal')); ?></td>
+                                <td class="cmn-actions">
+                                    <button class="cmn-ghost cmn-btn-mini" type="button" disabled><?php echo (string) ($feature_flag_row['status'] ?? '') === 'enabled' ? 'Disable' : 'Enable'; ?></button>
+                                    <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Edit</button>
+                                    <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Delete</button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <?php elseif ($settings_tab === 'permissions') : ?>
+        <section class="cmn-dashboard-card cmn-settings-tab-card">
+            <div class="cmn-panel-header">
+                <h3>Roles &amp; Permissions</h3>
+                <?php if ($can_manage_admin_tools) : ?>
+                    <button class="cmn-primary" type="button" data-role-permission-open>Create Role</button>
+                <?php endif; ?>
+            </div>
+            <?php if (!$can_manage_admin_tools) : ?>
+                <p class="cmn-register-warning">Only admins can manage roles and permissions.</p>
+            <?php endif; ?>
+            <div class="cmn-table-scroll">
+                <table class="cmn-approval-table">
+                    <thead>
+                        <tr>
+                            <th>Role Name</th>
+                            <th>Description</th>
+                            <th>Permissions Count</th>
+                            <th>Members</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$role_rows) : ?>
+                            <tr><td colspan="5">No role data available.</td></tr>
+                        <?php else : ?>
+                            <?php foreach ($role_rows as $role_row) : ?>
+                                <tr>
+                                    <td><?php echo esc_html((string) ($role_row['name'] ?? 'Role')); ?></td>
+                                    <td><?php echo esc_html((string) ($role_row['description'] ?? '')); ?></td>
+                                    <td><?php echo esc_html((string) ((int) ($role_row['permissions_count'] ?? 0))); ?></td>
+                                    <td><?php echo esc_html((string) ((int) ($role_row['members'] ?? 0))); ?></td>
+                                    <td class="cmn-actions">
+                                        <button class="cmn-ghost cmn-btn-mini" type="button" data-role-permission-open>Adjust Permissions</button>
+                                        <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Delete</button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <div class="cmn-modal" data-role-permission-modal>
+            <div class="cmn-modal-content">
+                <div class="cmn-modal-header">
+                    <h3>Permission Editor</h3>
+                    <button class="cmn-ghost cmn-btn-mini" type="button" data-role-permission-close>Close</button>
+                </div>
+                <p class="cmn-muted">Role permission editing is displayed here to keep configuration in one modal workflow.</p>
+                <div class="cmn-settings-grid">
+                    <label class="cmn-inline-check"><input type="checkbox" checked disabled> View Portal Data</label>
+                    <label class="cmn-inline-check"><input type="checkbox" checked disabled> Manage Bookings</label>
+                    <label class="cmn-inline-check"><input type="checkbox" disabled> Manage Finance Exports</label>
+                    <label class="cmn-inline-check"><input type="checkbox" disabled> Manage Automation Rules</label>
+                </div>
+                <div class="cmn-form-actions">
+                    <button class="cmn-primary" type="button" disabled>Save Permissions</button>
+                </div>
+            </div>
+        </div>
+        <script>
+        (function () {
+            var modal = document.querySelector('[data-role-permission-modal]');
+            if (!modal) {
+                return;
+            }
+            var openButtons = document.querySelectorAll('[data-role-permission-open]');
+            var closeButtons = modal.querySelectorAll('[data-role-permission-close]');
+            var openModal = function () { modal.classList.add('is-open'); };
+            var closeModal = function () { modal.classList.remove('is-open'); };
+            openButtons.forEach(function (button) {
+                button.addEventListener('click', openModal);
+            });
+            closeButtons.forEach(function (button) {
+                button.addEventListener('click', closeModal);
+            });
+            modal.addEventListener('click', function (event) {
+                if (event.target === modal) {
+                    closeModal();
+                }
+            });
+        })();
+        </script>
+        <?php else : ?>
         <div class="cmn-portal-grid">
             <div class="cmn-dashboard-card" data-theme-settings>
                 <h3>Colour Scheme</h3>
@@ -40987,12 +41163,13 @@ final class CMN_One_Plugin {
             <div class="cmn-email-test-results" data-email-test-results></div>
         </div>
         <?php endif; ?>
+        <?php endif; ?>
         <?php
         if ($release_standardized_notice && $can_edit_release_version) {
             update_option('cmn_release_version_standardized_notice', '0', false);
         }
         $inner = ob_get_clean();
-        return $this->render_staff_shell('settings', $inner);
+        return $this->render_staff_shell($active_nav_key, $inner);
     }
 
     public function handle_save_admin_recipient_email() {

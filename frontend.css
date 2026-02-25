@@ -8807,6 +8807,15 @@ body.cmn-portal-page .cmn-school-main .cmn-school-profile-tab.is-active {
   gap: 10px;
 }
 
+.cmn-settings-tabs-nav {
+  margin-bottom: 8px;
+}
+
+.cmn-settings-tab-card {
+  display: grid;
+  gap: 12px;
+}
+
 @media (max-width: 1200px) {
   .cmn-candidate-rewards-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
