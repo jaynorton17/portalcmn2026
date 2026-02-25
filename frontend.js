@@ -12048,7 +12048,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return document.querySelector('[data-profile-form] [name="' + field + '"]');
       };
 
-      ['email', 'first_name', 'last_name', 'phone', 'nationality', 'role_type', 'roles_other', 'teacher_subject_specialism', 'travel_radius', 'location', 'driving_licence', 'car_owner', 'qts_status', 'no_dbs', 'dbs_update_service', 'house_number', 'address_line1', 'address_line2', 'address_line3', 'town', 'county', 'postcode', 'notes'].forEach(function (field) {
+      ['email', 'first_name', 'last_name', 'phone', 'nationality', 'role_type', 'roles_other', 'profile_strength_1', 'profile_strength_2', 'profile_strength_3', 'teacher_subject_specialism', 'travel_radius', 'location', 'driving_licence', 'car_owner', 'qts_status', 'no_dbs', 'dbs_update_service', 'house_number', 'address_line1', 'address_line2', 'address_line3', 'town', 'county', 'postcode', 'notes'].forEach(function (field) {
         var input = getFieldInput(field);
         if (input) {
           fd.append(field, String(input.value || '').trim());
@@ -12098,6 +12098,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var hasDbsEl = document.querySelector('[data-profile-has-dbs]');
         var dbsUpdateEl = document.querySelector('[data-profile-dbs-update]');
         var daysEl = document.querySelector('[data-profile-days]');
+        var strengthsEl = document.querySelector('[data-profile-strengths]');
         var addressEl = document.querySelector('[data-profile-address]');
         var houseNumberEl = document.querySelector('[data-profile-house-number]');
         var line1El = document.querySelector('[data-profile-address-line1]');
@@ -12107,6 +12108,40 @@ document.addEventListener('DOMContentLoaded', function () {
         var countyEl = document.querySelector('[data-profile-county]');
         var postcodeEl = document.querySelector('[data-profile-postcode]');
         var notesEl = document.querySelector('[data-profile-notes]');
+        var cardFirstNameEl = document.querySelector('[data-profile-card-first-name]');
+        var cardRoleEl = document.querySelector('[data-profile-card-role]');
+        var cardStrengthTagsEl = document.querySelector('[data-profile-card-strength-tags]');
+
+        var renderStrengthTags = function (target, strengths) {
+          if (!target) {
+            return;
+          }
+          var safeStrengths = Array.isArray(strengths) ? strengths : [];
+          target.innerHTML = '';
+          if (!safeStrengths.length) {
+            var fallback = document.createElement('span');
+            fallback.className = 'cmn-school-candidate-tag';
+            fallback.textContent = 'Not set';
+            target.appendChild(fallback);
+            return;
+          }
+          safeStrengths.slice(0, 3).forEach(function (strength) {
+            var label = String(strength || '').trim();
+            if (!label) {
+              return;
+            }
+            var chip = document.createElement('span');
+            chip.className = 'cmn-school-candidate-tag';
+            chip.textContent = label;
+            target.appendChild(chip);
+          });
+          if (!target.children.length) {
+            var empty = document.createElement('span');
+            empty.className = 'cmn-school-candidate-tag';
+            empty.textContent = 'Not set';
+            target.appendChild(empty);
+          }
+        };
 
         if (fullNameEl) {
           fullNameEl.textContent = fullName || 'Candidate';
@@ -12156,6 +12191,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (daysEl) {
           daysEl.textContent = profile.availability_days_label || 'Not set';
         }
+        if (strengthsEl) {
+          strengthsEl.textContent = profile.profile_strengths_label || 'Not set';
+        }
         if (addressEl) {
           addressEl.textContent = profile.address_display || 'Not set';
         }
@@ -12183,6 +12221,13 @@ document.addEventListener('DOMContentLoaded', function () {
         if (notesEl) {
           notesEl.textContent = profile.notes || 'Not set';
         }
+        if (cardFirstNameEl) {
+          cardFirstNameEl.textContent = profile.first_name || 'Candidate';
+        }
+        if (cardRoleEl) {
+          cardRoleEl.textContent = profile.role_type || 'Cover Supervisor';
+        }
+        renderStrengthTags(cardStrengthTagsEl, profile.profile_strengths || []);
 
         var completionText = document.querySelector('[data-profile-completion-text]');
         var completionBar = document.querySelector('[data-profile-completion-bar]');

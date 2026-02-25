@@ -60381,7 +60381,42 @@ final class CMN_One_Plugin {
             $request_message = 'Offer already sent.';
         }
 
-        $skills = ['Classroom Management', 'Communication', 'First Aid'];
+        $tag_values_from_meta = static function ($raw_value) {
+            if (is_array($raw_value)) {
+                $values = $raw_value;
+            } elseif (is_string($raw_value)) {
+                $decoded = json_decode($raw_value, true);
+                if (is_array($decoded)) {
+                    $values = $decoded;
+                } else {
+                    $values = preg_split('/[\r\n,;|]+/', $raw_value) ?: [];
+                }
+            } else {
+                $values = [];
+            }
+            $clean_values = [];
+            foreach ((array) $values as $value) {
+                if (is_array($value) || is_object($value)) {
+                    continue;
+                }
+                $clean = sanitize_text_field((string) $value);
+                if ($clean !== '') {
+                    $clean_values[] = $clean;
+                }
+            }
+            return array_values(array_unique($clean_values));
+        };
+        $skills = [];
+        foreach (['cmn_profile_strength_1', 'cmn_profile_strength_2', 'cmn_profile_strength_3', 'cmn_profile_strengths', 'cmn_strengths', 'cmn_skills', 'cmn_key_info'] as $meta_key) {
+            $raw_value = get_post_meta($candidate_id, $meta_key, true);
+            foreach ($tag_values_from_meta($raw_value) as $tag_value) {
+                $skills[] = $tag_value;
+            }
+        }
+        $skills = array_slice(array_values(array_unique(array_filter(array_map('sanitize_text_field', $skills)))), 0, 3);
+        if (!$skills) {
+            $skills = ['Classroom Management', 'Communication', 'First Aid'];
+        }
         $compliance_flags = $this->get_candidate_live_matches_compliance_flags($candidate_id);
         $status_key = $response_state === 'confirmed_available' ? 'AVAILABLE_NOW' : 'NOT_RESPONDED';
         $status_label = $status_key === 'AVAILABLE_NOW' ? 'AVAILABLE NOW' : 'NOT RESPONDED';
@@ -64571,6 +64606,30 @@ final class CMN_One_Plugin {
                 'type' => 'text',
                 'form_key' => 'cmn_teacher_subject_specialism',
             ],
+            'profile_strength_1' => [
+                'storage' => 'post_meta',
+                'key' => 'cmn_profile_strength_1',
+                'sanitize' => 'text',
+                'label' => 'Key Strength 1',
+                'type' => 'text',
+                'form_key' => 'cmn_profile_strength_1',
+            ],
+            'profile_strength_2' => [
+                'storage' => 'post_meta',
+                'key' => 'cmn_profile_strength_2',
+                'sanitize' => 'text',
+                'label' => 'Key Strength 2',
+                'type' => 'text',
+                'form_key' => 'cmn_profile_strength_2',
+            ],
+            'profile_strength_3' => [
+                'storage' => 'post_meta',
+                'key' => 'cmn_profile_strength_3',
+                'sanitize' => 'text',
+                'label' => 'Key Strength 3',
+                'type' => 'text',
+                'form_key' => 'cmn_profile_strength_3',
+            ],
             'travel_radius' => [
                 'storage' => 'user_meta',
                 'key' => 'travel_radius',
@@ -68191,7 +68250,7 @@ final class CMN_One_Plugin {
         $resolve_candidate_strength_tags = function ($candidate_id, $role_labels = []) use ($candidate_tag_values_from_meta) {
             $candidate_id = (int) $candidate_id;
             $tags = [];
-            foreach (['cmn_strengths', 'cmn_skills', 'cmn_key_info', 'cmn_profile_strengths'] as $meta_key) {
+            foreach (['cmn_profile_strength_1', 'cmn_profile_strength_2', 'cmn_profile_strength_3', 'cmn_strengths', 'cmn_skills', 'cmn_key_info', 'cmn_profile_strengths'] as $meta_key) {
                 $raw_value = get_post_meta($candidate_id, $meta_key, true);
                 foreach ($candidate_tag_values_from_meta($raw_value) as $tag) {
                     $tags[] = $tag;
@@ -71566,6 +71625,53 @@ final class CMN_One_Plugin {
         $dbs_update_service = strtolower((string) $meta('cmn_dbs_update_service'));
         $roles_other = (string) $meta('cmn_roles_other');
         $teacher_subject_specialism = (string) $meta('cmn_teacher_subject_specialism');
+        $tag_values_from_meta = static function ($raw_value) {
+            if (is_array($raw_value)) {
+                $values = $raw_value;
+            } elseif (is_string($raw_value)) {
+                $decoded = json_decode($raw_value, true);
+                if (is_array($decoded)) {
+                    $values = $decoded;
+                } else {
+                    $values = preg_split('/[\r\n,;|]+/', $raw_value) ?: [];
+                }
+            } else {
+                $values = [];
+            }
+            $clean_values = [];
+            foreach ((array) $values as $value) {
+                if (is_array($value) || is_object($value)) {
+                    continue;
+                }
+                $clean = sanitize_text_field((string) $value);
+                if ($clean !== '') {
+                    $clean_values[] = $clean;
+                }
+            }
+            return array_values(array_unique($clean_values));
+        };
+        $profile_strength_1 = (string) $meta('cmn_profile_strength_1');
+        $profile_strength_2 = (string) $meta('cmn_profile_strength_2');
+        $profile_strength_3 = (string) $meta('cmn_profile_strength_3');
+        $profile_strength_seed = $tag_values_from_meta($meta('cmn_profile_strengths'));
+        if (!$profile_strength_seed) {
+            $profile_strength_seed = $tag_values_from_meta($meta('cmn_strengths'));
+        }
+        if ($profile_strength_1 === '' && !empty($profile_strength_seed[0])) {
+            $profile_strength_1 = (string) $profile_strength_seed[0];
+        }
+        if ($profile_strength_2 === '' && !empty($profile_strength_seed[1])) {
+            $profile_strength_2 = (string) $profile_strength_seed[1];
+        }
+        if ($profile_strength_3 === '' && !empty($profile_strength_seed[2])) {
+            $profile_strength_3 = (string) $profile_strength_seed[2];
+        }
+        $profile_strengths = array_values(array_filter([
+            sanitize_text_field($profile_strength_1),
+            sanitize_text_field($profile_strength_2),
+            sanitize_text_field($profile_strength_3),
+        ]));
+        $profile_strengths_label = $profile_strengths ? implode(', ', $profile_strengths) : 'Not set';
         $preferred_roles = array_values(array_filter(array_map('sanitize_text_field', (array) $roles)));
         if (!$preferred_roles && $role_label !== '') {
             $preferred_roles = [$role_label];
@@ -71825,6 +71931,38 @@ final class CMN_One_Plugin {
             }
         }
         $logout_url = wp_logout_url($portal_url);
+        $card_preview_role_labels = array_values(array_filter(array_map('sanitize_text_field', (array) $this->get_candidate_card_job_title_labels((int) $candidate_id))));
+        if (!$card_preview_role_labels) {
+            $card_preview_role_labels = [$role_label !== '' ? $role_label : 'Cover Supervisor'];
+        }
+        $card_preview_role_line = implode(' • ', array_slice($card_preview_role_labels, 0, 2));
+        if ($card_preview_role_line === '') {
+            $card_preview_role_line = 'Cover Supervisor';
+        }
+        $card_preview_first_name_bits = preg_split('/\s+/', trim((string) $first_name)) ?: [];
+        $card_preview_first_name = sanitize_text_field((string) ($card_preview_first_name_bits[0] ?? 'Candidate'));
+        if ($card_preview_first_name === '') {
+            $card_preview_first_name = 'Candidate';
+        }
+        $card_preview_avatar_url = $this->get_user_avatar_url_or_fallback($candidate_user_id, 144);
+        $card_preview_rating_payload = $this->get_candidate_average_rating_payload($candidate_user_id);
+        $card_preview_avg_rating = (float) ($card_preview_rating_payload['avg_rating'] ?? 0);
+        $card_preview_review_count = max(0, (int) ($card_preview_rating_payload['feedback_count'] ?? 0));
+        $card_preview_rating_line = $card_preview_review_count > 0
+            ? ('⭐ ' . number_format($card_preview_avg_rating, 1) . ' (' . number_format_i18n($card_preview_review_count) . ' reviews)')
+            : '⭐ New profile';
+        $card_preview_subject = (string) ($card_preview_role_labels[0] ?? 'Cover Supervisor');
+        $card_preview_day_rate = (float) $this->get_candidate_profile_school_charge_rate((int) $candidate_id, $card_preview_subject);
+        $card_preview_rate_label = $card_preview_day_rate > 0
+            ? ('£' . number_format_i18n((float) $card_preview_day_rate, abs($card_preview_day_rate - round($card_preview_day_rate)) < 0.01 ? 0 : 2) . ' per day')
+            : 'Rate on request';
+        $card_preview_state = $availability_response_state === 'confirmed_available' ? 'confirmed_available' : 'not_responded';
+        $card_preview_status_label = $card_preview_state === 'confirmed_available' ? 'AVAILABLE NOW' : 'NOT RESPONDED';
+        $card_preview_status_class = $card_preview_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending';
+        $card_preview_confirmation_text = $card_preview_state === 'confirmed_available'
+            ? 'AVAILABLE TOMORROW MORNING - Confirmed'
+            : 'Awaiting response for tomorrow morning';
+        $card_preview_strength_tags = array_slice($profile_strengths ?: ['Classroom Management', 'Communication', 'First Aid'], 0, 3);
 
         $render_static_calendar = function () use ($calendar_data, $cal_month, $start_weekday, $days_in_month) {
             ?>
@@ -71975,7 +72113,10 @@ final class CMN_One_Plugin {
                         };
                         ?>
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
-                            <h2>Profile</h2>
+                            <div class="cmn-candidate-header-row">
+                                <h2>Profile</h2>
+                                <a class="cmn-ghost cmn-btn-mini cmn-btn-secondary" href="#cmn-candidate-card-preview">VIEW MY CARD</a>
+                            </div>
                         </header>
                         <nav class="cmn-candidate-section-tabs" aria-label="Candidate profile sections">
                             <?php foreach ($candidate_profile_tabs as $candidate_profile_tab_key => $candidate_profile_tab_label) : ?>
@@ -72097,6 +72238,10 @@ final class CMN_One_Plugin {
                                             <span class="cmn-profile-definition-label">Availability days</span>
                                             <span class="cmn-profile-definition-value" data-profile-days><?php echo esc_html($availability_days_label); ?></span>
                                         </div>
+                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                            <span class="cmn-profile-definition-label">Key strengths</span>
+                                            <span class="cmn-profile-definition-value" data-profile-strengths><?php echo esc_html($profile_strengths_label); ?></span>
+                                        </div>
                                     </div>
                                 </div>
                                 <form class="cmn-form cmn-inline-edit-form" data-profile-form="role" hidden>
@@ -72117,6 +72262,20 @@ final class CMN_One_Plugin {
                                     <label>Other role
                                         <input type="text" name="roles_other" value="<?php echo esc_attr($roles_other); ?>" placeholder="If Other, add details">
                                     </label>
+                                    <fieldset class="cmn-form-group cmn-profile-strengths-group">
+                                        <span class="cmn-form-label">3 key strengths (shown on your candidate card)</span>
+                                        <div class="cmn-profile-strengths-grid">
+                                            <label>Strength 1
+                                                <input type="text" name="profile_strength_1" value="<?php echo esc_attr($profile_strength_1); ?>" maxlength="80" required>
+                                            </label>
+                                            <label>Strength 2
+                                                <input type="text" name="profile_strength_2" value="<?php echo esc_attr($profile_strength_2); ?>" maxlength="80" required>
+                                            </label>
+                                            <label>Strength 3
+                                                <input type="text" name="profile_strength_3" value="<?php echo esc_attr($profile_strength_3); ?>" maxlength="80" required>
+                                            </label>
+                                        </div>
+                                    </fieldset>
                                     <label>Teacher subject specialism
                                         <select name="teacher_subject_specialism">
                                             <option value=""<?php selected($teacher_subject_specialism, ''); ?>>Select (teachers only)</option>
@@ -72177,6 +72336,49 @@ final class CMN_One_Plugin {
                                         </div>
                                     </fieldset>
                                 </form>
+                                <div class="cmn-candidate-card-preview" id="cmn-candidate-card-preview">
+                                    <div class="cmn-card-header">
+                                        <h3>My Candidate Card</h3>
+                                        <span class="cmn-muted">What schools see</span>
+                                    </div>
+                                    <article class="cmn-school-candidate-card cmn-available-card <?php echo $card_preview_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending'; ?>">
+                                        <div class="cmn-school-candidate-card-top">
+                                            <div class="cmn-school-candidate-avatar">
+                                                <?php if (!empty($card_preview_avatar_url)) : ?>
+                                                    <img src="<?php echo esc_url((string) $card_preview_avatar_url); ?>" alt="<?php echo esc_attr($card_preview_first_name); ?>">
+                                                <?php else : ?>
+                                                    <span><?php echo esc_html(strtoupper((string) substr($card_preview_first_name, 0, 1))); ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="cmn-school-candidate-top-copy">
+                                                <strong class="cmn-school-candidate-first-name" data-profile-card-first-name><?php echo esc_html($card_preview_first_name); ?></strong>
+                                                <span class="cmn-school-candidate-role" data-profile-card-role><?php echo esc_html($card_preview_role_line); ?></span>
+                                                <span class="cmn-school-candidate-rating"><?php echo esc_html($card_preview_rating_line); ?></span>
+                                            </div>
+                                            <div class="cmn-school-candidate-top-badges">
+                                                <span class="cmn-school-candidate-distance">Candidate preview</span>
+                                                <span class="cmn-school-candidate-status <?php echo esc_attr($card_preview_status_class); ?>" data-profile-card-status><?php echo esc_html($card_preview_status_label); ?></span>
+                                            </div>
+                                        </div>
+                                        <div class="cmn-school-candidate-card-middle">
+                                            <div class="cmn-school-candidate-confirmation <?php echo $card_preview_state === 'confirmed_available' ? 'is-confirmed' : 'is-pending'; ?>" data-profile-card-confirmation>
+                                                <?php echo esc_html($card_preview_confirmation_text); ?>
+                                            </div>
+                                            <div class="cmn-school-candidate-rate"><?php echo esc_html($card_preview_rate_label); ?></div>
+                                            <div class="cmn-school-candidate-tags" data-profile-card-strength-tags>
+                                                <?php foreach ($card_preview_strength_tags as $card_preview_strength_tag) : ?>
+                                                    <span class="cmn-school-candidate-tag"><?php echo esc_html((string) $card_preview_strength_tag); ?></span>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </div>
+                                        <div class="cmn-school-candidate-card-actions">
+                                            <button class="cmn-primary cmn-btn-mini" type="button" disabled>Book Now</button>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Shortlist</button>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>Not Interested</button>
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" disabled>View Profile</button>
+                                        </div>
+                                    </article>
+                                </div>
                             </div>
                             <div class="cmn-dashboard-card"<?php echo $profile_section_tab !== 'address_roles' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
@@ -87635,6 +87837,16 @@ p{margin:0;line-height:1.5}
             $teacher_subject_specialism = '';
         }
         $payload['teacher_subject_specialism'] = $teacher_subject_specialism;
+        $profile_strength_1 = sanitize_text_field((string) ($payload['profile_strength_1'] ?? ''));
+        $profile_strength_2 = sanitize_text_field((string) ($payload['profile_strength_2'] ?? ''));
+        $profile_strength_3 = sanitize_text_field((string) ($payload['profile_strength_3'] ?? ''));
+        if ($profile_strength_1 === '' || $profile_strength_2 === '' || $profile_strength_3 === '') {
+            wp_send_json_error(['message' => 'Please add all 3 key strengths before saving.'], 400);
+        }
+        $profile_strengths = [$profile_strength_1, $profile_strength_2, $profile_strength_3];
+        $payload['profile_strength_1'] = $profile_strength_1;
+        $payload['profile_strength_2'] = $profile_strength_2;
+        $payload['profile_strength_3'] = $profile_strength_3;
 
         $first_name = (string) ($payload['first_name'] ?? '');
         $last_name = (string) ($payload['last_name'] ?? '');
@@ -87692,6 +87904,8 @@ p{margin:0;line-height:1.5}
                 }
             }
         }
+        update_post_meta($candidate_id, 'cmn_profile_strengths', $profile_strengths);
+        update_post_meta($candidate_id, 'cmn_strengths', $profile_strengths);
 
         $full_name = trim($first_name . ' ' . $last_name);
         wp_update_user([
@@ -87737,6 +87951,11 @@ p{margin:0;line-height:1.5}
                 'roles_label' => $preferred_roles_label,
                 'roles_other' => $roles_other,
                 'teacher_subject_specialism' => $teacher_subject_specialism,
+                'profile_strength_1' => $profile_strength_1,
+                'profile_strength_2' => $profile_strength_2,
+                'profile_strength_3' => $profile_strength_3,
+                'profile_strengths' => $profile_strengths,
+                'profile_strengths_label' => implode(', ', $profile_strengths),
                 'travel_radius' => (string) ($payload['travel_radius'] ?? ''),
                 'location' => (string) ($payload['location'] ?? ''),
                 'driving_licence' => $driving_licence,

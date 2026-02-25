@@ -1161,6 +1161,14 @@ body.cmn-portal-page img[src*="fasthosts"] {
   margin-bottom: 16px;
 }
 
+.cmn-candidate-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .cmn-candidate-header h2 {
   margin: 0;
   font-size: 22px;
@@ -19387,6 +19395,23 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form .cmn-for
   grid-column: 1 / -1;
 }
 
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-strengths-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-strengths-grid > label {
+  display: grid;
+  gap: 6px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-card-preview {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form :is(input, select, textarea) {
   min-height: 42px;
   border-radius: 10px;
@@ -19506,7 +19531,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero .cmn-
   }
 
   body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form,
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-grid {
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-grid,
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-strengths-grid {
     grid-template-columns: 1fr;
   }
 }
