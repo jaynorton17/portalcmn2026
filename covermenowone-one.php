@@ -38662,98 +38662,232 @@ final class CMN_One_Plugin {
         if (!$this->can_manage_staff_users()) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to admin staff only.</p></div></section>';
         }
+        $staff_search = sanitize_text_field((string) wp_unslash($_GET['s'] ?? ''));
+        $staff_role_filter = sanitize_key((string) ($_GET['cmn_staff_role'] ?? ''));
+        if (!in_array($staff_role_filter, ['', 'admin', 'cmn_account_manager', 'cmn_staff'], true)) {
+            $staff_role_filter = '';
+        }
+        $staff_status_filter = sanitize_key((string) ($_GET['cmn_staff_status'] ?? ''));
+        if (!in_array($staff_status_filter, ['', 'active', 'deactivated'], true)) {
+            $staff_status_filter = '';
+        }
         $staff_users = get_users([
             'role__in' => ['cmn_admin', 'cmn_staff', 'cmn_account_manager', 'administrator'],
         ]);
         $presence_now = time();
+        $portal_url = $this->get_portal_base_url();
+        $staff_clear_url = add_query_arg([
+            'view' => 'staff',
+            's' => false,
+            'cmn_staff_role' => false,
+            'cmn_staff_status' => false,
+        ], $portal_url);
+        $resolve_staff_role_key = static function ($roles) {
+            $roles = array_values(array_map('strval', (array) $roles));
+            if (in_array('administrator', $roles, true) || in_array('cmn_admin', $roles, true)) {
+                return 'admin';
+            }
+            if (in_array('cmn_account_manager', $roles, true)) {
+                return 'cmn_account_manager';
+            }
+            return 'cmn_staff';
+        };
+        $resolve_staff_role_label = static function ($role_key) {
+            if ($role_key === 'admin') {
+                return 'Admin';
+            }
+            if ($role_key === 'cmn_account_manager') {
+                return 'Account Manager';
+            }
+            return 'Staff';
+        };
+        $resolve_staff_editable_role = static function ($roles) {
+            $roles = array_values(array_map('strval', (array) $roles));
+            if (in_array('administrator', $roles, true) || in_array('cmn_admin', $roles, true)) {
+                return 'cmn_admin';
+            }
+            if (in_array('cmn_account_manager', $roles, true)) {
+                return 'cmn_account_manager';
+            }
+            return 'cmn_staff';
+        };
+        $staff_totals = [
+            'total' => 0,
+            'active' => 0,
+            'deactivated' => 0,
+        ];
+        $visible_staff_rows = [];
+        foreach ((array) $staff_users as $staff) {
+            $staff_totals['total']++;
+            $is_deactivated = get_user_meta($staff->ID, 'cmn_deactivated', true) ? true : false;
+            if ($is_deactivated) {
+                $staff_totals['deactivated']++;
+            } else {
+                $staff_totals['active']++;
+            }
+            $role_key = $resolve_staff_role_key($staff->roles);
+            if ($staff_role_filter !== '' && $staff_role_filter !== $role_key) {
+                continue;
+            }
+            if ($staff_status_filter === 'active' && $is_deactivated) {
+                continue;
+            }
+            if ($staff_status_filter === 'deactivated' && !$is_deactivated) {
+                continue;
+            }
+            if ($staff_search !== '') {
+                $haystack = trim((string) $staff->display_name . ' ' . (string) $staff->user_email . ' ' . (string) $staff->user_login);
+                if (function_exists('mb_strtolower')) {
+                    $haystack = mb_strtolower($haystack, 'UTF-8');
+                    $needle = mb_strtolower($staff_search, 'UTF-8');
+                } else {
+                    $haystack = strtolower($haystack);
+                    $needle = strtolower($staff_search);
+                }
+                if (strpos($haystack, $needle) === false) {
+                    continue;
+                }
+            }
+            $last_login_raw = get_user_meta((int) $staff->ID, 'cmn_last_seen_at', true);
+            if ($last_login_raw === '' || $last_login_raw === null) {
+                $last_login_raw = get_user_meta((int) $staff->ID, 'last_login', true);
+            }
+            $last_login_ts = 0;
+            if (is_numeric($last_login_raw)) {
+                $last_login_ts = (int) $last_login_raw;
+                if ($last_login_ts > 2000000000) {
+                    $last_login_ts = (int) floor($last_login_ts / 1000);
+                }
+            } elseif (is_string($last_login_raw) && trim($last_login_raw) !== '') {
+                $parsed_ts = strtotime((string) $last_login_raw);
+                if ($parsed_ts !== false) {
+                    $last_login_ts = (int) $parsed_ts;
+                }
+            }
+            $presence = $this->get_staff_presence_snapshot((int) $staff->ID, $presence_now);
+            $visible_staff_rows[] = [
+                'id' => (int) $staff->ID,
+                'name' => (string) $staff->display_name,
+                'username' => (string) $staff->user_login,
+                'email' => (string) $staff->user_email,
+                'role_key' => (string) $role_key,
+                'role_label' => (string) $resolve_staff_role_label($role_key),
+                'editable_role' => (string) $resolve_staff_editable_role($staff->roles),
+                'is_deactivated' => $is_deactivated,
+                'last_login_label' => $last_login_ts > 0 ? date_i18n('M j, Y g:ia', $last_login_ts) : 'Never',
+                'presence_dot_class' => (string) ($presence['dot_class'] ?? 'cmn-presence-dot--offline'),
+                'presence_label' => (string) ($presence['label'] ?? 'Offline'),
+                'presence_detail' => (string) ($presence['detail'] ?? ''),
+            ];
+        }
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Staff</h2>
-            <p>Add staff members and assign their roles.</p>
-        </header>
-        <div class="cmn-portal-grid cmn-staff-page-grid">
-            <div class="cmn-dashboard-card cmn-staff-table-card">
-                <div class="cmn-card-header cmn-staff-table-header">
-                    <h3>Current Staff</h3>
-                    <button class="cmn-primary cmn-btn-mini" type="button" data-staff-add-open>+ Add staff</button>
+        <header class="cmn-school-header cmn-staff-header">
+            <div class="cmn-header-row">
+                <div>
+                    <h2>Staff</h2>
+                    <p>Manage account access, roles and team availability in one controlled view.</p>
                 </div>
-                <?php if ($staff_users) : ?>
-                    <div class="cmn-staff-table-wrap">
-                    <table class="cmn-approval-table">
-                        <thead>
+                <div class="cmn-header-actions">
+                    <span class="cmn-status-chip is-pending">Total <?php echo esc_html((string) $staff_totals['total']); ?></span>
+                    <span class="cmn-status-chip is-approved">Active <?php echo esc_html((string) $staff_totals['active']); ?></span>
+                    <span class="cmn-status-chip is-declined">Deactivated <?php echo esc_html((string) $staff_totals['deactivated']); ?></span>
+                    <button class="cmn-primary cmn-btn-mini" type="button" data-staff-add-open>Add Staff</button>
+                </div>
+            </div>
+        </header>
+        <section class="cmn-dashboard-card cmn-staff-table-card cmn-staff-console-card">
+            <div class="cmn-card-header cmn-staff-table-header">
+                <h3>Staff Directory <span class="cmn-muted">(<?php echo esc_html((string) count($visible_staff_rows)); ?> shown)</span></h3>
+            </div>
+            <form method="get" class="cmn-filters cmn-staff-filters">
+                <input type="hidden" name="view" value="staff">
+                <input type="search" name="s" placeholder="Search staff name, username or email" value="<?php echo esc_attr($staff_search); ?>">
+                <select name="cmn_staff_role">
+                    <option value="">All roles</option>
+                    <option value="admin" <?php selected($staff_role_filter, 'admin'); ?>>Admin</option>
+                    <option value="cmn_account_manager" <?php selected($staff_role_filter, 'cmn_account_manager'); ?>>Account Manager</option>
+                    <option value="cmn_staff" <?php selected($staff_role_filter, 'cmn_staff'); ?>>Staff</option>
+                </select>
+                <select name="cmn_staff_status">
+                    <option value="">All statuses</option>
+                    <option value="active" <?php selected($staff_status_filter, 'active'); ?>>Active</option>
+                    <option value="deactivated" <?php selected($staff_status_filter, 'deactivated'); ?>>Deactivated</option>
+                </select>
+                <button class="cmn-primary" type="submit">Apply Filters</button>
+                <a class="cmn-ghost cmn-button-link" href="<?php echo esc_url($staff_clear_url); ?>">Clear</a>
+            </form>
+            <div class="cmn-staff-table-wrap">
+                <table class="cmn-approval-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Role</th>
+                            <th>Email</th>
+                            <th>Last Login</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if ($visible_staff_rows) : ?>
+                        <?php foreach ($visible_staff_rows as $row) : ?>
                             <tr>
-                                <th>Name</th>
-                                <th>Username</th>
-                                <th>Email</th>
-                                <th>Role</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        <?php foreach ($staff_users as $staff) : ?>
-                            <?php
-                            $is_deactivated = get_user_meta($staff->ID, 'cmn_deactivated', true) ? true : false;
-                            $role_label = implode(', ', $staff->roles);
-                            $presence = $this->get_staff_presence_snapshot((int) $staff->ID, $presence_now);
-                            ?>
-                            <tr>
-                                <td class="cmn-staff-name" title="<?php echo esc_attr((string) $staff->display_name); ?>"><?php echo esc_html($staff->display_name); ?></td>
-                                <td class="cmn-staff-username" title="<?php echo esc_attr((string) $staff->user_login); ?>"><?php echo esc_html($staff->user_login); ?></td>
-                                <td class="cmn-staff-email" title="<?php echo esc_attr((string) $staff->user_email); ?>"><?php echo esc_html($staff->user_email); ?></td>
-                                <td class="cmn-staff-role"><?php echo esc_html($role_label); ?></td>
-                                <td class="cmn-staff-status">
-                                    <span class="cmn-status-chip <?php echo $is_deactivated ? 'is-declined' : 'is-approved'; ?>">
-                                        <?php echo $is_deactivated ? 'Deactivated' : 'Active'; ?>
-                                    </span>
+                                <td class="cmn-staff-name" title="<?php echo esc_attr($row['name']); ?>">
+                                    <strong><?php echo esc_html($row['name']); ?></strong>
+                                    <div class="cmn-muted cmn-staff-subline">@<?php echo esc_html($row['username']); ?></div>
+                                </td>
+                                <td class="cmn-staff-role"><?php echo esc_html($row['role_label']); ?></td>
+                                <td class="cmn-staff-email" title="<?php echo esc_attr($row['email']); ?>"><?php echo esc_html($row['email']); ?></td>
+                                <td class="cmn-staff-last-login">
+                                    <span><?php echo esc_html($row['last_login_label']); ?></span>
                                     <div class="cmn-staff-presence">
-                                        <span class="cmn-presence-dot <?php echo esc_attr((string) ($presence['dot_class'] ?? 'cmn-presence-dot--offline')); ?>"></span>
-                                        <span class="cmn-staff-presence-label"><?php echo esc_html((string) ($presence['label'] ?? 'Offline')); ?></span>
-                                        <?php if (!empty($presence['detail'])) : ?>
-                                            <span class="cmn-muted"><?php echo esc_html((string) $presence['detail']); ?></span>
-                                        <?php endif; ?>
+                                        <span class="cmn-presence-dot <?php echo esc_attr($row['presence_dot_class']); ?>"></span>
+                                        <span class="cmn-staff-presence-label"><?php echo esc_html($row['presence_label']); ?></span>
                                     </div>
                                 </td>
+                                <td class="cmn-staff-status">
+                                    <span class="cmn-status-chip <?php echo $row['is_deactivated'] ? 'is-declined' : 'is-approved'; ?>">
+                                        <?php echo $row['is_deactivated'] ? 'Deactivated' : 'Active'; ?>
+                                    </span>
+                                </td>
                                 <td class="cmn-staff-actions">
-                                    <div class="cmn-staff-action-menu" data-staff-action-menu>
-                                        <button class="cmn-ghost cmn-btn-mini" type="button" data-staff-action-toggle aria-expanded="false">
-                                            Actions
+                                    <div class="cmn-staff-row-actions">
+                                        <button class="cmn-ghost cmn-btn-mini" type="button"
+                                                data-staff-view
+                                                data-staff-id="<?php echo esc_attr((string) $row['id']); ?>"
+                                                data-staff-name="<?php echo esc_attr($row['name']); ?>"
+                                                data-staff-username="<?php echo esc_attr($row['username']); ?>"
+                                                data-staff-email="<?php echo esc_attr($row['email']); ?>"
+                                                data-staff-role="<?php echo esc_attr($row['editable_role']); ?>">
+                                            View profile
                                         </button>
-                                        <div class="cmn-staff-action-dropdown" data-staff-action-dropdown hidden>
-                                            <button class="cmn-staff-action-item" type="button"
-                                                    data-staff-edit
-                                                    data-staff-id="<?php echo esc_attr($staff->ID); ?>"
-                                                    data-staff-name="<?php echo esc_attr($staff->display_name); ?>"
-                                                    data-staff-username="<?php echo esc_attr($staff->user_login); ?>"
-                                                    data-staff-email="<?php echo esc_attr($staff->user_email); ?>"
-                                                    data-staff-role="<?php echo esc_attr($staff->roles ? $staff->roles[0] : 'cmn_staff'); ?>">
-                                                Edit
-                                            </button>
-                                            <button class="cmn-staff-action-item" type="button"
-                                                    data-staff-reset
-                                                    data-staff-id="<?php echo esc_attr($staff->ID); ?>">
-                                                Reset password
-                                            </button>
-                                            <button class="cmn-staff-action-item is-danger" type="button"
-                                                    data-staff-toggle
-                                                    data-staff-id="<?php echo esc_attr($staff->ID); ?>"
-                                                    data-staff-active="<?php echo $is_deactivated ? '0' : '1'; ?>">
-                                                <?php echo $is_deactivated ? 'Activate' : 'Deactivate'; ?>
-                                            </button>
-                                        </div>
+                                        <button class="cmn-ghost cmn-btn-mini" type="button"
+                                                data-staff-edit
+                                                data-staff-id="<?php echo esc_attr((string) $row['id']); ?>"
+                                                data-staff-name="<?php echo esc_attr($row['name']); ?>"
+                                                data-staff-username="<?php echo esc_attr($row['username']); ?>"
+                                                data-staff-email="<?php echo esc_attr($row['email']); ?>"
+                                                data-staff-role="<?php echo esc_attr($row['editable_role']); ?>">
+                                            Edit
+                                        </button>
+                                        <button class="cmn-ghost cmn-btn-mini <?php echo $row['is_deactivated'] ? '' : 'is-danger'; ?>" type="button"
+                                                data-staff-toggle
+                                                data-staff-id="<?php echo esc_attr((string) $row['id']); ?>"
+                                                data-staff-active="<?php echo $row['is_deactivated'] ? '0' : '1'; ?>">
+                                            <?php echo $row['is_deactivated'] ? 'Activate' : 'Deactivate'; ?>
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    </div>
-                <?php else : ?>
-                    <p class="cmn-muted">No staff users found.</p>
-                <?php endif; ?>
+                    <?php else : ?>
+                        <tr><td colspan="6">No staff users found for this filter.</td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
-        </div>
+        </section>
         <div class="cmn-modal" data-staff-add-modal>
             <div class="cmn-modal-content">
                 <div class="cmn-modal-header">
@@ -38791,7 +38925,7 @@ final class CMN_One_Plugin {
         <div class="cmn-modal" data-staff-modal>
             <div class="cmn-modal-content">
                 <div class="cmn-modal-header">
-                    <h3>Edit Staff Member</h3>
+                    <h3 data-staff-modal-title>Edit Staff Member</h3>
                     <button class="cmn-ghost cmn-btn-mini" type="button" data-staff-modal-close>Close</button>
                 </div>
                 <form class="cmn-form" data-staff-edit-form>
@@ -38812,7 +38946,7 @@ final class CMN_One_Plugin {
                             <option value="cmn_admin">Admin</option>
                         </select>
                     </label>
-                    <button class="cmn-primary" type="submit">Save Changes</button>
+                    <button class="cmn-primary" type="submit" data-staff-edit-submit>Save Changes</button>
                     <div class="cmn-muted cmn-staff-form-msg" data-staff-edit-msg></div>
                 </form>
             </div>

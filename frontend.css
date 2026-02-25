@@ -1485,6 +1485,101 @@ body.cmn-portal-page img[src*="fasthosts"] {
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35);
 }
 
+.cmn-staff-header .cmn-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cmn-staff-console-card {
+  padding: 16px 16px 12px;
+}
+
+.cmn-staff-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(160px, 0.8fr) minmax(160px, 0.8fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.cmn-staff-filters .cmn-button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.cmn-staff-table-card .cmn-approval-table {
+  min-width: 980px;
+}
+
+.cmn-staff-table-card .cmn-approval-table thead th {
+  white-space: nowrap;
+}
+
+.cmn-staff-table-card .cmn-staff-name {
+  width: 22%;
+}
+
+.cmn-staff-table-card .cmn-staff-role {
+  width: 14%;
+}
+
+.cmn-staff-table-card .cmn-staff-email {
+  width: 20%;
+  max-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmn-staff-table-card .cmn-staff-last-login {
+  width: 18%;
+}
+
+.cmn-staff-table-card .cmn-staff-status {
+  width: 11%;
+}
+
+.cmn-staff-table-card .cmn-staff-actions {
+  width: 15%;
+  min-width: 250px;
+}
+
+.cmn-staff-table-card td.cmn-staff-actions {
+  display: table-cell;
+}
+
+.cmn-staff-subline {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.cmn-staff-last-login {
+  display: grid;
+  gap: 4px;
+}
+
+.cmn-staff-last-login > span {
+  font-weight: 600;
+  color: var(--cmn-text);
+}
+
+.cmn-staff-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmn-staff-row-actions .cmn-btn-mini {
+  min-height: 30px;
+  padding: 6px 10px;
+}
+
 .cmn-doc-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1670,6 +1765,15 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
     flex-direction: column;
   }
 
+  .cmn-staff-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cmn-staff-filters .cmn-primary,
+  .cmn-staff-filters .cmn-button-link {
+    width: 100%;
+  }
+
   .cmn-staff-inline-controls {
     grid-template-columns: 1fr;
   }
@@ -1682,9 +1786,19 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
     justify-content: flex-start;
   }
 
+  .cmn-staff-row-actions {
+    justify-content: flex-start;
+  }
+
   .cmn-doc-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 767px) {
+  .cmn-staff-filters {
+    grid-template-columns: 1fr;
   }
 }
 

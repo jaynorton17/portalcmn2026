@@ -5587,101 +5587,114 @@ document.addEventListener('DOMContentLoaded', function () {
     var modalClose = staffModal.querySelector('[data-staff-modal-close]');
     var editForm = staffModal.querySelector('[data-staff-edit-form]');
     var editMsg = staffModal.querySelector('[data-staff-edit-msg]');
+    var modalTitle = staffModal.querySelector('[data-staff-modal-title]');
+    var editSubmitBtn = staffModal.querySelector('[data-staff-edit-submit]');
     var currentRow = null;
-    var staffActionMenus = Array.prototype.slice.call(document.querySelectorAll('[data-staff-action-menu]'));
 
-    var closeStaffActionMenus = function () {
-      staffActionMenus.forEach(function (menu) {
-        var toggle = menu.querySelector('[data-staff-action-toggle]');
-        var dropdown = menu.querySelector('[data-staff-action-dropdown]');
-        if (dropdown) {
-          dropdown.hidden = true;
-          dropdown.classList.remove('is-dropup');
-        }
-        if (toggle) {
-          toggle.setAttribute('aria-expanded', 'false');
-        }
-      });
-    };
-
-    staffActionMenus.forEach(function (menu) {
-      var toggle = menu.querySelector('[data-staff-action-toggle]');
-      var dropdown = menu.querySelector('[data-staff-action-dropdown]');
-      if (!toggle || !dropdown) {
-        return;
-      }
-      toggle.addEventListener('click', function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        var willOpen = dropdown.hidden;
-        closeStaffActionMenus();
-        if (!willOpen) {
-          return;
-        }
-        dropdown.hidden = false;
-        toggle.setAttribute('aria-expanded', 'true');
-        dropdown.classList.remove('is-dropup');
-        var rect = dropdown.getBoundingClientRect();
-        if (rect.bottom > (window.innerHeight - 8)) {
-          dropdown.classList.add('is-dropup');
-        }
-      });
-      menu.querySelectorAll('[data-staff-edit],[data-staff-reset],[data-staff-toggle]').forEach(function (actionButton) {
-        actionButton.addEventListener('click', function (event) {
-          event.stopPropagation();
-          closeStaffActionMenus();
-        });
-      });
-    });
-
-    document.addEventListener('click', function (event) {
-      if (!event.target.closest('[data-staff-action-menu]')) {
-        closeStaffActionMenus();
-      }
-    });
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape') {
-        closeStaffActionMenus();
-      }
-    });
-
-    var roleLabel = function (role) {
-      if (role === 'cmn_admin') {
+    var roleValue = function (role) {
+      var normalizedRole = String(role || '').toLowerCase();
+      if (normalizedRole === 'administrator' || normalizedRole === 'admin') {
         return 'cmn_admin';
       }
-      if (role === 'cmn_account_manager') {
+      if (normalizedRole === 'cmn_admin') {
+        return 'cmn_admin';
+      }
+      if (normalizedRole === 'cmn_account_manager' || normalizedRole === 'account manager') {
         return 'cmn_account_manager';
       }
       return 'cmn_staff';
     };
 
+    var roleDisplay = function (role) {
+      if (role === 'administrator' || role === 'cmn_admin') {
+        return 'Admin';
+      }
+      if (role === 'cmn_account_manager') {
+        return 'Account Manager';
+      }
+      return 'Staff';
+    };
+
+    var setStaffModalMode = function (mode) {
+      if (!editForm) {
+        return;
+      }
+      var safeMode = mode === 'view' ? 'view' : 'edit';
+      editForm.setAttribute('data-mode', safeMode);
+      var isView = safeMode === 'view';
+      var nameInput = editForm.querySelector('input[name="staff_name"]');
+      var emailInput = editForm.querySelector('input[name="staff_email"]');
+      var usernameInput = editForm.querySelector('input[name="staff_username"]');
+      var roleSelect = editForm.querySelector('select[name="staff_role"]');
+      if (nameInput) {
+        nameInput.readOnly = isView;
+      }
+      if (emailInput) {
+        emailInput.readOnly = isView;
+      }
+      if (usernameInput) {
+        usernameInput.readOnly = true;
+      }
+      if (roleSelect) {
+        roleSelect.disabled = isView;
+      }
+      if (modalTitle) {
+        modalTitle.textContent = isView ? 'Staff Profile' : 'Edit Staff Member';
+      }
+      if (editSubmitBtn) {
+        editSubmitBtn.hidden = isView;
+        editSubmitBtn.disabled = isView;
+      }
+    };
+
+    var openStaffModal = function (button, mode) {
+      currentRow = button.closest('tr');
+      if (!editForm) {
+        return;
+      }
+      editForm.querySelector('input[name="staff_id"]').value = button.getAttribute('data-staff-id') || '';
+      editForm.querySelector('input[name="staff_name"]').value = button.getAttribute('data-staff-name') || '';
+      editForm.querySelector('input[name="staff_username"]').value = button.getAttribute('data-staff-username') || '';
+      editForm.querySelector('input[name="staff_email"]').value = button.getAttribute('data-staff-email') || '';
+      editForm.querySelector('select[name="staff_role"]').value = roleValue(button.getAttribute('data-staff-role') || 'cmn_staff');
+      setStaffModalMode(mode);
+      if (editMsg) {
+        editMsg.textContent = '';
+      }
+      staffModal.classList.add('is-open');
+    };
+    setStaffModalMode('edit');
+
     document.querySelectorAll('[data-staff-edit]').forEach(function (button) {
       button.addEventListener('click', function () {
-        currentRow = button.closest('tr');
-        if (!editForm) {
-          return;
-        }
-        editForm.querySelector('input[name="staff_id"]').value = button.getAttribute('data-staff-id') || '';
-        editForm.querySelector('input[name="staff_name"]').value = button.getAttribute('data-staff-name') || '';
-        editForm.querySelector('input[name="staff_username"]').value = button.getAttribute('data-staff-username') || '';
-        editForm.querySelector('input[name="staff_email"]').value = button.getAttribute('data-staff-email') || '';
-        editForm.querySelector('select[name="staff_role"]').value = roleLabel(button.getAttribute('data-staff-role') || 'cmn_staff');
-        if (editMsg) {
-          editMsg.textContent = '';
-        }
-        staffModal.classList.add('is-open');
+        openStaffModal(button, 'edit');
+      });
+    });
+    document.querySelectorAll('[data-staff-view]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        openStaffModal(button, 'view');
       });
     });
 
     if (modalClose) {
       modalClose.addEventListener('click', function () {
+        setStaffModalMode('edit');
         staffModal.classList.remove('is-open');
       });
     }
+    staffModal.addEventListener('click', function (event) {
+      if (event.target === staffModal) {
+        setStaffModalMode('edit');
+        staffModal.classList.remove('is-open');
+      }
+    });
 
     if (editForm) {
       editForm.addEventListener('submit', function (event) {
         event.preventDefault();
+        if (editForm.getAttribute('data-mode') === 'view') {
+          return;
+        }
         var formData = new FormData();
         formData.append('action', 'cmn_update_staff_user');
         formData.append('nonce', window.cmnPortal.staffNonce);
@@ -5713,7 +5726,12 @@ document.addEventListener('DOMContentLoaded', function () {
               var emailCell = currentRow.querySelector('.cmn-staff-email');
               var roleCell = currentRow.querySelector('.cmn-staff-role');
               if (nameCell) {
-                nameCell.textContent = user.name;
+                var nameStrong = nameCell.querySelector('strong');
+                if (nameStrong) {
+                  nameStrong.textContent = user.name;
+                } else {
+                  nameCell.textContent = user.name;
+                }
                 nameCell.setAttribute('title', user.name || '');
               }
               if (emailCell) {
@@ -5721,18 +5739,18 @@ document.addEventListener('DOMContentLoaded', function () {
                 emailCell.setAttribute('title', user.email || '');
               }
               if (roleCell) {
-                roleCell.textContent = user.role;
+                roleCell.textContent = roleDisplay(user.role);
               }
-              var editBtn = currentRow.querySelector('[data-staff-edit]');
-              if (editBtn) {
-                editBtn.setAttribute('data-staff-name', user.name);
-                editBtn.setAttribute('data-staff-email', user.email);
-                editBtn.setAttribute('data-staff-role', user.role);
-              }
+              currentRow.querySelectorAll('[data-staff-edit],[data-staff-view]').forEach(function (actionBtn) {
+                actionBtn.setAttribute('data-staff-name', user.name);
+                actionBtn.setAttribute('data-staff-email', user.email);
+                actionBtn.setAttribute('data-staff-role', roleValue(user.role));
+              });
             }
             if (editMsg) {
               editMsg.textContent = 'Saved.';
             }
+            setStaffModalMode('edit');
             staffModal.classList.remove('is-open');
           })
           .catch(function () {
@@ -5813,6 +5831,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             button.textContent = isDeactivated ? 'Activate' : 'Deactivate';
             button.setAttribute('data-staff-active', isDeactivated ? '0' : '1');
+            button.classList.toggle('is-danger', !isDeactivated);
           })
           .catch(function () {
             alert('Unable to update status.');
