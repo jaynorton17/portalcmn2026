@@ -13709,7 +13709,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
   margin: 0 auto;
   min-height: var(--cmn-availability-action-band-height) !important;
   display: grid !important;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: 1fr 0.5fr;
   align-items: stretch;
   justify-items: stretch;
   gap: 0 !important;
