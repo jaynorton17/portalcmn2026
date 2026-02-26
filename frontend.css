@@ -13407,12 +13407,12 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-tomo
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-unavailable-morning-btn {
   align-self: center;
   justify-self: center;
-  width: calc(100% - 48px);
+  width: auto !important;
   max-width: none;
   border-top: 0 !important;
   border-bottom: 0 !important;
   padding-top: 0 !important;
-  padding-bottom: 10px !important;
+  padding-bottom: 0 !important;
   margin: 0 auto !important;
 }
 
