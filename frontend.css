@@ -13393,6 +13393,12 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section {
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section .cmn-availability-countdown {
+  display: block !important;
+  width: 100% !important;
+  text-align: center !important;
+  align-self: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
   border-bottom: 0 !important;
   padding-bottom: 0 !important;
   margin-bottom: 0 !important;
