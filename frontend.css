@@ -13396,6 +13396,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-tomo
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-unavailable-morning-btn {
   align-self: center;
   justify-self: center;
+  width: min(760px, 100%);
+  max-width: 760px;
+  border-top: 1px solid rgba(255, 255, 255, 0.16) !important;
+  padding-top: 10px !important;
   margin: 0 auto !important;
 }
 
@@ -13403,6 +13407,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
   align-self: center;
   justify-self: center;
   width: min(760px, 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.16) !important;
   margin: 0 auto;
   min-height: 0 !important;
   padding: 10px 0 !important;
@@ -13416,6 +13421,9 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band .cmn-availability-bottom-row {
+  width: min(760px, 100%);
+  border-top: 1px solid #000000 !important;
+  padding-top: 10px !important;
   justify-content: center !important;
   align-items: center !important;
 }
