@@ -13443,7 +13443,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-unav
   border-top: 0 !important;
   border-bottom: 0 !important;
   padding: 0 12px !important;
-  margin: 0 auto !important;
+  margin: 0 auto var(--cmn-availability-segment-gap) !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-availability-lower-band {
