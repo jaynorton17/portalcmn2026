@@ -65814,16 +65814,6 @@ final class CMN_One_Plugin {
                                     <span class="cmn-candidate-summary-subtext">All complete</span>
                                 <?php endif; ?>
                             </a>
-                            <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_learning_url); ?>">
-                                <span class="cmn-candidate-summary-label">Learning courses</span>
-                                <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small"><?php echo esc_html($learning_progress_text); ?></strong>
-                                <span class="cmn-candidate-summary-subtext"><?php echo esc_html($learning_progress_subtext); ?></span>
-                            </a>
-                            <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_rewards_url); ?>">
-                                <span class="cmn-candidate-summary-label">CMN tier status</span>
-                                <strong class="cmn-candidate-summary-value"><?php echo esc_html($tier_label); ?></strong>
-                                <span class="cmn-candidate-summary-subtext">View rewards tier</span>
-                            </a>
                             <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_feedback_url); ?>">
                                 <span class="cmn-candidate-summary-label">Feedback score</span>
                                 <span class="cmn-candidate-feedback-stars" role="img" aria-label="<?php echo esc_attr($feedback_has_reviews ? ($feedback_score_label . ' from ' . $feedback_count_total . ' review(s)') : 'No feedback yet, showing baseline five stars'); ?>">
@@ -65831,6 +65821,16 @@ final class CMN_One_Plugin {
                                     <span class="cmn-candidate-feedback-stars-fill" style="width: <?php echo esc_attr(number_format($feedback_star_fill_percent, 2, '.', '')); ?>%;">★★★★★</span>
                                 </span>
                                 <span class="cmn-candidate-summary-subtext"><?php echo esc_html($feedback_score_label); ?></span>
+                            </a>
+                            <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_rewards_url); ?>">
+                                <span class="cmn-candidate-summary-label">CMN tier status</span>
+                                <strong class="cmn-candidate-summary-value"><?php echo esc_html($tier_label); ?></strong>
+                                <span class="cmn-candidate-summary-subtext">View rewards tier</span>
+                            </a>
+                            <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_learning_url); ?>">
+                                <span class="cmn-candidate-summary-label">Learning courses</span>
+                                <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small"><?php echo esc_html($learning_progress_text); ?></strong>
+                                <span class="cmn-candidate-summary-subtext"><?php echo esc_html($learning_progress_subtext); ?></span>
                             </a>
                         </div>
                         <div class="cmn-dashboard-card cmn-calendar-planner" data-candidate-calendar data-tour-target="availability-planner"
