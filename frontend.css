@@ -13420,6 +13420,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
   justify-self: center;
   width: min(760px, 100%);
   border-top: 0 !important;
+  border-bottom: 0 !important;
   margin: 0 auto;
   min-height: 0 !important;
   padding: 10px 0 !important;
