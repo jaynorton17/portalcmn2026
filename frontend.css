@@ -13409,9 +13409,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-unav
   justify-self: center;
   width: min(760px, 100%);
   max-width: 760px;
-  border-top: 1px solid rgba(255, 255, 255, 0.16) !important;
   border-bottom: 1px solid rgba(203, 213, 225, 0.62) !important;
-  padding-top: 10px !important;
+  padding-top: 0 !important;
   padding-bottom: 10px !important;
   margin: 0 auto !important;
 }
@@ -13435,8 +13434,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band .cmn-availability-bottom-row {
   width: min(760px, 100%);
-  border-top: 1px solid #000000 !important;
-  padding-top: 10px !important;
+  border-top: 0 !important;
+  padding-top: 0 !important;
   justify-content: center !important;
   align-items: center !important;
 }
