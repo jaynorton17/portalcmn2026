@@ -13374,11 +13374,22 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero::afte
   content: none !important;
 }
 
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero {
+  --cmn-availability-segment-width: calc(100% - 24px);
+  --cmn-availability-segment-gap: 10px;
+}
+
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section {
   position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   text-align: center !important;
   border-bottom: 0 !important;
-  padding-bottom: 10px;
+  padding-bottom: var(--cmn-availability-segment-gap);
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section .cmn-availability-countdown {
@@ -13390,8 +13401,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section .cmn-availa
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section::after {
   content: '';
   display: block;
-  width: calc(100% - 24px);
-  margin: 10px auto 0;
+  width: var(--cmn-availability-segment-width);
+  margin: var(--cmn-availability-segment-gap) auto 0;
   border-bottom: 1px solid rgba(203, 213, 225, 0.62);
 }
 
@@ -13400,7 +13411,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions {
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 12px !important;
+  gap: var(--cmn-availability-segment-gap) !important;
   text-align: center !important;
   width: 100% !important;
 }
@@ -13430,12 +13441,12 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-unav
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-availability-lower-band {
   align-self: center;
   justify-self: center;
-  width: calc(100% - 24px);
+  width: var(--cmn-availability-segment-width);
   border-top: 1px solid rgba(203, 213, 225, 0.62) !important;
   border-bottom: 0 !important;
   margin: 0 auto;
   min-height: 0 !important;
-  padding: 10px 0 !important;
+  padding: var(--cmn-availability-segment-gap) 0 !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-availability-helper {
@@ -13476,7 +13487,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band .cmn-availability-impact {
   width: 100%;
   margin: 0 auto;
-  padding-bottom: 10px !important;
+  padding-top: var(--cmn-availability-segment-gap) !important;
+  padding-bottom: var(--cmn-availability-segment-gap) !important;
   border-bottom: 1px solid rgba(203, 213, 225, 0.62) !important;
   text-align: center !important;
 }
