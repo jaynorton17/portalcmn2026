@@ -13291,6 +13291,23 @@ body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main 
   color: #e9eef7 !important;
 }
 
+/* Candidate dashboard cards below section 1: vary red glow origin per card */
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-row > .cmn-dashboard-card::before {
+  background: radial-gradient(circle at 16% 18%, rgba(208, 42, 42, 0.22), transparent 62%) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-row > .cmn-dashboard-card:nth-child(2n)::before {
+  background: radial-gradient(circle at 84% 16%, rgba(208, 42, 42, 0.22), transparent 62%) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-row > .cmn-dashboard-card:nth-child(3n)::before {
+  background: radial-gradient(circle at 18% 82%, rgba(208, 42, 42, 0.22), transparent 62%) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-row > .cmn-dashboard-card:nth-child(4n)::before {
+  background: radial-gradient(circle at 82% 80%, rgba(208, 42, 42, 0.22), transparent 62%) !important;
+}
+
 body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(p, li, label, .cmn-muted, .cmn-profile-meta-label) {
   color: rgba(233, 238, 247, 0.74) !important;
 }
