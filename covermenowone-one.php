@@ -65898,33 +65898,6 @@ final class CMN_One_Plugin {
                                 <?php endif; ?>
                             </div>
                         <?php endif; ?>
-                        <div class="cmn-dashboard-row cmn-dashboard-row-equal">
-                            <div class="cmn-dashboard-card" data-tour-target="profile-documents">
-                                <div class="cmn-card-header">
-                                    <h3>Profile & Documents</h3>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile'], $portal_url)); ?>">View profile</a>
-                                </div>
-                                <p data-profile-completion-copy>Profile <?php echo esc_html($completion_percent); ?>% complete</p>
-                                <div class="cmn-progress-bar"><span data-profile-completion-bar style="width: <?php echo esc_attr($completion_percent); ?>%;"></span></div>
-                                <ul class="cmn-status-list">
-                                    <li class="<?php echo $doc_cv['uploaded'] ? 'is-ok' : 'is-warn'; ?>">CV <?php echo $doc_cv['uploaded'] ? 'Uploaded' : 'Required'; ?></li>
-                                    <li class="<?php echo $doc_dbs['uploaded'] ? 'is-ok' : 'is-warn'; ?>">DBS <?php echo $doc_dbs['uploaded'] ? 'Uploaded' : 'Required'; ?></li>
-                                    <li class="<?php echo $doc_id['uploaded'] ? 'is-ok' : 'is-warn'; ?>">ID <?php echo $doc_id['uploaded'] ? 'Uploaded' : 'Required'; ?></li>
-                                </ul>
-                            </div>
-                            <div class="cmn-dashboard-card" data-tour-target="availability-summary">
-                                <div class="cmn-card-header">
-                                    <h3>Availability Summary</h3>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'calendar'], $portal_url)); ?>">Manage</a>
-                                </div>
-                                <p>Next available date</p>
-                                <strong data-summary-next-date><?php echo esc_html($next_available_label); ?></strong>
-                                <div class="cmn-availability-stats">
-                                    <div><span class="cmn-dot is-available"></span> <span data-summary-available><?php echo esc_html($available_count); ?></span> Available days</div>
-                                    <div><span class="cmn-dot is-unavailable"></span> <span data-summary-unavailable><?php echo esc_html($unavailable_count); ?></span> Unavailable days</div>
-                                </div>
-                            </div>
-                        </div>
                     <?php endif; ?>
                     <?php if ($is_preview) : ?>
                         <div class="cmn-preview-register">
