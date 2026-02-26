@@ -13426,6 +13426,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions {
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-tomorrow-availability-btn {
   align-self: center;
   justify-self: center;
+  margin-top: -4px !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-unavailable-morning-btn {
