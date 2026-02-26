@@ -13375,7 +13375,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero::afte
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero {
-  --cmn-availability-segment-width: calc(100% - 12px);
+  --cmn-availability-segment-width: calc(100% - 4px);
   --cmn-availability-segment-gap: 10px;
   --cmn-availability-action-band-height: calc(58px + 39px + (var(--cmn-availability-segment-gap) * 2));
 }
