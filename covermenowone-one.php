@@ -65645,8 +65645,8 @@ final class CMN_One_Plugin {
                                                                 <div class="cmn-availability-countdown" data-availability-countdown></div>
                             </div>
                             <div class="cmn-availability-hero-action confirm-actions">
-                                <button id="cmn-tomorrow-availability-btn" class="cmn-availability-btn btn-confirm" type="button" data-availability-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>"<?php echo $availability_button_disabled ? ' disabled' : ''; ?> data-availability-date="<?php echo esc_attr($target_date); ?>" data-available="<?php echo $already_marked ? '1' : '0'; ?>" data-calendar-blocked="<?php echo $calendar_blocked ? '1' : '0'; ?>" data-availability-period-label="<?php echo esc_attr($period_label); ?>"<?php echo $availability_next_press_label !== '' ? ' data-availability-next-open-label="' . esc_attr($availability_next_press_label) . '"' : ''; ?><?php echo !empty($availability_window['window_open_at']) ? ' data-availability-open-at="' . esc_attr((string) $availability_window['window_open_at']) . '"' : ''; ?><?php echo !empty($availability_window['window_close_at']) ? ' data-availability-close-at="' . esc_attr((string) $availability_window['window_close_at']) . '"' : ''; ?>>
-                                    <?php echo esc_html($already_marked ? ('Confirmed for ' . $period_label) : ('Confirm availability for ' . $period_label)); ?>
+                                <button id="cmn-tomorrow-availability-btn" class="cmn-availability-btn btn-confirm<?php echo $already_marked ? ' is-confirmed' : ''; ?>" type="button" data-availability-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>"<?php echo $availability_button_disabled ? ' disabled' : ''; ?> data-availability-date="<?php echo esc_attr($target_date); ?>" data-availability-date-label="<?php echo esc_attr($target_label); ?>" data-available="<?php echo $already_marked ? '1' : '0'; ?>" data-calendar-blocked="<?php echo $calendar_blocked ? '1' : '0'; ?>" data-availability-period-label="<?php echo esc_attr($period_label); ?>"<?php echo $availability_next_press_label !== '' ? ' data-availability-next-open-label="' . esc_attr($availability_next_press_label) . '"' : ''; ?><?php echo !empty($availability_window['window_open_at']) ? ' data-availability-open-at="' . esc_attr((string) $availability_window['window_open_at']) . '"' : ''; ?><?php echo !empty($availability_window['window_close_at']) ? ' data-availability-close-at="' . esc_attr((string) $availability_window['window_close_at']) . '"' : ''; ?>>
+                                    <?php echo esc_html($already_marked ? 'Availability confirmed' : ('Confirm availability for ' . $period_label)); ?>
                                 </button>
                                 <button id="cmn-unavailable-morning-btn" class="cmn-availability-btn-secondary" type="button" data-availability-unavailable-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>" data-availability-date="<?php echo esc_attr($target_date); ?>">I'm not available</button>
                                 <div class="cmn-availability-lower-band">
@@ -78484,7 +78484,7 @@ p{margin:0;line-height:1.5}
             wp_send_json_error([
                 'message' => $closed_message,
                 'available' => $already_marked,
-                'button_text' => $already_marked ? ('I\'m NOT available ' . $period_label) : ('I\'m available ' . $period_label),
+                'button_text' => $already_marked ? 'Availability confirmed' : ('Confirm availability for ' . $period_label),
                 'button_enabled' => false,
                 'status_text' => $already_marked ? 'I\'m available' : 'Not confirmed yet',
             ], 400);
@@ -78494,7 +78494,7 @@ p{margin:0;line-height:1.5}
             wp_send_json_error([
                 'message' => 'You have marked yourself unavailable for ' . $period_label . ' in your calendar.',
                 'available' => false,
-                'button_text' => 'I\'m available ' . $period_label,
+                'button_text' => 'Confirm availability for ' . $period_label,
                 'button_enabled' => true,
                 'status_text' => 'I\'m not available',
             ], 400);
@@ -78502,16 +78502,12 @@ p{margin:0;line-height:1.5}
         global $wpdb;
         $table = $this->get_candidate_availability_table();
         if ($already_marked) {
-            $wpdb->delete($table, [
-                'candidate_id' => $candidate_id,
-                'available_date' => $target_date,
-            ], ['%d', '%s']);
             wp_send_json_success([
-                'message' => 'You\'re now marked as unavailable for ' . $period_label . '.',
-                'available' => false,
+                'message' => 'Availability confirmed for ' . $period_label . '.',
+                'available' => true,
                 'button_enabled' => true,
-                'status_text' => 'Not confirmed yet',
-                'button_text' => 'I\'m available ' . $period_label,
+                'status_text' => 'I\'m available',
+                'button_text' => 'Availability confirmed',
             ]);
         }
 
@@ -78527,12 +78523,12 @@ p{margin:0;line-height:1.5}
         }
 
         wp_send_json_success([
-            'message' => 'You\'re marked as available for ' . $period_label . '.',
+            'message' => 'Availability confirmed for ' . $period_label . '.',
             'date' => $target_date,
             'available' => true,
             'button_enabled' => true,
             'status_text' => 'I\'m available',
-            'button_text' => 'I\'m NOT available ' . $period_label,
+            'button_text' => 'Availability confirmed',
         ]);
     }
 
@@ -78565,11 +78561,11 @@ p{margin:0;line-height:1.5}
         ], ['%d', '%s']);
 
         wp_send_json_success([
-            'message' => 'Marked unavailable.',
+            'message' => 'You are marked unavailable for ' . $this->get_availability_period_label($target_date, $now) . '.',
             'available' => false,
             'button_enabled' => true,
             'status_text' => 'I\'m not available',
-            'button_text' => 'I\'m available ' . $this->get_availability_period_label($target_date, $now),
+            'button_text' => 'Confirm availability for ' . $this->get_availability_period_label($target_date, $now),
         ]);
     }
 

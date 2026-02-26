@@ -2055,6 +2055,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var availabilityImpact = document.querySelector('[data-availability-impact]');
       var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
       var availabilityPeriodLabel = availabilityButton.getAttribute('data-availability-period-label') || 'tomorrow morning';
+      var availabilityDateLabel = (availabilityButton.getAttribute('data-availability-date-label') || '').trim() || availabilityPeriodLabel;
       var countdownEl = document.querySelector('[data-availability-countdown]');
       var openAtRaw = availabilityButton.getAttribute('data-availability-open-at') || '';
       var closeAtRaw = availabilityButton.getAttribute('data-availability-close-at') || '';
@@ -2185,7 +2186,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
       var setAvailabilityVisualState = function (isAvailable) {
         availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
-        setAvailabilityButtonLabel(isAvailable ? ('Confirmed for ' + availabilityPeriodLabel) : ('Confirm availability for ' + availabilityPeriodLabel));
+        availabilityButton.classList.toggle('is-confirmed', !!isAvailable);
+        setAvailabilityButtonLabel(isAvailable ? 'Availability confirmed' : ('Confirm availability for ' + availabilityPeriodLabel));
         if (availabilityCard) {
           availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
           if (!isAvailable) {
@@ -2244,6 +2246,12 @@ document.addEventListener('DOMContentLoaded', function () {
             availabilityMessage.textContent = availabilityHelper.textContent.trim();
           }
           return;
+        }
+        if (availabilityButton.getAttribute('data-available') !== '1') {
+          var confirmMessage = 'Are you sure you want to confirm your availability for "' + availabilityDateLabel + '"?';
+          if (!window.confirm(confirmMessage)) {
+            return;
+          }
         }
         availabilityButton.disabled = true;
         var formData = new FormData();
