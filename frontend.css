@@ -13426,8 +13426,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-unav
   justify-self: center;
   width: min(380px, 50%) !important;
   max-width: 380px !important;
-  min-height: 58px !important;
-  height: 58px !important;
+  min-height: 39px !important;
+  height: 39px !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
