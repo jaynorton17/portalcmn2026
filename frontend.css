@@ -13486,6 +13486,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band .cmn-availability-impact {
   width: 100%;
+  max-width: none !important;
   margin: 0 auto;
   padding-top: var(--cmn-availability-segment-gap) !important;
   padding-bottom: var(--cmn-availability-segment-gap) !important;
