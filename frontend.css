@@ -13394,6 +13394,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-strip
   margin: 0 0 14px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-strip--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-card {
   display: flex;
   flex-direction: column;
