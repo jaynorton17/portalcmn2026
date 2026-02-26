@@ -65636,7 +65636,6 @@ final class CMN_One_Plugin {
                             $availability_state_text = 'I\'m available';
                         }
                         $availability_button_disabled = (!$availability_allowed);
-                        $confirmed_count = $this->count_available_candidates_for_date($target_date);
                         ?>
                         <div class="cmn-availability-hero <?php echo esc_attr($availability_state_class); ?>" data-availability-card data-tour-target="availability-button">
                             <div class="cmn-availability-hero-content confirm-section">
@@ -65657,7 +65656,6 @@ final class CMN_One_Plugin {
                                         </div>
                                     </div>
                                     <div class="cmn-availability-impact" data-availability-impact><?php echo esc_html($already_marked ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.'); ?></div>
-                                    <div class="cmn-availability-social" data-availability-social>🔥 <?php echo esc_html((string) $confirmed_count); ?> candidates have already confirmed</div>
                                 </div>
                                 <div class="cmn-availability-helper" data-availability-helper><?php echo esc_html($availability_button_helper); ?></div>
                             </div>
