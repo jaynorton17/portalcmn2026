@@ -13377,6 +13377,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero::afte
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero {
   --cmn-availability-segment-width: calc(100% - 24px);
   --cmn-availability-segment-gap: 10px;
+  --cmn-availability-action-band-height: calc(58px + 39px + (var(--cmn-availability-segment-gap) * 2));
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section {
@@ -13451,8 +13452,13 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
   border-top: 1px solid rgba(203, 213, 225, 0.62) !important;
   border-bottom: 0 !important;
   margin: 0 auto;
-  min-height: 0 !important;
-  padding: var(--cmn-availability-segment-gap) 0 !important;
+  min-height: var(--cmn-availability-action-band-height) !important;
+  display: grid !important;
+  grid-template-rows: 1fr 1fr;
+  align-items: stretch;
+  justify-items: center;
+  gap: 0 !important;
+  padding: 0 !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-availability-helper {
@@ -13465,7 +13471,9 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band .cmn-availability-bottom-row {
   width: 100%;
   border-top: 0 !important;
-  padding-top: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex !important;
   justify-content: center !important;
   align-items: center !important;
 }
@@ -13493,9 +13501,11 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band .cmn-availability-impact {
   width: 100%;
   max-width: none !important;
-  margin: 0 auto;
-  padding-top: var(--cmn-availability-segment-gap) !important;
-  padding-bottom: var(--cmn-availability-segment-gap) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   border-bottom: 1px solid rgba(203, 213, 225, 0.62) !important;
   text-align: center !important;
 }
