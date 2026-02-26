@@ -13519,6 +13519,16 @@ body.cmn-portal-page .cmn-candidate-main--dashboard #cmn-tomorrow-availability-b
   margin: 0 auto !important;
 }
 
+body.cmn-portal-page .cmn-candidate-main--dashboard #cmn-tomorrow-availability-btn:not(.is-confirmed):not([disabled]),
+body.cmn-portal-page .cmn-candidate-main--dashboard #cmn-tomorrow-availability-btn:not(.is-confirmed):not([disabled]):hover,
+body.cmn-portal-page .cmn-candidate-main--dashboard #cmn-tomorrow-availability-btn:not(.is-confirmed):not([disabled]):focus,
+body.cmn-portal-page .cmn-candidate-main--dashboard #cmn-tomorrow-availability-btn:not(.is-confirmed):not([disabled]):active {
+  background: #facc15 !important;
+  border-color: #facc15 !important;
+  color: #111827 !important;
+  box-shadow: 0 10px 24px rgba(250, 204, 21, 0.35) !important;
+}
+
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-progress,
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-global-editbar {
   background: rgba(16, 21, 28, 0.92) !important;
