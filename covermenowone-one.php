@@ -64400,6 +64400,140 @@ final class CMN_One_Plugin {
             $tab = 'candidate_finance';
         }
         $is_candidate_rewards_allowed = $candidate_user_id > 0 && $this->is_candidate_user($candidate_user_id);
+        $candidate_profile_url = add_query_arg(['candidate' => 'profile'], $portal_url);
+        $candidate_profile_personal_url = add_query_arg([
+            'candidate' => 'profile',
+            'cmn_profile_focus' => 'personal',
+        ], $portal_url) . '#cmn-profile-personal';
+        $candidate_profile_documents_url = add_query_arg([
+            'candidate' => 'profile',
+            'cmn_profile_focus' => 'documents',
+        ], $portal_url) . '#cmn-profile-documents';
+        $candidate_learning_url = add_query_arg(['candidate' => 'learning'], $portal_url);
+        $candidate_rewards_url = add_query_arg(['candidate' => 'rewards'], $portal_url);
+        $candidate_feedback_url = add_query_arg(['candidate' => 'feedback_ratings'], $portal_url);
+
+        $completion_missing_map = [
+            'add first name' => ['label' => 'First name', 'url' => $candidate_profile_personal_url],
+            'add last name' => ['label' => 'Last name', 'url' => $candidate_profile_personal_url],
+            'add email address' => ['label' => 'Email', 'url' => $candidate_profile_personal_url],
+            'add phone number' => ['label' => 'Phone', 'url' => $candidate_profile_personal_url],
+            'add nationality' => ['label' => 'Nationality', 'url' => $candidate_profile_personal_url],
+            'select role type' => ['label' => 'Role type', 'url' => $candidate_profile_personal_url],
+            'set travel radius' => ['label' => 'Travel radius', 'url' => $candidate_profile_personal_url],
+            'add location' => ['label' => 'Location', 'url' => $candidate_profile_personal_url],
+            'answer driving licence' => ['label' => 'Driving licence', 'url' => $candidate_profile_personal_url],
+            'answer own vehicle' => ['label' => 'Own vehicle', 'url' => $candidate_profile_personal_url],
+            'set qts status' => ['label' => 'QTS', 'url' => $candidate_profile_personal_url],
+            'upload cv' => ['label' => 'CV', 'url' => $candidate_profile_documents_url],
+            'upload dbs' => ['label' => 'DBS', 'url' => $candidate_profile_documents_url],
+            'upload photo id' => ['label' => 'Photo ID', 'url' => $candidate_profile_documents_url],
+        ];
+        $completion_outstanding_links = [];
+        $completion_seen = [];
+        foreach ((array) $completion_missing_items as $missing_item_raw) {
+            $missing_item = trim((string) $missing_item_raw);
+            if ($missing_item === '') {
+                continue;
+            }
+            $missing_key = strtolower($missing_item);
+            $mapped = $completion_missing_map[$missing_key] ?? null;
+            if (!is_array($mapped)) {
+                $fallback_words = preg_split('/\s+/', trim(preg_replace('/[^a-z0-9 ]+/i', ' ', $missing_item)));
+                $fallback_words = array_values(array_filter(array_map('trim', (array) $fallback_words)));
+                $fallback_label = $fallback_words ? implode(' ', array_slice($fallback_words, 0, 2)) : 'Update';
+                $mapped = [
+                    'label' => ucwords(strtolower($fallback_label)),
+                    'url' => $candidate_profile_personal_url,
+                ];
+            }
+            $label = sanitize_text_field((string) ($mapped['label'] ?? 'Update'));
+            $url = esc_url_raw((string) ($mapped['url'] ?? $candidate_profile_url));
+            if ($label === '' || $url === '') {
+                continue;
+            }
+            $signature = strtolower($label) . '|' . $url;
+            if (isset($completion_seen[$signature])) {
+                continue;
+            }
+            $completion_seen[$signature] = true;
+            $completion_outstanding_links[] = [
+                'label' => $label,
+                'url' => $url,
+            ];
+        }
+
+        $learning_catalog = get_option('cmn_learning_courses_catalog', []);
+        if (is_string($learning_catalog) && $learning_catalog !== '') {
+            $decoded_learning_catalog = json_decode($learning_catalog, true);
+            if (is_array($decoded_learning_catalog)) {
+                $learning_catalog = $decoded_learning_catalog;
+            }
+        }
+        if (!is_array($learning_catalog)) {
+            $learning_catalog = [];
+        }
+        $learning_total_courses = 0;
+        foreach ((array) $learning_catalog as $course_item) {
+            if (is_array($course_item)) {
+                $is_active = !isset($course_item['active']) || (string) $course_item['active'] !== '0';
+                if ($is_active) {
+                    $learning_total_courses++;
+                }
+                continue;
+            }
+            if ((string) $course_item !== '') {
+                $learning_total_courses++;
+            }
+        }
+        $learning_completed_courses = 0;
+        $learning_completed_meta = $candidate_user_id > 0 ? get_user_meta($candidate_user_id, 'cmn_learning_courses_completed', true) : [];
+        if (is_string($learning_completed_meta) && $learning_completed_meta !== '') {
+            $decoded_learning_completed = json_decode($learning_completed_meta, true);
+            if (is_array($decoded_learning_completed)) {
+                $learning_completed_meta = $decoded_learning_completed;
+            } else {
+                $learning_completed_meta = array_map('trim', explode(',', $learning_completed_meta));
+            }
+        }
+        if (is_array($learning_completed_meta)) {
+            $learning_completed_courses = count(array_filter(array_map('trim', array_map('strval', $learning_completed_meta))));
+        }
+        $learning_completed_courses = max(0, min($learning_total_courses, $learning_completed_courses));
+        $learning_progress_text = $learning_total_courses > 0
+            ? sprintf('%d out of %d completed', $learning_completed_courses, $learning_total_courses)
+            : 'N/A';
+        $learning_progress_subtext = $learning_total_courses > 0 ? 'Open Learning Centre' : 'No courses live yet';
+
+        $tier_label = 'N/A';
+        if ($is_candidate_rewards_allowed && $candidate_user_id > 0) {
+            $tier_payload = $this->get_candidate_rewards_overview_payload($candidate_user_id);
+            if (is_array($tier_payload) && !is_wp_error($tier_payload)) {
+                $tier_label = sanitize_text_field((string) ($tier_payload['tier_label'] ?? ''));
+                if ($tier_label === '') {
+                    $tier_label = $this->get_candidate_rewards_tier_label((string) ($tier_payload['tier'] ?? 'standard'));
+                }
+            }
+        }
+        if ($tier_label === '') {
+            $tier_label = 'Standard';
+        }
+
+        $feedback_rating_payload = $candidate_user_id > 0
+            ? $this->get_candidate_average_rating_payload($candidate_user_id)
+            : [
+                'avg_rating' => 0.0,
+                'avg_rating_raw' => 0.0,
+                'feedback_count' => 0,
+            ];
+        $feedback_score_raw = (float) ($feedback_rating_payload['avg_rating_raw'] ?? ($feedback_rating_payload['avg_rating'] ?? 0));
+        $feedback_score_raw = max(0.0, min(5.0, $feedback_score_raw));
+        $feedback_count_total = max(0, (int) ($feedback_rating_payload['feedback_count'] ?? 0));
+        $feedback_has_reviews = $feedback_count_total > 0;
+        $feedback_star_fill_percent = $feedback_has_reviews ? (($feedback_score_raw / 5) * 100) : 100;
+        $feedback_score_label = $feedback_has_reviews
+            ? number_format(round($feedback_score_raw, 1), 1) . ' out of 5 stars'
+            : 'NA';
         $nav_items = [
             'dashboard' => 'Dashboard',
             'profile' => 'Profile',
@@ -64588,7 +64722,7 @@ final class CMN_One_Plugin {
                             </div>
                         </div>
                         <div class="cmn-profile-grid cmn-profile-grid--candidate-profile">
-                            <div class="cmn-dashboard-card" data-profile-personal-card>
+                            <div class="cmn-dashboard-card" id="cmn-profile-personal" data-profile-personal-card>
                                 <div class="cmn-card-header">
                                     <h3>Profile Details</h3>
                                     <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit personal details">✎</button>
@@ -64815,7 +64949,7 @@ final class CMN_One_Plugin {
                                     </ul>
                                 </details>
                             </div>
-                            <div class="cmn-dashboard-card cmn-doc-upload-card" data-profile-edit-only hidden>
+                            <div class="cmn-dashboard-card cmn-doc-upload-card" id="cmn-profile-documents" data-profile-edit-only hidden>
                                 <div class="cmn-card-header">
                                     <h3>Documents Upload</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>"><?php echo esc_html($doc_summary['badge_label']); ?></span>
@@ -65637,6 +65771,41 @@ final class CMN_One_Plugin {
                         }
                         $availability_button_disabled = (!$availability_allowed);
                         ?>
+                        <div class="cmn-candidate-summary-strip" data-candidate-summary-strip>
+                            <div class="cmn-candidate-summary-card cmn-candidate-summary-card--profile">
+                                <span class="cmn-candidate-summary-label">Profile completion</span>
+                                <strong class="cmn-candidate-summary-value"><?php echo esc_html((int) $completion_percent); ?>%</strong>
+                                <?php if (!empty($completion_outstanding_links)) : ?>
+                                    <div class="cmn-candidate-summary-links">
+                                        <?php foreach ((array) $completion_outstanding_links as $outstanding_link) : ?>
+                                            <a class="cmn-candidate-summary-link" href="<?php echo esc_url((string) ($outstanding_link['url'] ?? $candidate_profile_personal_url)); ?>">
+                                                <?php echo esc_html((string) ($outstanding_link['label'] ?? 'Update')); ?>
+                                            </a>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php else : ?>
+                                    <span class="cmn-candidate-summary-subtext">All complete</span>
+                                <?php endif; ?>
+                            </div>
+                            <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_learning_url); ?>">
+                                <span class="cmn-candidate-summary-label">Learning courses</span>
+                                <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small"><?php echo esc_html($learning_progress_text); ?></strong>
+                                <span class="cmn-candidate-summary-subtext"><?php echo esc_html($learning_progress_subtext); ?></span>
+                            </a>
+                            <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_rewards_url); ?>">
+                                <span class="cmn-candidate-summary-label">CMN tier status</span>
+                                <strong class="cmn-candidate-summary-value"><?php echo esc_html($tier_label); ?></strong>
+                                <span class="cmn-candidate-summary-subtext">View rewards tier</span>
+                            </a>
+                            <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_feedback_url); ?>">
+                                <span class="cmn-candidate-summary-label">Feedback score</span>
+                                <span class="cmn-candidate-feedback-stars" role="img" aria-label="<?php echo esc_attr($feedback_has_reviews ? ($feedback_score_label . ' from ' . $feedback_count_total . ' review(s)') : 'No feedback yet, showing baseline five stars'); ?>">
+                                    <span class="cmn-candidate-feedback-stars-base">★★★★★</span>
+                                    <span class="cmn-candidate-feedback-stars-fill" style="width: <?php echo esc_attr(number_format($feedback_star_fill_percent, 2, '.', '')); ?>%;">★★★★★</span>
+                                </span>
+                                <span class="cmn-candidate-summary-subtext"><?php echo esc_html($feedback_score_label); ?></span>
+                            </a>
+                        </div>
                         <div class="cmn-availability-hero <?php echo esc_attr($availability_state_class); ?>" data-availability-card data-tour-target="availability-button">
                             <div class="cmn-availability-hero-content confirm-section">
                                 <h2><?php echo esc_html($availability_heading); ?></h2>

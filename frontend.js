@@ -9080,7 +9080,65 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     });
 
+    var profileFocusRaw = '';
+    try {
+      var profileFocusUrl = new URL(window.location.href);
+      profileFocusRaw = String(profileFocusUrl.searchParams.get('cmn_profile_focus') || '');
+    } catch (_error) {}
+    if (!profileFocusRaw && window.location.hash) {
+      profileFocusRaw = String(window.location.hash || '').replace(/^#/, '');
+    }
+    var normalizeProfileFocus = function (value) {
+      var normalized = String(value || '').toLowerCase().trim();
+      if (!normalized) {
+        return '';
+      }
+      if ([
+        'documents',
+        'document',
+        'doc',
+        'docs',
+        'profile-documents',
+        'cmn-profile-documents'
+      ].indexOf(normalized) !== -1) {
+        return 'documents';
+      }
+      if ([
+        'personal',
+        'profile',
+        'details',
+        'profile-personal',
+        'cmn-profile-personal'
+      ].indexOf(normalized) !== -1) {
+        return 'personal';
+      }
+      return '';
+    };
+    var applyProfileFocus = function () {
+      var focusTarget = normalizeProfileFocus(profileFocusRaw);
+      if (!focusTarget) {
+        return;
+      }
+      toggleProfileEditMode(true, true);
+      var targetSelector = focusTarget === 'documents' ? '#cmn-profile-documents' : '#cmn-profile-personal';
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(function () {
+          var target = document.querySelector(targetSelector);
+          if (!target) {
+            return;
+          }
+          if (typeof target.scrollIntoView === 'function') {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
+          var targetTop = target.getBoundingClientRect().top + window.pageYOffset - 20;
+          window.scrollTo(0, targetTop);
+        });
+      });
+    };
+
     toggleProfileEditMode(false, true);
+    applyProfileFocus();
   }
 
   if (candidateDocsRoot && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateDocNonce) {
