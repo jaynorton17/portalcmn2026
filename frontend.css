@@ -13474,7 +13474,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band .cmn-availability-impact {
-  width: calc(100% - 24px);
+  width: 100%;
   margin: 0 auto;
   padding-bottom: 10px !important;
   border-bottom: 1px solid rgba(203, 213, 225, 0.62) !important;
