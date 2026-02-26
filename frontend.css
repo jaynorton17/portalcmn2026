@@ -13622,7 +13622,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
   justify-self: center;
   width: var(--cmn-availability-segment-width);
   border-top: 1px solid var(--cmn-availability-divider-color) !important;
-  border-bottom: 1px solid var(--cmn-availability-divider-color) !important;
+  border-bottom: 0 !important;
   margin: 0 auto;
   min-height: var(--cmn-availability-action-band-height) !important;
   display: grid !important;
