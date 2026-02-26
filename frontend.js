@@ -2187,7 +2187,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var setAvailabilityVisualState = function (isAvailable) {
         availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
         availabilityButton.classList.toggle('is-confirmed', !!isAvailable);
-        setAvailabilityButtonLabel(isAvailable ? 'Availability confirmed' : ('Confirm availability for ' + availabilityPeriodLabel));
+        setAvailabilityButtonLabel(isAvailable ? 'Availability confirmed' : ('Click here to confirm availability for ' + availabilityPeriodLabel));
         if (availabilityCard) {
           availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
           if (!isAvailable) {
