@@ -7814,8 +7814,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var isoDate = function (dateObj) {
       return dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
     };
-    var todayStr = isoDate(today);
-    var limitDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    var windowStartDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    windowStartDate.setDate(windowStartDate.getDate() + 1);
+    var windowStartStr = isoDate(windowStartDate);
+    var limitDate = new Date(windowStartDate.getFullYear(), windowStartDate.getMonth(), windowStartDate.getDate());
     limitDate.setDate(limitDate.getDate() + 30);
     var limitStr = isoDate(limitDate);
     var feedbackTimer = null;
@@ -7959,7 +7961,11 @@ document.addEventListener('DOMContentLoaded', function () {
       var hasWeekdayInMonth = false;
       for (var probeDay = 1; probeDay <= daysInMonth; probeDay++) {
         var probeDate = new Date(year, monthIndex, probeDay);
+        var probeDateStr = isoDate(probeDate);
         var probeWeekday = probeDate.getDay();
+        if (probeDateStr < windowStartStr || probeDateStr > limitStr) {
+          continue;
+        }
         if (probeWeekday === 0 || probeWeekday === 6) {
           continue;
         }
@@ -7977,13 +7983,14 @@ document.addEventListener('DOMContentLoaded', function () {
       for (var d = 1; d <= daysInMonth; d++) {
         var dateObj = new Date(year, monthIndex, d);
         var dateStr = isoDate(dateObj);
+        if (dateStr < windowStartStr || dateStr > limitStr) {
+          continue;
+        }
         var status = data[dateStr] || '';
         var day = dateObj.getDay();
         if (day === 0 || day === 6) {
           continue;
         }
-        var isPast = dateStr < todayStr;
-        var isBeyondLimit = dateStr > limitStr;
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'cmn-calendar-cell';
@@ -7991,10 +7998,6 @@ document.addEventListener('DOMContentLoaded', function () {
           btn.classList.add('is-available');
         } else if (status === 'unavailable') {
           btn.classList.add('is-unavailable');
-        }
-        if (isPast || isBeyondLimit) {
-          btn.classList.add('is-disabled');
-          btn.disabled = true;
         }
         btn.setAttribute('data-date', dateStr);
         var span = document.createElement('span');

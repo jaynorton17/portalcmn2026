@@ -64255,13 +64255,17 @@ final class CMN_One_Plugin {
         $already_marked = $candidate_id ? $this->has_candidate_availability($candidate_id, $target_date) : false;
         $calendar_blocked = $candidate_id ? $this->is_candidate_unavailable($candidate_id, $target_date) : false;
 
-        $calendar_start = $now->format('Y-m-01');
-        $calendar_end = (clone $now)->modify('+1 month')->format('Y-m-t');
-        $calendar_min_month = $now->format('Y-m');
-        $calendar_max_month = (clone $now)->modify('+1 month')->format('Y-m');
+        $calendar_window_start = (clone $now)->modify('+1 day');
+        $calendar_window_end = (clone $calendar_window_start)->modify('+30 days');
+        $calendar_start = $calendar_window_start->format('Y-m-d');
+        $calendar_end = $calendar_window_end->format('Y-m-d');
+        $calendar_min_date = $calendar_start;
+        $calendar_max_date = $calendar_end;
+        $calendar_min_month = $calendar_window_start->format('Y-m');
+        $calendar_max_month = $calendar_window_end->format('Y-m');
         $calendar_map = $candidate_id ? $this->get_candidate_calendar_map($candidate_id, $calendar_start, $calendar_end) : [];
         $calendar_data = $calendar_map;
-        $cal_month = $now->format('Y-m');
+        $cal_month = $calendar_min_month;
         $month_start = new DateTime($cal_month . '-01', $tz);
         $days_in_month = (int) $month_start->format('t');
         $start_weekday = (int) $month_start->format('N'); // 1 (Mon) - 7 (Sun)
@@ -64272,7 +64276,7 @@ final class CMN_One_Plugin {
         foreach ($calendar_data as $date => $status) {
             if ($status === 'available') {
                 $available_count++;
-                if ($date >= $now->format('Y-m-d') && ($next_available === '' || $date < $next_available)) {
+                if ($date >= $calendar_min_date && ($next_available === '' || $date < $next_available)) {
                     $next_available = $date;
                 }
             }
@@ -65845,10 +65849,10 @@ final class CMN_One_Plugin {
                             <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
                             <div class="cmn-calendar-range-controls">
                                 <label>Start date
-                                    <input type="date" data-calendar-range-start min="<?php echo esc_attr(current_time('Y-m-d')); ?>" max="<?php echo esc_attr((new DateTime(current_time('Y-m-d'), wp_timezone()))->modify('+30 days')->format('Y-m-d')); ?>">
+                                    <input type="date" data-calendar-range-start min="<?php echo esc_attr($calendar_min_date); ?>" max="<?php echo esc_attr($calendar_max_date); ?>">
                                 </label>
                                 <label>End date
-                                    <input type="date" data-calendar-range-end min="<?php echo esc_attr(current_time('Y-m-d')); ?>" max="<?php echo esc_attr((new DateTime(current_time('Y-m-d'), wp_timezone()))->modify('+30 days')->format('Y-m-d')); ?>">
+                                    <input type="date" data-calendar-range-end min="<?php echo esc_attr($calendar_min_date); ?>" max="<?php echo esc_attr($calendar_max_date); ?>">
                                 </label>
                                 <button class="cmn-ghost" type="button" data-calendar-bulk="available">Mark as Available</button>
                                 <button class="cmn-ghost" type="button" data-calendar-bulk="unavailable">Mark as Unavailable</button>
