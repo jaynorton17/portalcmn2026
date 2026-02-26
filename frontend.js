@@ -2137,6 +2137,7 @@ document.addEventListener('DOMContentLoaded', function () {
       renderAvailabilityCountdown();
       availabilityCountdownTimer = window.setInterval(renderAvailabilityCountdown, 1000);
       if (availabilityCard && availabilityCard.classList.contains('is-blocked')) {
+        availabilityCard.classList.remove('is-confirmed');
         if (availabilityDot && availabilityDotLabel) {
           availabilityDot.classList.remove('is-confirmed', 'is-neutral');
           availabilityDot.classList.add('is-blocked');
@@ -2184,16 +2185,23 @@ document.addEventListener('DOMContentLoaded', function () {
         availabilityDotLabel.textContent = text;
       };
 
+      var setAvailabilityCardState = function (state) {
+        if (!availabilityCard) {
+          return;
+        }
+        availabilityCard.classList.remove('is-confirmed', 'is-blocked');
+        if (state === 'confirmed') {
+          availabilityCard.classList.add('is-confirmed');
+        } else if (state === 'blocked') {
+          availabilityCard.classList.add('is-blocked');
+        }
+      };
+
       var setAvailabilityVisualState = function (isAvailable) {
         availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
         availabilityButton.classList.toggle('is-confirmed', !!isAvailable);
         setAvailabilityButtonLabel(isAvailable ? 'Availability confirmed' : ('Click here to confirm availability for ' + availabilityPeriodLabel));
-        if (availabilityCard) {
-          availabilityCard.classList.toggle('is-confirmed', !!isAvailable);
-          if (!isAvailable) {
-            availabilityCard.classList.remove('is-blocked');
-          }
-        }
+        setAvailabilityCardState(isAvailable ? 'confirmed' : 'neutral');
         setStatusDot(isAvailable ? 'is-confirmed' : 'is-neutral', isAvailable ? 'Confirmed' : 'Not confirmed yet');
         if (availabilityImpact) {
           availabilityImpact.textContent = isAvailable ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.';
@@ -2215,9 +2223,7 @@ document.addEventListener('DOMContentLoaded', function () {
               unavailableButton.disabled = false;
               if (data && data.success) {
                 setAvailabilityVisualState(false);
-                if (availabilityCard) {
-                  availabilityCard.classList.add('is-blocked');
-                }
+                setAvailabilityCardState('blocked');
                 setStatusDot('is-blocked', "I'm not available");
                 if (availabilityImpact) { availabilityImpact.textContent = 'You are hidden from manager searches.'; }
                 if (availabilityMessage) {
@@ -2310,7 +2316,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 availabilityHelper.textContent = data.data.message;
               }
               if (availabilityCard && data && data.data && data.data.message && data.data.message.toLowerCase().indexOf('unavailable') !== -1) {
-                availabilityCard.classList.add('is-blocked');
+                setAvailabilityCardState('blocked');
               }
               syncAvailabilityButtonLabel();
             }
