@@ -7816,26 +7816,40 @@ document.addEventListener('DOMContentLoaded', function () {
       if (label) {
         label.textContent = monthToLabel(currentMonth);
       }
-      ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function (day) {
+      ['M', 'T', 'W', 'T', 'F'].forEach(function (day) {
         var cell = document.createElement('div');
         cell.className = 'cmn-calendar-day';
         cell.textContent = day;
         grid.appendChild(cell);
       });
-      var firstDay = new Date(year, monthIndex, 1);
-      var startWeekday = firstDay.getDay();
-      for (var i = 0; i < startWeekday; i++) {
-        var empty = document.createElement('div');
-        empty.className = 'cmn-calendar-cell is-empty';
-        grid.appendChild(empty);
-      }
       var daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+      var firstWeekdayOffset = 0;
+      var hasWeekdayInMonth = false;
+      for (var probeDay = 1; probeDay <= daysInMonth; probeDay++) {
+        var probeDate = new Date(year, monthIndex, probeDay);
+        var probeWeekday = probeDate.getDay();
+        if (probeWeekday === 0 || probeWeekday === 6) {
+          continue;
+        }
+        firstWeekdayOffset = probeWeekday - 1;
+        hasWeekdayInMonth = true;
+        break;
+      }
+      if (hasWeekdayInMonth) {
+        for (var i = 0; i < firstWeekdayOffset; i++) {
+          var empty = document.createElement('div');
+          empty.className = 'cmn-calendar-cell is-empty';
+          grid.appendChild(empty);
+        }
+      }
       for (var d = 1; d <= daysInMonth; d++) {
         var dateObj = new Date(year, monthIndex, d);
         var dateStr = isoDate(dateObj);
         var status = data[dateStr] || '';
         var day = dateObj.getDay();
-        var isWeekend = day === 0 || day === 6;
+        if (day === 0 || day === 6) {
+          continue;
+        }
         var isPast = dateStr < todayStr;
         var isBeyondLimit = dateStr > limitStr;
         var btn = document.createElement('button');
@@ -7846,10 +7860,7 @@ document.addEventListener('DOMContentLoaded', function () {
         } else if (status === 'unavailable') {
           btn.classList.add('is-unavailable');
         }
-        if (isWeekend) {
-          btn.classList.add('is-weekend');
-        }
-        if (isPast || isWeekend || isBeyondLimit) {
+        if (isPast || isBeyondLimit) {
           btn.classList.add('is-disabled');
           btn.disabled = true;
         }
@@ -7908,6 +7919,22 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       var current = data[dateStr] || '';
       var next = current === '' ? 'available' : current === 'available' ? 'unavailable' : '';
+      if (next === 'available') {
+        var confirmAvailableSingle = window.confirm(
+          'Mark this date as available?\n\nThis does not automatically confirm the availability button above.'
+        );
+        if (!confirmAvailableSingle) {
+          return;
+        }
+      }
+      if (next === 'unavailable') {
+        var confirmUnavailableSingle = window.confirm(
+          'Mark this date as unavailable?\n\nYou will be removed from school view for this date.'
+        );
+        if (!confirmUnavailableSingle) {
+          return;
+        }
+      }
       if (next) {
         data[dateStr] = next;
       } else {
@@ -7942,6 +7969,22 @@ document.addEventListener('DOMContentLoaded', function () {
           if (!range) {
             setFeedback('Select a valid start and end date.', 2200, 'warning');
             return;
+          }
+          if (status === 'available') {
+            var confirmAvailableRange = window.confirm(
+              'Mark selected dates as available?\n\nThis does not automatically confirm the availability button above.'
+            );
+            if (!confirmAvailableRange) {
+              return;
+            }
+          }
+          if (status === 'unavailable') {
+            var confirmUnavailableRange = window.confirm(
+              'Mark selected dates as unavailable?\n\nYou will be removed from school view on those selected dates.'
+            );
+            if (!confirmUnavailableRange) {
+              return;
+            }
           }
           var formData = new FormData();
           formData.append('action', 'cmn_bulk_update_calendar');
