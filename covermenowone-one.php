@@ -64533,7 +64533,7 @@ final class CMN_One_Plugin {
         $feedback_star_fill_percent = $feedback_has_reviews ? (($feedback_score_raw / 5) * 100) : 100;
         $feedback_score_label = $feedback_has_reviews
             ? number_format(round($feedback_score_raw, 1), 1) . ' out of 5 stars'
-            : 'NA';
+            : 'NA - Feedback not yet received';
         $nav_items = [
             'dashboard' => 'Dashboard',
             'profile' => 'Profile',
