@@ -13379,11 +13379,30 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section {
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions {
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 12px !important;
+  display: grid !important;
+  grid-template-rows: repeat(3, minmax(0, 1fr)) !important;
+  align-items: stretch !important;
+  gap: 0 !important;
   text-align: center !important;
+  width: 100% !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-tomorrow-availability-btn {
+  grid-row: 1;
+  align-self: center;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > #cmn-unavailable-morning-btn {
+  grid-row: 2;
+  align-self: center;
+  margin: 0 auto !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-availability-lower-band {
+  grid-row: 3;
+  align-self: center;
+  width: min(760px, 100%);
+  margin: 0 auto;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band .cmn-availability-bottom-row {
