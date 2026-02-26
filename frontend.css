@@ -13375,9 +13375,18 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero::afte
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero {
-  --cmn-availability-segment-width: calc(100% - 4px);
+  --cmn-availability-segment-width: 100%;
   --cmn-availability-segment-gap: 10px;
   --cmn-availability-action-band-height: calc(58px + 39px + (var(--cmn-availability-segment-gap) * 2));
+  --cmn-availability-divider-color: #facc15;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-confirmed {
+  --cmn-availability-divider-color: #16a34a;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-blocked {
+  --cmn-availability-divider-color: #dc2626;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section {
@@ -13410,7 +13419,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-section::after {
   display: block;
   width: var(--cmn-availability-segment-width);
   margin: var(--cmn-availability-segment-gap) auto 0;
-  border-bottom: 1px solid rgba(203, 213, 225, 0.62);
+  border-bottom: 1px solid var(--cmn-availability-divider-color);
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions {
@@ -13450,7 +13459,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .confirm-actions > .cmn-avai
   align-self: center;
   justify-self: center;
   width: var(--cmn-availability-segment-width);
-  border-top: 1px solid rgba(203, 213, 225, 0.62) !important;
+  border-top: 1px solid var(--cmn-availability-divider-color) !important;
   border-bottom: 0 !important;
   margin: 0 auto;
   min-height: var(--cmn-availability-action-band-height) !important;
@@ -13507,7 +13516,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-lower-band
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  border-bottom: 1px solid rgba(203, 213, 225, 0.62) !important;
+  border-bottom: 1px solid var(--cmn-availability-divider-color) !important;
   text-align: center !important;
 }
 
@@ -13528,6 +13537,16 @@ body.cmn-portal-page .cmn-candidate-main--dashboard #cmn-tomorrow-availability-b
   border-color: #facc15 !important;
   color: #111827 !important;
   box-shadow: 0 10px 24px rgba(250, 204, 21, 0.35) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-blocked #cmn-tomorrow-availability-btn:not(.is-confirmed),
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-blocked #cmn-tomorrow-availability-btn:not(.is-confirmed):hover,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-blocked #cmn-tomorrow-availability-btn:not(.is-confirmed):focus,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-blocked #cmn-tomorrow-availability-btn:not(.is-confirmed):active {
+  background: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(220, 38, 38, 0.35) !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-progress,
