@@ -1648,6 +1648,105 @@ body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback.is-error {
   color: #fee2e2;
 }
 
+body.cmn-portal-page .cmn-portal-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(3, 8, 18, 0.66);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+body.cmn-portal-page .cmn-portal-prompt.is-open {
+  opacity: 1;
+}
+
+body.cmn-portal-page .cmn-portal-prompt-card {
+  width: min(640px, calc(100% - 24px));
+  background: linear-gradient(145deg, rgba(10, 14, 24, 0.98), rgba(16, 21, 32, 0.96));
+  border: 1px solid rgba(248, 250, 252, 0.18);
+  border-radius: 18px;
+  padding: 24px 24px 20px;
+  box-shadow: 0 26px 54px rgba(0, 0, 0, 0.48);
+}
+
+body.cmn-portal-page .cmn-portal-prompt-card.is-success {
+  border-color: rgba(22, 163, 74, 0.46);
+}
+
+body.cmn-portal-page .cmn-portal-prompt-card.is-warning {
+  border-color: rgba(250, 204, 21, 0.52);
+}
+
+body.cmn-portal-page .cmn-portal-prompt-card.is-danger {
+  border-color: rgba(220, 38, 38, 0.52);
+}
+
+body.cmn-portal-page .cmn-portal-prompt-message {
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(15px, 1.35vw, 20px);
+  font-weight: 600;
+  line-height: 1.42;
+  text-align: center;
+  white-space: pre-line;
+}
+
+body.cmn-portal-page .cmn-portal-prompt-actions {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-portal-prompt-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+  transition: transform 0.14s ease, box-shadow 0.18s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+body.cmn-portal-page .cmn-portal-prompt-btn:hover {
+  transform: translateY(-1px);
+}
+
+body.cmn-portal-page .cmn-portal-prompt-btn.is-primary {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(220, 38, 38, 0.34);
+}
+
+body.cmn-portal-page .cmn-portal-prompt-card.is-success .cmn-portal-prompt-btn.is-primary {
+  background: #16a34a;
+  border-color: #16a34a;
+  box-shadow: 0 10px 20px rgba(22, 163, 74, 0.34);
+}
+
+body.cmn-portal-page .cmn-portal-prompt-card.is-warning .cmn-portal-prompt-btn.is-primary {
+  background: #facc15;
+  border-color: #facc15;
+  color: #111827;
+  box-shadow: 0 10px 20px rgba(250, 204, 21, 0.34);
+}
+
+body.cmn-portal-page .cmn-portal-prompt-btn.is-secondary {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(203, 213, 225, 0.28);
+  color: #e2e8f0;
+}
+
 @media (max-width: 767px) {
   body.cmn-portal-page #cmn-portal-overlay-root .cmn-calendar-feedback,
   body.cmn-portal-page #cmn-portal-overlay-root .cmn-toast,

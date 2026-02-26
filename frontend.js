@@ -183,6 +183,104 @@ document.addEventListener('DOMContentLoaded', function () {
     return root;
   };
   var portalOverlayRoot = ensurePortalOverlayRoot();
+  var openCenteredPortalPrompt = function (options) {
+    var config = options || {};
+    var message = String(config.message || '').trim();
+    if (!message) {
+      return Promise.resolve(false);
+    }
+    var primaryLabel = String(config.primaryLabel || 'OK').trim() || 'OK';
+    var secondaryLabel = String(config.secondaryLabel || '').trim();
+    var tone = String(config.tone || 'neutral').toLowerCase();
+    if (['neutral', 'success', 'warning', 'danger'].indexOf(tone) === -1) {
+      tone = 'neutral';
+    }
+
+    return new Promise(function (resolve) {
+      document.querySelectorAll('.cmn-portal-prompt').forEach(function (node) {
+        if (node && node.parentNode) {
+          node.parentNode.removeChild(node);
+        }
+      });
+
+      var backdrop = document.createElement('div');
+      backdrop.className = 'cmn-portal-prompt';
+      backdrop.setAttribute('role', 'dialog');
+      backdrop.setAttribute('aria-modal', 'true');
+      backdrop.setAttribute('aria-live', 'assertive');
+
+      var card = document.createElement('div');
+      card.className = 'cmn-portal-prompt-card is-' + tone;
+
+      var text = document.createElement('p');
+      text.className = 'cmn-portal-prompt-message';
+      text.textContent = message;
+
+      var actions = document.createElement('div');
+      actions.className = 'cmn-portal-prompt-actions';
+
+      var secondaryButton = null;
+      if (secondaryLabel) {
+        secondaryButton = document.createElement('button');
+        secondaryButton.type = 'button';
+        secondaryButton.className = 'cmn-portal-prompt-btn is-secondary';
+        secondaryButton.textContent = secondaryLabel;
+        actions.appendChild(secondaryButton);
+      }
+
+      var primaryButton = document.createElement('button');
+      primaryButton.type = 'button';
+      primaryButton.className = 'cmn-portal-prompt-btn is-primary';
+      primaryButton.textContent = primaryLabel;
+      actions.appendChild(primaryButton);
+
+      card.appendChild(text);
+      card.appendChild(actions);
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+      document.body.classList.add('cmn-support-modal-lock');
+
+      var resolved = false;
+      var keyHandler = function (event) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closePrompt(false);
+        }
+      };
+      var closePrompt = function (value) {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        document.removeEventListener('keydown', keyHandler, true);
+        document.body.classList.remove('cmn-support-modal-lock');
+        if (backdrop && backdrop.parentNode) {
+          backdrop.parentNode.removeChild(backdrop);
+        }
+        resolve(!!value);
+      };
+
+      primaryButton.addEventListener('click', function () {
+        closePrompt(true);
+      });
+      if (secondaryButton) {
+        secondaryButton.addEventListener('click', function () {
+          closePrompt(false);
+        });
+      }
+      backdrop.addEventListener('click', function (event) {
+        if (event.target === backdrop) {
+          closePrompt(false);
+        }
+      });
+      document.addEventListener('keydown', keyHandler, true);
+
+      window.requestAnimationFrame(function () {
+        backdrop.classList.add('is-open');
+        primaryButton.focus();
+      });
+    });
+  };
 
   var cmnPollManager = (function () {
     var tasks = {};
@@ -2233,6 +2331,11 @@ document.addEventListener('DOMContentLoaded', function () {
                   setAvailabilityButtonLabel(data.data.button_text);
                 }
                 syncAvailabilityButtonLabel();
+                openCenteredPortalPrompt({
+                  tone: 'danger',
+                  message: "Thanks for letting us know! We will be sure you dont show up in any searches in the morning!",
+                  primaryLabel: 'I understand',
+                });
               } else if (availabilityMessage) {
                 availabilityMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to update availability.';
               }
@@ -2246,18 +2349,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
-      availabilityButton.addEventListener('click', function () {
+      var submitAvailabilityUpdate = function () {
+        var wasAvailable = availabilityButton.getAttribute('data-available') === '1';
         if (availabilityButton.disabled) {
           if (availabilityHelper && availabilityHelper.textContent.trim()) {
             availabilityMessage.textContent = availabilityHelper.textContent.trim();
           }
           return;
-        }
-        if (availabilityButton.getAttribute('data-available') !== '1') {
-          var confirmMessage = 'Are you sure you want to confirm your availability for "' + availabilityDateLabel + '"?';
-          if (!window.confirm(confirmMessage)) {
-            return;
-          }
         }
         availabilityButton.disabled = true;
         var formData = new FormData();
@@ -2285,6 +2383,7 @@ document.addEventListener('DOMContentLoaded', function () {
               } else {
                 setAvailabilityVisualState(true);
               }
+              var isNowAvailable = data && data.data && typeof data.data.available !== 'undefined' ? !!data.data.available : true;
               if (data.data && typeof data.data.button_text === 'string') {
                 setAvailabilityButtonLabel(data.data.button_text);
               }
@@ -2301,6 +2400,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 availabilityHelper.textContent = '';
               }
               syncAvailabilityButtonLabel();
+              if (!wasAvailable && isNowAvailable) {
+                openCenteredPortalPrompt({
+                  tone: 'success',
+                  message: "Great job! We will let schools know you're available tomorrow morning! Be sure to checking the portal from 6am as you only have 10 minutes to confirm a booking",
+                  primaryLabel: "I'll be awake and checking the portal",
+                });
+              }
             } else {
               availabilityButton.disabled = false;
               if (availabilityMessage) {
@@ -2328,6 +2434,24 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             syncAvailabilityButtonLabel();
           });
+      };
+
+      availabilityButton.addEventListener('click', function () {
+        if (availabilityButton.getAttribute('data-available') !== '1') {
+          var confirmMessage = 'Are you sure you want to confirm your availability for "' + availabilityDateLabel + '"?';
+          openCenteredPortalPrompt({
+            tone: 'warning',
+            message: confirmMessage,
+            primaryLabel: 'Confirm availability',
+            secondaryLabel: 'Cancel',
+          }).then(function (confirmed) {
+            if (confirmed) {
+              submitAvailabilityUpdate();
+            }
+          });
+          return;
+        }
+        submitAvailabilityUpdate();
       });
     }
   }
@@ -7927,30 +8051,47 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       var current = data[dateStr] || '';
       var next = current === '' ? 'available' : current === 'available' ? 'unavailable' : '';
-      if (next === 'available') {
-        var confirmAvailableSingle = window.confirm(confirmAvailableMessage);
-        if (!confirmAvailableSingle) {
-          return;
+      var applyCellChange = function () {
+        if (next) {
+          data[dateStr] = next;
+        } else {
+          delete data[dateStr];
         }
+        cell.classList.remove('is-available', 'is-unavailable');
+        if (next === 'available') {
+          cell.classList.add('is-available');
+        } else if (next === 'unavailable') {
+          cell.classList.add('is-unavailable');
+        }
+        saveStatus(dateStr, next || 'neutral');
+      };
+      if (next === 'available') {
+        openCenteredPortalPrompt({
+          tone: 'warning',
+          message: confirmAvailableMessage,
+          primaryLabel: 'Confirm',
+          secondaryLabel: 'Cancel',
+        }).then(function (confirmed) {
+          if (confirmed) {
+            applyCellChange();
+          }
+        });
+        return;
       }
       if (next === 'unavailable') {
-        var confirmUnavailableSingle = window.confirm(confirmUnavailableMessage);
-        if (!confirmUnavailableSingle) {
-          return;
-        }
+        openCenteredPortalPrompt({
+          tone: 'danger',
+          message: confirmUnavailableMessage,
+          primaryLabel: 'Confirm',
+          secondaryLabel: 'Cancel',
+        }).then(function (confirmed) {
+          if (confirmed) {
+            applyCellChange();
+          }
+        });
+        return;
       }
-      if (next) {
-        data[dateStr] = next;
-      } else {
-        delete data[dateStr];
-      }
-      cell.classList.remove('is-available', 'is-unavailable');
-      if (next === 'available') {
-        cell.classList.add('is-available');
-      } else if (next === 'unavailable') {
-        cell.classList.add('is-unavailable');
-      }
-      saveStatus(dateStr, next || 'neutral');
+      applyCellChange();
     });
 
     var getRange = function () {
@@ -7975,16 +8116,54 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           if (status === 'available') {
-            var confirmAvailableRange = window.confirm(confirmAvailableMessage);
-            if (!confirmAvailableRange) {
-              return;
-            }
+            openCenteredPortalPrompt({
+              tone: 'warning',
+              message: confirmAvailableMessage,
+              primaryLabel: 'Confirm',
+              secondaryLabel: 'Cancel',
+            }).then(function (confirmed) {
+              if (!confirmed) {
+                return;
+              }
+              var formDataAvailable = new FormData();
+              formDataAvailable.append('action', 'cmn_bulk_update_calendar');
+              formDataAvailable.append('nonce', window.cmnPortal.calendarBulkNonce || '');
+              formDataAvailable.append('start_date', range.start);
+              formDataAvailable.append('end_date', range.end);
+              formDataAvailable.append('status', status);
+              setFeedback('Saving...', 0, 'warning');
+              requestCalendar(formDataAvailable, function (payload) {
+                replaceCalendarData(payload.calendar || {});
+                updateSummary(payload.summary);
+                setFeedback(payload.message || 'Saved', 1500, 'success');
+              });
+            });
+            return;
           }
           if (status === 'unavailable') {
-            var confirmUnavailableRange = window.confirm(confirmUnavailableMessage);
-            if (!confirmUnavailableRange) {
-              return;
-            }
+            openCenteredPortalPrompt({
+              tone: 'danger',
+              message: confirmUnavailableMessage,
+              primaryLabel: 'Confirm',
+              secondaryLabel: 'Cancel',
+            }).then(function (confirmed) {
+              if (!confirmed) {
+                return;
+              }
+              var formDataUnavailable = new FormData();
+              formDataUnavailable.append('action', 'cmn_bulk_update_calendar');
+              formDataUnavailable.append('nonce', window.cmnPortal.calendarBulkNonce || '');
+              formDataUnavailable.append('start_date', range.start);
+              formDataUnavailable.append('end_date', range.end);
+              formDataUnavailable.append('status', status);
+              setFeedback('Saving...', 0, 'warning');
+              requestCalendar(formDataUnavailable, function (payload) {
+                replaceCalendarData(payload.calendar || {});
+                updateSummary(payload.summary);
+                setFeedback(payload.message || 'Saved', 1500, 'success');
+              });
+            });
+            return;
           }
           var formData = new FormData();
           formData.append('action', 'cmn_bulk_update_calendar');
