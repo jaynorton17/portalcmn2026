@@ -13587,6 +13587,13 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-link:
   color: #fff1f3;
 }
 
+/* Section 3 (Availability Planner): remove red card glow */
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-calendar-planner::before {
+  content: none !important;
+  background: none !important;
+  opacity: 0 !important;
+}
+
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-feedback-stars {
   position: relative;
   display: inline-block;
