@@ -7675,6 +7675,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var summaryAvailable = document.querySelector('[data-summary-available]');
     var summaryUnavailable = document.querySelector('[data-summary-unavailable]');
     var data = {};
+    var confirmAvailableMessage = 'Marking yourself as available here does not automatically press the availability button above.';
+    var confirmUnavailableMessage = 'Marking yourself as unavailable here will remove you from the schools view on those selected dates.';
     try {
       data = JSON.parse(planner.getAttribute('data-calendar-data') || '{}');
     } catch (e) {
@@ -7926,17 +7928,13 @@ document.addEventListener('DOMContentLoaded', function () {
       var current = data[dateStr] || '';
       var next = current === '' ? 'available' : current === 'available' ? 'unavailable' : '';
       if (next === 'available') {
-        var confirmAvailableSingle = window.confirm(
-          'Mark this date as available?\n\nThis does not automatically confirm the availability button above.'
-        );
+        var confirmAvailableSingle = window.confirm(confirmAvailableMessage);
         if (!confirmAvailableSingle) {
           return;
         }
       }
       if (next === 'unavailable') {
-        var confirmUnavailableSingle = window.confirm(
-          'Mark this date as unavailable?\n\nYou will be removed from school view for this date.'
-        );
+        var confirmUnavailableSingle = window.confirm(confirmUnavailableMessage);
         if (!confirmUnavailableSingle) {
           return;
         }
@@ -7977,17 +7975,13 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           if (status === 'available') {
-            var confirmAvailableRange = window.confirm(
-              'Mark selected dates as available?\n\nThis does not automatically confirm the availability button above.'
-            );
+            var confirmAvailableRange = window.confirm(confirmAvailableMessage);
             if (!confirmAvailableRange) {
               return;
             }
           }
           if (status === 'unavailable') {
-            var confirmUnavailableRange = window.confirm(
-              'Mark selected dates as unavailable?\n\nYou will be removed from school view on those selected dates.'
-            );
+            var confirmUnavailableRange = window.confirm(confirmUnavailableMessage);
             if (!confirmUnavailableRange) {
               return;
             }

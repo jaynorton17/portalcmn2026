@@ -65842,10 +65842,6 @@ final class CMN_One_Plugin {
                                     <button class="cmn-ghost" type="button" data-calendar-next>&rarr;</button>
                                 </div>
                             </div>
-                            <div class="cmn-calendar-warning-box">
-                                <p>Marking yourself as available here does not automatically press the availability button above.</p>
-                                <p>Marking yourself as unavailable here will remove you from the schools view on those selected dates.</p>
-                            </div>
                             <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
                             <div class="cmn-calendar-range-controls">
                                 <label>Start date
