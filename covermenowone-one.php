@@ -65660,90 +65660,39 @@ final class CMN_One_Plugin {
                                 <div class="cmn-availability-helper" data-availability-helper><?php echo esc_html($availability_button_helper); ?></div>
                             </div>
                         </div>
-                        <div class="cmn-dashboard-row cmn-dashboard-row-equal">
-                            <div class="cmn-dashboard-card" data-tour-target="upcoming-bookings">
-                                <div class="cmn-card-header">
-                                    <h3>Upcoming Booking</h3>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings'], $portal_url)); ?>">View all</a>
-                                </div>
-                                <?php if ($upcoming_booking) : ?>
-                                    <?php
-                                    $booking_date = get_post_meta($upcoming_booking->ID, 'cmn_date', true) ?: get_post_meta($upcoming_booking->ID, 'cmn_start_date', true);
-                                    $school_id = (int) get_post_meta($upcoming_booking->ID, 'cmn_school_id', true);
-                                    $school_name = $school_id ? get_the_title($school_id) : 'School';
-                                    ?>
-                                    <strong><?php echo esc_html($booking_date ? date_i18n('l, F jS', strtotime($booking_date)) : ''); ?></strong>
-                                    <span><?php echo esc_html($school_name); ?></span>
-                                    <span class="cmn-pill cmn-pill--confirmed">Confirmed</span>
-                                <?php else : ?>
-                                    <?php
-                                    echo $this->render_empty_explain_panel(
-                                        'No upcoming bookings',
-                                        'You have no upcoming confirmed bookings yet.',
-                                        'Update availability',
-                                        $candidate_calendar_url
-                                    );
-                                    ?>
-                                <?php endif; ?>
-                            </div>
-                            <div class="cmn-dashboard-card" data-tour-target="booking-history">
-                                <div class="cmn-card-header">
-                                    <h3>Booking History</h3>
-                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'past'], $portal_url)); ?>">View all</a>
-                                </div>
-                                <?php if ($past_bookings) : ?>
-                                    <div class="cmn-list">
-                                        <?php foreach ($past_bookings as $booking) : ?>
-                                            <?php
-                                            $booking_date = get_post_meta($booking->ID, 'cmn_date', true) ?: get_post_meta($booking->ID, 'cmn_start_date', true);
-                                            $school_id = (int) get_post_meta($booking->ID, 'cmn_school_id', true);
-                                            $school_name = $school_id ? get_the_title($school_id) : 'School';
-                                            ?>
-                                            <div class="cmn-list-item">
-                                                <strong><?php echo esc_html($school_name); ?></strong>
-                                                <span><?php echo esc_html($booking_date ? date_i18n('M j, Y', strtotime($booking_date)) : ''); ?></span>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php else : ?>
-                                    <?php
-                                    echo $this->render_empty_explain_panel(
-                                        'No booking history',
-                                        'Completed bookings will appear here after your first placement.',
-                                        'Complete profile',
-                                        $candidate_profile_url
-                                    );
-                                    ?>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <div class="cmn-dashboard-card cmn-earnings-card">
-                            <div class="cmn-card-header">
-                                <h3>Earnings</h3>
-                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings'], $portal_url)); ?>">Bookings</a>
-                            </div>
-                            <div class="cmn-profile-meta-grid">
-                                <div class="cmn-profile-meta-item">
-                                    <span class="cmn-profile-meta-label">This month</span>
-                                    <strong class="cmn-profile-meta-value">GBP <?php echo esc_html(number_format((float) ($earnings_metrics['month_total'] ?? 0), 2)); ?></strong>
-                                </div>
-                                <div class="cmn-profile-meta-item">
-                                    <span class="cmn-profile-meta-label">Academic year</span>
-                                    <strong class="cmn-profile-meta-value">GBP <?php echo esc_html(number_format((float) ($earnings_metrics['academic_year_total'] ?? 0), 2)); ?></strong>
-                                </div>
-                                <div class="cmn-profile-meta-item">
-                                    <span class="cmn-profile-meta-label">Lifetime</span>
-                                    <strong class="cmn-profile-meta-value">GBP <?php echo esc_html(number_format((float) ($earnings_metrics['lifetime_total'] ?? 0), 2)); ?></strong>
-                                </div>
-                                <div class="cmn-profile-meta-item">
-                                    <span class="cmn-profile-meta-label">Upcoming booked</span>
-                                    <strong class="cmn-profile-meta-value">GBP <?php echo esc_html(number_format((float) ($earnings_metrics['upcoming_total'] ?? 0), 2)); ?></strong>
-                                </div>
-                                <div class="cmn-profile-meta-item">
-                                    <span class="cmn-profile-meta-label">Average daily rate</span>
-                                    <strong class="cmn-profile-meta-value">GBP <?php echo esc_html(number_format((float) ($earnings_metrics['average_daily_rate'] ?? 0), 2)); ?></strong>
+                        <div class="cmn-dashboard-card cmn-calendar-planner" data-candidate-calendar data-tour-target="availability-planner"
+                             data-calendar-month="<?php echo esc_attr($calendar_min_month); ?>"
+                             data-calendar-min="<?php echo esc_attr($calendar_min_month); ?>"
+                             data-calendar-max="<?php echo esc_attr($calendar_max_month); ?>"
+                             data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
+                            <div class="cmn-card-header cmn-calendar-header">
+                                <h3>Availability Planner</h3>
+                                <div class="cmn-calendar-controls">
+                                    <button class="cmn-ghost" type="button" data-calendar-prev>&larr;</button>
+                                    <span data-calendar-label></span>
+                                    <button class="cmn-ghost" type="button" data-calendar-next>&rarr;</button>
                                 </div>
                             </div>
+                            <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
+                            <div class="cmn-calendar-range-controls">
+                                <label>Start date
+                                    <input type="date" data-calendar-range-start min="<?php echo esc_attr(current_time('Y-m-d')); ?>" max="<?php echo esc_attr((new DateTime(current_time('Y-m-d'), wp_timezone()))->modify('+30 days')->format('Y-m-d')); ?>">
+                                </label>
+                                <label>End date
+                                    <input type="date" data-calendar-range-end min="<?php echo esc_attr(current_time('Y-m-d')); ?>" max="<?php echo esc_attr((new DateTime(current_time('Y-m-d'), wp_timezone()))->modify('+30 days')->format('Y-m-d')); ?>">
+                                </label>
+                                <button class="cmn-ghost" type="button" data-calendar-bulk="available">Mark as Available</button>
+                                <button class="cmn-ghost" type="button" data-calendar-bulk="unavailable">Mark as Unavailable</button>
+                                <button class="cmn-ghost" type="button" data-calendar-clear="range">Clear selected range</button>
+                                <button class="cmn-ghost" type="button" data-calendar-clear="next30">Clear availability (next 30 days)</button>
+                            </div>
+                            <div class="cmn-calendar-legend">
+                                <span><span class="cmn-dot is-available"></span> Available</span>
+                                <span><span class="cmn-dot is-unavailable"></span> Unavailable</span>
+                                <span><span class="cmn-dot is-weekend"></span> Weekend locked</span>
+                                <span><span class="cmn-dot"></span> Neutral</span>
+                            </div>
+                            <div class="cmn-calendar-feedback" data-calendar-feedback></div>
                         </div>
                         <?php if ($is_candidate_rewards_allowed) : ?>
                             <div class="cmn-dashboard-card cmn-candidate-weekly-earnings-card"
@@ -65780,40 +65729,6 @@ final class CMN_One_Plugin {
                                 <?php endif; ?>
                             </div>
                         <?php endif; ?>
-                        <div class="cmn-dashboard-card cmn-calendar-planner" data-candidate-calendar data-tour-target="availability-planner"
-                             data-calendar-month="<?php echo esc_attr($calendar_min_month); ?>"
-                             data-calendar-min="<?php echo esc_attr($calendar_min_month); ?>"
-                             data-calendar-max="<?php echo esc_attr($calendar_max_month); ?>"
-                             data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
-                            <div class="cmn-card-header cmn-calendar-header">
-                                <h3>Availability Planner</h3>
-                                <div class="cmn-calendar-controls">
-                                    <button class="cmn-ghost" type="button" data-calendar-prev>&larr;</button>
-                                    <span data-calendar-label></span>
-                                    <button class="cmn-ghost" type="button" data-calendar-next>&rarr;</button>
-                                </div>
-                            </div>
-                            <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
-                            <div class="cmn-calendar-range-controls">
-                                <label>Start date
-                                    <input type="date" data-calendar-range-start min="<?php echo esc_attr(current_time('Y-m-d')); ?>" max="<?php echo esc_attr((new DateTime(current_time('Y-m-d'), wp_timezone()))->modify('+30 days')->format('Y-m-d')); ?>">
-                                </label>
-                                <label>End date
-                                    <input type="date" data-calendar-range-end min="<?php echo esc_attr(current_time('Y-m-d')); ?>" max="<?php echo esc_attr((new DateTime(current_time('Y-m-d'), wp_timezone()))->modify('+30 days')->format('Y-m-d')); ?>">
-                                </label>
-                                <button class="cmn-ghost" type="button" data-calendar-bulk="available">Mark as Available</button>
-                                <button class="cmn-ghost" type="button" data-calendar-bulk="unavailable">Mark as Unavailable</button>
-                                <button class="cmn-ghost" type="button" data-calendar-clear="range">Clear selected range</button>
-                                <button class="cmn-ghost" type="button" data-calendar-clear="next30">Clear availability (next 30 days)</button>
-                            </div>
-                            <div class="cmn-calendar-legend">
-                                <span><span class="cmn-dot is-available"></span> Available</span>
-                                <span><span class="cmn-dot is-unavailable"></span> Unavailable</span>
-                                <span><span class="cmn-dot is-weekend"></span> Weekend locked</span>
-                                <span><span class="cmn-dot"></span> Neutral</span>
-                            </div>
-                            <div class="cmn-calendar-feedback" data-calendar-feedback></div>
-                        </div>
                         <div class="cmn-dashboard-row cmn-dashboard-row-equal">
                             <div class="cmn-dashboard-card" data-tour-target="profile-documents">
                                 <div class="cmn-card-header">
