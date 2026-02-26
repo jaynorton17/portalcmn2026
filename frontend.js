@@ -7820,6 +7820,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var limitDate = new Date(windowStartDate.getFullYear(), windowStartDate.getMonth(), windowStartDate.getDate());
     limitDate.setDate(limitDate.getDate() + 30);
     var limitStr = isoDate(limitDate);
+    var rollingWindowMode = true;
     var feedbackTimer = null;
 
     if (feedback && portalOverlayRoot) {
@@ -7941,6 +7942,62 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       grid.innerHTML = '';
+      if (rollingWindowMode) {
+        if (label) {
+          label.textContent = 'Next 30 Days';
+        }
+        if (prevBtn) {
+          prevBtn.disabled = true;
+        }
+        if (nextBtn) {
+          nextBtn.disabled = true;
+        }
+        ['M', 'T', 'W', 'T', 'F'].forEach(function (dayLabel) {
+          var weekdayCell = document.createElement('div');
+          weekdayCell.className = 'cmn-calendar-day';
+          weekdayCell.textContent = dayLabel;
+          grid.appendChild(weekdayCell);
+        });
+
+        var firstRenderDate = new Date(windowStartDate.getFullYear(), windowStartDate.getMonth(), windowStartDate.getDate());
+        while (firstRenderDate <= limitDate && (firstRenderDate.getDay() === 0 || firstRenderDate.getDay() === 6)) {
+          firstRenderDate.setDate(firstRenderDate.getDate() + 1);
+        }
+        if (firstRenderDate <= limitDate) {
+          var firstOffset = Math.max(0, firstRenderDate.getDay() - 1);
+          for (var pad = 0; pad < firstOffset; pad++) {
+            var emptyPad = document.createElement('div');
+            emptyPad.className = 'cmn-calendar-cell is-empty';
+            grid.appendChild(emptyPad);
+          }
+        }
+
+        var cursor = new Date(windowStartDate.getFullYear(), windowStartDate.getMonth(), windowStartDate.getDate());
+        while (cursor <= limitDate) {
+          var weekday = cursor.getDay();
+          if (weekday !== 0 && weekday !== 6) {
+            var dateStrRolling = isoDate(cursor);
+            var statusRolling = data[dateStrRolling] || '';
+            var btnRolling = document.createElement('button');
+            btnRolling.type = 'button';
+            btnRolling.className = 'cmn-calendar-cell';
+            if (statusRolling === 'available') {
+              btnRolling.classList.add('is-available');
+            } else if (statusRolling === 'unavailable') {
+              btnRolling.classList.add('is-unavailable');
+            }
+            btnRolling.setAttribute('data-date', dateStrRolling);
+            btnRolling.title = cursor.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+            var spanRolling = document.createElement('span');
+            spanRolling.textContent = cursor.getDate();
+            btnRolling.appendChild(spanRolling);
+            grid.appendChild(btnRolling);
+          }
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        return;
+      }
+
       var parts = currentMonth.split('-');
       if (parts.length !== 2) {
         return;
@@ -8022,6 +8079,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (prevBtn) {
       prevBtn.addEventListener('click', function () {
+        if (rollingWindowMode) {
+          return;
+        }
         var nextMonth = shiftMonth(currentMonth, -1);
         if (inRange(nextMonth)) {
           currentMonth = nextMonth;
@@ -8031,6 +8091,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (nextBtn) {
       nextBtn.addEventListener('click', function () {
+        if (rollingWindowMode) {
+          return;
+        }
         var nextMonth = shiftMonth(currentMonth, 1);
         if (inRange(nextMonth)) {
           currentMonth = nextMonth;
