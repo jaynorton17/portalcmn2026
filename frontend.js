@@ -9550,7 +9550,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
         var profile = data.data && data.data.profile ? data.data.profile : {};
         var fullName = (profile.full_name || '').trim();
+        var firstNameValue = String(profile.first_name || '').trim();
+        var lastNameValue = String(profile.last_name || '').trim();
+        if (!firstNameValue && fullName) {
+          var fullNameParts = fullName.split(/\s+/);
+          firstNameValue = fullNameParts[0] || '';
+          lastNameValue = fullNameParts.length > 1 ? fullNameParts.slice(1).join(' ') : '';
+        }
 
+        var firstNameEl = document.querySelector('[data-profile-first-name]');
+        var lastNameEl = document.querySelector('[data-profile-last-name]');
         var fullNameEl = document.querySelector('[data-profile-full-name]');
         var emailEl = document.querySelector('[data-profile-email]');
         var phoneEl = document.querySelector('[data-profile-phone]');
@@ -9574,6 +9583,12 @@ document.addEventListener('DOMContentLoaded', function () {
         var postcodeEl = document.querySelector('[data-profile-postcode]');
         var notesEl = document.querySelector('[data-profile-notes]');
 
+        if (firstNameEl) {
+          firstNameEl.textContent = firstNameValue || 'Not set';
+        }
+        if (lastNameEl) {
+          lastNameEl.textContent = lastNameValue || 'Not set';
+        }
         if (fullNameEl) {
           fullNameEl.textContent = fullName || 'Candidate';
         }
