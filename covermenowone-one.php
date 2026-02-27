@@ -65456,6 +65456,20 @@ final class CMN_One_Plugin {
                             $contact_card_feedback_text = $feedback_has_reviews
                                 ? number_format(round($feedback_score_raw, 1), 1) . ' (' . $feedback_count_total . ' reviews)'
                                 : 'No ratings yet';
+                            $contact_card_primary_role = trim((string) $role_label) !== '' ? trim((string) $role_label) : 'Not set';
+                            $contact_card_distance_raw = trim((string) $travel_distance);
+                            $contact_card_distance_label = 'Not set';
+                            if ($contact_card_distance_raw !== '') {
+                                if (preg_match('/^\d+(\.\d+)?$/', $contact_card_distance_raw)) {
+                                    $numeric_distance = (float) $contact_card_distance_raw;
+                                    $contact_card_distance_label = rtrim(rtrim(number_format($numeric_distance, 1, '.', ''), '0'), '.') . ' miles';
+                                } else {
+                                    $contact_card_distance_label = $contact_card_distance_raw;
+                                    if (stripos($contact_card_distance_label, 'mile') === false) {
+                                        $contact_card_distance_label .= ' miles';
+                                    }
+                                }
+                            }
                             $contact_card_other_checked = $saved_contact_card_custom_skill !== '';
                             ?>
                             <div class="cmn-contact-card-tab-grid" id="cmn-profile-contact-card" data-profile-contact-card<?php echo $profile_focus_tab === 'contact_card' ? '' : ' hidden'; ?>>
@@ -65473,7 +65487,8 @@ final class CMN_One_Plugin {
                                                 <span class="cmn-contact-card-preview-kicker">CoverMeNow Contact Card</span>
                                             </div>
                                             <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--2">
-                                                <span><?php echo esc_html($role_label !== '' ? $role_label : 'Cover Staff'); ?></span>
+                                                <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-role>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
+                                                <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-distance>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
                                             </div>
                                             <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--3">
                                                 <strong data-contact-card-preview-name><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></strong>

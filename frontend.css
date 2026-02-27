@@ -14784,12 +14784,26 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row-
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--2 {
   font-size: 13px;
   color: rgba(226, 232, 240, 0.88);
+  flex-wrap: wrap;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--3 strong {
   font-size: 24px;
   line-height: 1.1;
   color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(248, 250, 252, 0.92);
+  font-size: 12px;
+  line-height: 1;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--4 {
