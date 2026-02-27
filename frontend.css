@@ -3504,6 +3504,39 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   margin: 0 0 8px;
 }
 
+.cmn-candidate-finance-ytd-card {
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-candidate-finance-ytd-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.cmn-candidate-finance-ytd-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cmn-candidate-finance-ytd-item strong {
+  color: var(--cmn-text);
+  font-weight: 700;
+}
+
+.cmn-candidate-finance-ytd-item.is-na strong {
+  color: var(--cmn-muted);
+}
+
 @media (max-width: 980px) {
   .cmn-candidate-finance-self-employed-card {
     width: 100%;

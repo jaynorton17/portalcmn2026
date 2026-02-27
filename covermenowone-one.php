@@ -66721,6 +66721,101 @@ final class CMN_One_Plugin {
         return $result;
     }
 
+    private function get_candidate_finance_join_date($candidate_user_id) {
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_user_id < 1) {
+            return '';
+        }
+        $join_date = '';
+        $user = get_user_by('id', $candidate_user_id);
+        if ($user && !empty($user->user_registered)) {
+            $join_date = $this->normalize_invoice_date((string) $user->user_registered);
+        }
+        if ($join_date !== '') {
+            return $join_date;
+        }
+        $candidate_id = (int) $this->get_candidate_id_for_user($candidate_user_id);
+        if ($candidate_id > 0) {
+            $candidate_post = get_post($candidate_id);
+            if ($candidate_post && !empty($candidate_post->post_date)) {
+                $join_date = $this->normalize_invoice_date((string) $candidate_post->post_date);
+            }
+        }
+        return $join_date;
+    }
+
+    private function get_candidate_year_to_date_monthly_earnings($candidate_user_id, $academic_year = '') {
+        $candidate_user_id = (int) $candidate_user_id;
+        $response = [
+            'academic_year_label' => '',
+            'months' => [],
+            'total_confirmed' => 0.00,
+        ];
+        if ($candidate_user_id < 1) {
+            return $response;
+        }
+
+        $bounds = $this->get_candidate_rewards_academic_year_bounds($academic_year, current_time('Y-m-d'));
+        $start_date = $this->normalize_invoice_date((string) ($bounds['start_date'] ?? ''));
+        $end_date = $this->normalize_invoice_date((string) ($bounds['end_date'] ?? ''));
+        if ($start_date === '' || $end_date === '' || strtotime($start_date) === false || strtotime($end_date) === false) {
+            return $response;
+        }
+
+        $timezone = wp_timezone();
+        try {
+            $cursor = new DateTimeImmutable($start_date, $timezone);
+            $end_dt = new DateTimeImmutable($end_date, $timezone);
+        } catch (Exception $e) {
+            return $response;
+        }
+
+        $join_date = $this->get_candidate_finance_join_date($candidate_user_id);
+        $actor_user_id = (int) get_current_user_id();
+        $months = [];
+        $total_confirmed = 0.00;
+
+        while ($cursor <= $end_dt) {
+            $month_start = $cursor->format('Y-m-01');
+            $month_end = $cursor->format('Y-m-t');
+            if ($month_start < $start_date) {
+                $month_start = $start_date;
+            }
+            if ($month_end > $end_date) {
+                $month_end = $end_date;
+            }
+
+            $is_na = ($join_date !== '' && $month_end < $join_date);
+            $month_total = 0.00;
+            if (!$is_na) {
+                $calc_start = $month_start;
+                if ($join_date !== '' && $join_date > $month_start && $join_date <= $month_end) {
+                    $calc_start = $join_date;
+                }
+                $month_totals = $this->calculate_candidate_weekly_earnings_total_for_range(
+                    $candidate_user_id,
+                    $calc_start,
+                    $month_end,
+                    $actor_user_id
+                );
+                $month_total = round((float) ($month_totals['total'] ?? 0), 2);
+                $total_confirmed += $month_total;
+            }
+
+            $months[] = [
+                'month_label' => wp_date('M', $cursor->getTimestamp(), $timezone),
+                'is_na' => $is_na ? 1 : 0,
+                'amount' => $is_na ? null : $month_total,
+            ];
+            $cursor = $cursor->modify('first day of next month');
+        }
+
+        $response['academic_year_label'] = sanitize_text_field((string) ($bounds['label'] ?? ''));
+        $response['months'] = $months;
+        $response['total_confirmed'] = round($total_confirmed, 2);
+        return $response;
+    }
+
     private function get_candidate_weekly_earnings_payload($candidate_user_id, $use_cache = true) {
         $candidate_user_id = (int) $candidate_user_id;
         if ($candidate_user_id < 1) {
@@ -69053,6 +69148,10 @@ final class CMN_One_Plugin {
         if ($weekly_state_note === '') {
             $weekly_state_note = 'Estimate (pending lock).';
         }
+        $ytd_monthly_payload = $this->get_candidate_year_to_date_monthly_earnings($candidate_user_id);
+        $ytd_month_rows = is_array($ytd_monthly_payload['months'] ?? null) ? (array) ($ytd_monthly_payload['months'] ?? []) : [];
+        $ytd_total_confirmed = round((float) ($ytd_monthly_payload['total_confirmed'] ?? 0), 2);
+        $ytd_academic_year_label = sanitize_text_field((string) ($ytd_monthly_payload['academic_year_label'] ?? ''));
 
         $bank_details = $this->get_candidate_bank_details_record($candidate_user_id);
         $bank_sort_code_display = sanitize_text_field((string) ($bank_details['sort_code_masked'] ?? ''));
@@ -69330,6 +69429,35 @@ final class CMN_One_Plugin {
                     </details>
                 </article>
             </div>
+            <article class="cmn-dashboard-card cmn-candidate-finance-ytd-card">
+                <div class="cmn-card-header">
+                    <h3>Year-to-Date Earnings (Confirmed)</h3>
+                    <span class="cmn-status-chip is-approved"><?php echo esc_html('GBP ' . number_format($ytd_total_confirmed, 2)); ?></span>
+                </div>
+                <p class="cmn-muted">
+                    <?php if ($ytd_academic_year_label !== '') : ?>
+                        <?php echo esc_html('Academic year ' . $ytd_academic_year_label . ' (Sep-Jul).'); ?>
+                    <?php else : ?>
+                        Sep-Jul confirmed totals.
+                    <?php endif; ?>
+                </p>
+                <ul class="cmn-candidate-finance-ytd-list">
+                    <?php foreach ($ytd_month_rows as $month_row) : ?>
+                        <?php
+                        $month_label = sanitize_text_field((string) ($month_row['month_label'] ?? ''));
+                        if ($month_label === '') {
+                            continue;
+                        }
+                        $is_na = !empty($month_row['is_na']);
+                        $month_amount = round((float) ($month_row['amount'] ?? 0), 2);
+                        ?>
+                        <li class="cmn-candidate-finance-ytd-item<?php echo $is_na ? ' is-na' : ''; ?>">
+                            <span><?php echo esc_html($month_label); ?></span>
+                            <strong><?php echo esc_html($is_na ? 'N/A' : ('GBP ' . number_format($month_amount, 2))); ?></strong>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </article>
             <article class="cmn-dashboard-card cmn-candidate-finance-self-employed-card" id="cmn-candidate-compliance-ack">
                 <h3>Self-Employed Notice</h3>
                 <p>You are self-employed. CoverMeNow does not deduct tax/NIC.</p>
