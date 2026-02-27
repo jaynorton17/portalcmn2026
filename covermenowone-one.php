@@ -65797,13 +65797,13 @@ final class CMN_One_Plugin {
                         }
                         $booking_query = $booking_args ? new WP_Query($booking_args) : null;
                         ?>
-                        <div class="cmn-bookings-toolbar">
-                            <div class="cmn-booking-tabs">
-                                <a class="cmn-booking-tab<?php echo $booking_tab === 'upcoming' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'upcoming'], $portal_url)); ?>">Upcoming</a>
-                                <a class="cmn-booking-tab<?php echo $booking_tab === 'past' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'past'], $portal_url)); ?>">Past</a>
-                            </div>
-                        </div>
                         <div class="cmn-booking-table">
+                            <div class="cmn-booking-table-head">
+                                <div class="cmn-booking-tabs">
+                                    <a class="cmn-booking-tab<?php echo $booking_tab === 'upcoming' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'upcoming'], $portal_url)); ?>">Upcoming</a>
+                                    <a class="cmn-booking-tab<?php echo $booking_tab === 'past' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'past'], $portal_url)); ?>">Past</a>
+                                </div>
+                            </div>
                             <div class="cmn-booking-row header">
                                 <div>Date</div>
                                 <div>School</div>

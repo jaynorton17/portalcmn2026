@@ -4119,6 +4119,16 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   background: rgba(10, 12, 16, 0.55);
 }
 
+.cmn-booking-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--cmn-border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .cmn-booking-row {
   display: grid;
   grid-template-columns: 1.1fr 1.3fr 1fr 0.8fr 1.4fr;
