@@ -14751,3 +14751,143 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-filters-drawer[hidden]{display:none !important}
 @media (max-width:1200px){.cmn-live-carousel{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-kpi:nth-child(2){border-right:0}}
 @media (max-width:760px){.cmn-live-matches-head{padding-right:0}.cmn-live-filter-btn{position:static;margin-bottom:10px}.cmn-live-carousel-wrap{grid-template-columns:1fr}.cmn-live-arrow{min-height:38px;width:100%}.cmn-live-carousel{grid-template-columns:1fr}.cmn-live-kpis{grid-template-columns:1fr}.cmn-live-kpi{border-right:0}}
+
+/* Finance overlap hard-fix + unified portal format pass */
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-row {
+  align-items: start !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-row > .cmn-dashboard-card {
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-payment-card {
+  overflow: visible !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-details {
+  width: 100%;
+  min-width: 0;
+  overflow: visible;
+}
+
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-summary {
+  width: fit-content;
+  max-width: 100%;
+}
+
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-form-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) !important;
+  gap: 10px !important;
+  align-items: start !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-form label {
+  min-width: 0;
+}
+
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-form :is(input, select) {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box;
+}
+
+body.cmn-portal-page .cmn-portal-light {
+  --cmn-unified-surface: #10151d;
+  --cmn-unified-surface-alt: #0f141b;
+  --cmn-unified-border: rgba(255, 255, 255, 0.08);
+  --cmn-unified-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+body.cmn-portal-page .cmn-portal-light :is(.cmn-candidate-main, .cmn-school-main, .cmn-staff-main) {
+  background: #0d1219 !important;
+}
+
+body.cmn-portal-page .cmn-portal-light :is(.cmn-card-tone-1, .cmn-card-tone-2, .cmn-card-tone-3, .cmn-card-tone-4, .cmn-card-tone-5) {
+  background: var(--cmn-unified-surface) !important;
+  background-image: none !important;
+}
+
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-card,
+  .cmn-cover-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-staff-add-card,
+  .cmn-staff-payroll-page .cmn-empty,
+  .cmn-admin-stats div,
+  .cmn-admin-table div,
+  .cmn-request-row,
+  .cmn-live-matches
+):not(.cmn-availability-hero) {
+  background: var(--cmn-unified-surface) !important;
+  background-image: none !important;
+  border-color: var(--cmn-unified-border) !important;
+  box-shadow: var(--cmn-unified-shadow) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-card,
+  .cmn-cover-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-staff-add-card,
+  .cmn-request-row,
+  .cmn-admin-stats div,
+  .cmn-admin-table div
+) :is(h2, h3, h4, h5, strong) {
+  color: #eef2f8 !important;
+}
+
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-card,
+  .cmn-cover-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-staff-add-card,
+  .cmn-request-row,
+  .cmn-admin-stats div,
+  .cmn-admin-table div
+) :is(.cmn-muted, small) {
+  color: #a8b1bf !important;
+}
+
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-card,
+  .cmn-cover-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-staff-add-card,
+  .cmn-request-row,
+  .cmn-admin-stats div,
+  .cmn-admin-table div
+) p {
+  color: #c6ceda !important;
+}

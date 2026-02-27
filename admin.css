@@ -86,3 +86,41 @@
   display: inline-block;
   margin-right: 8px;
 }
+
+/* Unified admin/staff/school portal visual format */
+:root {
+  --cmn-admin-surface: #10151d;
+  --cmn-admin-surface-alt: #0f141b;
+  --cmn-admin-border: rgba(255, 255, 255, 0.08);
+  --cmn-admin-text-primary: #eef2f8;
+  --cmn-admin-text-muted: #a8b1bf;
+  --cmn-admin-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.cmn-card {
+  background: var(--cmn-admin-surface);
+  border: 1px solid var(--cmn-admin-border);
+  border-radius: 12px;
+  box-shadow: var(--cmn-admin-shadow);
+  color: var(--cmn-admin-text-primary);
+}
+
+.cmn-card h2 {
+  color: var(--cmn-admin-text-primary);
+}
+
+.cmn-activity-list li {
+  background: var(--cmn-admin-surface-alt);
+  border: 1px solid var(--cmn-admin-border);
+}
+
+.cmn-activity-content,
+.cmn-muted {
+  color: var(--cmn-admin-text-muted);
+}
+
+.cmn-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--cmn-admin-border);
+  color: var(--cmn-admin-text-primary);
+}
