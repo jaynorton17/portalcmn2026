@@ -3347,6 +3347,23 @@ body.cmn-booking-feedback-lock {
   gap: 16px;
 }
 
+.cmn-support-user--admin-feel {
+  border: 1px solid var(--cmn-border);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--cmn-panel);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.32);
+}
+
+.cmn-support-user--admin-feel .cmn-support-body {
+  grid-template-columns: 320px 1fr;
+}
+
+.cmn-support-user--admin-feel .cmn-support-header-row {
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .cmn-support-whats-new {
   border: 1px solid var(--cmn-border);
   border-radius: 14px;

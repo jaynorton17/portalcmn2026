@@ -66507,15 +66507,14 @@ final class CMN_One_Plugin {
                         <header class="cmn-candidate-header" data-tour-target="support-hub">
                             <h2>Support</h2>
                         </header>
-                        <div class="cmn-support-user" data-support-root data-support-mode="user" data-support-role="candidate">
+                        <div class="cmn-support-user cmn-support-user--candidate cmn-support-user--admin-feel" data-support-root data-support-mode="user" data-support-role="candidate">
                             <div class="cmn-support-header-row">
                                 <div>
                                     <h3>Need help?</h3>
-                                    <p class="cmn-muted">Email candidate@covermenow.co.uk or open a support ticket.</p>
+                                    <p class="cmn-muted">Email candidate@covermenow.co.uk or open a support ticket. Only your tickets are shown here.</p>
                                 </div>
                                 <button class="cmn-primary" type="button" data-support-open>Open Support Ticket</button>
                             </div>
-                            <?php echo $this->render_support_whats_new_panel('candidate'); ?>
                             <div class="cmn-support-dashboard" data-support-dashboard>
                                 <button class="cmn-support-tile is-active" type="button" data-support-tile="all">
                                     <span>All tickets</span>

@@ -5301,7 +5301,15 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || '') + '</span><em>' + supportEsc(visual.statusLabel + ' - ' + (ticket.updated_at || '')) + '</em>' + channelBadge + feedbackBadge;
         } else {
-          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><em>' + supportEsc(visual.statusLabel) + '</em>';
+          var userFeedbackCount = parseInt(ticket.feedback_count || 0, 10);
+          var userNeedsFeedback = !!parseInt(ticket.requires_feedback || '0', 10);
+          var userFeedbackBadge = '';
+          if (userFeedbackCount > 0) {
+            userFeedbackBadge = '<span class="cmn-support-ticket-badge">Feedback submitted</span>';
+          } else if (userNeedsFeedback) {
+            userFeedbackBadge = '<span class="cmn-support-ticket-badge is-warning">Needs feedback</span>';
+          }
+          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || 'Support ticket') + '</span><em>' + supportEsc(visual.statusLabel + ' - ' + (ticket.updated_at || '')) + '</em>' + userFeedbackBadge;
         }
         item.addEventListener('click', function () {
           root.querySelectorAll('.cmn-support-ticket').forEach(function (row) { row.classList.remove('is-selected'); });
