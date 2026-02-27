@@ -64651,8 +64651,11 @@ final class CMN_One_Plugin {
         $weekly_expected_has_bank_hold = $weekly_expected_is_hold && stripos((string) $weekly_expected_display, 'bank details') !== false;
 
         $completion_missing_map = [
-            'add bank details' => ['label' => 'Bank details', 'url' => $candidate_finance_bank_url],
-            'accept self-employment notice' => ['label' => 'Self-employment notice', 'url' => $candidate_finance_ack_url],
+            'add bank details' => ['label' => 'Add bank details', 'url' => $candidate_finance_bank_url],
+            'accept self-employment notice' => ['label' => 'Accept self-employment notice', 'url' => $candidate_finance_ack_url],
+            'upload cv' => ['label' => 'Upload CV', 'url' => $candidate_profile_documents_url],
+            'upload dbs' => ['label' => 'Upload DBS', 'url' => $candidate_profile_documents_url],
+            'upload photo id' => ['label' => 'Upload photo ID', 'url' => $candidate_profile_documents_url],
         ];
         $completion_outstanding_links = [];
         $completion_seen = [];
@@ -64664,11 +64667,9 @@ final class CMN_One_Plugin {
             $missing_key = strtolower($missing_item);
             $mapped = $completion_missing_map[$missing_key] ?? null;
             if (!is_array($mapped)) {
-                $fallback_words = preg_split('/\s+/', trim(preg_replace('/[^a-z0-9 ]+/i', ' ', $missing_item)));
-                $fallback_words = array_values(array_filter(array_map('trim', (array) $fallback_words)));
-                $fallback_label = $fallback_words ? implode(' ', array_slice($fallback_words, 0, 2)) : 'Update';
+                $fallback_label = preg_replace('/\s+/', ' ', trim($missing_item));
                 $mapped = [
-                    'label' => ucwords(strtolower($fallback_label)),
+                    'label' => $fallback_label !== '' ? $fallback_label : 'Update details',
                     'url' => $candidate_profile_personal_url,
                 ];
             }

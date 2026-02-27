@@ -9398,19 +9398,17 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       var key = item.toLowerCase();
       var map = {
-        'add bank details': { label: 'Bank details', url: profileFinanceBankUrl || profilePersonalUrl },
-        'accept self-employment notice': { label: 'Self-employment notice', url: profileFinanceAckUrl || profilePersonalUrl },
+        'add bank details': { label: 'Add bank details', url: profileFinanceBankUrl || profilePersonalUrl },
+        'accept self-employment notice': { label: 'Accept self-employment notice', url: profileFinanceAckUrl || profilePersonalUrl },
         'upload cv': { label: 'CV', url: profileDocumentsUrl || profilePersonalUrl },
         'upload dbs': { label: 'DBS', url: profileDocumentsUrl || profilePersonalUrl },
-        'upload photo id': { label: 'Photo ID', url: profileDocumentsUrl || profilePersonalUrl }
+        'upload photo id': { label: 'Upload photo ID', url: profileDocumentsUrl || profilePersonalUrl }
       };
       if (map[key]) {
         return map[key];
       }
-      var words = item.replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).filter(function (word) { return !!word; });
-      var fallbackLabel = words.length ? words.slice(0, 2).join(' ') : 'Update details';
       return {
-        label: fallbackLabel.charAt(0).toUpperCase() + fallbackLabel.slice(1).toLowerCase(),
+        label: item,
         url: profilePersonalUrl || window.location.href
       };
     };
