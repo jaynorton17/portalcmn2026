@@ -3171,6 +3171,18 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
   word-break: break-word;
 }
 
+.cmn-weekly-earnings-expected-link {
+  color: #fecaca;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 600;
+}
+
+.cmn-weekly-earnings-expected-link:hover,
+.cmn-weekly-earnings-expected-link:focus-visible {
+  color: #fee2e2;
+}
+
 .cmn-candidate-weekly-earnings-card {
   display: grid;
   gap: 12px;

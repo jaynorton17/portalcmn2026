@@ -3228,12 +3228,34 @@ document.addEventListener('DOMContentLoaded', function () {
     var weeklyErrorEl = weeklyEarningsRoot.querySelector('[data-cmn-weekly-earnings-error]');
     var weeklyChipEl = weeklyEarningsRoot.querySelector('[data-cmn-weekly-earnings-chip]');
     var weeklyNoteEl = weeklyEarningsRoot.querySelector('[data-cmn-weekly-earnings-note]');
+    var weeklyExpectedEl = weeklyEarningsRoot.querySelector('[data-cmn-weekly-earnings-expected]');
+    var weeklyBankDetailsUrl = weeklyExpectedEl ? String(weeklyExpectedEl.getAttribute('data-cmn-weekly-bank-url') || '').trim() : '';
 
     var weeklySetText = function (selector, value) {
       var node = weeklyEarningsRoot.querySelector(selector);
       if (node) {
         node.textContent = String(value == null ? '' : value);
       }
+    };
+
+    var weeklyRenderExpectedValue = function (displayValue, isHold) {
+      if (!weeklyExpectedEl) {
+        return;
+      }
+      var message = String(displayValue == null ? '' : displayValue);
+      var shouldLinkBankDetails = !!isHold
+        && weeklyBankDetailsUrl !== ''
+        && message.toLowerCase().indexOf('bank details') !== -1;
+      weeklyExpectedEl.textContent = '';
+      if (shouldLinkBankDetails) {
+        var holdLink = document.createElement('a');
+        holdLink.className = 'cmn-weekly-earnings-expected-link';
+        holdLink.href = weeklyBankDetailsUrl;
+        holdLink.textContent = message;
+        weeklyExpectedEl.appendChild(holdLink);
+        return;
+      }
+      weeklyExpectedEl.textContent = message;
     };
 
     var weeklyMoney = function (value) {
@@ -3318,7 +3340,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         weeklySetText('[data-cmn-weekly-earnings-range]', weekRange);
         weeklySetText('[data-cmn-weekly-earnings-total]', weeklyMoney(payload.total || 0));
-        weeklySetText('[data-cmn-weekly-earnings-expected]', expectedDisplay);
+        weeklyRenderExpectedValue(expectedDisplay, Number(payload.expected_payout_is_hold || 0) === 1);
         weeklySetText('[data-cmn-weekly-earnings-last-week]', weeklyMoney(payload.last_week_total || 0));
         if (weeklyNoteEl && payload && payload.payout_state_note) {
           weeklyNoteEl.textContent = String(payload.payout_state_note);

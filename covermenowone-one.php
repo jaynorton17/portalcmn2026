@@ -64552,6 +64552,13 @@ final class CMN_One_Plugin {
         $candidate_learning_url = add_query_arg(['candidate' => 'learning'], $portal_url);
         $candidate_rewards_url = add_query_arg(['candidate' => 'rewards'], $portal_url);
         $candidate_feedback_url = add_query_arg(['candidate' => 'feedback_ratings'], $portal_url);
+        $candidate_finance_url = add_query_arg([
+            'cmn_tab' => 'candidate_finance',
+            'candidate' => false,
+            'view' => false,
+        ], $portal_url);
+        $candidate_finance_bank_url = $candidate_finance_url . '#cmn-candidate-bank-details';
+        $weekly_expected_has_bank_hold = $weekly_expected_is_hold && stripos((string) $weekly_expected_display, 'bank details') !== false;
 
         $completion_missing_map = [
             'add first name' => ['label' => 'First name', 'url' => $candidate_profile_personal_url],
@@ -66030,10 +66037,16 @@ final class CMN_One_Plugin {
                                             <span class="cmn-profile-meta-label">Earnings this week (Fri-Thu)</span>
                                             <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-total><?php echo esc_html('GBP ' . number_format($weekly_earnings_total, 2)); ?></strong>
                                         </div>
-                                        <div class="cmn-profile-meta-item">
-                                            <span class="cmn-profile-meta-label">Expected payout (Friday)</span>
-                                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-expected><?php echo esc_html($weekly_expected_display); ?></strong>
-                                        </div>
+                                    <div class="cmn-profile-meta-item">
+                                        <span class="cmn-profile-meta-label">Expected payout (Friday)</span>
+                                        <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-expected data-cmn-weekly-bank-url="<?php echo esc_url($candidate_finance_bank_url); ?>">
+                                            <?php if ($weekly_expected_has_bank_hold) : ?>
+                                                <a class="cmn-weekly-earnings-expected-link" href="<?php echo esc_url($candidate_finance_bank_url); ?>"><?php echo esc_html($weekly_expected_display); ?></a>
+                                            <?php else : ?>
+                                                <?php echo esc_html($weekly_expected_display); ?>
+                                            <?php endif; ?>
+                                        </strong>
+                                    </div>
                                         <div class="cmn-profile-meta-item">
                                             <span class="cmn-profile-meta-label">Last week total</span>
                                             <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-last-week><?php echo esc_html('GBP ' . number_format($weekly_last_week_total, 2)); ?></strong>
