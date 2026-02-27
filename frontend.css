@@ -15071,6 +15071,7 @@ body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedba
 body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-summary-row {
   margin-bottom: 20px;
   align-items: stretch;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-summary-row > .cmn-dashboard-card {
@@ -15080,6 +15081,12 @@ body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedba
 body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-overall-card {
   display: grid;
   gap: 10px;
+}
+
+@media (max-width: 900px) {
+  body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-summary-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-overall-hero {
