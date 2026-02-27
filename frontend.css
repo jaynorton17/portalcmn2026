@@ -6508,6 +6508,313 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   font-size: 14px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp {
+  display: grid;
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card {
+  background: #0f1116;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.28);
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-progress-track {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  overflow: hidden;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-progress-track span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(225, 6, 19, 0.92), rgba(255, 43, 43, 0.94));
+  box-shadow: 0 0 16px rgba(225, 6, 19, 0.35);
+  transition: width 220ms ease;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-progress-labels strong {
+  font-size: 14px;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-snapshot-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-snapshot-list li {
+  background: rgba(15, 23, 42, 0.68);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 5px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-snapshot-list span {
+  font-size: 11px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-snapshot-list strong {
+  font-size: 16px;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--full {
+  grid-column: 1 / -1;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-inline-formula {
+  margin: 0;
+  color: #dbe4f0;
+  font-size: 14px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-inline-formula strong {
+  color: #ffffff;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-example-list {
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-example-list p {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-example-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-example-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-next-bonus {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-details {
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding-top: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-details summary {
+  cursor: pointer;
+  color: #f8fafc;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-table-wrap {
+  margin-top: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ladder {
+  display: grid;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ladder-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: rgba(15, 23, 42, 0.62);
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ladder-row.is-current {
+  border-color: rgba(225, 6, 19, 0.46);
+  background: rgba(55, 16, 20, 0.52);
+  box-shadow: 0 0 14px rgba(225, 6, 19, 0.18);
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ladder-row strong {
+  font-size: 14px;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ladder-row span,
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ladder-row small {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ranking {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: #e2e8f0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-highlight {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-head {
+  display: grid;
+  gap: 6px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-stars {
+  position: relative;
+  display: inline-block;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-stars-base {
+  color: rgba(148, 163, 184, 0.42);
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-stars-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #f59e0b;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-head strong {
+  font-size: 18px;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-head span {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-breakdown {
+  display: grid;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.58);
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-row span {
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-row strong {
+  font-size: 13px;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-conduct > summary {
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-conduct-body {
+  margin-top: 10px;
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 1024px) {
+  body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-snapshot-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-snapshot-list {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ladder-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 .cmn-rewards-admin-override-section {
   margin-top: 16px;
   padding-top: 14px;

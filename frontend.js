@@ -3026,6 +3026,34 @@ document.addEventListener('DOMContentLoaded', function () {
       }).join('');
     };
 
+    var renderRewardsRatingBreakdown = function (rating) {
+      var host = candidateRewardsRoot.querySelector('[data-cmn-rewards-rating-breakdown]');
+      if (!host) {
+        return;
+      }
+      var payload = (rating && typeof rating === 'object') ? rating : {};
+      var rows = Array.isArray(payload.breakdown) ? payload.breakdown : [];
+      if (!rows.length) {
+        host.innerHTML = '<div class="cmn-empty">No rating module data yet.</div>';
+        return;
+      }
+      host.innerHTML = rows.map(function (row) {
+        var label = row && row.label ? String(row.label) : 'Module';
+        var average = parseFloat(row && row.average ? row.average : 0);
+        if (!isFinite(average) || average < 0) {
+          average = 0;
+        }
+        if (average > 5) {
+          average = 5;
+        }
+        return '' +
+          '<div class="cmn-candidate-clp-rating-row">' +
+            '<span>' + rewardsEscape(label) + '</span>' +
+            '<strong>' + rewardsEscape(average.toFixed(1)) + '</strong>' +
+          '</div>';
+      }).join('');
+    };
+
     var applyRewardsPayload = function (payload) {
       if (!payload || typeof payload !== 'object') {
         return;
@@ -3034,6 +3062,8 @@ document.addEventListener('DOMContentLoaded', function () {
       var bonus = (payload.bonus && typeof payload.bonus === 'object') ? payload.bonus : {};
       var referral = (payload.referral && typeof payload.referral === 'object') ? payload.referral : {};
       var conduct = (payload.conduct && typeof payload.conduct === 'object') ? payload.conduct : {};
+      var multipliers = (payload.multipliers && typeof payload.multipliers === 'object') ? payload.multipliers : {};
+      var rating = (payload.rating && typeof payload.rating === 'object') ? payload.rating : {};
 
       var tier = String(state.tier || 'standard').toLowerCase();
       var tierLabel = String(state.tier_label || 'Standard');
@@ -3090,7 +3120,56 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!isFinite(shiftsToNextBonus) || shiftsToNextBonus < 0) {
         shiftsToNextBonus = 0;
       }
+      var progressTarget = nextTierThreshold > 0 ? nextTierThreshold : Math.max(nextBonusAt, 30);
+      var progressValue = Math.min(Math.max(shiftsCompleted, 0), progressTarget);
+      var progressPercent = progressTarget > 0 ? Math.max(0, Math.min(100, Math.round((progressValue / progressTarget) * 100))) : 0;
+      var progressFill = candidateRewardsRoot.querySelector('[data-cmn-rewards-progress-fill]');
+      if (progressFill) {
+        progressFill.style.width = String(progressPercent) + '%';
+      }
+
+      var confirmationCompliance = parseInt(state.confirmation_compliance_pct, 10);
+      if (!isFinite(confirmationCompliance) || confirmationCompliance < 0) {
+        confirmationCompliance = null;
+      }
+
+      var estimatedAveragePay = parseFloat(bonus.estimated_average_day_pay || '0');
+      if (!isFinite(estimatedAveragePay) || estimatedAveragePay <= 0) {
+        estimatedAveragePay = 160;
+      }
+      var nextMultiplier = parseFloat(bonus.next_multiplier || multipliers[tier] || '1');
+      if (!isFinite(nextMultiplier) || nextMultiplier <= 0) {
+        nextMultiplier = 1;
+      }
+      var estimatedNextBonus = parseFloat(bonus.estimated_next_bonus || (estimatedAveragePay * nextMultiplier));
+      if (!isFinite(estimatedNextBonus) || estimatedNextBonus < 0) {
+        estimatedNextBonus = 0;
+      }
+
+      var ratingRaw = parseFloat(rating.avg_rating_raw || rating.avg_rating || '0');
+      if (!isFinite(ratingRaw) || ratingRaw < 0) {
+        ratingRaw = 0;
+      }
+      if (ratingRaw > 5) {
+        ratingRaw = 5;
+      }
+      var ratingCount = parseInt(rating.feedback_count || '0', 10);
+      if (!isFinite(ratingCount) || ratingCount < 0) {
+        ratingCount = 0;
+      }
+      var starsFill = candidateRewardsRoot.querySelector('[data-cmn-rewards-rating-stars-fill]');
+      if (starsFill) {
+        starsFill.style.width = String(Math.max(0, Math.min(100, (ratingRaw / 5) * 100))) + '%';
+      }
+
       rewardsSetText('[data-cmn-rewards-next-bonus]', 'Next bonus at ' + String(nextBonusAt) + ' shifts (' + String(shiftsToNextBonus) + ' to go)');
+      rewardsSetText('[data-cmn-rewards-progress-value]', rewardsWhole(progressValue) + ' / ' + rewardsWhole(progressTarget) + ' shifts');
+      rewardsSetText('[data-cmn-rewards-next-unlock]', nextTierThreshold > 0 ? (String(state.next_tier || 'Next Tier') + ' unlocked at ' + String(nextTierThreshold)) : 'Top tier achieved');
+      rewardsSetText('[data-cmn-rewards-estimated-average-pay]', rewardsMoney(estimatedAveragePay));
+      rewardsSetText('[data-cmn-rewards-estimated-next-bonus]', rewardsMoney(estimatedNextBonus));
+      rewardsSetText('[data-cmn-rewards-confirmation-compliance]', confirmationCompliance === null ? '80%+ required' : (String(confirmationCompliance) + '%'));
+      rewardsSetText('[data-cmn-rewards-rating-value]', ratingCount > 0 ? (ratingRaw.toFixed(2) + ' / 5') : 'N/A');
+      rewardsSetText('[data-cmn-rewards-rating-count]', ratingCount > 0 ? (String(ratingCount) + (ratingCount === 1 ? ' review' : ' reviews')) : 'No reviews yet');
 
       var eliteNote = candidateRewardsRoot.querySelector('[data-cmn-rewards-elite-note]');
       if (eliteNote) {
@@ -3105,6 +3184,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       renderRewardsAwards(Array.isArray(bonus.awards) ? bonus.awards : []);
+      renderRewardsRatingBreakdown(rating);
       renderAppealBookingSelect(Array.isArray(conduct.appeal_booking_options) ? conduct.appeal_booking_options : []);
       renderAppealBookingChips(Array.isArray(conduct.appeal_booking_options) ? conduct.appeal_booking_options : []);
       renderConductHistory(Array.isArray(conduct.recent_events) ? conduct.recent_events : []);
