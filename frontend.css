@@ -2799,25 +2799,19 @@ body.cmn-booking-feedback-lock {
   gap: 12px;
 }
 
-.cmn-calendar-header-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
-
-.cmn-calendar-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
+.cmn-calendar-title {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 .cmn-calendar-link-action {
   border: 0;
   background: transparent;
-  color: rgba(203, 213, 225, 0.8);
-  font-size: 12px;
+  color: rgba(203, 213, 225, 0.74);
+  font-size: 11px;
   font-weight: 500;
   line-height: 1.2;
   padding: 0;
@@ -2832,18 +2826,21 @@ body.cmn-booking-feedback-lock {
   color: #f8fafc;
 }
 
-@media (max-width: 720px) {
-  .cmn-calendar-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+.cmn-calendar-month-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
 
-  .cmn-calendar-header-actions {
-    width: 100%;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
+.cmn-calendar-month-row [data-calendar-label] {
+  min-width: 150px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.9);
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-grid {
@@ -2851,35 +2848,48 @@ body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .c
   gap: 6px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar].cmn-calendar-planner {
+  background: linear-gradient(162deg, rgba(11, 15, 24, 0.95), rgba(7, 10, 16, 0.94));
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  box-shadow: 0 12px 30px rgba(2, 6, 14, 0.44), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(7px);
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-day {
+  font-size: 10.5px;
+  color: rgba(173, 184, 201, 0.74);
+}
+
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell {
-  min-height: 34px;
-  padding: 2px 0;
+  min-height: 32px;
+  padding: 1px 0;
   border-radius: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(9, 13, 21, 0.62);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: linear-gradient(180deg, rgba(20, 27, 38, 0.66), rgba(12, 17, 26, 0.66));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(3px);
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell span {
   padding: 0;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell.is-available {
-  background: rgba(74, 222, 128, 0.14);
-  border-color: rgba(134, 239, 172, 0.38);
-  box-shadow: inset 0 1px 0 rgba(220, 252, 231, 0.14);
+  background: linear-gradient(180deg, rgba(62, 128, 95, 0.24), rgba(35, 92, 67, 0.2));
+  border-color: rgba(122, 177, 150, 0.42);
+  box-shadow: inset 0 1px 0 rgba(201, 234, 217, 0.11);
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell.is-unavailable {
-  background: rgba(248, 113, 113, 0.14);
-  border-color: rgba(252, 165, 165, 0.42);
-  box-shadow: inset 0 1px 0 rgba(254, 226, 226, 0.1);
+  background: linear-gradient(180deg, rgba(152, 73, 86, 0.22), rgba(124, 53, 66, 0.2));
+  border-color: rgba(206, 137, 149, 0.4);
+  box-shadow: inset 0 1px 0 rgba(242, 211, 217, 0.1);
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell.is-booked-confirmed {
-  background: rgba(190, 24, 52, 0.28);
-  border-color: rgba(248, 113, 113, 0.62);
+  background: linear-gradient(180deg, rgba(146, 37, 57, 0.34), rgba(118, 28, 46, 0.3));
+  border-color: rgba(235, 147, 162, 0.54);
   box-shadow: none;
 }
 
@@ -2907,46 +2917,61 @@ body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .c
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 10px;
   align-items: end;
 }
 
 .cmn-calendar-range-controls label {
   display: grid;
   gap: 4px;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--cmn-muted);
 }
 
 .cmn-calendar-range-controls input[type='date'],
 .cmn-calendar-range-controls select {
-  min-height: 38px;
+  min-height: 36px;
+  font-size: 12px;
 }
 
 .cmn-calendar-range-controls .cmn-primary[data-calendar-bulk-submit] {
-  min-height: 38px;
+  min-height: 36px;
   width: 100%;
   margin: 0;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .cmn-calendar-legend {
   display: flex;
-  gap: 16px;
+  gap: 14px;
   align-items: center;
-  font-size: 12px;
-  color: var(--cmn-muted);
+  font-size: 10.5px;
+  color: rgba(167, 178, 195, 0.72);
   margin-top: 10px;
   flex-wrap: wrap;
 }
 
 .cmn-calendar-feedback {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--cmn-muted);
   min-height: 16px;
 }
 
 .cmn-dot.is-weekend {
   background: rgba(148, 163, 184, 0.6);
+}
+
+@media (max-width: 720px) {
+  .cmn-calendar-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .cmn-calendar-month-row {
+    justify-content: space-between;
+  }
 }
 
 .cmn-dashboard-row-equal {

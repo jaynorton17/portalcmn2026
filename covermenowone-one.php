@@ -65975,15 +65975,13 @@ final class CMN_One_Plugin {
                              data-calendar-max="<?php echo esc_attr($calendar_max_month); ?>"
                              data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
                             <div class="cmn-card-header cmn-calendar-header">
-                                <h3>Availability Planner</h3>
-                                <div class="cmn-calendar-header-actions">
-                                    <button class="cmn-calendar-link-action" type="button" data-calendar-clear="next30">Clear next 30 days</button>
-                                    <div class="cmn-calendar-controls">
-                                        <button class="cmn-ghost" type="button" data-calendar-prev>&larr;</button>
-                                        <span data-calendar-label></span>
-                                        <button class="cmn-ghost" type="button" data-calendar-next>&rarr;</button>
-                                    </div>
-                                </div>
+                                <h2 class="cmn-calendar-title">Availability Planner</h2>
+                                <button class="cmn-calendar-link-action" type="button" data-calendar-clear="next30">Clear next 30 days</button>
+                            </div>
+                            <div class="cmn-calendar-month-row">
+                                <button class="cmn-ghost" type="button" data-calendar-prev aria-label="Previous month">&larr;</button>
+                                <span data-calendar-label></span>
+                                <button class="cmn-ghost" type="button" data-calendar-next aria-label="Next month">&rarr;</button>
                             </div>
                             <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
                             <div class="cmn-calendar-range-controls">
