@@ -7985,12 +7985,20 @@ document.addEventListener('DOMContentLoaded', function () {
               btnRolling.classList.add('is-available');
             } else if (statusRolling === 'unavailable') {
               btnRolling.classList.add('is-unavailable');
+            } else if (statusRolling === 'booked_confirmed') {
+              btnRolling.classList.add('is-booked-confirmed');
             }
             btnRolling.setAttribute('data-date', dateStrRolling);
             btnRolling.title = cursor.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
             var spanRolling = document.createElement('span');
             spanRolling.textContent = cursor.getDate();
             btnRolling.appendChild(spanRolling);
+            if (statusRolling === 'booked_confirmed') {
+              var bookedNoteRolling = document.createElement('small');
+              bookedNoteRolling.className = 'cmn-calendar-booked-note';
+              bookedNoteRolling.textContent = 'Booking confirmed';
+              btnRolling.appendChild(bookedNoteRolling);
+            }
             grid.appendChild(btnRolling);
           }
           cursor.setDate(cursor.getDate() + 1);
@@ -8055,11 +8063,19 @@ document.addEventListener('DOMContentLoaded', function () {
           btn.classList.add('is-available');
         } else if (status === 'unavailable') {
           btn.classList.add('is-unavailable');
+        } else if (status === 'booked_confirmed') {
+          btn.classList.add('is-booked-confirmed');
         }
         btn.setAttribute('data-date', dateStr);
         var span = document.createElement('span');
         span.textContent = d;
         btn.appendChild(span);
+        if (status === 'booked_confirmed') {
+          var bookedNote = document.createElement('small');
+          bookedNote.className = 'cmn-calendar-booked-note';
+          bookedNote.textContent = 'Booking confirmed';
+          btn.appendChild(bookedNote);
+        }
         grid.appendChild(btn);
       }
     };
@@ -8111,6 +8127,10 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!cell || cell.classList.contains('is-empty') || cell.classList.contains('is-disabled')) {
         return;
       }
+      if (cell.classList.contains('is-booked-confirmed')) {
+        setFeedback('Booking confirmed on this date.', 2200, 'warning');
+        return;
+      }
       var dateStr = cell.getAttribute('data-date');
       if (!dateStr) {
         return;
@@ -8123,7 +8143,11 @@ document.addEventListener('DOMContentLoaded', function () {
         } else {
           delete data[dateStr];
         }
-        cell.classList.remove('is-available', 'is-unavailable');
+        cell.classList.remove('is-available', 'is-unavailable', 'is-booked-confirmed');
+        var staleBookedNote = cell.querySelector('.cmn-calendar-booked-note');
+        if (staleBookedNote) {
+          staleBookedNote.remove();
+        }
         if (next === 'available') {
           cell.classList.add('is-available');
         } else if (next === 'unavailable') {

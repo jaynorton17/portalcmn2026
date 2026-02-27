@@ -58652,7 +58652,116 @@ final class CMN_One_Plugin {
                 }
             }
         }
+        $booked_map = $this->get_candidate_confirmed_booking_dates_map($candidate_id, $start_date, $end_date);
+        if ($booked_map) {
+            foreach ($booked_map as $booked_date => $booked_status) {
+                $map[$booked_date] = $booked_status;
+            }
+        }
         return $map;
+    }
+
+    private function get_candidate_confirmed_booking_dates_map($candidate_id, $start_date, $end_date) {
+        $candidate_id = (int) $candidate_id;
+        $start_date = $this->normalize_invoice_date($start_date);
+        $end_date = $this->normalize_invoice_date($end_date);
+        if ($candidate_id < 1 || $start_date === '' || $end_date === '' || $end_date < $start_date) {
+            return [];
+        }
+
+        $allowed_statuses = $this->get_completed_payable_booking_statuses();
+        if (!$allowed_statuses) {
+            return [];
+        }
+
+        global $wpdb;
+        $posts_table = $wpdb->posts;
+        $meta_table = $wpdb->postmeta;
+        $status_placeholders = implode(',', array_fill(0, count($allowed_statuses), '%s'));
+        $sql = "SELECT p.ID AS booking_id,
+                       status_meta.meta_value AS booking_status,
+                       start_meta.meta_value AS start_date,
+                       day_meta.meta_value AS day_date,
+                       end_meta.meta_value AS end_date
+                FROM {$posts_table} p
+                INNER JOIN {$meta_table} candidate_meta
+                    ON candidate_meta.post_id = p.ID
+                   AND candidate_meta.meta_key = 'cmn_candidate_id'
+                   AND candidate_meta.meta_value = %d
+                LEFT JOIN {$meta_table} status_meta
+                    ON status_meta.post_id = p.ID
+                   AND status_meta.meta_key = 'cmn_status'
+                LEFT JOIN {$meta_table} start_meta
+                    ON start_meta.post_id = p.ID
+                   AND start_meta.meta_key = 'cmn_start_date'
+                LEFT JOIN {$meta_table} day_meta
+                    ON day_meta.post_id = p.ID
+                   AND day_meta.meta_key = 'cmn_date'
+                LEFT JOIN {$meta_table} end_meta
+                    ON end_meta.post_id = p.ID
+                   AND end_meta.meta_key = 'cmn_end_date'
+                WHERE p.post_type = 'cmn_booking'
+                  AND p.post_status NOT IN ('trash', 'auto-draft')
+                  AND (status_meta.meta_value = '' OR status_meta.meta_value IS NULL OR status_meta.meta_value IN ({$status_placeholders}))";
+        $params = array_merge([$candidate_id], $allowed_statuses);
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        if (!$rows) {
+            return [];
+        }
+
+        $booked = [];
+        foreach ($rows as $row) {
+            $status = sanitize_key((string) ($row['booking_status'] ?? ''));
+            if (!$this->is_completed_payable_booking_status($status)) {
+                continue;
+            }
+            $window = $this->get_invoice_booking_date_window([
+                'start_date' => (string) ($row['start_date'] ?? ''),
+                'day_date' => (string) ($row['day_date'] ?? ''),
+                'end_date' => (string) ($row['end_date'] ?? ''),
+            ]);
+            if (!$window) {
+                continue;
+            }
+            $window_start = (string) ($window['start_date'] ?? '');
+            $window_end = (string) ($window['end_date'] ?? '');
+            if ($window_start === '' || $window_end === '') {
+                continue;
+            }
+            if ($window_end < $window_start) {
+                $window_end = $window_start;
+            }
+
+            $range_start = max($start_date, $window_start);
+            $range_end = min($end_date, $window_end);
+            if ($range_end < $range_start) {
+                continue;
+            }
+
+            $cursor = DateTime::createFromFormat('Y-m-d', $range_start, wp_timezone());
+            $stop = DateTime::createFromFormat('Y-m-d', $range_end, wp_timezone());
+            if (!$cursor || !$stop) {
+                continue;
+            }
+            while ($cursor <= $stop) {
+                $cursor_date = $cursor->format('Y-m-d');
+                if ($this->is_weekday_date($cursor_date)) {
+                    $booked[$cursor_date] = 'booked_confirmed';
+                }
+                $cursor->modify('+1 day');
+            }
+        }
+
+        return $booked;
+    }
+
+    private function is_candidate_booking_confirmed_on_date($candidate_id, $date) {
+        $date = $this->normalize_invoice_date($date);
+        if ($date === '') {
+            return false;
+        }
+        $booked = $this->get_candidate_confirmed_booking_dates_map((int) $candidate_id, $date, $date);
+        return isset($booked[$date]);
     }
 
     private function is_weekday_date($date) {
@@ -58668,9 +58777,9 @@ final class CMN_One_Plugin {
     }
 
     private function get_calendar_limit_dates() {
-        $today = current_time('Y-m-d');
-        $limit = (new DateTime($today, wp_timezone()))->modify('+30 days')->format('Y-m-d');
-        return [$today, $limit];
+        $start = (new DateTime(current_time('Y-m-d'), wp_timezone()))->modify('+1 day');
+        $limit = (clone $start)->modify('+30 days')->format('Y-m-d');
+        return [$start->format('Y-m-d'), $limit];
     }
 
     private function get_candidate_calendar_summary($candidate_id) {
@@ -65901,6 +66010,7 @@ final class CMN_One_Plugin {
                             <div class="cmn-calendar-legend">
                                 <span><span class="cmn-dot is-available"></span> Available</span>
                                 <span><span class="cmn-dot is-unavailable"></span> Unavailable</span>
+                                <span><span class="cmn-dot is-booked-confirmed"></span> Booking confirmed</span>
                                 <span><span class="cmn-dot"></span> Neutral</span>
                             </div>
                             <div class="cmn-calendar-feedback" data-calendar-feedback></div>
@@ -78695,6 +78805,9 @@ p{margin:0;line-height:1.5}
         if (!$this->is_weekday_date($date)) {
             wp_send_json_error(['message' => 'Only Monday to Friday can be updated.'], 400);
         }
+        if ($this->is_candidate_booking_confirmed_on_date($candidate_id, $date)) {
+            wp_send_json_error(['message' => 'Booking confirmed on this date. Availability cannot be changed.'], 400);
+        }
 
         global $wpdb;
         $table = $this->get_candidate_calendar_table();
@@ -78777,10 +78890,17 @@ p{margin:0;line-height:1.5}
         global $wpdb;
         $table = $this->get_candidate_calendar_table();
         $count = 0;
+        $booked_dates = $this->get_candidate_confirmed_booking_dates_map($candidate_id, $start, $end);
+        $skipped_booked = 0;
         $cursor = clone $start_dt;
         while ($cursor <= $end_dt) {
             $date = $cursor->format('Y-m-d');
             if ($this->is_weekday_date($date)) {
+                if (isset($booked_dates[$date])) {
+                    $skipped_booked++;
+                    $cursor->modify('+1 day');
+                    continue;
+                }
                 $wpdb->replace($table, [
                     'candidate_id' => $candidate_id,
                     'date' => $date,
@@ -78793,8 +78913,16 @@ p{margin:0;line-height:1.5}
             $cursor->modify('+1 day');
         }
         $summary = $this->get_candidate_calendar_summary($candidate_id);
+        $message = $count ? 'Availability updated.' : 'No weekday dates in selected range.';
+        if ($skipped_booked > 0) {
+            if ($count > 0) {
+                $message .= ' ' . $skipped_booked . ' booked day' . ($skipped_booked === 1 ? '' : 's') . ' skipped.';
+            } else {
+                $message = 'Selected dates are already booked and cannot be changed.';
+            }
+        }
         wp_send_json_success([
-            'message' => $count ? 'Availability updated.' : 'No weekday dates in selected range.',
+            'message' => $message,
             'updated' => $count,
             'summary' => $summary,
             'calendar' => $this->get_candidate_calendar_map($candidate_id, $today, $limit),
