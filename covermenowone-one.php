@@ -64853,16 +64853,16 @@ final class CMN_One_Plugin {
                                 <strong data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>
                             </div>
                         </div>
-                        <div class="cmn-profile-completion-help<?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? ' is-complete' : ''; ?>" data-profile-completion-help>
-                            <strong data-profile-completion-helper-text>
-                                <?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? 'Profile complete. You are at 100%.' : 'To reach 100% complete:'; ?>
-                            </strong>
-                            <ul data-profile-completion-missing<?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? ' hidden' : ''; ?>>
-                                <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
-                                    <li><?php echo esc_html((string) $missing_item); ?></li>
-                                <?php endforeach; ?>
-                            </ul>
-                        </div>
+                        <?php if ($completion_percent < 100 && !empty($completion_missing_items)) : ?>
+                            <div class="cmn-profile-completion-help" data-profile-completion-help>
+                                <strong data-profile-completion-helper-text>To reach 100% complete:</strong>
+                                <ul data-profile-completion-missing>
+                                    <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
+                                        <li><?php echo esc_html((string) $missing_item); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        <?php endif; ?>
                         <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
                             <a class="cmn-tab is-active" href="<?php echo esc_url($candidate_profile_url); ?>">Personal Details</a>
                             <a class="cmn-tab" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
