@@ -64925,9 +64925,6 @@ final class CMN_One_Plugin {
                         </div>
                         <div class="cmn-profile-grid cmn-profile-grid--candidate-profile" data-profile-root>
                             <div class="cmn-profile-personal-shell" id="cmn-profile-personal" data-profile-personal-card<?php echo $profile_focus_tab === 'documents' ? ' hidden' : ''; ?>>
-                                <div class="cmn-card-header">
-                                    <h3>Profile Details</h3>
-                                </div>
                                 <div data-profile-view="personal">
                                     <?php
                                     $profile_status_pill = static function ($label, $yes_text = 'Yes', $no_text = 'No', $unknown_text = 'Not set') {
