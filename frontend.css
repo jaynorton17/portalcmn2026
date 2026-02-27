@@ -14945,3 +14945,167 @@ body.cmn-portal-page .cmn-portal-light :is(
   background-image: none !important;
   border-color: var(--cmn-unified-border) !important;
 }
+
+/* Final hard lock: remove all red-tint card overlays/gradients across portal views. */
+body.cmn-portal-page :is(.cmn-candidate-main, .cmn-school-main, .cmn-staff-main) {
+  background-color: #0d1219 !important;
+  background-image: none !important;
+}
+
+body.cmn-portal-page :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-card,
+  .cmn-cover-card,
+  .cmn-support-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-support-ticket,
+  .cmn-support-tile,
+  .cmn-support-footer,
+  .cmn-support-feedback-modal__card,
+  .cmn-booking-feedback-modal__card,
+  .cmn-support-insights-modal__card,
+  .cmn-booking-disclaimer-modal__card,
+  .cmn-support-whats-new,
+  .cmn-calendar-card,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-staff-add-card,
+  .cmn-request-row,
+  .cmn-admin-stats div,
+  .cmn-admin-table div,
+  .cmn-kpi,
+  .cmn-task-item,
+  .cmn-mini-day,
+  .cmn-list-item,
+  .cmn-candidate-rewards-summary,
+  .cmn-candidate-rewards-card,
+  .cmn-candidate-rewards-summary-grid > div,
+  .cmn-candidate-rewards-award-row,
+  .cmn-candidate-rewards-conduct-row,
+  .cmn-rewards-hero,
+  .cmn-rewards-panel,
+  .cmn-rewards-event-row,
+  .cmn-rewards-history-row,
+  .cmn-rewards-admin-form,
+  .cmn-partner-progress-card,
+  .cmn-partner-savings-card,
+  .cmn-finance-metric-card,
+  .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 > .cmn-dashboard-card,
+  .cmn-candidate-main--dashboard .cmn-candidate-section4-slide,
+  .cmn-candidate-grid .cmn-availability-card,
+  .cmn-dashboard-row .cmn-availability-card
+):not(.cmn-availability-hero):not(.cmn-live-card):not(.cmn-live-matches) {
+  background-color: #10151d !important;
+  background-image: none !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.cmn-portal-page :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-card,
+  .cmn-cover-card,
+  .cmn-support-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-support-ticket,
+  .cmn-support-tile,
+  .cmn-support-footer,
+  .cmn-support-feedback-modal__card,
+  .cmn-booking-feedback-modal__card,
+  .cmn-support-insights-modal__card,
+  .cmn-booking-disclaimer-modal__card,
+  .cmn-support-whats-new,
+  .cmn-calendar-card,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-staff-add-card,
+  .cmn-request-row,
+  .cmn-admin-stats div,
+  .cmn-admin-table div,
+  .cmn-kpi,
+  .cmn-task-item,
+  .cmn-mini-day,
+  .cmn-list-item,
+  .cmn-candidate-rewards-summary,
+  .cmn-candidate-rewards-card,
+  .cmn-candidate-rewards-summary-grid > div,
+  .cmn-candidate-rewards-award-row,
+  .cmn-candidate-rewards-conduct-row,
+  .cmn-rewards-hero,
+  .cmn-rewards-panel,
+  .cmn-rewards-event-row,
+  .cmn-rewards-history-row,
+  .cmn-rewards-admin-form,
+  .cmn-partner-progress-card,
+  .cmn-partner-savings-card,
+  .cmn-finance-metric-card,
+  .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 > .cmn-dashboard-card,
+  .cmn-candidate-main--dashboard .cmn-candidate-section4-slide,
+  .cmn-candidate-grid .cmn-availability-card,
+  .cmn-dashboard-row .cmn-availability-card
+):not(.cmn-availability-hero):not(.cmn-live-card):not(.cmn-live-matches)::before,
+body.cmn-portal-page :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-card,
+  .cmn-cover-card,
+  .cmn-support-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-support-ticket,
+  .cmn-support-tile,
+  .cmn-support-footer,
+  .cmn-support-feedback-modal__card,
+  .cmn-booking-feedback-modal__card,
+  .cmn-support-insights-modal__card,
+  .cmn-booking-disclaimer-modal__card,
+  .cmn-support-whats-new,
+  .cmn-calendar-card,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-staff-add-card,
+  .cmn-request-row,
+  .cmn-admin-stats div,
+  .cmn-admin-table div,
+  .cmn-kpi,
+  .cmn-task-item,
+  .cmn-mini-day,
+  .cmn-list-item,
+  .cmn-candidate-rewards-summary,
+  .cmn-candidate-rewards-card,
+  .cmn-candidate-rewards-summary-grid > div,
+  .cmn-candidate-rewards-award-row,
+  .cmn-candidate-rewards-conduct-row,
+  .cmn-rewards-hero,
+  .cmn-rewards-panel,
+  .cmn-rewards-event-row,
+  .cmn-rewards-history-row,
+  .cmn-rewards-admin-form,
+  .cmn-partner-progress-card,
+  .cmn-partner-savings-card,
+  .cmn-finance-metric-card,
+  .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 > .cmn-dashboard-card,
+  .cmn-candidate-main--dashboard .cmn-candidate-section4-slide,
+  .cmn-candidate-grid .cmn-availability-card,
+  .cmn-dashboard-row .cmn-availability-card
+):not(.cmn-availability-hero):not(.cmn-live-card):not(.cmn-live-matches)::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  opacity: 0 !important;
+}
