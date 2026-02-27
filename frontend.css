@@ -2878,15 +2878,18 @@ body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .c
 }
 
 .cmn-calendar-range-controls {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 9px;
   margin-top: 10px;
-  align-items: end;
 }
 
 .cmn-calendar-range-controls label {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
   gap: 4px;
   font-size: 11px;
   color: var(--cmn-muted);
@@ -2896,14 +2899,29 @@ body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .c
 .cmn-calendar-range-controls select {
   min-height: 36px;
   font-size: 12px;
+  padding: 0 10px;
+  width: auto;
+}
+
+.cmn-calendar-range-controls select[data-calendar-range-start],
+.cmn-calendar-range-controls select[data-calendar-range-end] {
+  min-width: 108px;
+}
+
+.cmn-calendar-range-controls select[data-calendar-bulk-action] {
+  min-width: 132px;
 }
 
 .cmn-calendar-range-controls .cmn-primary[data-calendar-bulk-submit] {
   min-height: 36px;
-  width: 100%;
+  width: auto;
+  min-width: 136px;
   margin: 0;
+  padding: 0 14px;
   font-size: 12px;
   font-weight: 700;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .cmn-calendar-legend {
@@ -2961,6 +2979,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
 @media (max-width: 1100px) {
   body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 {
     grid-template-columns: 1fr;
+  }
+
+  .cmn-calendar-range-controls {
+    flex-wrap: wrap;
   }
 }
 

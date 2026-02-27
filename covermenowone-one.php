@@ -64380,7 +64380,7 @@ final class CMN_One_Plugin {
                 $option_value = $calendar_cursor->format('Y-m-d');
                 $calendar_weekday_options[] = [
                     'value' => $option_value,
-                    'label' => date_i18n('D j M Y', strtotime($option_value)),
+                    'label' => date_i18n('D j M', strtotime($option_value)),
                 ];
                 if (count($calendar_weekday_options) === 1) {
                     $calendar_default_start_date = $option_value;
@@ -64392,7 +64392,7 @@ final class CMN_One_Plugin {
         if (!$calendar_weekday_options) {
             $calendar_weekday_options[] = [
                 'value' => $calendar_min_date,
-                'label' => date_i18n('D j M Y', strtotime($calendar_min_date)),
+                'label' => date_i18n('D j M', strtotime($calendar_min_date)),
             ];
             $calendar_default_start_date = $calendar_min_date;
             $calendar_default_end_date = $calendar_min_date;
