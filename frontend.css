@@ -3509,6 +3509,16 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
     width: 100%;
     max-width: 100%;
   }
+
+  body.cmn-portal-page .cmn-candidate-main:is(
+    .cmn-candidate-main--profile,
+    .cmn-candidate-main--candidate_finance,
+    .cmn-candidate-main--feedback_ratings,
+    .cmn-candidate-main--calendar,
+    .cmn-candidate-main--bookings
+  ) :is(button.cmn-primary, button.cmn-ghost, a.cmn-primary, a.cmn-ghost):not(.cmn-profile-edit-trigger) {
+    min-width: 140px;
+  }
 }
 
 .cmn-staff-payroll-page {
@@ -13254,6 +13264,53 @@ body.cmn-portal-page .cmn-candidate-main:is(
   .cmn-candidate-main--bookings
 ) :is(.cmn-candidate-finance-page, .cmn-candidate-feedback-page, .cmn-profile-grid, .cmn-availability-layout) {
   gap: 14px;
+}
+
+/* My Hub button unification: match "Edit bank details" look and size */
+body.cmn-portal-page .cmn-candidate-main:is(
+  .cmn-candidate-main--profile,
+  .cmn-candidate-main--candidate_finance,
+  .cmn-candidate-main--feedback_ratings,
+  .cmn-candidate-main--calendar,
+  .cmn-candidate-main--bookings
+) :is(button.cmn-primary, button.cmn-ghost, a.cmn-primary, a.cmn-ghost):not(.cmn-profile-edit-trigger) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 172px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--cmn-text) !important;
+  box-shadow: none !important;
+  text-decoration: none;
+  font-weight: 600;
+  transition: background-color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+}
+
+body.cmn-portal-page .cmn-candidate-main:is(
+  .cmn-candidate-main--profile,
+  .cmn-candidate-main--candidate_finance,
+  .cmn-candidate-main--feedback_ratings,
+  .cmn-candidate-main--calendar,
+  .cmn-candidate-main--bookings
+) :is(button.cmn-primary, button.cmn-ghost, a.cmn-primary, a.cmn-ghost):not(.cmn-profile-edit-trigger):hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main:is(
+  .cmn-candidate-main--profile,
+  .cmn-candidate-main--candidate_finance,
+  .cmn-candidate-main--feedback_ratings,
+  .cmn-candidate-main--calendar,
+  .cmn-candidate-main--bookings
+) :is(button.cmn-primary, button.cmn-ghost, a.cmn-primary, a.cmn-ghost):not(.cmn-profile-edit-trigger):disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+  box-shadow: none !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-doc-upload-card {
