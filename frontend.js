@@ -10604,7 +10604,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var outcomesOpenTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-open-outcomes]'));
       var outcomesCloseTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-outcomes-close]'));
       var subjectModal = learningRoot.querySelector('[data-learning-subject-modal]');
-      var subjectModalOpenBtn = learningRoot.querySelector('[data-learning-open-subject-modal]');
+      var subjectModalOpenTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-open-subject-modal]'));
       var subjectModalCloseTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-subject-close]'));
       var subjectForm = learningRoot.querySelector('[data-learning-subject-form]');
       var subjectFormMsg = learningRoot.querySelector('[data-learning-subject-msg]');
@@ -11283,12 +11283,12 @@ document.addEventListener('DOMContentLoaded', function () {
           closeOutcomesModal();
         });
       });
-      if (subjectModalOpenBtn) {
-        subjectModalOpenBtn.addEventListener('click', function (event) {
+      subjectModalOpenTriggers.forEach(function (trigger) {
+        trigger.addEventListener('click', function (event) {
           event.preventDefault();
           openSubjectModal();
         });
-      }
+      });
       subjectModalCloseTriggers.forEach(function (trigger) {
         trigger.addEventListener('click', function (event) {
           event.preventDefault();

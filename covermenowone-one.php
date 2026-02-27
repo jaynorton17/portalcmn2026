@@ -65801,7 +65801,10 @@ final class CMN_One_Plugin {
                                 <article class="cmn-dashboard-card cmn-learning-modules-panel" data-learning-courses-screen<?php echo $learning_is_module_screen ? ' hidden' : ''; ?>>
                                     <div class="cmn-card-header">
                                         <h3>Courses</h3>
-                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => false], $portal_url)); ?>">Back</a>
+                                        <div class="cmn-learning-header-actions">
+                                            <button class="cmn-ghost cmn-btn-mini" type="button" data-learning-open-subject-modal>Recommend a subject</button>
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => false], $portal_url)); ?>">Back</a>
+                                        </div>
                                     </div>
                                     <div class="cmn-learning-modules-toolbar" data-learning-module-tools>
                                         <label class="cmn-learning-tool-search">
