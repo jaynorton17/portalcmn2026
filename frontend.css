@@ -3387,6 +3387,12 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   user-select: none;
 }
 
+.cmn-candidate-finance-query-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+}
+
 .cmn-candidate-finance-bank-summary::-webkit-details-marker {
   display: none;
 }
@@ -15012,6 +15018,20 @@ body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finan
 body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-bank-summary:focus-visible {
   background: rgba(51, 65, 85, 0.95) !important;
   border-color: rgba(148, 163, 184, 0.46) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-query-btn {
+  border-color: rgba(148, 163, 184, 0.34) !important;
+  background: rgba(30, 41, 59, 0.88) !important;
+  color: #f8fafc !important;
+  box-shadow: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-query-btn:hover,
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-query-btn:focus-visible {
+  background: rgba(51, 65, 85, 0.95) !important;
+  border-color: rgba(148, 163, 184, 0.46) !important;
+  box-shadow: none !important;
 }
 
 /* Hard override: Query pay button must not use the global red primary theme */

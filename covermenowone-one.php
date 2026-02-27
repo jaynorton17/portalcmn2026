@@ -69294,7 +69294,7 @@ final class CMN_One_Plugin {
                         <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error hidden></div>
                     <?php endif; ?>
                     <div class="cmn-candidate-finance-actions">
-                        <button class="cmn-primary" type="button" data-cmn-payroll-query-open>Query pay</button>
+                        <button class="cmn-candidate-finance-bank-summary cmn-candidate-finance-query-btn" type="button" data-cmn-payroll-query-open>Query pay</button>
                     </div>
                     <div class="cmn-candidate-payroll-query-panel" data-cmn-payroll-query-panel hidden>
                         <form class="cmn-candidate-payroll-query-form"
