@@ -65569,6 +65569,7 @@ final class CMN_One_Plugin {
                                             $module_title = sanitize_text_field((string) ($module_item['title'] ?? 'Module'));
                                             $module_description = sanitize_textarea_field((string) ($module_item['description'] ?? ''));
                                             $module_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($module_item['course_keys'] ?? []))));
+                                            $module_hover_details = array_values(array_filter(array_map('sanitize_text_field', (array) ($module_item['hover_details'] ?? []))));
                                             $is_coming_soon = !empty($module_item['coming_soon']);
                                             $is_selected_module = $learning_open_module_key !== '' && $learning_open_module_key === $module_key;
                                             ?>
@@ -65580,6 +65581,16 @@ final class CMN_One_Plugin {
                                                     aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>">
                                                 <h4><?php echo esc_html($module_title); ?></h4>
                                                 <p><?php echo esc_html($module_description); ?></p>
+                                                <?php if ($module_hover_details) : ?>
+                                                    <div class="cmn-learning-module-hover" aria-hidden="true">
+                                                        <strong>Includes:</strong>
+                                                        <ul>
+                                                            <?php foreach ($module_hover_details as $module_detail) : ?>
+                                                                <li><?php echo esc_html($module_detail); ?></li>
+                                                            <?php endforeach; ?>
+                                                        </ul>
+                                                    </div>
+                                                <?php endif; ?>
                                                 <span class="cmn-status-chip<?php echo $is_coming_soon ? '' : ' is-approved'; ?>">
                                                     <?php echo $is_coming_soon ? 'Coming soon' : (esc_html((string) count($module_course_keys)) . ' course' . (count($module_course_keys) === 1 ? '' : 's')); ?>
                                                 </span>
@@ -65602,19 +65613,36 @@ final class CMN_One_Plugin {
                                             $completion_item = is_array($learning_course_results[$course_key] ?? null) ? (array) $learning_course_results[$course_key] : [];
                                             $is_completed = !empty($completion_item['passed']);
                                             $completion_date = sanitize_text_field((string) ($completion_item['issued_date'] ?? ''));
+                                            $required_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($course_item['requires_course_keys'] ?? []))));
+                                            $missing_required_titles = [];
+                                            foreach ($required_course_keys as $required_course_key) {
+                                                $required_completion_item = is_array($learning_course_results[$required_course_key] ?? null) ? (array) $learning_course_results[$required_course_key] : [];
+                                                if (!empty($required_completion_item['passed'])) {
+                                                    continue;
+                                                }
+                                                $required_title = sanitize_text_field((string) ($learning_course_catalog[$required_course_key]['title'] ?? str_replace('_', ' ', ucfirst($required_course_key))));
+                                                if ($required_title !== '') {
+                                                    $missing_required_titles[] = $required_title;
+                                                }
+                                            }
+                                            $is_locked_course = !$is_completed && !empty($missing_required_titles);
+                                            $lock_message = $is_locked_course ? ('Complete first: ' . implode(', ', $missing_required_titles)) : '';
+                                            $open_label = $is_locked_course ? 'Locked' : ($is_completed ? 'Review course' : 'Open course');
                                             $is_visible_for_module = $learning_open_module_key !== '' && $course_module_key === $learning_open_module_key;
                                             if ($is_visible_for_module) {
                                                 $learning_visible_course_count++;
                                             }
                                             ?>
-                                            <div class="cmn-learning-course-item<?php echo $is_completed ? ' is-completed' : ''; ?>"
+                                            <div class="cmn-learning-course-item<?php echo $is_completed ? ' is-completed' : ''; ?><?php echo $is_locked_course ? ' is-locked' : ''; ?>"
                                                  data-learning-course-card="<?php echo esc_attr($course_key); ?>"
                                                  data-learning-course-module="<?php echo esc_attr($course_module_key); ?>"
+                                                 data-learning-course-locked="<?php echo $is_locked_course ? '1' : '0'; ?>"
+                                                 data-learning-course-requires="<?php echo esc_attr(wp_json_encode($required_course_keys)); ?>"
                                                  <?php echo $is_visible_for_module ? '' : 'hidden'; ?>>
                                                 <div class="cmn-learning-course-head">
                                                     <h4><?php echo esc_html($course_title); ?></h4>
                                                     <span class="cmn-status-chip<?php echo $is_completed ? ' is-approved' : ''; ?>" data-learning-course-status="<?php echo esc_attr($course_key); ?>">
-                                                        <?php echo $is_completed ? 'Completed' : 'Not started'; ?>
+                                                        <?php echo $is_completed ? 'Completed' : ($is_locked_course ? 'Locked' : 'Not started'); ?>
                                                     </span>
                                                 </div>
                                                 <p><?php echo esc_html($course_description); ?></p>
@@ -65622,10 +65650,13 @@ final class CMN_One_Plugin {
                                                     <span><?php echo esc_html((string) $slides_count); ?> slides</span>
                                                     <span><?php echo esc_html((string) $exam_count); ?> exam questions</span>
                                                 </div>
+                                                <small class="cmn-learning-course-lock"<?php echo $is_locked_course ? '' : ' hidden'; ?> data-learning-course-lock="<?php echo esc_attr($course_key); ?>">
+                                                    <?php echo esc_html($lock_message); ?>
+                                                </small>
                                                 <?php if ($is_completed && $completion_date !== '') : ?>
                                                     <small>Completed: <?php echo esc_html($completion_date); ?></small>
                                                 <?php endif; ?>
-                                                <button class="cmn-primary" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>">Open course</button>
+                                                <button class="cmn-primary" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>"<?php echo $is_locked_course ? ' disabled' : ''; ?>><?php echo esc_html($open_label); ?></button>
                                             </div>
                                         <?php endforeach; ?>
                                     </div>
@@ -65685,10 +65716,11 @@ final class CMN_One_Plugin {
                                         <div class="cmn-learning-exam-feedback" data-learning-result-feedback></div>
                                         <div class="cmn-learning-certificate" data-learning-certificate hidden>
                                             <div class="cmn-learning-certificate-head">
+                                                <img class="cmn-learning-certificate-logo" src="<?php echo esc_url($learning_study_icon_url); ?>" alt="CoverMeNow ONE Learning Centre">
                                                 <strong>COVERMENOW ONE</strong>
-                                                <span>Structured Emergency Cover Infrastructure</span>
+                                                <span>Learning Centre</span>
                                             </div>
-                                            <h4>Certificate of Course Completion</h4>
+                                            <h4 data-learning-certificate-title>Certificate of Course Completion</h4>
                                             <p>This certifies that:</p>
                                             <p class="cmn-learning-certificate-name" data-learning-certificate-name></p>
                                             <p>has successfully completed:</p>
@@ -65697,7 +65729,7 @@ final class CMN_One_Plugin {
                                             <div class="cmn-learning-certificate-meta">
                                                 <span>Version: <strong data-learning-certificate-version></strong></span>
                                                 <span>Issued: <strong data-learning-certificate-issued></strong></span>
-                                                <span>Verification Code: <strong data-learning-certificate-code></strong></span>
+                                                <span>Certificate Number: <strong data-learning-certificate-code></strong></span>
                                             </div>
                                             <p class="cmn-learning-certificate-tagline">One system. Total cover.</p>
                                         </div>
@@ -70544,11 +70576,1226 @@ final class CMN_One_Plugin {
     }
 
     private function get_candidate_learning_course_catalog() {
-        return [];
+        $slide_image_pool = [];
+        $slide_image_dir = plugin_dir_path(__FILE__) . 'assets/learning/safeguarding/';
+        $slide_image_url_base = plugin_dir_url(__FILE__) . 'assets/learning/safeguarding/';
+        if (is_dir($slide_image_dir)) {
+            $pool = glob($slide_image_dir . '*.{png,jpg,jpeg,webp}', GLOB_BRACE);
+            if (is_array($pool)) {
+                foreach ($pool as $slide_file) {
+                    $basename = basename((string) $slide_file);
+                    if ($basename === '') {
+                        continue;
+                    }
+                    $slide_image_pool[] = $slide_image_url_base . $basename;
+                }
+            }
+        }
+        if (!$slide_image_pool) {
+            $slide_image_pool[] = plugin_dir_url(__FILE__) . 'assets/courses.png';
+        }
+        $slide_image_pool = array_values(array_unique($slide_image_pool));
+        shuffle($slide_image_pool);
+        $slide_image_index = 0;
+        $next_slide_image = function() use (&$slide_image_index, $slide_image_pool) {
+            $count = count($slide_image_pool);
+            if ($count < 1) {
+                return plugin_dir_url(__FILE__) . 'assets/courses.png';
+            }
+            $image = (string) $slide_image_pool[$slide_image_index % $count];
+            $slide_image_index++;
+            return $image;
+        };
+        return [
+            'safeguarding_reporting_module_1' => [
+                'key' => 'safeguarding_reporting_module_1',
+                'module_key' => 'safeguarding_reporting_protocols',
+                'title' => 'Module 1: Legal and Statutory Framework for Safeguarding Reporting',
+                'description' => 'Statutory safeguarding reporting duties under KCSIE, Children Acts, Teachers\' Standards, and Ofsted safeguarding judgement expectations.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 1 Certificate',
+                'certificate_prefix' => 'CMN-SRP-M1',
+                'slides' => [
+                    [
+                        'title' => 'Why Safeguarding Reporting Matters',
+                        'body' => "Safeguarding reporting is a statutory duty, not discretionary action. Every adult in school has a legal and professional responsibility to report concerns.\n\nFailure to report can place children at risk of significant harm and expose staff and schools to disciplinary, legal, and regulatory consequences.\n\nEffective reporting protects pupils, staff, and the school community through early intervention and accountable multi-agency collaboration.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Statutory Foundations: KCSIE and the Children Acts',
+                        'body' => "KCSIE is statutory guidance and staff must understand their safeguarding role. The Children Act 1989 establishes child welfare primacy and the Children Act 2004 reinforces multi-agency cooperation.\n\nConcerns must be reported immediately to the DSL. Staff should not investigate independently or delay while collecting additional evidence.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Roles and Responsibilities in Reporting',
+                        'body' => "All staff must recognise concerns, report immediately, and record accurately. DSLs assess concerns, make referrals, and maintain secure records.\n\nHeadteachers and governors hold leadership accountability for safeguarding compliance. Confusion about reporting pathways is not a valid defence.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'What Must Be Reported',
+                        'body' => "Report concerns including abuse, neglect, exploitation, child-on-child abuse, online harm, Prevent risks, domestic abuse exposure, and mental health risk linked to harm.\n\nStaff report reasonable concern, not proof. Low-level concerns still matter because patterns often emerge over time.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Professional Conduct and Teachers’ Standards',
+                        'body' => "Teachers’ Standards Part Two requires safeguarding duty of care and professional conduct. Staff must avoid secrecy, never promise confidentiality, and record disclosures objectively.\n\nBreach of safeguarding duties can lead to disciplinary action, TRA referral, prohibition, or dismissal.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Ofsted and Safeguarding Compliance',
+                        'body' => "Under EIF, safeguarding is a limiting judgement. If safeguarding is ineffective, overall effectiveness cannot be good or outstanding.\n\nInspectors evaluate staff reporting understanding, timeliness, record quality, referral evidence, and training compliance.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Which document provides statutory safeguarding guidance for schools in England?',
+                        'options' => [
+                            'A' => 'The Equality Act 2010',
+                            'B' => 'Keeping Children Safe in Education (KCSIE)',
+                            'C' => 'The School Admissions Code',
+                            'D' => 'The National Curriculum Framework',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'KCSIE is the statutory safeguarding guidance for schools and colleges in England.',
+                    ],
+                    [
+                        'question' => 'If a staff member suspects abuse but has no proof, they should:',
+                        'options' => [
+                            'A' => 'Investigate further themselves',
+                            'B' => 'Wait for more evidence',
+                            'C' => 'Immediately report to the DSL',
+                            'D' => 'Speak to the child’s parents first',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding reporting is based on concern and risk, not proof. DSLs and agencies assess threshold.',
+                    ],
+                    [
+                        'question' => 'Who has overall responsibility for safeguarding leadership within a school?',
+                        'options' => [
+                            'A' => 'Classroom teachers only',
+                            'B' => 'The school receptionist',
+                            'C' => 'The DSL, Headteacher, and Governing Body',
+                            'D' => 'Pupils',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding leadership is shared across DSL operational leadership and senior strategic accountability.',
+                    ],
+                    [
+                        'question' => 'Under Teachers’ Standards Part Two, teachers must:',
+                        'options' => [
+                            'A' => 'Keep disclosures confidential from leaders',
+                            'B' => 'Prioritise pupil welfare and safeguard wellbeing',
+                            'C' => 'Investigate safeguarding concerns independently',
+                            'D' => 'Avoid documenting concerns',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Teachers must safeguard pupil wellbeing and uphold professional standards.',
+                    ],
+                    [
+                        'question' => 'If Ofsted judges safeguarding ineffective, the school:',
+                        'options' => [
+                            'A' => 'Can still be graded Outstanding',
+                            'B' => 'Will automatically close',
+                            'C' => 'Cannot be judged Good or Outstanding overall',
+                            'D' => 'Receives no consequences',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding is a limiting judgement under EIF.',
+                    ],
+                ],
+            ],
+            'safeguarding_reporting_module_2' => [
+                'key' => 'safeguarding_reporting_module_2',
+                'module_key' => 'safeguarding_reporting_protocols',
+                'title' => 'Module 2: Recognising Concerns and Identifying Reportable Issues',
+                'description' => 'Identifying abuse indicators, disclosures, contextual vulnerability, and professional curiosity for accurate and timely safeguarding reporting.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 2 Certificate',
+                'certificate_prefix' => 'CMN-SRP-M2',
+                'slides' => [
+                    [
+                        'title' => 'Early Identification',
+                        'body' => "Early identification prevents escalation. Concerns often appear as subtle behavioural, emotional, physical, or attendance changes rather than direct disclosures.\n\nStaff vigilance and professional curiosity are core safeguarding expectations.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Categories of Abuse',
+                        'body' => "Staff must understand physical abuse, emotional abuse, sexual abuse, and neglect, alongside contextual risks such as CSE, CCE, county lines, FGM, forced marriage, and Prevent concerns.\n\nUnderstanding categories improves reporting accuracy.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Child-on-Child Abuse',
+                        'body' => "Child-on-child abuse must never be dismissed as banter. Incidents such as sexual harassment, sexual violence, coercion, and cyber abuse are safeguarding issues and must be reported.\n\nIncidents require formal recording and DSL assessment.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Disclosures',
+                        'body' => "Disclosures may be direct, indirect, behavioural, written, or third-party. Staff should listen calmly, avoid leading questions, avoid promises of confidentiality, and report promptly to DSL.\n\nRecord accurately using the child’s words where possible.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Vulnerability and Contextual Safeguarding',
+                        'body' => "SEND, LAC status, prior concerns, domestic abuse, mental health, poverty, and online risks can increase vulnerability.\n\nStaff should consider contextual harm outside home and school when reporting concerns.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Low-Level vs Immediate Risk',
+                        'body' => "Low-level concerns must still be logged because patterns matter. Immediate risk indicators require urgent reporting and potentially emergency escalation.\n\nDo not delay because of uncertainty.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Professional Curiosity and Safe Challenge',
+                        'body' => "Professional curiosity means respectfully questioning, observing patterns, and escalating concerns where responses appear insufficient.\n\nSafeguarding culture requires escalation confidence and ethical courage.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'If a safeguarding concern appears minor but recurring, staff should:',
+                        'options' => [
+                            'A' => 'Ignore it',
+                            'B' => 'Wait for proof',
+                            'C' => 'Record and report to the DSL',
+                            'D' => 'Speak only to colleagues informally',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Recurring low-level concerns can reveal significant risk patterns when logged and reviewed.',
+                    ],
+                    [
+                        'question' => 'Child-on-child abuse should be treated as:',
+                        'options' => [
+                            'A' => 'Normal childhood behaviour',
+                            'B' => 'A disciplinary issue only',
+                            'C' => 'A safeguarding concern requiring reporting',
+                            'D' => 'A parental responsibility',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'KCSIE requires child-on-child abuse to be recognised and managed as safeguarding risk.',
+                    ],
+                    [
+                        'question' => 'When a pupil discloses abuse, staff must:',
+                        'options' => [
+                            'A' => 'Promise confidentiality',
+                            'B' => 'Ask leading questions to clarify details',
+                            'C' => 'Listen calmly and report to the DSL',
+                            'D' => 'Confront the alleged perpetrator',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Staff receive and report disclosures; they do not investigate or promise secrecy.',
+                    ],
+                    [
+                        'question' => 'Which of the following is considered neglect?',
+                        'options' => [
+                            'A' => 'Persistent failure to meet a child’s basic needs',
+                            'B' => 'A one-off disagreement',
+                            'C' => 'A pupil failing homework',
+                            'D' => 'Occasional lateness',
+                        ],
+                        'answer' => 'A',
+                        'explanation' => 'Neglect is persistent failure to meet physical and/or psychological needs.',
+                    ],
+                    [
+                        'question' => 'Professional curiosity involves:',
+                        'options' => [
+                            'A' => 'Conducting personal investigations',
+                            'B' => 'Ignoring minor concerns',
+                            'C' => 'Respectfully questioning and escalating concerns appropriately',
+                            'D' => 'Discussing concerns publicly',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Professional curiosity supports safe escalation and improved safeguarding outcomes.',
+                    ],
+                ],
+            ],
+            'safeguarding_reporting_module_3' => [
+                'key' => 'safeguarding_reporting_module_3',
+                'module_key' => 'safeguarding_reporting_protocols',
+                'title' => 'Module 3: Internal Reporting Procedures and Record Keeping',
+                'description' => 'Internal pathways, factual recording standards, secure systems, confidentiality, staff allegations, escalation, and safeguarding audit accountability.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 3 Certificate',
+                'certificate_prefix' => 'CMN-SRP-M3',
+                'slides' => [
+                    [
+                        'title' => 'Clear Internal Reporting Pathways',
+                        'body' => "Schools must define clear safeguarding reporting pathways and staff must know DSL/deputy contacts and reporting systems.\n\nConcerns must be reported immediately and formally, not assumed or left to verbal handovers.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Accurate Recording Standards',
+                        'body' => "Records must be factual, dated, timed, and distinguish observation from opinion. Include direct quotes where possible and avoid diagnostic or emotive language.\n\nHigh-quality records support DSL decisions and agency referrals.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Using Secure Recording Systems',
+                        'body' => "Use approved safeguarding systems promptly and securely. Do not store sensitive safeguarding information on personal devices or insecure channels.\n\nSafeguarding data must be confidential and separated from routine academic records.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Confidentiality and Information Sharing',
+                        'body' => "Safeguarding confidentiality is not secrecy. Share on a need-to-know basis and follow DSL guidance.\n\nData protection must not be misused to delay safeguarding action when a child is at risk.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Concerns Involving Staff',
+                        'body' => "Allegations about staff follow specific pathways. Report to Headteacher or Chair of Governors as appropriate and involve LADO where threshold criteria apply.\n\nDo not investigate independently.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Escalation and Whistleblowing',
+                        'body' => "If concerns are not addressed, escalate through DSL, Headteacher, and whistleblowing pathways. Staff are protected for good-faith disclosure under public interest legislation.\n\nFailure to escalate is a recurring safeguarding failure factor.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Audit, Monitoring and Accountability',
+                        'body' => "DSLs and leaders must maintain chronologies, monitor patterns, and evidence timely action. Governors oversee safeguarding effectiveness.\n\nDocumentation quality is central to Ofsted and safeguarding defensibility.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Safeguarding concerns should be reported:',
+                        'options' => [
+                            'A' => 'At the end of the week',
+                            'B' => 'Only if confirmed',
+                            'C' => 'Immediately, following school procedures',
+                            'D' => 'Only to colleagues',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding concerns require prompt reporting through formal pathways.',
+                    ],
+                    [
+                        'question' => 'Safeguarding records should:',
+                        'options' => [
+                            'A' => 'Contain personal opinions',
+                            'B' => 'Be factual, dated, and timed',
+                            'C' => 'Be stored on personal devices',
+                            'D' => 'Be shared widely',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Factual, time-stamped records are required for safeguarding accountability and referral quality.',
+                    ],
+                    [
+                        'question' => 'If a concern involves the Headteacher, staff must report it to:',
+                        'options' => [
+                            'A' => 'The DSL',
+                            'B' => 'The Chair of Governors',
+                            'C' => 'Another teacher',
+                            'D' => 'Parents',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Concerns involving the Headteacher are escalated to the Chair of Governors.',
+                    ],
+                    [
+                        'question' => 'Data protection laws:',
+                        'options' => [
+                            'A' => 'Prevent safeguarding information sharing',
+                            'B' => 'Override child protection duties',
+                            'C' => 'Must not be used to delay safeguarding reporting',
+                            'D' => 'Prohibit digital safeguarding systems',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Data protection does not override child protection duty where risk exists.',
+                    ],
+                    [
+                        'question' => 'If concerns are not addressed appropriately, staff should:',
+                        'options' => [
+                            'A' => 'Ignore it',
+                            'B' => 'Discuss it casually with colleagues',
+                            'C' => 'Escalate through safeguarding or whistleblowing procedures',
+                            'D' => 'Post about it online',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Escalation is required where safeguarding response appears insufficient.',
+                    ],
+                ],
+            ],
+            'safeguarding_reporting_module_4' => [
+                'key' => 'safeguarding_reporting_module_4',
+                'module_key' => 'safeguarding_reporting_protocols',
+                'title' => 'Module 4: Escalation, External Referrals and Multi-Agency Working',
+                'description' => 'External thresholds, social care referral pathways, Prevent duty, staff allegation oversight, escalation challenge, and post-referral monitoring.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 4 Certificate',
+                'certificate_prefix' => 'CMN-SRP-M4',
+                'slides' => [
+                    [
+                        'title' => 'When Internal Reporting Leads to External Referral',
+                        'body' => "DSLs determine referral threshold using KCSIE and local guidance. Referrals may involve social care, police, LADO, Channel, or Early Help.\n\nTimely referral is critical to child safety and compliance.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Thresholds: Early Help vs Child Protection',
+                        'body' => "Early Help addresses emerging need; Section 17 supports Child in Need; Section 47 applies where significant harm is suspected.\n\nStaff report concerns; DSLs determine threshold and pathway.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Working with Social Care and Police',
+                        'body' => "Schools must cooperate with strategy discussions, conferences, core groups, and child protection planning.\n\nInformation sharing should remain factual, secure, and aligned with agreed safeguarding plans.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Prevent Duty and Radicalisation',
+                        'body' => "Under Prevent duty, schools must report radicalisation concerns through DSL pathways, with Channel referral where appropriate.\n\nResponses must be proportionate, lawful, and non-discriminatory.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Allegations Against Staff and External Oversight',
+                        'body' => "Harm-threshold allegations require LADO consultation. Schools must not pre-investigate before required external coordination.\n\nTimely, policy-compliant response protects pupils and staff fairness.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Escalation and Professional Challenge',
+                        'body' => "Where agencies disagree or response is insufficient, escalation should be professional, evidence-led, and child-centred.\n\nFailure to challenge unsafe outcomes is a repeated serious-review learning point.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Documentation and Post-Referral Monitoring',
+                        'body' => "Referral does not end school safeguarding responsibility. DSLs must track outcomes, maintain chronology, monitor wellbeing, and continue reporting new concerns.\n\nSafeguarding is persistent, not one-off.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Who decides whether a safeguarding concern meets threshold for external referral?',
+                        'options' => [
+                            'A' => 'Any classroom teacher',
+                            'B' => 'The pupil',
+                            'C' => 'The Designated Safeguarding Lead (DSL)',
+                            'D' => 'Parents',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'DSLs lead threshold decisions and referral pathways.',
+                    ],
+                    [
+                        'question' => 'A Section 47 enquiry relates to:',
+                        'options' => [
+                            'A' => 'Attendance monitoring',
+                            'B' => 'Child Protection (risk of significant harm)',
+                            'C' => 'Curriculum planning',
+                            'D' => 'School admissions',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Section 47 is the child protection threshold where significant harm is suspected.',
+                    ],
+                    [
+                        'question' => 'Concerns about radicalisation should be reported to:',
+                        'options' => [
+                            'A' => 'The media',
+                            'B' => 'The DSL',
+                            'C' => 'Other pupils',
+                            'D' => 'Parents immediately',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Prevent concerns must follow safeguarding pathways through DSL leadership.',
+                    ],
+                    [
+                        'question' => 'When allegation harm criteria are met against staff, school must contact:',
+                        'options' => [
+                            'A' => 'Ofsted directly',
+                            'B' => 'The LADO',
+                            'C' => 'The PTA',
+                            'D' => 'The school receptionist',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'LADO oversees threshold allegations against adults in positions of trust.',
+                    ],
+                    [
+                        'question' => 'After referral to social care, the school should:',
+                        'options' => [
+                            'A' => 'Close the case internally',
+                            'B' => 'Stop monitoring the child',
+                            'C' => 'Continue monitoring and recording concerns',
+                            'D' => 'Inform all parents',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Post-referral monitoring remains essential safeguarding duty.',
+                    ],
+                ],
+            ],
+            'safeguarding_reporting_module_5' => [
+                'key' => 'safeguarding_reporting_module_5',
+                'module_key' => 'safeguarding_reporting_protocols',
+                'title' => 'Module 5: Professional Accountability, Whistleblowing and Ofsted Expectations',
+                'description' => 'Professional safeguarding accountability, whistleblowing protections, low-level conduct concerns, Ofsted culture expectations, and legal documentation standards.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 5 Certificate',
+                'certificate_prefix' => 'CMN-SRP-M5',
+                'slides' => [
+                    [
+                        'title' => 'Safeguarding as Professional Accountability',
+                        'body' => "Safeguarding reporting is statutory and central to Teachers’ Standards Part Two. Professional accountability includes immediate action, accurate recording, escalation where needed, and ethical conduct.\n\nFailure may lead to disciplinary action, TRA referral, or prohibition.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Whistleblowing',
+                        'body' => "Whistleblowing procedures protect staff raising safeguarding concerns in good faith under Public Interest Disclosure law.\n\nUnsafe cultures that silence concern create significant pupil risk and regulatory vulnerability.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Low-Level Concerns About Staff Conduct',
+                        'body' => "Low-level concerns about boundary behaviour must be recorded and reviewed. Patterns may indicate escalating safeguarding risk.\n\nRecording protects pupils, colleagues, and professional standards.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Ofsted Safeguarding Culture Expectations',
+                        'body' => "Ofsted tests lived safeguarding practice, not policy statements alone. Staff should confidently explain reporting pathways, recording, DSL routes, and escalation processes.\n\nSafeguarding remains a limiting judgement.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Documentation as Legal Protection',
+                        'body' => "Accurate safeguarding documentation protects children, staff, leaders, and governors. Weak records can undermine intervention and expose schools to legal and regulatory risk.\n\nHigh-quality records evidence professional diligence.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Learning from Serious Case Reviews',
+                        'body' => "Case reviews repeatedly identify failures in information sharing, escalation, and record quality. Staff must challenge assumptions and follow through persistently.\n\nReflective safeguarding culture prevents repeated failure patterns.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Sustaining Robust Safeguarding Culture',
+                        'body' => "Sustained safeguarding requires ongoing training, policy updates, leadership visibility, induction, governance oversight, and safe concern-raising routes.\n\nEvery good-faith report strengthens child protection culture.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Teachers’ Standards Part Two requires teachers to:',
+                        'options' => [
+                            'A' => 'Avoid involvement in safeguarding',
+                            'B' => 'Safeguard pupils’ wellbeing and maintain public trust',
+                            'C' => 'Investigate abuse independently',
+                            'D' => 'Delegate safeguarding to governors only',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Part Two requires safeguarding duty and professional integrity.',
+                    ],
+                    [
+                        'question' => 'Whistleblowing procedures protect staff who:',
+                        'options' => [
+                            'A' => 'Spread rumours',
+                            'B' => 'Raise safeguarding concerns in good faith',
+                            'C' => 'Ignore unsafe practice',
+                            'D' => 'Share confidential data publicly',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Good-faith safeguarding disclosures are protected and expected.',
+                    ],
+                    [
+                        'question' => 'Low-level concerns about staff conduct should:',
+                        'options' => [
+                            'A' => 'Be ignored',
+                            'B' => 'Only be addressed if repeated',
+                            'C' => 'Be recorded and reviewed appropriately',
+                            'D' => 'Be discussed publicly',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Low-level concern recording supports pattern detection and risk prevention.',
+                    ],
+                    [
+                        'question' => 'If safeguarding is judged ineffective by Ofsted, the school:',
+                        'options' => [
+                            'A' => 'Can still be Outstanding',
+                            'B' => 'Cannot be judged Good or Outstanding overall',
+                            'C' => 'Faces no consequences',
+                            'D' => 'Automatically closes',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Safeguarding is a limiting judgement under EIF.',
+                    ],
+                    [
+                        'question' => 'Serious safeguarding reviews often identify failure to:',
+                        'options' => [
+                            'A' => 'Complete lesson plans',
+                            'B' => 'Share information and escalate concerns',
+                            'C' => 'Increase homework',
+                            'D' => 'Reduce staff meetings',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Information-sharing and escalation failure is a repeated major learning theme.',
+                    ],
+                ],
+            ],
+            'safeguarding_reporting_final_exam' => [
+                'key' => 'safeguarding_reporting_final_exam',
+                'module_key' => 'safeguarding_reporting_protocols',
+                'title' => 'Final Course Exam: Safeguarding Reporting Protocols in UK Schools',
+                'description' => 'Final certification exam. Locked until all five module assessments are passed.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Final Exam Certificate',
+                'certificate_prefix' => 'CMN-SRP-FINAL',
+                'requires_course_keys' => [
+                    'safeguarding_reporting_module_1',
+                    'safeguarding_reporting_module_2',
+                    'safeguarding_reporting_module_3',
+                    'safeguarding_reporting_module_4',
+                    'safeguarding_reporting_module_5',
+                ],
+                'slides' => [
+                    [
+                        'title' => 'Final Exam Briefing',
+                        'body' => "You must complete all module assessments before this final exam unlocks.\n\nPass mark is 100% and unlimited retakes are available.\n\nSuccessful completion confirms statutory safeguarding reporting competence aligned to KCSIE, Ofsted EIF, and Teachers’ Standards.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Which statutory document sets out safeguarding responsibilities for schools in England?',
+                        'options' => ['A' => 'The Equality Act 2010', 'B' => 'Keeping Children Safe in Education (KCSIE)', 'C' => 'The National Curriculum', 'D' => 'The School Teachers’ Pay and Conditions Document'],
+                        'answer' => 'B',
+                        'explanation' => 'KCSIE defines statutory safeguarding responsibilities for schools and colleges.',
+                    ],
+                    [
+                        'question' => 'If a child makes a safeguarding disclosure, the first action should be to:',
+                        'options' => ['A' => 'Investigate immediately', 'B' => 'Promise confidentiality', 'C' => 'Listen calmly and report to the DSL', 'D' => 'Inform the child’s friends'],
+                        'answer' => 'C',
+                        'explanation' => 'Staff should listen, reassure appropriately, and report through safeguarding pathways.',
+                    ],
+                    [
+                        'question' => 'Safeguarding concerns should be reported:',
+                        'options' => ['A' => 'Only when evidence is confirmed', 'B' => 'Immediately, following school procedures', 'C' => 'At the end of term', 'D' => 'Only if parents agree'],
+                        'answer' => 'B',
+                        'explanation' => 'Immediate reporting is core safeguarding duty.',
+                    ],
+                    [
+                        'question' => 'Who decides whether a concern meets threshold for referral to children’s social care?',
+                        'options' => ['A' => 'Any classroom teacher', 'B' => 'The Governing Body alone', 'C' => 'The Designated Safeguarding Lead (DSL)', 'D' => 'The Office Manager'],
+                        'answer' => 'C',
+                        'explanation' => 'DSLs lead threshold and referral decisions.',
+                    ],
+                    [
+                        'question' => 'Under the Children Act 1989, a Section 47 enquiry relates to:',
+                        'options' => ['A' => 'Curriculum development', 'B' => 'Staff appraisal', 'C' => 'Suspected significant harm (Child Protection)', 'D' => 'School funding'],
+                        'answer' => 'C',
+                        'explanation' => 'Section 47 concerns child protection and significant harm.',
+                    ],
+                    [
+                        'question' => 'If a safeguarding concern involves the Headteacher, report to:',
+                        'options' => ['A' => 'The DSL', 'B' => 'The Chair of Governors', 'C' => 'The Local MP', 'D' => 'Parents'],
+                        'answer' => 'B',
+                        'explanation' => 'Headteacher allegations are escalated to the Chair of Governors.',
+                    ],
+                    [
+                        'question' => 'Which is an example of child-on-child abuse?',
+                        'options' => ['A' => 'Homework incomplete', 'B' => 'Resolved playground disagreement', 'C' => 'Sexual harassment between pupils', 'D' => 'Uniform non-compliance'],
+                        'answer' => 'C',
+                        'explanation' => 'Sexual harassment between pupils is a safeguarding concern.',
+                    ],
+                    [
+                        'question' => 'Data protection legislation:',
+                        'options' => ['A' => 'Prevents safeguarding information sharing', 'B' => 'Overrides child protection duties', 'C' => 'Must not be used to delay safeguarding reporting', 'D' => 'Prohibits safeguarding record systems'],
+                        'answer' => 'C',
+                        'explanation' => 'Data protection should not delay safeguarding action where risk exists.',
+                    ],
+                    [
+                        'question' => 'The Prevent duty requires schools to safeguard pupils from:',
+                        'options' => ['A' => 'Poor attendance', 'B' => 'Radicalisation and extremism', 'C' => 'Low academic attainment', 'D' => 'School inspections'],
+                        'answer' => 'B',
+                        'explanation' => 'Prevent duty focuses on radicalisation risk protection.',
+                    ],
+                    [
+                        'question' => 'Low-level concerns about staff conduct should be:',
+                        'options' => ['A' => 'Ignored unless repeated', 'B' => 'Recorded and reviewed appropriately', 'C' => 'Shared informally with colleagues', 'D' => 'Discussed with pupils'],
+                        'answer' => 'B',
+                        'explanation' => 'Low-level concern recording is required for pattern tracking and risk prevention.',
+                    ],
+                    [
+                        'question' => 'If a concern is not taken seriously, staff should:',
+                        'options' => ['A' => 'Drop the issue', 'B' => 'Post concerns online', 'C' => 'Escalate through safeguarding or whistleblowing procedures', 'D' => 'Inform pupils'],
+                        'answer' => 'C',
+                        'explanation' => 'Escalation through formal pathways is required when response is inadequate.',
+                    ],
+                    [
+                        'question' => 'When recording a safeguarding concern, staff should:',
+                        'options' => ['A' => 'Include personal opinions', 'B' => 'Use factual, dated, and timed information', 'C' => 'Diagnose abuse', 'D' => 'Delay writing it down'],
+                        'answer' => 'B',
+                        'explanation' => 'Factual, time-stamped records are required for safeguarding evidential quality.',
+                    ],
+                    [
+                        'question' => 'Failure to report safeguarding concerns may result in:',
+                        'options' => ['A' => 'Promotion', 'B' => 'No consequences', 'C' => 'Disciplinary action or TRA referral', 'D' => 'Automatic pay increase'],
+                        'answer' => 'C',
+                        'explanation' => 'Failure can lead to serious professional and regulatory consequences.',
+                    ],
+                    [
+                        'question' => 'Ofsted treats safeguarding as:',
+                        'options' => ['A' => 'A minor inspection area', 'B' => 'Optional if outcomes are strong', 'C' => 'A limiting judgement', 'D' => 'A governor-only responsibility'],
+                        'answer' => 'C',
+                        'explanation' => 'Ineffective safeguarding limits overall effectiveness grading.',
+                    ],
+                    [
+                        'question' => 'Professional curiosity involves:',
+                        'options' => ['A' => 'Independent investigation', 'B' => 'Respectfully questioning and escalating concerns appropriately', 'C' => 'Ignoring low-level signs', 'D' => 'Sharing suspicions publicly'],
+                        'answer' => 'B',
+                        'explanation' => 'Professional curiosity supports safe challenge and timely safeguarding action.',
+                    ],
+                ],
+            ],
+            'safeguarding_statutory_module_1' => [
+                'key' => 'safeguarding_statutory_module_1',
+                'module_key' => 'safeguarding_statutory_practice',
+                'title' => 'Module 1: Foundations of Safeguarding and Statutory Responsibilities',
+                'description' => 'Safeguarding definitions, statutory framework, DSL role, teachers’ standards, culture, and consequences of safeguarding failure in UK schools.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 1 Certificate',
+                'certificate_prefix' => 'CMN-SDSP-M1',
+                'slides' => [
+                    [
+                        'title' => 'What Safeguarding Means in UK Schools',
+                        'body' => "Safeguarding protects children from harm, prevents impairment, and ensures safe and effective care. It includes prevention, early intervention, and child protection.\n\nUnder KCSIE, safeguarding is everyone’s responsibility and must be embedded into culture, curriculum, behaviour systems, attendance, and training.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'The Legal and Statutory Framework',
+                        'body' => "Core frameworks include KCSIE, Children Act 1989 and 2004, Working Together, Education Act 2002, and Prevent duty.\n\nSchools must maintain compliant safeguarding policies and ensure all staff understand statutory duties.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'The Role of the DSL',
+                        'body' => "The DSL manages concerns and referrals, liaises with agencies, maintains records, supports staff, and leads safeguarding culture.\n\nAll staff still hold direct reporting responsibility and must escalate concerns promptly.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Teachers’ Standards and Professional Conduct',
+                        'body' => "Teachers’ Standards Part Two requires safeguarding pupil wellbeing and maintaining public trust.\n\nStaff must keep boundaries, use appropriate communication channels, and report concerns without delay.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Creating a Whole-School Safeguarding Culture',
+                        'body' => "Strong safeguarding culture includes training, clear reporting pathways, effective behaviour policy, attendance oversight, safe recruitment, pupil voice, and governance challenge.\n\nOfsted evaluates lived practice, not policy documents alone.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Consequences of Safeguarding Failure',
+                        'body' => "Failure can lead to child harm, disciplinary action, TRA referral, dismissal, legal exposure, Ofsted downgrading, and reputational damage.\n\nProactive safeguarding protects pupils, professionals, and institutional integrity.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Which statutory document sets out safeguarding responsibilities for schools in England?',
+                        'options' => ['A' => 'The National Curriculum', 'B' => 'Keeping Children Safe in Education (KCSIE)', 'C' => 'The Teachers’ Pay and Conditions Document', 'D' => 'The Equality Policy only'],
+                        'answer' => 'B',
+                        'explanation' => 'KCSIE is the core statutory safeguarding guidance for schools and colleges in England.',
+                    ],
+                    [
+                        'question' => 'Who holds lead responsibility for safeguarding within a school?',
+                        'options' => ['A' => 'Any classroom teacher', 'B' => 'The School Business Manager', 'C' => 'The Designated Safeguarding Lead (DSL)', 'D' => 'The Head Boy or Head Girl'],
+                        'answer' => 'C',
+                        'explanation' => 'The DSL holds lead operational safeguarding responsibility.',
+                    ],
+                    [
+                        'question' => 'Under Teachers’ Standards Part Two, teachers must:',
+                        'options' => ['A' => 'Avoid involvement in safeguarding matters', 'B' => 'Safeguard pupils’ wellbeing and maintain public trust', 'C' => 'Investigate abuse independently', 'D' => 'Share safeguarding information publicly'],
+                        'answer' => 'B',
+                        'explanation' => 'Teachers must protect pupils and maintain public confidence in professional conduct.',
+                    ],
+                    [
+                        'question' => 'Safeguarding in schools includes:',
+                        'options' => ['A' => 'Only responding to confirmed abuse', 'B' => 'Academic progress monitoring only', 'C' => 'Prevention, early intervention, and child protection', 'D' => 'Behaviour management alone'],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding is a broad system that includes prevention and response.',
+                    ],
+                    [
+                        'question' => 'If safeguarding is judged ineffective by Ofsted, the school:',
+                        'options' => ['A' => 'Can still be Outstanding', 'B' => 'Cannot be judged Good or Outstanding overall', 'C' => 'Faces no inspection consequences', 'D' => 'Automatically closes'],
+                        'answer' => 'B',
+                        'explanation' => 'Safeguarding is a limiting judgement under EIF.',
+                    ],
+                ],
+            ],
+            'safeguarding_statutory_module_2' => [
+                'key' => 'safeguarding_statutory_module_2',
+                'module_key' => 'safeguarding_statutory_practice',
+                'title' => 'Module 2: Recognising Abuse, Neglect and Emerging Risks',
+                'description' => 'Core abuse categories, warning signs, child-on-child abuse, disclosures, vulnerabilities, and professional curiosity in safeguarding reporting.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 2 Certificate',
+                'certificate_prefix' => 'CMN-SDSP-M2',
+                'slides' => [
+                    [
+                        'title' => 'Categories of Abuse: Core Definitions',
+                        'body' => "Staff must understand physical abuse, emotional abuse, sexual abuse, and neglect as defined in statutory guidance.\n\nStaff do not diagnose abuse; they observe, record, and report to DSL promptly.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Indicators and Warning Signs',
+                        'body' => "Abuse often appears through patterns: injuries, behaviour changes, fear of adults, absences, poor hygiene, hunger, self-harm, and risk-taking.\n\nPatterns over time matter and must be reported.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Child-on-Child Abuse and Harmful Sexual Behaviour',
+                        'body' => "Child-on-child abuse must never be dismissed as banter.\n\nIncidents including sexual harassment, sexual violence, coercion, or online abuse require formal DSL reporting and recording.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Emerging and Contextual Risks',
+                        'body' => "Emerging risks include CSE, CCE, county lines, Prevent concerns, FGM, forced marriage, serious youth violence, and online grooming.\n\nContextual safeguarding recognises risk beyond home settings.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Responding to a Disclosure',
+                        'body' => "Listen calmly, avoid leading questions, never promise confidentiality, report immediately, and record verbatim where possible.\n\nDo not investigate or confront alleged perpetrators.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Vulnerable Groups and Additional Considerations',
+                        'body' => "Some pupils face heightened vulnerability, including SEND, looked-after status, trauma history, domestic abuse exposure, and persistent absence.\n\nSafeguarding responses must be inclusive and adapted appropriately.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'The Importance of Professional Curiosity',
+                        'body' => "Professional curiosity means noticing patterns, questioning respectfully, and escalating concerns when something does not feel right.\n\nIt supports early intervention and protects children from escalating harm.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Which of the following is one of the four primary categories of abuse?',
+                        'options' => ['A' => 'Academic underachievement', 'B' => 'Emotional abuse', 'C' => 'Homework avoidance', 'D' => 'Friendship disputes'],
+                        'answer' => 'B',
+                        'explanation' => 'Emotional abuse is a statutory abuse category.',
+                    ],
+                    [
+                        'question' => 'If multiple minor safeguarding indicators are observed over time, staff should:',
+                        'options' => ['A' => 'Ignore them individually', 'B' => 'Wait for confirmation', 'C' => 'Record and report to the DSL', 'D' => 'Address them privately with parents only'],
+                        'answer' => 'C',
+                        'explanation' => 'Patterns of low-level concern often reveal significant safeguarding risk.',
+                    ],
+                    [
+                        'question' => 'Child-on-child sexual harassment should be treated as:',
+                        'options' => ['A' => 'Banter', 'B' => 'A behaviour issue only', 'C' => 'A safeguarding concern', 'D' => 'A parental matter only'],
+                        'answer' => 'C',
+                        'explanation' => 'KCSIE requires child-on-child abuse to be treated as safeguarding.',
+                    ],
+                    [
+                        'question' => 'When responding to a disclosure, staff must:',
+                        'options' => ['A' => 'Promise confidentiality', 'B' => 'Ask detailed investigative questions', 'C' => 'Listen calmly and report immediately', 'D' => 'Confront the alleged perpetrator'],
+                        'answer' => 'C',
+                        'explanation' => 'Staff should receive and report, not investigate.',
+                    ],
+                    [
+                        'question' => 'Professional curiosity involves:',
+                        'options' => ['A' => 'Conducting personal investigations', 'B' => 'Respectfully questioning and escalating concerns', 'C' => 'Ignoring low-level worries', 'D' => 'Discussing suspicions publicly'],
+                        'answer' => 'B',
+                        'explanation' => 'Professional curiosity supports safe challenge and timely safeguarding action.',
+                    ],
+                ],
+            ],
+            'safeguarding_statutory_module_3' => [
+                'key' => 'safeguarding_statutory_module_3',
+                'module_key' => 'safeguarding_statutory_practice',
+                'title' => 'Module 3: Safe Practice, Professional Boundaries and Staff Conduct',
+                'description' => 'Professional boundaries, one-to-one safety, online conduct, low-level concerns, safer recruitment, and allegation handling under KCSIE.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 3 Certificate',
+                'certificate_prefix' => 'CMN-SDSP-M3',
+                'slides' => [
+                    [
+                        'title' => 'Professional Boundaries as a Safeguarding Mechanism',
+                        'body' => "Clear boundaries protect pupils and staff from harm, allegations, and reputational risk.\n\nSchools must maintain and enforce a clear staff code of conduct.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'One-to-One Situations and Visibility',
+                        'body' => "One-to-one support should remain transparent: visible rooms, colleague awareness, and clear records where required.\n\nAvoid secretive or isolated interactions.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Online Safety and Digital Conduct',
+                        'body' => "Use school-approved channels only. No personal social media contact or private messaging with pupils.\n\nProfessional digital boundaries are core safeguarding practice.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Low-Level Concerns and Conduct Monitoring',
+                        'body' => "Low-level concerns must be recorded and reviewed. Patterns may indicate escalating risk.\n\nReporting is protective and supports accountability.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Safe Recruitment and Safer Working Practice',
+                        'body' => "Safeguarding starts before employment through robust safer recruitment checks and accurate SCR records.\n\nInduction and ongoing training are essential.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Allegations Against Staff: Immediate Action',
+                        'body' => "Allegations meeting harm criteria require immediate reporting and LADO consultation.\n\nDo not investigate independently or delay reporting.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Maintaining Public Trust and Professional Reputation',
+                        'body' => "Safeguarding conduct shapes public trust in education.\n\nProfessional integrity, boundaries, and accountability strengthen employability and leadership credibility.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Professional boundaries are important because they:',
+                        'options' => ['A' => 'Limit curriculum delivery', 'B' => 'Protect pupils and staff from harm and allegations', 'C' => 'Reduce workload', 'D' => 'Replace safeguarding training'],
+                        'answer' => 'B',
+                        'explanation' => 'Boundaries are a safeguarding mechanism for both pupils and professionals.',
+                    ],
+                    [
+                        'question' => 'When meeting a pupil one-to-one, best practice includes:',
+                        'options' => ['A' => 'Keeping the interaction secret', 'B' => 'Using isolated areas without visibility', 'C' => 'Ensuring visibility and transparency', 'D' => 'Locking the door'],
+                        'answer' => 'C',
+                        'explanation' => 'Transparent one-to-one practice reduces risk and protects all parties.',
+                    ],
+                    [
+                        'question' => 'Staff should communicate with pupils online using:',
+                        'options' => ['A' => 'Personal social media accounts', 'B' => 'School-approved platforms only', 'C' => 'Private messaging apps', 'D' => 'Gaming chat rooms'],
+                        'answer' => 'B',
+                        'explanation' => 'Only approved channels should be used for pupil communication.',
+                    ],
+                    [
+                        'question' => 'Low-level concerns about staff conduct should be:',
+                        'options' => ['A' => 'Ignored', 'B' => 'Recorded and reviewed appropriately', 'C' => 'Publicly discussed', 'D' => 'Automatically escalated to police'],
+                        'answer' => 'B',
+                        'explanation' => 'Recording low-level concerns supports pattern detection and prevention.',
+                    ],
+                    [
+                        'question' => 'If an allegation meets harm criteria against a staff member, the school must contact:',
+                        'options' => ['A' => 'The PTA', 'B' => 'Ofsted immediately', 'C' => 'The Local Authority Designated Officer (LADO)', 'D' => 'The school receptionist'],
+                        'answer' => 'C',
+                        'explanation' => 'LADO oversight is required for qualifying allegations.',
+                    ],
+                ],
+            ],
+            'safeguarding_statutory_module_4' => [
+                'key' => 'safeguarding_statutory_module_4',
+                'module_key' => 'safeguarding_statutory_practice',
+                'title' => 'Module 4: Safeguarding Systems, DSL Leadership and Multi-Agency Working',
+                'description' => 'Safeguarding infrastructure, DSL strategic leadership, external agency coordination, early help, governance, audit, and Ofsted scrutiny.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 4 Certificate',
+                'certificate_prefix' => 'CMN-SDSP-M4',
+                'slides' => [
+                    [
+                        'title' => 'Safeguarding Systems and Internal Infrastructure',
+                        'body' => "Effective safeguarding relies on clear systems, reporting pathways, secure records, staff conduct standards, and whistleblowing routes.\n\nSystems must be embedded in practice, not paper-only.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'The Strategic Role of the DSL',
+                        'body' => "The DSL must be a senior leader with authority and capacity to coordinate referrals, monitor patterns, train staff, and report to governors.\n\nStrong DSL leadership sets safeguarding tone.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Multi-Agency Working: Statutory Expectations',
+                        'body' => "Schools must cooperate with social care, police, health, and safeguarding partnerships.\n\nTimely, factual information sharing is a statutory requirement.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Early Help and Preventative Safeguarding',
+                        'body' => "Early Help addresses emerging needs before crisis threshold.\n\nPreventative intervention supports families, reduces escalation risk, and demonstrates child-centred safeguarding culture.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Governance and Oversight',
+                        'body' => "Governors and trustees provide strategic oversight: policy compliance, data scrutiny, safer recruitment assurance, and constructive challenge.\n\nSafeguarding should be a standing governance agenda item.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Monitoring, Audit and Continuous Improvement',
+                        'body' => "Regular audits, training checks, case-file reviews, and trend analysis maintain safeguarding quality.\n\nSafeguarding is dynamic and requires continuous improvement.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Ofsted and Safeguarding Judgement',
+                        'body' => "Ofsted reviews staff knowledge, record quality, SCR accuracy, multi-agency engagement, and pupil safety perception.\n\nIf safeguarding is ineffective, overall judgement cannot be good or outstanding.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Who holds strategic responsibility for safeguarding oversight in a school?',
+                        'options' => ['A' => 'Pupils', 'B' => 'Governors or Trustees', 'C' => 'Administrative staff only', 'D' => 'External contractors'],
+                        'answer' => 'B',
+                        'explanation' => 'Governors and trustees hold strategic safeguarding responsibility.',
+                    ],
+                    [
+                        'question' => 'The DSL should be:',
+                        'options' => ['A' => 'A junior member of staff', 'B' => 'A senior leader with authority and training', 'C' => 'Optional in small schools', 'D' => 'Responsible only for paperwork'],
+                        'answer' => 'B',
+                        'explanation' => 'The DSL must have authority, access, and leadership capacity.',
+                    ],
+                    [
+                        'question' => 'Multi-agency safeguarding cooperation is required under:',
+                        'options' => ['A' => 'The National Curriculum', 'B' => 'The Children Act 2004', 'C' => 'The Teachers’ Pay Document', 'D' => 'The School Admissions Code'],
+                        'answer' => 'B',
+                        'explanation' => 'The Children Act 2004 reinforces multi-agency safeguarding cooperation.',
+                    ],
+                    [
+                        'question' => 'Early Help aims to:',
+                        'options' => ['A' => 'Replace child protection', 'B' => 'Prevent concerns escalating', 'C' => 'Avoid parental involvement', 'D' => 'Reduce inspection workload'],
+                        'answer' => 'B',
+                        'explanation' => 'Early Help is preventative safeguarding to reduce escalation.',
+                    ],
+                    [
+                        'question' => 'If safeguarding is ineffective, Ofsted:',
+                        'options' => ['A' => 'Can still judge the school Outstanding', 'B' => 'Ignores safeguarding', 'C' => 'Cannot award Good or Outstanding overall', 'D' => 'Automatically closes the school'],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding remains a limiting judgement.',
+                    ],
+                ],
+            ],
+            'safeguarding_statutory_module_5' => [
+                'key' => 'safeguarding_statutory_module_5',
+                'module_key' => 'safeguarding_statutory_practice',
+                'title' => 'Module 5: Ofsted Expectations, Accountability and Continuous Improvement',
+                'description' => 'Inspection expectations, accountability across roles, whistleblowing, audit learning, and sustained safeguarding culture through daily practice.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Module 5 Certificate',
+                'certificate_prefix' => 'CMN-SDSP-M5',
+                'slides' => [
+                    [
+                        'title' => 'Safeguarding as a Limiting Judgement',
+                        'body' => "Under EIF, safeguarding is a limiting judgement.\n\nInspectors test whether safeguarding is effective in daily practice through staff interviews, records, pupil voice, and SCR checks.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Accountability at Every Level',
+                        'body' => "Classroom staff, DSLs, headteachers, and governors each hold distinct safeguarding accountability.\n\nDecisions must be transparent, documented, and defensible.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Learning from Safeguarding Reviews',
+                        'body' => "Reviews repeatedly identify delayed information sharing, weak records, poor escalation, and limited professional curiosity.\n\nSchools must adopt reflective safeguarding improvement cycles.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Staff Training and Ongoing Professional Development',
+                        'body' => "All staff need induction safeguarding training and regular updates; DSLs require enhanced, refreshed specialist training.\n\nTraining compliance must be monitored and recorded.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Whistleblowing and Ethical Leadership',
+                        'body' => "Whistleblowing routes must be clear and protected under public-interest disclosure law.\n\nLeadership must promote openness and child-centred ethical decision-making.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Building a Sustainable Safeguarding Culture',
+                        'body' => "Sustainable safeguarding includes clear reporting, training refreshers, leadership visibility, strong governance, early intervention, and pupil voice.\n\nCulture is shown through routine practice.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                    [
+                        'title' => 'Professional Reputation and Employability',
+                        'body' => "Safeguarding competence is a core employability standard in UK education.\n\nStrong knowledge of statutory duties and reporting protocols enhances career credibility and leadership potential.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'If safeguarding is judged ineffective, Ofsted:',
+                        'options' => ['A' => 'Can still judge the school Outstanding', 'B' => 'Cannot judge the school Good or Outstanding overall', 'C' => 'Ignores safeguarding', 'D' => 'Automatically closes the school'],
+                        'answer' => 'B',
+                        'explanation' => 'Ineffective safeguarding limits the overall inspection judgement.',
+                    ],
+                    [
+                        'question' => 'DSL training must be refreshed at least:',
+                        'options' => ['A' => 'Every year', 'B' => 'Every two years', 'C' => 'Every five years', 'D' => 'Only once'],
+                        'answer' => 'B',
+                        'explanation' => 'DSL enhanced training should be refreshed at least every two years.',
+                    ],
+                    [
+                        'question' => 'Whistleblowing protections are provided under:',
+                        'options' => ['A' => 'The Equality Act 2010', 'B' => 'The Public Interest Disclosure Act 1998', 'C' => 'The Education Act 2002', 'D' => 'The Data Protection Act only'],
+                        'answer' => 'B',
+                        'explanation' => 'Public Interest Disclosure Act protections apply to good-faith concerns.',
+                    ],
+                    [
+                        'question' => 'Safeguarding accountability includes:',
+                        'options' => ['A' => 'Verbal discussions only', 'B' => 'Documented and transparent decision-making', 'C' => 'Ignoring minor concerns', 'D' => 'Protecting reputation over pupils'],
+                        'answer' => 'B',
+                        'explanation' => 'Safeguarding decisions must be documented and transparent.',
+                    ],
+                    [
+                        'question' => 'Effective safeguarding culture is demonstrated through:',
+                        'options' => ['A' => 'Policies only', 'B' => 'Reactive crisis management', 'C' => 'Embedded daily practice and early intervention', 'D' => 'Annual inspection preparation only'],
+                        'answer' => 'C',
+                        'explanation' => 'Culture is evidenced through routine, embedded safeguarding practice.',
+                    ],
+                ],
+            ],
+            'safeguarding_statutory_final_exam' => [
+                'key' => 'safeguarding_statutory_final_exam',
+                'module_key' => 'safeguarding_statutory_practice',
+                'title' => 'Final Course Exam: Safeguarding in UK Schools: Statutory Duties and Professional Practice',
+                'description' => 'Final certification exam. Locked until all five module assessments are passed.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'certificate_label' => 'Final Exam Certificate',
+                'certificate_prefix' => 'CMN-SDSP-FINAL',
+                'requires_course_keys' => [
+                    'safeguarding_statutory_module_1',
+                    'safeguarding_statutory_module_2',
+                    'safeguarding_statutory_module_3',
+                    'safeguarding_statutory_module_4',
+                    'safeguarding_statutory_module_5',
+                ],
+                'slides' => [
+                    [
+                        'title' => 'Final Exam Briefing',
+                        'body' => "You must complete all five module assessments before this final exam unlocks.\n\nPass mark is 100% with unlimited retakes.\n\nSuccessful completion confirms safeguarding competence aligned to KCSIE, Ofsted EIF, statutory duties, and Teachers’ Standards.",
+                        'image_url' => $next_slide_image(),
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Which statutory guidance must all school staff read at least Part 1 (or Annex A) of?',
+                        'options' => ['A' => 'The Equality Act 2010', 'B' => 'Keeping Children Safe in Education (KCSIE)', 'C' => 'The National Curriculum', 'D' => 'The SEND Code of Practice only'],
+                        'answer' => 'B',
+                        'explanation' => 'KCSIE is mandatory statutory safeguarding guidance for staff.',
+                    ],
+                    [
+                        'question' => 'Under the Children Act 1989, the welfare of the child is:',
+                        'options' => ['A' => 'A secondary consideration', 'B' => 'The responsibility of parents only', 'C' => 'Paramount', 'D' => 'Optional in schools'],
+                        'answer' => 'C',
+                        'explanation' => 'The Children Act 1989 establishes child welfare as paramount.',
+                    ],
+                    [
+                        'question' => 'Who holds lead operational responsibility for safeguarding in a school?',
+                        'options' => ['A' => 'The Chair of Governors', 'B' => 'The School Business Manager', 'C' => 'The Designated Safeguarding Lead (DSL)', 'D' => 'The Office Administrator'],
+                        'answer' => 'C',
+                        'explanation' => 'The DSL is the lead operational safeguarding officer.',
+                    ],
+                    [
+                        'question' => 'Which of the following is one of the four main categories of abuse?',
+                        'options' => ['A' => 'Academic failure', 'B' => 'Emotional abuse', 'C' => 'Friendship disputes', 'D' => 'Homework avoidance'],
+                        'answer' => 'B',
+                        'explanation' => 'Emotional abuse is one of the four statutory abuse categories.',
+                    ],
+                    [
+                        'question' => 'If a pupil discloses abuse, a staff member should:',
+                        'options' => ['A' => 'Promise confidentiality', 'B' => 'Ask leading investigative questions', 'C' => 'Listen calmly and report immediately to the DSL', 'D' => 'Confront the alleged perpetrator'],
+                        'answer' => 'C',
+                        'explanation' => 'Staff should listen, reassure, and report immediately.',
+                    ],
+                    [
+                        'question' => 'Child-on-child sexual harassment should be treated as:',
+                        'options' => ['A' => 'Banter', 'B' => 'A safeguarding concern', 'C' => 'A minor behaviour issue only', 'D' => 'A parental issue only'],
+                        'answer' => 'B',
+                        'explanation' => 'Child-on-child sexual harassment is a safeguarding concern.',
+                    ],
+                    [
+                        'question' => 'The Prevent duty requires schools to safeguard pupils from:',
+                        'options' => ['A' => 'Low attendance', 'B' => 'Radicalisation and extremism', 'C' => 'Exam stress', 'D' => 'Curriculum gaps'],
+                        'answer' => 'B',
+                        'explanation' => 'Prevent duty addresses radicalisation and extremism risk.',
+                    ],
+                    [
+                        'question' => 'Low-level concerns about staff conduct should be:',
+                        'options' => ['A' => 'Ignored unless repeated', 'B' => 'Recorded and reviewed appropriately', 'C' => 'Shared informally in the staffroom', 'D' => 'Automatically reported to police'],
+                        'answer' => 'B',
+                        'explanation' => 'Low-level concern recording supports safer culture and pattern monitoring.',
+                    ],
+                    [
+                        'question' => 'If an allegation against a staff member meets harm criteria, the school must contact:',
+                        'options' => ['A' => 'Ofsted immediately', 'B' => 'The PTA', 'C' => 'The Local Authority Designated Officer (LADO)', 'D' => 'The media'],
+                        'answer' => 'C',
+                        'explanation' => 'LADO oversight is required for qualifying staff allegations.',
+                    ],
+                    [
+                        'question' => 'Governors are responsible for:',
+                        'options' => ['A' => 'Managing individual safeguarding cases', 'B' => 'Strategic safeguarding oversight and compliance', 'C' => 'Replacing the DSL', 'D' => 'Ignoring safeguarding audits'],
+                        'answer' => 'B',
+                        'explanation' => 'Governance responsibility is strategic safeguarding assurance.',
+                    ],
+                    [
+                        'question' => 'Safeguarding training for staff must be provided:',
+                        'options' => ['A' => 'Only at induction', 'B' => 'Regularly, with updates as required', 'C' => 'Once every five years', 'D' => 'Only for teaching staff'],
+                        'answer' => 'B',
+                        'explanation' => 'Safeguarding training is ongoing and role-relevant.',
+                    ],
+                    [
+                        'question' => 'Accurate safeguarding records should be:',
+                        'options' => ['A' => 'Opinion-based', 'B' => 'Factual, dated, and timed', 'C' => 'Stored on personal devices', 'D' => 'Shared widely with staff'],
+                        'answer' => 'B',
+                        'explanation' => 'Safeguarding records should be objective, factual, and time-stamped.',
+                    ],
+                    [
+                        'question' => 'If safeguarding is judged ineffective by Ofsted:',
+                        'options' => ['A' => 'The school can still be Outstanding', 'B' => 'It has no impact on grading', 'C' => 'The school cannot be judged Good or Outstanding overall', 'D' => 'The inspection is cancelled'],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding is a limiting judgement under EIF.',
+                    ],
+                    [
+                        'question' => 'Professional boundaries protect:',
+                        'options' => ['A' => 'Only staff', 'B' => 'Only pupils', 'C' => 'Both pupils and staff', 'D' => 'Only leadership'],
+                        'answer' => 'C',
+                        'explanation' => 'Professional boundaries protect everyone involved.',
+                    ],
+                    [
+                        'question' => 'Whistleblowing protections are provided under:',
+                        'options' => ['A' => 'The Education Act 2002', 'B' => 'The Public Interest Disclosure Act 1998', 'C' => 'The Teachers’ Standards', 'D' => 'The Prevent strategy only'],
+                        'answer' => 'B',
+                        'explanation' => 'Public Interest Disclosure Act provides legal protections.',
+                    ],
+                    [
+                        'question' => 'Professional curiosity in safeguarding involves:',
+                        'options' => ['A' => 'Conducting independent investigations', 'B' => 'Ignoring minor concerns', 'C' => 'Respectfully questioning and escalating concerns appropriately', 'D' => 'Sharing suspicions publicly'],
+                        'answer' => 'C',
+                        'explanation' => 'Professional curiosity supports timely, safe escalation and intervention.',
+                    ],
+                ],
+            ],
+        ];
     }
 
     private function get_candidate_learning_modules_catalog() {
-        return [];
+        return [
+            [
+                'key' => 'safeguarding_reporting_protocols',
+                'title' => 'Safeguarding Reporting Protocols in UK Schools',
+                'description' => 'Develop legally compliant safeguarding reporting practices aligned with KCSIE, Ofsted EIF, and Teachers’ Standards to protect pupils effectively.',
+                'hover_details' => [
+                    'Legal and Statutory Framework for Safeguarding Reporting',
+                    'Recognising Concerns and Identifying Reportable Issues',
+                    'Internal Reporting Procedures and Record Keeping',
+                    'Escalation, External Referrals and Multi-Agency Working',
+                    'Professional Accountability, Whistleblowing and Ofsted Expectations',
+                ],
+                'course_keys' => [
+                    'safeguarding_reporting_module_1',
+                    'safeguarding_reporting_module_2',
+                    'safeguarding_reporting_module_3',
+                    'safeguarding_reporting_module_4',
+                    'safeguarding_reporting_module_5',
+                    'safeguarding_reporting_final_exam',
+                ],
+            ],
+            [
+                'key' => 'safeguarding_statutory_practice',
+                'title' => 'Safeguarding in UK Schools: Statutory Duties and Professional Practice',
+                'description' => 'Understand statutory safeguarding duties, recognise risks, and implement compliant whole-school practices aligned with KCSIE and Ofsted EIF.',
+                'hover_details' => [
+                    'Foundations of Safeguarding and Statutory Responsibilities',
+                    'Recognising Abuse, Neglect and Emerging Risks',
+                    'Safe Practice, Professional Boundaries and Staff Conduct',
+                    'Safeguarding Systems, DSL Leadership and Multi-Agency Working',
+                    'Ofsted Expectations, Accountability and Continuous Improvement',
+                ],
+                'course_keys' => [
+                    'safeguarding_statutory_module_1',
+                    'safeguarding_statutory_module_2',
+                    'safeguarding_statutory_module_3',
+                    'safeguarding_statutory_module_4',
+                    'safeguarding_statutory_module_5',
+                    'safeguarding_statutory_final_exam',
+                ],
+            ],
+        ];
     }
 
     private function render_candidate_rewards_tab($candidate_id, $portal_url) {
@@ -80618,11 +81865,6 @@ p{margin:0;line-height:1.5}
             wp_send_json_error(['message' => 'Course not found.'], 404);
         }
 
-        $pass_mark = max(1, min(100, (int) ($catalog[$course_key]['pass_mark'] ?? 100)));
-        if ($score < $pass_mark) {
-            wp_send_json_error(['message' => 'Pass mark not reached.'], 400);
-        }
-
         $user_id = (int) get_current_user_id();
         $results = get_user_meta($user_id, 'cmn_learning_course_results', true);
         if (is_string($results) && $results !== '') {
@@ -80635,13 +81877,45 @@ p{margin:0;line-height:1.5}
             $results = [];
         }
 
+        $required_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($catalog[$course_key]['requires_course_keys'] ?? []))));
+        if ($required_course_keys) {
+            $missing_required_titles = [];
+            foreach ($required_course_keys as $required_course_key) {
+                $required_completion = is_array($results[$required_course_key] ?? null) ? (array) $results[$required_course_key] : [];
+                if (!empty($required_completion['passed'])) {
+                    continue;
+                }
+                $required_title = sanitize_text_field((string) ($catalog[$required_course_key]['title'] ?? str_replace('_', ' ', ucfirst($required_course_key))));
+                if ($required_title !== '') {
+                    $missing_required_titles[] = $required_title;
+                }
+            }
+            if ($missing_required_titles) {
+                wp_send_json_error([
+                    'message' => 'Complete required modules first: ' . implode(', ', $missing_required_titles) . '.',
+                    'missing_required' => $missing_required_titles,
+                ], 400);
+            }
+        }
+
+        $pass_mark = max(1, min(100, (int) ($catalog[$course_key]['pass_mark'] ?? 100)));
+        if ($score < $pass_mark) {
+            wp_send_json_error(['message' => 'Pass mark not reached.'], 400);
+        }
+
         $existing_code = sanitize_text_field((string) (($results[$course_key]['verification_code'] ?? '')));
+        $certificate_prefix = strtoupper(trim((string) ($catalog[$course_key]['certificate_prefix'] ?? 'CMN')));
+        $certificate_prefix = preg_replace('/[^A-Z0-9-]/', '', $certificate_prefix);
+        if ($certificate_prefix === '') {
+            $certificate_prefix = 'CMN';
+        }
         if ($existing_code === '') {
-            $existing_code = 'CMN-' . strtoupper(substr(md5($user_id . '|' . $course_key . '|' . time()), 0, 10));
+            $existing_code = $certificate_prefix . '-' . strtoupper(substr(md5($user_id . '|' . $course_key . '|' . microtime(true) . '|' . wp_rand(1000, 999999)), 0, 10));
         }
         $issued_mysql = current_time('mysql');
         $issued_display = date_i18n('j M Y', strtotime($issued_mysql));
         $version = sanitize_text_field((string) ($catalog[$course_key]['version'] ?? 'v1.0'));
+        $certificate_label = sanitize_text_field((string) ($catalog[$course_key]['certificate_label'] ?? 'Certificate of Course Completion'));
 
         $results[$course_key] = [
             'course_key' => $course_key,
@@ -80651,6 +81925,7 @@ p{margin:0;line-height:1.5}
             'issued_date' => $issued_display,
             'verification_code' => $existing_code,
             'version' => $version,
+            'certificate_label' => $certificate_label,
         ];
         update_user_meta($user_id, 'cmn_learning_course_results', $results);
 
@@ -80684,6 +81959,7 @@ p{margin:0;line-height:1.5}
             'issued_date' => $issued_display,
             'verification_code' => $existing_code,
             'version' => $version,
+            'certificate_label' => $certificate_label,
             'message' => 'Course completion saved.',
         ]);
     }

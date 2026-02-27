@@ -10324,6 +10324,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var certificateVersion = learningPlayer.querySelector('[data-learning-certificate-version]');
       var certificateIssued = learningPlayer.querySelector('[data-learning-certificate-issued]');
       var certificateCode = learningPlayer.querySelector('[data-learning-certificate-code]');
+      var certificateTitle = learningPlayer.querySelector('[data-learning-certificate-title]');
 
       var state = {
         moduleKey: '',
@@ -10337,6 +10338,82 @@ document.addEventListener('DOMContentLoaded', function () {
       var courseCards = learningRoot.querySelectorAll('[data-learning-course-card]');
       var coursesTitle = learningRoot.querySelector('[data-learning-courses-title]');
       var courseEmptyState = learningRoot.querySelector('[data-learning-course-empty]');
+      var isCoursePassed = function (courseKey) {
+        var result = learningResults[courseKey];
+        if (!result || typeof result !== 'object') {
+          return false;
+        }
+        return result.passed === true || result.passed === 1 || String(result.passed) === '1';
+      };
+      var getCourseRequiredKeys = function (course) {
+        if (!course || typeof course !== 'object') {
+          return [];
+        }
+        var raw = course.requires_course_keys || course.requiresCourseKeys || [];
+        if (!Array.isArray(raw)) {
+          return [];
+        }
+        return raw.map(function (key) { return String(key || ''); }).filter(function (key) { return key !== ''; });
+      };
+      var getMissingRequiredKeys = function (course) {
+        var required = getCourseRequiredKeys(course);
+        if (!required.length) {
+          return [];
+        }
+        return required.filter(function (requiredKey) {
+          return !isCoursePassed(requiredKey);
+        });
+      };
+      var getCourseLockMessage = function (course) {
+        var missingRequired = getMissingRequiredKeys(course);
+        if (!missingRequired.length) {
+          return '';
+        }
+        var titles = missingRequired.map(function (requiredKey) {
+          var requiredCourse = learningCourses[requiredKey] || {};
+          return String(requiredCourse.title || requiredKey);
+        });
+        return 'Complete first: ' + titles.join(', ');
+      };
+      var refreshCourseLocks = function () {
+        courseCards.forEach(function (card) {
+          var courseKey = String(card.getAttribute('data-learning-course-card') || '');
+          if (!courseKey) {
+            return;
+          }
+          var course = learningCourses[courseKey] || {};
+          var completed = isCoursePassed(courseKey);
+          var missingRequired = getMissingRequiredKeys(course);
+          var isLocked = !completed && missingRequired.length > 0;
+          var status = card.querySelector('[data-learning-course-status="' + courseKey + '"]');
+          var lockRow = card.querySelector('[data-learning-course-lock="' + courseKey + '"]');
+          var openButton = card.querySelector('[data-learning-open-course="' + courseKey + '"]');
+          card.classList.toggle('is-locked', isLocked);
+          card.setAttribute('data-learning-course-locked', isLocked ? '1' : '0');
+          if (status && !completed) {
+            status.textContent = isLocked ? 'Locked' : 'Not started';
+            status.classList.remove('is-approved');
+          }
+          if (lockRow) {
+            if (isLocked) {
+              lockRow.hidden = false;
+              lockRow.textContent = getCourseLockMessage(course);
+            } else {
+              lockRow.hidden = true;
+              lockRow.textContent = '';
+            }
+          }
+          if (openButton) {
+            if (isLocked) {
+              openButton.disabled = true;
+              openButton.textContent = 'Locked';
+            } else {
+              openButton.disabled = false;
+              openButton.textContent = completed ? 'Review course' : 'Open course';
+            }
+          }
+        });
+      };
       var setCourseCardStatus = function (courseKey, completed, dateLabel) {
         var card = learningRoot.querySelector('[data-learning-course-card="' + courseKey + '"]');
         if (card) {
@@ -10355,6 +10432,7 @@ document.addEventListener('DOMContentLoaded', function () {
             existingDate.textContent = 'Completed: ' + dateLabel;
           }
         }
+        refreshCourseLocks();
       };
 
       var setActiveModule = function (moduleKey, keepOpenCourse) {
@@ -10437,7 +10515,12 @@ document.addEventListener('DOMContentLoaded', function () {
           summaryTitle.textContent = String(state.course.title || 'Course');
         }
         if (summaryDescription) {
-          summaryDescription.textContent = String(state.course.description || '');
+          var descriptionText = String(state.course.description || '');
+          var missingRequired = getMissingRequiredKeys(state.course);
+          if (missingRequired.length && !isCoursePassed(state.courseKey)) {
+            descriptionText += ' ' + getCourseLockMessage(state.course) + '.';
+          }
+          summaryDescription.textContent = descriptionText;
         }
         if (summaryPass) {
           summaryPass.textContent = String(passMark) + '%';
@@ -10447,6 +10530,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (summaryExamCount) {
           summaryExamCount.textContent = String(Array.isArray(state.course.exam) ? state.course.exam.length : 0);
+        }
+        if (startCourseBtn) {
+          var courseLocked = getMissingRequiredKeys(state.course).length > 0 && !isCoursePassed(state.courseKey);
+          startCourseBtn.disabled = courseLocked;
+          startCourseBtn.textContent = courseLocked ? 'Locked until prerequisites are passed' : 'Start course';
         }
         showPanel(panelSummary);
       };
@@ -10601,6 +10689,9 @@ document.addEventListener('DOMContentLoaded', function () {
           if (certificateCode) {
             certificateCode.textContent = 'Generating...';
           }
+          if (certificateTitle) {
+            certificateTitle.textContent = String((state.course && state.course.certificate_label) || 'Certificate of Course Completion');
+          }
           persistCompletion(state.courseKey, score)
             .then(function (completionData) {
               if (certificateIssued && completionData.issued_date) {
@@ -10611,6 +10702,9 @@ document.addEventListener('DOMContentLoaded', function () {
               }
               if (certificateVersion && completionData.version) {
                 certificateVersion.textContent = String(completionData.version);
+              }
+              if (certificateTitle && completionData.certificate_label) {
+                certificateTitle.textContent = String(completionData.certificate_label);
               }
               learningResults[state.courseKey] = completionData;
               setCourseCardStatus(state.courseKey, true, String(completionData.issued_date || ''));
@@ -10659,6 +10753,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
       if (startCourseBtn) {
         startCourseBtn.addEventListener('click', function () {
+          if (state.course && getMissingRequiredKeys(state.course).length > 0 && !isCoursePassed(state.courseKey)) {
+            return;
+          }
           state.slideIndex = 0;
           renderSlide();
         });
@@ -10763,6 +10860,7 @@ document.addEventListener('DOMContentLoaded', function () {
           setActiveModule(defaultModuleKey, false);
         }
       }
+      refreshCourseLocks();
     }
   }
 
