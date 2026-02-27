@@ -3314,6 +3314,13 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   gap: 16px;
 }
 
+.cmn-candidate-finance-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
 .cmn-candidate-finance-header-card h2 {
   margin: 0 0 6px;
 }
@@ -3347,6 +3354,39 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.cmn-candidate-finance-payment-card {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-candidate-finance-bank-details {
+  border-top: 1px solid var(--cmn-border);
+  padding-top: 12px;
+}
+
+.cmn-candidate-finance-bank-summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--cmn-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cmn-candidate-finance-bank-summary::-webkit-details-marker {
+  display: none;
+}
+
+.cmn-candidate-finance-bank-details[open] .cmn-candidate-finance-bank-summary {
+  margin-bottom: 12px;
 }
 
 .cmn-candidate-payroll-query-panel {
@@ -3577,6 +3617,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 }
 
 @media (max-width: 1100px) {
+  .cmn-candidate-finance-row {
+    grid-template-columns: 1fr;
+  }
+
   .cmn-profile-meta-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

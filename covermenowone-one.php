@@ -67016,8 +67016,8 @@ final class CMN_One_Plugin {
 
     private function get_candidate_finance_tab_url() {
         return add_query_arg([
+            'candidate' => 'candidate_finance',
             'cmn_tab' => 'candidate_finance',
-            'candidate' => false,
             'view' => false,
         ], $this->get_portal_base_url());
     }
@@ -67028,6 +67028,9 @@ final class CMN_One_Plugin {
         if ($focus === '') {
             return $url;
         }
+        $url = add_query_arg([
+            'cmn_candidate_focus' => $focus,
+        ], $url);
         return $url . '#cmn-candidate-' . $focus;
     }
 
@@ -67613,9 +67616,16 @@ final class CMN_One_Plugin {
     public function handle_save_candidate_bank_details() {
         $default_redirect = $this->get_candidate_finance_focus_url('bank-details');
         $redirect_raw = isset($_POST['cmn_redirect']) ? (string) wp_unslash($_POST['cmn_redirect']) : '';
-        $redirect = $redirect_raw !== ''
-            ? wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect)
-            : $default_redirect;
+        $redirect = $default_redirect;
+        if ($redirect_raw !== '') {
+            $candidate_redirect = wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect);
+            if (
+                strpos($candidate_redirect, 'cmn_tab=candidate_finance') !== false
+                || strpos($candidate_redirect, 'candidate=candidate_finance') !== false
+            ) {
+                $redirect = $candidate_redirect;
+            }
+        }
 
         $build_redirect = static function ($target, $status, $message) {
             $target = (string) $target;
@@ -67830,9 +67840,16 @@ final class CMN_One_Plugin {
     public function handle_candidate_accept_compliance_ack() {
         $default_redirect = $this->get_candidate_finance_focus_url('compliance-ack');
         $redirect_raw = isset($_POST['cmn_redirect']) ? (string) wp_unslash($_POST['cmn_redirect']) : '';
-        $redirect = $redirect_raw !== ''
-            ? wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect)
-            : $default_redirect;
+        $redirect = $default_redirect;
+        if ($redirect_raw !== '') {
+            $candidate_redirect = wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect);
+            if (
+                strpos($candidate_redirect, 'cmn_tab=candidate_finance') !== false
+                || strpos($candidate_redirect, 'candidate=candidate_finance') !== false
+            ) {
+                $redirect = $candidate_redirect;
+            }
+        }
 
         $build_redirect = static function ($target, $status, $message) {
             $target = (string) $target;
@@ -69168,144 +69185,141 @@ final class CMN_One_Plugin {
         if (!is_string($payroll_query_booking_map_json) || $payroll_query_booking_map_json === '') {
             $payroll_query_booking_map_json = '{}';
         }
+        $candidate_finance_focus = str_replace('_', '-', sanitize_key((string) wp_unslash($_GET['cmn_candidate_focus'] ?? '')));
+        $bank_details_open = ($candidate_finance_focus === 'bank-details' || $finance_notice_message !== '');
 
         ob_start();
         ?>
         <section class="cmn-candidate-finance-page">
-            <article class="cmn-dashboard-card cmn-candidate-finance-header-card">
-                <h2>Finance</h2>
-                <p>Your weekly pay overview and payment details.</p>
-            </article>
             <?php if ($finance_notice_message !== '') : ?>
                 <div class="<?php echo esc_attr($finance_notice_class); ?> cmn-candidate-finance-bank-message"><?php echo esc_html($finance_notice_message); ?></div>
             <?php endif; ?>
-            <article class="cmn-dashboard-card cmn-candidate-weekly-earnings-card"
-                     data-cmn-weekly-earnings-root
-                     data-cmn-weekly-earnings-action="cmn_candidate_weekly_earnings_overview"
-                     data-cmn-weekly-earnings-nonce="<?php echo esc_attr(wp_create_nonce('cmn_candidate_weekly_earnings_view')); ?>">
-                <div class="cmn-card-header">
-                    <h3>Weekly Pay Overview</h3>
-                    <span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>" data-cmn-weekly-earnings-chip><?php echo esc_html($weekly_state_label); ?></span>
-                </div>
-                <p class="cmn-muted cmn-candidate-weekly-earnings-range" data-cmn-weekly-earnings-range><?php echo esc_html($weekly_earnings_week_label); ?> (Fri-Thu)</p>
-                <div class="cmn-profile-meta-grid cmn-candidate-weekly-earnings-grid">
-                    <div class="cmn-profile-meta-item">
-                        <span class="cmn-profile-meta-label">Earnings this week (Fri-Thu)</span>
-                        <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-total><?php echo esc_html('GBP ' . number_format($weekly_earnings_total, 2)); ?></strong>
+            <div class="cmn-candidate-finance-row">
+                <article class="cmn-dashboard-card cmn-candidate-weekly-earnings-card"
+                         data-cmn-weekly-earnings-root
+                         data-cmn-weekly-earnings-action="cmn_candidate_weekly_earnings_overview"
+                         data-cmn-weekly-earnings-nonce="<?php echo esc_attr(wp_create_nonce('cmn_candidate_weekly_earnings_view')); ?>">
+                    <div class="cmn-card-header">
+                        <h3>Weekly Pay Overview</h3>
+                        <span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>" data-cmn-weekly-earnings-chip><?php echo esc_html($weekly_state_label); ?></span>
                     </div>
-                    <div class="cmn-profile-meta-item">
-                        <span class="cmn-profile-meta-label">Expected payout (Friday)</span>
-                        <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-expected><?php echo esc_html($weekly_expected_display); ?></strong>
-                    </div>
-                    <div class="cmn-profile-meta-item">
-                        <span class="cmn-profile-meta-label">Last week total</span>
-                        <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-last-week><?php echo esc_html('GBP ' . number_format($weekly_last_week_total, 2)); ?></strong>
-                    </div>
-                </div>
-                <p class="cmn-muted" data-cmn-weekly-earnings-note><?php echo esc_html($weekly_state_note); ?></p>
-                <?php if ($weekly_earnings_error !== '') : ?>
-                    <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error><?php echo esc_html($weekly_earnings_error); ?></div>
-                <?php else : ?>
-                    <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error hidden></div>
-                <?php endif; ?>
-                <div class="cmn-candidate-finance-actions">
-                    <button class="cmn-primary" type="button" data-cmn-payroll-query-open>Query pay</button>
-                </div>
-                <div class="cmn-candidate-payroll-query-panel" data-cmn-payroll-query-panel hidden>
-                    <form class="cmn-candidate-payroll-query-form"
-                          data-cmn-payroll-query-form
-                          data-cmn-payroll-query-bookings-map="<?php echo esc_attr($payroll_query_booking_map_json); ?>">
-                        <input type="hidden" name="action" value="cmn_candidate_submit_payroll_query">
-                        <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('cmn_candidate_payroll_query_submit')); ?>">
-                        <div class="cmn-candidate-payroll-query-grid">
-                            <label>Pay period
-                                <select name="period_id" data-cmn-payroll-query-period required>
-                                    <?php foreach ($payroll_query_period_options as $period_row) : ?>
-                                        <?php
-                                        $period_option_id = sanitize_text_field((string) ($period_row['period_id'] ?? ''));
-                                        if ($period_option_id === '') {
-                                            continue;
-                                        }
-                                        $period_option_label = sanitize_text_field((string) ($period_row['label'] ?? $period_option_id));
-                                        ?>
-                                        <option value="<?php echo esc_attr($period_option_id); ?>"<?php selected($period_option_id, $payroll_query_default_period_id); ?>><?php echo esc_html($period_option_label); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </label>
-                            <label>Issue type
-                                <select name="issue_type" required>
-                                    <?php foreach ($payroll_query_issue_type_map as $issue_key => $issue_label) : ?>
-                                        <option value="<?php echo esc_attr((string) $issue_key); ?>"><?php echo esc_html((string) $issue_label); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </label>
-                            <label>Booking day(s) (optional)
-                                <select name="booking_refs[]" data-cmn-payroll-query-bookings multiple size="5"></select>
-                                <small class="cmn-muted" data-cmn-payroll-query-bookings-empty hidden>No booking days found for this period.</small>
-                            </label>
-                            <label>Message
-                                <textarea name="message" rows="4" minlength="10" required></textarea>
-                            </label>
+                    <p class="cmn-muted cmn-candidate-weekly-earnings-range" data-cmn-weekly-earnings-range><?php echo esc_html($weekly_earnings_week_label); ?> (Fri-Thu)</p>
+                    <div class="cmn-profile-meta-grid cmn-candidate-weekly-earnings-grid">
+                        <div class="cmn-profile-meta-item">
+                            <span class="cmn-profile-meta-label">Earnings this week (Fri-Thu)</span>
+                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-total><?php echo esc_html('GBP ' . number_format($weekly_earnings_total, 2)); ?></strong>
                         </div>
-                        <div class="cmn-candidate-finance-actions">
-                            <button class="cmn-primary" type="submit" data-cmn-payroll-query-submit>Submit payroll query</button>
-                            <button class="cmn-ghost" type="button" data-cmn-payroll-query-cancel>Cancel</button>
+                        <div class="cmn-profile-meta-item">
+                            <span class="cmn-profile-meta-label">Expected payout (Friday)</span>
+                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-expected><?php echo esc_html($weekly_expected_display); ?></strong>
                         </div>
-                        <div class="cmn-register-warning cmn-candidate-payroll-query-feedback" data-cmn-payroll-query-feedback hidden></div>
-                    </form>
-                </div>
-            </article>
-            <article class="cmn-dashboard-card cmn-candidate-finance-payment-card">
-                <h3>Payment Details</h3>
-                <div class="cmn-candidate-finance-status-list">
-                    <div class="cmn-candidate-finance-status-row">
-                        <span>Bank details</span>
-                        <strong><span class="cmn-status-chip <?php echo esc_attr($bank_status_chip); ?>"><?php echo esc_html($bank_status_label); ?></span></strong>
+                        <div class="cmn-profile-meta-item">
+                            <span class="cmn-profile-meta-label">Last week total</span>
+                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-last-week><?php echo esc_html('GBP ' . number_format($weekly_last_week_total, 2)); ?></strong>
+                        </div>
                     </div>
-                    <div class="cmn-candidate-finance-status-row">
-                        <span>Payment schedule</span>
-                        <strong>Weekly (Fri-Thu, paid Friday)</strong>
-                    </div>
-                </div>
-                <div class="cmn-candidate-finance-actions">
-                    <a class="cmn-ghost" href="#cmn-candidate-bank-details"><?php echo esc_html($has_bank_details ? 'Edit' : 'Add bank details'); ?></a>
-                </div>
-            </article>
-            <article class="cmn-dashboard-card cmn-candidate-finance-bank-card" id="cmn-candidate-bank-details">
-                <h3>Bank Details</h3>
-                <p class="cmn-muted">Add your payment bank details. Re-enter full sort code and account number when updating.</p>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-bank-form">
-                    <?php wp_nonce_field('cmn_save_candidate_bank_details', 'cmn_candidate_bank_details_nonce'); ?>
-                    <input type="hidden" name="action" value="cmn_save_candidate_bank_details">
-                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('bank-details')); ?>">
-                    <div class="cmn-candidate-finance-bank-form-grid">
-                        <label>Account holder name
-                            <input type="text" name="cmn_bank_account_name" value="<?php echo esc_attr($bank_account_name); ?>" minlength="2" maxlength="150" required>
-                        </label>
-                        <label>Sort code
-                            <input type="text" name="cmn_bank_sort_code" value="" inputmode="numeric" placeholder="12-34-56" maxlength="10" required>
-                        </label>
-                        <label>Account number
-                            <input type="text" name="cmn_bank_account_number" value="" inputmode="numeric" placeholder="8 digits" maxlength="16" required>
-                        </label>
-                    </div>
+                    <p class="cmn-muted" data-cmn-weekly-earnings-note><?php echo esc_html($weekly_state_note); ?></p>
+                    <?php if ($weekly_earnings_error !== '') : ?>
+                        <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error><?php echo esc_html($weekly_earnings_error); ?></div>
+                    <?php else : ?>
+                        <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error hidden></div>
+                    <?php endif; ?>
                     <div class="cmn-candidate-finance-actions">
-                        <button class="cmn-primary" type="submit"><?php echo esc_html($bank_action_label); ?></button>
+                        <button class="cmn-primary" type="button" data-cmn-payroll-query-open>Query pay</button>
                     </div>
-                </form>
-                <?php if ($has_bank_details && $bank_sort_code_display !== '' && $bank_account_number_display !== '') : ?>
-                    <div class="cmn-candidate-finance-bank-preview">
-                        <div class="cmn-candidate-finance-bank-preview-row">
-                            <span>Sort code</span>
-                            <strong><?php echo esc_html($bank_sort_code_display); ?></strong>
+                    <div class="cmn-candidate-payroll-query-panel" data-cmn-payroll-query-panel hidden>
+                        <form class="cmn-candidate-payroll-query-form"
+                              data-cmn-payroll-query-form
+                              data-cmn-payroll-query-bookings-map="<?php echo esc_attr($payroll_query_booking_map_json); ?>">
+                            <input type="hidden" name="action" value="cmn_candidate_submit_payroll_query">
+                            <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('cmn_candidate_payroll_query_submit')); ?>">
+                            <div class="cmn-candidate-payroll-query-grid">
+                                <label>Pay period
+                                    <select name="period_id" data-cmn-payroll-query-period required>
+                                        <?php foreach ($payroll_query_period_options as $period_row) : ?>
+                                            <?php
+                                            $period_option_id = sanitize_text_field((string) ($period_row['period_id'] ?? ''));
+                                            if ($period_option_id === '') {
+                                                continue;
+                                            }
+                                            $period_option_label = sanitize_text_field((string) ($period_row['label'] ?? $period_option_id));
+                                            ?>
+                                            <option value="<?php echo esc_attr($period_option_id); ?>"<?php selected($period_option_id, $payroll_query_default_period_id); ?>><?php echo esc_html($period_option_label); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <label>Issue type
+                                    <select name="issue_type" required>
+                                        <?php foreach ($payroll_query_issue_type_map as $issue_key => $issue_label) : ?>
+                                            <option value="<?php echo esc_attr((string) $issue_key); ?>"><?php echo esc_html((string) $issue_label); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <label>Booking day(s) (optional)
+                                    <select name="booking_refs[]" data-cmn-payroll-query-bookings multiple size="5"></select>
+                                    <small class="cmn-muted" data-cmn-payroll-query-bookings-empty hidden>No booking days found for this period.</small>
+                                </label>
+                                <label>Message
+                                    <textarea name="message" rows="4" minlength="10" required></textarea>
+                                </label>
+                            </div>
+                            <div class="cmn-candidate-finance-actions">
+                                <button class="cmn-primary" type="submit" data-cmn-payroll-query-submit>Submit payroll query</button>
+                                <button class="cmn-ghost" type="button" data-cmn-payroll-query-cancel>Cancel</button>
+                            </div>
+                            <div class="cmn-register-warning cmn-candidate-payroll-query-feedback" data-cmn-payroll-query-feedback hidden></div>
+                        </form>
+                    </div>
+                </article>
+                <article class="cmn-dashboard-card cmn-candidate-finance-payment-card">
+                    <h3>Payment Details</h3>
+                    <div class="cmn-candidate-finance-status-list">
+                        <div class="cmn-candidate-finance-status-row">
+                            <span>Bank details</span>
+                            <strong><span class="cmn-status-chip <?php echo esc_attr($bank_status_chip); ?>"><?php echo esc_html($bank_status_label); ?></span></strong>
                         </div>
-                        <div class="cmn-candidate-finance-bank-preview-row">
-                            <span>Account number</span>
-                            <strong><?php echo esc_html($bank_account_number_display); ?></strong>
+                        <div class="cmn-candidate-finance-status-row">
+                            <span>Payment schedule</span>
+                            <strong>Weekly (Fri-Thu, paid Friday)</strong>
                         </div>
                     </div>
-                <?php endif; ?>
-            </article>
+                    <details class="cmn-candidate-finance-bank-details" id="cmn-candidate-bank-details"<?php echo $bank_details_open ? ' open' : ''; ?>>
+                        <summary class="cmn-candidate-finance-bank-summary"><?php echo esc_html($has_bank_details ? 'Edit bank details' : 'Add bank details'); ?></summary>
+                        <p class="cmn-muted">Add your payment bank details. Re-enter full sort code and account number when updating.</p>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-bank-form">
+                            <?php wp_nonce_field('cmn_save_candidate_bank_details', 'cmn_candidate_bank_details_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_save_candidate_bank_details">
+                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('bank-details')); ?>">
+                            <div class="cmn-candidate-finance-bank-form-grid">
+                                <label>Account holder name
+                                    <input type="text" name="cmn_bank_account_name" value="<?php echo esc_attr($bank_account_name); ?>" minlength="2" maxlength="150" required>
+                                </label>
+                                <label>Sort code
+                                    <input type="text" name="cmn_bank_sort_code" value="" inputmode="numeric" placeholder="12-34-56" maxlength="10" required>
+                                </label>
+                                <label>Account number
+                                    <input type="text" name="cmn_bank_account_number" value="" inputmode="numeric" placeholder="8 digits" maxlength="16" required>
+                                </label>
+                            </div>
+                            <div class="cmn-candidate-finance-actions">
+                                <button class="cmn-primary" type="submit"><?php echo esc_html($bank_action_label); ?></button>
+                            </div>
+                        </form>
+                        <?php if ($has_bank_details && $bank_sort_code_display !== '' && $bank_account_number_display !== '') : ?>
+                            <div class="cmn-candidate-finance-bank-preview">
+                                <div class="cmn-candidate-finance-bank-preview-row">
+                                    <span>Sort code</span>
+                                    <strong><?php echo esc_html($bank_sort_code_display); ?></strong>
+                                </div>
+                                <div class="cmn-candidate-finance-bank-preview-row">
+                                    <span>Account number</span>
+                                    <strong><?php echo esc_html($bank_account_number_display); ?></strong>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </details>
+                </article>
+            </div>
             <article class="cmn-dashboard-card cmn-candidate-finance-self-employed-card" id="cmn-candidate-compliance-ack">
                 <h3>Self-Employed Notice</h3>
                 <p>You are self-employed. CoverMeNow does not deduct tax/NIC.</p>
