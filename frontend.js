@@ -10326,12 +10326,17 @@ document.addEventListener('DOMContentLoaded', function () {
       var certificateCode = learningPlayer.querySelector('[data-learning-certificate-code]');
 
       var state = {
+        moduleKey: '',
         courseKey: '',
         course: null,
         slideIndex: 0
       };
 
+      var moduleButtons = learningRoot.querySelectorAll('[data-learning-open-module]');
       var learningButtons = learningRoot.querySelectorAll('[data-learning-open-course]');
+      var courseCards = learningRoot.querySelectorAll('[data-learning-course-card]');
+      var coursesTitle = learningRoot.querySelector('[data-learning-courses-title]');
+      var courseEmptyState = learningRoot.querySelector('[data-learning-course-empty]');
       var setCourseCardStatus = function (courseKey, completed, dateLabel) {
         var card = learningRoot.querySelector('[data-learning-course-card="' + courseKey + '"]');
         if (card) {
@@ -10348,6 +10353,64 @@ document.addEventListener('DOMContentLoaded', function () {
               card.insertBefore(existingDate, card.querySelector('[data-learning-open-course]'));
             }
             existingDate.textContent = 'Completed: ' + dateLabel;
+          }
+        }
+      };
+
+      var setActiveModule = function (moduleKey, keepOpenCourse) {
+        var key = String(moduleKey || '');
+        if (!key || !moduleButtons.length) {
+          return;
+        }
+        var selectedButton = null;
+        var selectedComingSoon = false;
+        moduleButtons.forEach(function (button) {
+          var buttonKey = String(button.getAttribute('data-learning-open-module') || '');
+          var selected = buttonKey === key;
+          button.classList.toggle('is-selected', selected);
+          button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+          if (selected) {
+            selectedButton = button;
+            selectedComingSoon = String(button.getAttribute('data-learning-module-coming-soon') || '0') === '1';
+          }
+        });
+        state.moduleKey = key;
+        var visibleCourses = 0;
+        courseCards.forEach(function (card) {
+          var cardModuleKey = String(card.getAttribute('data-learning-course-module') || '');
+          var show = !selectedComingSoon && cardModuleKey === key;
+          card.hidden = !show;
+          if (show) {
+            visibleCourses += 1;
+          }
+        });
+        if (coursesTitle) {
+          var moduleTitle = selectedButton ? String(selectedButton.getAttribute('data-learning-module-title') || 'Module') : 'Module';
+          coursesTitle.textContent = selectedComingSoon ? (moduleTitle + ' (Coming soon)') : (moduleTitle + ' Courses');
+        }
+        if (courseEmptyState) {
+          if (selectedComingSoon) {
+            courseEmptyState.textContent = 'This module is coming soon.';
+            courseEmptyState.hidden = false;
+          } else if (visibleCourses < 1) {
+            courseEmptyState.textContent = 'No courses available in this module yet.';
+            courseEmptyState.hidden = false;
+          } else {
+            courseEmptyState.hidden = true;
+          }
+        }
+        if (!keepOpenCourse) {
+          var currentCourseModule = state.course
+            ? String(state.course.module_key || state.course.moduleKey || '')
+            : '';
+          if (selectedComingSoon || !state.course || currentCourseModule !== key) {
+            state.courseKey = '';
+            state.course = null;
+            state.slideIndex = 0;
+            learningButtons.forEach(function (button) {
+              button.classList.remove('is-selected');
+            });
+            showPanel(panelEmpty);
           }
         }
       };
@@ -10566,8 +10629,13 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!key || !learningCourses[key]) {
           return;
         }
+        var selectedCourse = learningCourses[key];
+        var selectedModuleKey = String(selectedCourse.module_key || selectedCourse.moduleKey || '');
+        if (selectedModuleKey) {
+          setActiveModule(selectedModuleKey, true);
+        }
         state.courseKey = key;
-        state.course = learningCourses[key];
+        state.course = selectedCourse;
         state.slideIndex = 0;
         learningButtons.forEach(function (button) {
           var selected = button.getAttribute('data-learning-open-course') === key;
@@ -10576,6 +10644,12 @@ document.addEventListener('DOMContentLoaded', function () {
         renderSummary();
       };
 
+      moduleButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          var key = button.getAttribute('data-learning-open-module');
+          setActiveModule(key, false);
+        });
+      });
       learningButtons.forEach(function (button) {
         button.addEventListener('click', function () {
           var key = button.getAttribute('data-learning-open-course');
@@ -10665,7 +10739,29 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       if (initialOpenKey && learningCourses[initialOpenKey]) {
+        var initialCourse = learningCourses[initialOpenKey];
+        var initialModuleKey = String(initialCourse.module_key || initialCourse.moduleKey || '');
+        if (initialModuleKey) {
+          setActiveModule(initialModuleKey, true);
+        }
         openCourse(initialOpenKey);
+      } else if (moduleButtons.length) {
+        var defaultModuleKey = '';
+        moduleButtons.forEach(function (button) {
+          if (defaultModuleKey) {
+            return;
+          }
+          var isComingSoon = String(button.getAttribute('data-learning-module-coming-soon') || '0') === '1';
+          if (!isComingSoon) {
+            defaultModuleKey = String(button.getAttribute('data-learning-open-module') || '');
+          }
+        });
+        if (!defaultModuleKey) {
+          defaultModuleKey = String(moduleButtons[0].getAttribute('data-learning-open-module') || '');
+        }
+        if (defaultModuleKey) {
+          setActiveModule(defaultModuleKey, false);
+        }
       }
     }
   }

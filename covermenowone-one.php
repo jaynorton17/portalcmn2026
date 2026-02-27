@@ -65475,63 +65475,105 @@ final class CMN_One_Plugin {
                                 <h2>Modules &amp; Courses</h2>
                                 <p>Select a course to view summary, complete slides, and sit the end-of-course exam.</p>
                             </header>
+                            <?php
+                            $learning_module_tiles = array_values((array) $learning_modules_catalog);
+                            while (count($learning_module_tiles) < 4) {
+                                $learning_module_tiles[] = [
+                                    'key' => 'coming_soon_' . (string) count($learning_module_tiles),
+                                    'title' => 'Coming soon',
+                                    'description' => 'New module releasing soon.',
+                                    'course_keys' => [],
+                                    'coming_soon' => true,
+                                ];
+                            }
+                            $learning_open_module_key = '';
+                            if ($learning_open_course_key !== '' && isset($learning_course_catalog[$learning_open_course_key])) {
+                                $learning_open_module_key = sanitize_key((string) ($learning_course_catalog[$learning_open_course_key]['module_key'] ?? ''));
+                            }
+                            if ($learning_open_module_key === '') {
+                                foreach ($learning_module_tiles as $module_item_default) {
+                                    if (empty($module_item_default['coming_soon'])) {
+                                        $learning_open_module_key = sanitize_key((string) ($module_item_default['key'] ?? ''));
+                                        break;
+                                    }
+                                }
+                            }
+                            $learning_visible_course_count = 0;
+                            ?>
                             <div class="cmn-learning-modules-shell" id="cmn-learning-modules" data-learning-root>
-                                <div class="cmn-learning-modules-grid">
-                                    <article class="cmn-dashboard-card cmn-learning-modules-panel">
-                                        <div class="cmn-card-header">
-                                            <h3>Modules</h3>
-                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => false], $portal_url)); ?>">Back</a>
-                                        </div>
-                                        <div class="cmn-learning-module-list">
-                                            <?php foreach ((array) $learning_modules_catalog as $module_item) : ?>
-                                                <?php
-                                                $module_title = sanitize_text_field((string) ($module_item['title'] ?? 'Module'));
-                                                $module_description = sanitize_textarea_field((string) ($module_item['description'] ?? ''));
-                                                $module_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($module_item['course_keys'] ?? []))));
-                                                ?>
-                                                <div class="cmn-learning-module-item">
-                                                    <h4><?php echo esc_html($module_title); ?></h4>
-                                                    <p><?php echo esc_html($module_description); ?></p>
-                                                    <span class="cmn-status-chip"><?php echo esc_html((string) count($module_course_keys)); ?> course<?php echo count($module_course_keys) === 1 ? '' : 's'; ?></span>
+                                <article class="cmn-dashboard-card cmn-learning-modules-panel">
+                                    <div class="cmn-card-header">
+                                        <h3>Modules</h3>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => false], $portal_url)); ?>">Back</a>
+                                    </div>
+                                    <div class="cmn-learning-module-list">
+                                        <?php foreach ((array) $learning_module_tiles as $module_item) : ?>
+                                            <?php
+                                            $module_key = sanitize_key((string) ($module_item['key'] ?? ''));
+                                            $module_title = sanitize_text_field((string) ($module_item['title'] ?? 'Module'));
+                                            $module_description = sanitize_textarea_field((string) ($module_item['description'] ?? ''));
+                                            $module_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($module_item['course_keys'] ?? []))));
+                                            $is_coming_soon = !empty($module_item['coming_soon']);
+                                            $is_selected_module = $learning_open_module_key !== '' && $learning_open_module_key === $module_key;
+                                            ?>
+                                            <button class="cmn-learning-module-tile<?php echo $is_selected_module ? ' is-selected' : ''; ?><?php echo $is_coming_soon ? ' is-coming-soon' : ''; ?>"
+                                                    type="button"
+                                                    data-learning-open-module="<?php echo esc_attr($module_key); ?>"
+                                                    data-learning-module-title="<?php echo esc_attr($module_title); ?>"
+                                                    data-learning-module-coming-soon="<?php echo $is_coming_soon ? '1' : '0'; ?>"
+                                                    aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>">
+                                                <h4><?php echo esc_html($module_title); ?></h4>
+                                                <p><?php echo esc_html($module_description); ?></p>
+                                                <span class="cmn-status-chip<?php echo $is_coming_soon ? '' : ' is-approved'; ?>">
+                                                    <?php echo $is_coming_soon ? 'Coming soon' : (esc_html((string) count($module_course_keys)) . ' course' . (count($module_course_keys) === 1 ? '' : 's')); ?>
+                                                </span>
+                                            </button>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </article>
+                                <article class="cmn-dashboard-card cmn-learning-courses-panel">
+                                    <h3 data-learning-courses-title>Courses</h3>
+                                    <div class="cmn-learning-course-empty" data-learning-course-empty hidden>No courses available in this module yet.</div>
+                                    <div class="cmn-learning-course-list">
+                                        <?php foreach ((array) $learning_course_catalog as $course_key => $course_item) : ?>
+                                            <?php
+                                            $course_key = sanitize_key((string) $course_key);
+                                            $course_title = sanitize_text_field((string) ($course_item['title'] ?? 'Course'));
+                                            $course_description = sanitize_textarea_field((string) ($course_item['description'] ?? ''));
+                                            $course_module_key = sanitize_key((string) ($course_item['module_key'] ?? ''));
+                                            $slides_count = count((array) ($course_item['slides'] ?? []));
+                                            $exam_count = count((array) ($course_item['exam'] ?? []));
+                                            $completion_item = is_array($learning_course_results[$course_key] ?? null) ? (array) $learning_course_results[$course_key] : [];
+                                            $is_completed = !empty($completion_item['passed']);
+                                            $completion_date = sanitize_text_field((string) ($completion_item['issued_date'] ?? ''));
+                                            $is_visible_for_module = $learning_open_module_key !== '' && $course_module_key === $learning_open_module_key;
+                                            if ($is_visible_for_module) {
+                                                $learning_visible_course_count++;
+                                            }
+                                            ?>
+                                            <div class="cmn-learning-course-item<?php echo $is_completed ? ' is-completed' : ''; ?>"
+                                                 data-learning-course-card="<?php echo esc_attr($course_key); ?>"
+                                                 data-learning-course-module="<?php echo esc_attr($course_module_key); ?>"
+                                                 <?php echo $is_visible_for_module ? '' : 'hidden'; ?>>
+                                                <div class="cmn-learning-course-head">
+                                                    <h4><?php echo esc_html($course_title); ?></h4>
+                                                    <span class="cmn-status-chip<?php echo $is_completed ? ' is-approved' : ''; ?>" data-learning-course-status="<?php echo esc_attr($course_key); ?>">
+                                                        <?php echo $is_completed ? 'Completed' : 'Not started'; ?>
+                                                    </span>
                                                 </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </article>
-                                    <article class="cmn-dashboard-card cmn-learning-courses-panel">
-                                        <h3>Courses</h3>
-                                        <div class="cmn-learning-course-list">
-                                            <?php foreach ((array) $learning_course_catalog as $course_key => $course_item) : ?>
-                                                <?php
-                                                $course_key = sanitize_key((string) $course_key);
-                                                $course_title = sanitize_text_field((string) ($course_item['title'] ?? 'Course'));
-                                                $course_description = sanitize_textarea_field((string) ($course_item['description'] ?? ''));
-                                                $slides_count = count((array) ($course_item['slides'] ?? []));
-                                                $exam_count = count((array) ($course_item['exam'] ?? []));
-                                                $completion_item = is_array($learning_course_results[$course_key] ?? null) ? (array) $learning_course_results[$course_key] : [];
-                                                $is_completed = !empty($completion_item['passed']);
-                                                $completion_date = sanitize_text_field((string) ($completion_item['issued_date'] ?? ''));
-                                                ?>
-                                                <div class="cmn-learning-course-item<?php echo $is_completed ? ' is-completed' : ''; ?>" data-learning-course-card="<?php echo esc_attr($course_key); ?>">
-                                                    <div class="cmn-learning-course-head">
-                                                        <h4><?php echo esc_html($course_title); ?></h4>
-                                                        <span class="cmn-status-chip<?php echo $is_completed ? ' is-approved' : ''; ?>" data-learning-course-status="<?php echo esc_attr($course_key); ?>">
-                                                            <?php echo $is_completed ? 'Completed' : 'Not started'; ?>
-                                                        </span>
-                                                    </div>
-                                                    <p><?php echo esc_html($course_description); ?></p>
-                                                    <div class="cmn-learning-course-meta">
-                                                        <span><?php echo esc_html((string) $slides_count); ?> slides</span>
-                                                        <span><?php echo esc_html((string) $exam_count); ?> exam questions</span>
-                                                    </div>
-                                                    <?php if ($is_completed && $completion_date !== '') : ?>
-                                                        <small>Completed: <?php echo esc_html($completion_date); ?></small>
-                                                    <?php endif; ?>
-                                                    <button class="cmn-primary" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>">Open course</button>
+                                                <p><?php echo esc_html($course_description); ?></p>
+                                                <div class="cmn-learning-course-meta">
+                                                    <span><?php echo esc_html((string) $slides_count); ?> slides</span>
+                                                    <span><?php echo esc_html((string) $exam_count); ?> exam questions</span>
                                                 </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </article>
-                                </div>
+                                                <?php if ($is_completed && $completion_date !== '') : ?>
+                                                    <small>Completed: <?php echo esc_html($completion_date); ?></small>
+                                                <?php endif; ?>
+                                                <button class="cmn-primary" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>">Open course</button>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </article>
                                 <article class="cmn-dashboard-card cmn-learning-player"
                                          data-learning-player
                                          data-learning-courses="<?php echo esc_attr(wp_json_encode($learning_course_catalog)); ?>"
