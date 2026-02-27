@@ -2967,6 +2967,13 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
   row-gap: 12px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-section4-carousel.cmn-dashboard-card {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-carousel-viewport {
   overflow: hidden;
   border-radius: 12px;
@@ -13027,6 +13034,13 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-p
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-profile > #cmn-profile-personal[data-profile-personal-card] {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-toprow {
