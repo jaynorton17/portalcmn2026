@@ -7793,7 +7793,9 @@ document.addEventListener('DOMContentLoaded', function () {
     var nextBtn = planner.querySelector('[data-calendar-next]');
     var rangeStart = planner.querySelector('[data-calendar-range-start]');
     var rangeEnd = planner.querySelector('[data-calendar-range-end]');
-    var bulkButtons = planner.querySelectorAll('[data-calendar-bulk]');
+    var bulkActionSelect = planner.querySelector('[data-calendar-bulk-action]');
+    var bulkSubmitButton = planner.querySelector('[data-calendar-bulk-submit]');
+    var bulkButtonsLegacy = planner.querySelectorAll('[data-calendar-bulk]');
     var clearButtons = planner.querySelectorAll('[data-calendar-clear]');
     var summaryNext = document.querySelector('[data-summary-next-date]');
     var summaryAvailable = document.querySelector('[data-summary-available]');
@@ -8196,77 +8198,99 @@ document.addEventListener('DOMContentLoaded', function () {
       return { start: start, end: end };
     };
 
-    if (bulkButtons.length) {
-      bulkButtons.forEach(function (btn) {
+    var submitBulkStatus = function (range, status) {
+      var formData = new FormData();
+      formData.append('action', 'cmn_bulk_update_calendar');
+      formData.append('nonce', window.cmnPortal.calendarBulkNonce || '');
+      formData.append('start_date', range.start);
+      formData.append('end_date', range.end);
+      formData.append('status', status);
+      setFeedback('Saving...', 0, 'warning');
+      requestCalendar(formData, function (payload) {
+        replaceCalendarData(payload.calendar || {});
+        updateSummary(payload.summary);
+        setFeedback(payload.message || 'Saved', 1500, 'success');
+      });
+    };
+
+    var submitClearRange = function (range) {
+      var clearRangeData = new FormData();
+      clearRangeData.append('action', 'cmn_clear_calendar');
+      clearRangeData.append('nonce', window.cmnPortal.calendarClearNonce || '');
+      clearRangeData.append('mode', 'range');
+      clearRangeData.append('start_date', range.start);
+      clearRangeData.append('end_date', range.end);
+      setFeedback('Clearing...', 0, 'warning');
+      requestCalendar(clearRangeData, function (payload) {
+        replaceCalendarData(payload.calendar || {});
+        updateSummary(payload.summary);
+        setFeedback(payload.message || 'Cleared', 1500, 'success');
+      });
+    };
+
+    var runBulkRangeAction = function (action) {
+      var range = getRange();
+      if (!range) {
+        setFeedback('Select a valid start and end date.', 2200, 'warning');
+        return;
+      }
+      if (action === 'available') {
+        openCenteredPortalPrompt({
+          tone: 'warning',
+          message: confirmAvailableMessage,
+          primaryLabel: 'Confirm',
+          secondaryLabel: 'Cancel',
+        }).then(function (confirmed) {
+          if (confirmed) {
+            submitBulkStatus(range, 'available');
+          }
+        });
+        return;
+      }
+      if (action === 'unavailable') {
+        openCenteredPortalPrompt({
+          tone: 'danger',
+          message: confirmUnavailableMessage,
+          primaryLabel: 'Confirm',
+          secondaryLabel: 'Cancel',
+        }).then(function (confirmed) {
+          if (confirmed) {
+            submitBulkStatus(range, 'unavailable');
+          }
+        });
+        return;
+      }
+      if (action === 'clear_range') {
+        openCenteredPortalPrompt({
+          tone: 'warning',
+          message: 'Clear availability for the selected range?',
+          primaryLabel: 'Clear range',
+          secondaryLabel: 'Cancel',
+        }).then(function (confirmed) {
+          if (confirmed) {
+            submitClearRange(range);
+          }
+        });
+        return;
+      }
+      setFeedback('Choose an action first.', 2200, 'warning');
+    };
+
+    if (bulkSubmitButton) {
+      bulkSubmitButton.addEventListener('click', function () {
+        var selectedAction = bulkActionSelect ? String(bulkActionSelect.value || '') : '';
+        runBulkRangeAction(selectedAction);
+      });
+    }
+
+    if (bulkButtonsLegacy.length) {
+      bulkButtonsLegacy.forEach(function (btn) {
         btn.addEventListener('click', function () {
-          var range = getRange();
-          var status = btn.getAttribute('data-calendar-bulk') || '';
-          if (!range) {
-            setFeedback('Select a valid start and end date.', 2200, 'warning');
+          var legacyAction = String(btn.getAttribute('data-calendar-bulk') || '').trim();
+          if (!legacyAction) {
             return;
           }
-          if (status === 'available') {
-            openCenteredPortalPrompt({
-              tone: 'warning',
-              message: confirmAvailableMessage,
-              primaryLabel: 'Confirm',
-              secondaryLabel: 'Cancel',
-            }).then(function (confirmed) {
-              if (!confirmed) {
-                return;
-              }
-              var formDataAvailable = new FormData();
-              formDataAvailable.append('action', 'cmn_bulk_update_calendar');
-              formDataAvailable.append('nonce', window.cmnPortal.calendarBulkNonce || '');
-              formDataAvailable.append('start_date', range.start);
-              formDataAvailable.append('end_date', range.end);
-              formDataAvailable.append('status', status);
-              setFeedback('Saving...', 0, 'warning');
-              requestCalendar(formDataAvailable, function (payload) {
-                replaceCalendarData(payload.calendar || {});
-                updateSummary(payload.summary);
-                setFeedback(payload.message || 'Saved', 1500, 'success');
-              });
-            });
-            return;
-          }
-          if (status === 'unavailable') {
-            openCenteredPortalPrompt({
-              tone: 'danger',
-              message: confirmUnavailableMessage,
-              primaryLabel: 'Confirm',
-              secondaryLabel: 'Cancel',
-            }).then(function (confirmed) {
-              if (!confirmed) {
-                return;
-              }
-              var formDataUnavailable = new FormData();
-              formDataUnavailable.append('action', 'cmn_bulk_update_calendar');
-              formDataUnavailable.append('nonce', window.cmnPortal.calendarBulkNonce || '');
-              formDataUnavailable.append('start_date', range.start);
-              formDataUnavailable.append('end_date', range.end);
-              formDataUnavailable.append('status', status);
-              setFeedback('Saving...', 0, 'warning');
-              requestCalendar(formDataUnavailable, function (payload) {
-                replaceCalendarData(payload.calendar || {});
-                updateSummary(payload.summary);
-                setFeedback(payload.message || 'Saved', 1500, 'success');
-              });
-            });
-            return;
-          }
-          var formData = new FormData();
-          formData.append('action', 'cmn_bulk_update_calendar');
-          formData.append('nonce', window.cmnPortal.calendarBulkNonce || '');
-          formData.append('start_date', range.start);
-          formData.append('end_date', range.end);
-          formData.append('status', status);
-          setFeedback('Saving...', 0, 'warning');
-          requestCalendar(formData, function (payload) {
-            replaceCalendarData(payload.calendar || {});
-            updateSummary(payload.summary);
-            setFeedback(payload.message || 'Saved', 1500, 'success');
-          });
+          runBulkRangeAction(legacyAction);
         });
       });
     }

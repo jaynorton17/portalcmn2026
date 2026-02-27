@@ -65976,10 +65976,13 @@ final class CMN_One_Plugin {
                              data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
                             <div class="cmn-card-header cmn-calendar-header">
                                 <h3>Availability Planner</h3>
-                                <div class="cmn-calendar-controls">
-                                    <button class="cmn-ghost" type="button" data-calendar-prev>&larr;</button>
-                                    <span data-calendar-label></span>
-                                    <button class="cmn-ghost" type="button" data-calendar-next>&rarr;</button>
+                                <div class="cmn-calendar-header-actions">
+                                    <button class="cmn-calendar-link-action" type="button" data-calendar-clear="next30">Clear next 30 days</button>
+                                    <div class="cmn-calendar-controls">
+                                        <button class="cmn-ghost" type="button" data-calendar-prev>&larr;</button>
+                                        <span data-calendar-label></span>
+                                        <button class="cmn-ghost" type="button" data-calendar-next>&rarr;</button>
+                                    </div>
                                 </div>
                             </div>
                             <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
@@ -66002,10 +66005,14 @@ final class CMN_One_Plugin {
                                         <?php endforeach; ?>
                                     </select>
                                 </label>
-                                <button class="cmn-ghost" type="button" data-calendar-bulk="available">Mark as Available</button>
-                                <button class="cmn-ghost" type="button" data-calendar-bulk="unavailable">Mark as Unavailable</button>
-                                <button class="cmn-ghost" type="button" data-calendar-clear="range">Clear selected range</button>
-                                <button class="cmn-ghost" type="button" data-calendar-clear="next30">Clear availability (next 30 days)</button>
+                                <label>Action
+                                    <select data-calendar-bulk-action>
+                                        <option value="available">Mark as Available</option>
+                                        <option value="unavailable">Mark as Unavailable</option>
+                                        <option value="clear_range">Clear range</option>
+                                    </select>
+                                </label>
+                                <button class="cmn-primary" type="button" data-calendar-bulk-submit>Update Availability</button>
                             </div>
                             <div class="cmn-calendar-legend">
                                 <span><span class="cmn-dot is-available"></span> Available</span>

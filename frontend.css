@@ -2799,6 +2799,13 @@ body.cmn-booking-feedback-lock {
   gap: 12px;
 }
 
+.cmn-calendar-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
 .cmn-calendar-controls {
   display: inline-flex;
   align-items: center;
@@ -2806,8 +2813,79 @@ body.cmn-booking-feedback-lock {
   font-size: 13px;
 }
 
+.cmn-calendar-link-action {
+  border: 0;
+  background: transparent;
+  color: rgba(203, 213, 225, 0.8);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 0;
+  margin: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.cmn-calendar-link-action:hover,
+.cmn-calendar-link-action:focus-visible {
+  color: #f8fafc;
+}
+
+@media (max-width: 720px) {
+  .cmn-calendar-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cmn-calendar-header-actions {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell {
+  min-height: 34px;
+  padding: 2px 0;
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(9, 13, 21, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell span {
+  padding: 0;
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell.is-available {
+  background: rgba(74, 222, 128, 0.14);
+  border-color: rgba(134, 239, 172, 0.38);
+  box-shadow: inset 0 1px 0 rgba(220, 252, 231, 0.14);
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell.is-unavailable {
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(252, 165, 165, 0.42);
+  box-shadow: inset 0 1px 0 rgba(254, 226, 226, 0.1);
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-interactive .cmn-calendar-cell.is-booked-confirmed {
+  background: rgba(190, 24, 52, 0.28);
+  border-color: rgba(248, 113, 113, 0.62);
+  box-shadow: none;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-booked-note {
+  font-size: 9px;
+  line-height: 1.05;
 }
 
 .cmn-calendar-interactive .cmn-calendar-cell {
@@ -2827,9 +2905,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .c
 
 .cmn-calendar-range-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
   margin-top: 12px;
+  align-items: end;
 }
 
 .cmn-calendar-range-controls label {
@@ -2842,6 +2921,12 @@ body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .c
 .cmn-calendar-range-controls input[type='date'],
 .cmn-calendar-range-controls select {
   min-height: 38px;
+}
+
+.cmn-calendar-range-controls .cmn-primary[data-calendar-bulk-submit] {
+  min-height: 38px;
+  width: 100%;
+  margin: 0;
 }
 
 .cmn-calendar-legend {
