@@ -11452,7 +11452,7 @@ document.addEventListener('DOMContentLoaded', function () {
         showPanel(panelResult);
       };
 
-      var openCourse = function (courseKey) {
+      var openCourse = function (courseKey, startSlides) {
         var key = String(courseKey || '');
         if (!key || !learningCourses[key]) {
           return;
@@ -11469,7 +11469,41 @@ document.addEventListener('DOMContentLoaded', function () {
           var selected = button.getAttribute('data-learning-open-course') === key;
           button.classList.toggle('is-selected', selected);
         });
+        var shouldStartSlides = !!startSlides;
+        if (shouldStartSlides && getMissingRequiredKeys(selectedCourse).length > 0 && !isCoursePassed(key)) {
+          shouldStartSlides = false;
+        }
+        if (shouldStartSlides) {
+          renderSlide();
+          return;
+        }
         renderSummary();
+      };
+
+      var openFirstVisibleCourse = function (startSlides) {
+        var firstCourseKey = '';
+        for (var buttonIndex = 0; buttonIndex < learningButtons.length; buttonIndex += 1) {
+          var button = learningButtons[buttonIndex];
+          if (!button || button.disabled) {
+            continue;
+          }
+          var card = button.closest('[data-learning-course-card]');
+          if (!card || card.hidden) {
+            continue;
+          }
+          if (String(card.getAttribute('data-learning-course-locked') || '0') === '1') {
+            continue;
+          }
+          firstCourseKey = String(button.getAttribute('data-learning-open-course') || '');
+          if (firstCourseKey !== '') {
+            break;
+          }
+        }
+        if (!firstCourseKey) {
+          return false;
+        }
+        openCourse(firstCourseKey, startSlides);
+        return true;
       };
 
       moduleButtons.forEach(function (button) {
@@ -11584,7 +11618,7 @@ document.addEventListener('DOMContentLoaded', function () {
       learningButtons.forEach(function (button) {
         button.addEventListener('click', function () {
           var key = button.getAttribute('data-learning-open-course');
-          openCourse(key);
+          openCourse(key, true);
         });
       });
 
@@ -11678,9 +11712,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (initialModuleKey) {
           setActiveModule(initialModuleKey, true);
         }
-        openCourse(initialOpenKey);
+        openCourse(initialOpenKey, true);
       } else if (initialOpenModuleKey) {
         setActiveModule(initialOpenModuleKey, false);
+        openFirstVisibleCourse(true);
       } else if (moduleCards.length) {
         var defaultModuleKey = '';
         moduleCards.forEach(function (card) {
