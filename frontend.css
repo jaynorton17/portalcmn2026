@@ -15050,6 +15050,11 @@ body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedba
 
 body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-summary-row {
   margin-bottom: 20px;
+  align-items: stretch;
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-summary-row > .cmn-dashboard-card {
+  height: 100%;
 }
 
 body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-overall-card {
