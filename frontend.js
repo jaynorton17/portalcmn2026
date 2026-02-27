@@ -10463,15 +10463,15 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         });
         if (coursesTitle) {
-          var moduleTitle = selectedButton ? String(selectedButton.getAttribute('data-learning-module-title') || 'Module') : 'Module';
-          coursesTitle.textContent = selectedComingSoon ? (moduleTitle + ' (Coming soon)') : (moduleTitle + ' Courses');
+          var moduleTitle = selectedButton ? String(selectedButton.getAttribute('data-learning-module-title') || 'Course') : 'Course';
+          coursesTitle.textContent = selectedComingSoon ? (moduleTitle + ' (Coming soon)') : (moduleTitle + ' Modules');
         }
         if (courseEmptyState) {
           if (selectedComingSoon) {
-            courseEmptyState.textContent = 'This module is coming soon.';
+            courseEmptyState.textContent = 'This course is coming soon.';
             courseEmptyState.hidden = false;
           } else if (visibleCourses < 1) {
-            courseEmptyState.textContent = 'No courses available in this module yet.';
+            courseEmptyState.textContent = 'No modules available in this course yet.';
             courseEmptyState.hidden = false;
           } else {
             courseEmptyState.hidden = true;

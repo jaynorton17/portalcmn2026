@@ -65532,8 +65532,8 @@ final class CMN_One_Plugin {
                             </div>
                         <?php else : ?>
                             <header class="cmn-candidate-header" data-tour-target="learning-centre">
-                                <h2>Modules &amp; Courses</h2>
-                                <p>Select a course to view summary, complete slides, and sit the end-of-course exam.</p>
+                                <h2>Courses</h2>
+                                <p>Select a course to view modules, complete slides, and sit the end-of-course exam.</p>
                             </header>
                             <?php
                             $learning_module_tiles = array_values((array) $learning_modules_catalog);
@@ -65563,7 +65563,7 @@ final class CMN_One_Plugin {
                             <div class="cmn-learning-modules-shell" id="cmn-learning-modules" data-learning-root>
                                 <article class="cmn-dashboard-card cmn-learning-modules-panel">
                                     <div class="cmn-card-header">
-                                        <h3>Modules</h3>
+                                        <h3>Courses</h3>
                                         <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => false], $portal_url)); ?>">Back</a>
                                     </div>
                                     <div class="cmn-learning-module-list">
@@ -65621,8 +65621,8 @@ final class CMN_One_Plugin {
                                     </div>
                                 </article>
                                 <article class="cmn-dashboard-card cmn-learning-courses-panel">
-                                    <h3 data-learning-courses-title>Courses</h3>
-                                    <div class="cmn-learning-course-empty" data-learning-course-empty hidden>No courses available in this module yet.</div>
+                                    <h3 data-learning-courses-title>Modules</h3>
+                                    <div class="cmn-learning-course-empty" data-learning-course-empty hidden>No modules available in this course yet.</div>
                                     <div class="cmn-learning-course-list">
                                         <?php foreach ((array) $learning_course_catalog as $course_key => $course_item) : ?>
                                             <?php
