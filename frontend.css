@@ -2839,7 +2839,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .c
   color: var(--cmn-muted);
 }
 
-.cmn-calendar-range-controls input[type='date'] {
+.cmn-calendar-range-controls input[type='date'],
+.cmn-calendar-range-controls select {
   min-height: 38px;
 }
 
@@ -13589,6 +13590,13 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-link:
 
 /* Section 3 (Availability Planner): remove red card glow */
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-calendar-planner::before {
+  content: none !important;
+  background: none !important;
+  opacity: 0 !important;
+}
+
+/* Section 4 (Weekly Earnings): remove red card glow */
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-weekly-earnings-card::before {
   content: none !important;
   background: none !important;
   opacity: 0 !important;

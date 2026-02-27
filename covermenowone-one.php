@@ -64261,6 +64261,33 @@ final class CMN_One_Plugin {
         $calendar_end = $calendar_window_end->format('Y-m-d');
         $calendar_min_date = $calendar_start;
         $calendar_max_date = $calendar_end;
+        $calendar_weekday_options = [];
+        $calendar_default_start_date = $calendar_min_date;
+        $calendar_default_end_date = $calendar_min_date;
+        $calendar_cursor = clone $calendar_window_start;
+        while ($calendar_cursor <= $calendar_window_end) {
+            $weekday_number = (int) $calendar_cursor->format('N');
+            if ($weekday_number <= 5) {
+                $option_value = $calendar_cursor->format('Y-m-d');
+                $calendar_weekday_options[] = [
+                    'value' => $option_value,
+                    'label' => date_i18n('D j M Y', strtotime($option_value)),
+                ];
+                if (count($calendar_weekday_options) === 1) {
+                    $calendar_default_start_date = $option_value;
+                }
+                $calendar_default_end_date = $option_value;
+            }
+            $calendar_cursor->modify('+1 day');
+        }
+        if (!$calendar_weekday_options) {
+            $calendar_weekday_options[] = [
+                'value' => $calendar_min_date,
+                'label' => date_i18n('D j M Y', strtotime($calendar_min_date)),
+            ];
+            $calendar_default_start_date = $calendar_min_date;
+            $calendar_default_end_date = $calendar_min_date;
+        }
         $calendar_min_month = $calendar_window_start->format('Y-m');
         $calendar_max_month = $calendar_window_end->format('Y-m');
         $calendar_map = $candidate_id ? $this->get_candidate_calendar_map($candidate_id, $calendar_start, $calendar_end) : [];
@@ -65849,10 +65876,22 @@ final class CMN_One_Plugin {
                             <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
                             <div class="cmn-calendar-range-controls">
                                 <label>Start date
-                                    <input type="date" data-calendar-range-start min="<?php echo esc_attr($calendar_min_date); ?>" max="<?php echo esc_attr($calendar_max_date); ?>">
+                                    <select data-calendar-range-start>
+                                        <?php foreach ($calendar_weekday_options as $calendar_option) : ?>
+                                            <option value="<?php echo esc_attr((string) ($calendar_option['value'] ?? '')); ?>"<?php selected((string) ($calendar_option['value'] ?? ''), $calendar_default_start_date); ?>>
+                                                <?php echo esc_html((string) ($calendar_option['label'] ?? '')); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
                                 </label>
                                 <label>End date
-                                    <input type="date" data-calendar-range-end min="<?php echo esc_attr($calendar_min_date); ?>" max="<?php echo esc_attr($calendar_max_date); ?>">
+                                    <select data-calendar-range-end>
+                                        <?php foreach ($calendar_weekday_options as $calendar_option) : ?>
+                                            <option value="<?php echo esc_attr((string) ($calendar_option['value'] ?? '')); ?>"<?php selected((string) ($calendar_option['value'] ?? ''), $calendar_default_end_date); ?>>
+                                                <?php echo esc_html((string) ($calendar_option['label'] ?? '')); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
                                 </label>
                                 <button class="cmn-ghost" type="button" data-calendar-bulk="available">Mark as Available</button>
                                 <button class="cmn-ghost" type="button" data-calendar-bulk="unavailable">Mark as Unavailable</button>
