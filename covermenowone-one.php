@@ -70538,6 +70538,525 @@ final class CMN_One_Plugin {
                     ],
                 ],
             ],
+            'foundations_safeguarding_infrastructure' => [
+                'key' => 'foundations_safeguarding_infrastructure',
+                'module_key' => 'safeguarding_infrastructure',
+                'title' => 'Foundations of Safeguarding Infrastructure',
+                'description' => 'This course establishes the structural foundations of safeguarding within a school environment. It defines safeguarding as operational infrastructure rather than a policy document, and clarifies statutory duties under UK legislation.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'slides' => [
+                    [
+                        'title' => 'Safeguarding as Infrastructure',
+                        'body' => "Safeguarding in schools is not a reactive function. It is a structured system of prevention, detection, reporting, and response embedded into daily operations. Infrastructure means systems must function regardless of personnel changes.\n\nSafeguarding infrastructure includes leadership oversight, defined reporting pathways, documented procedures, training cycles, and monitoring mechanisms. It must operate consistently across all departments and roles. Informal or personality-led systems are not compliant systems.\n\nA safeguarding infrastructure must be auditable. Decisions must be recorded, reviewable, and capable of external scrutiny. This ensures accountability and reliability.",
+                    ],
+                    [
+                        'title' => 'Statutory Framework',
+                        'body' => "UK safeguarding practice is governed by statutory guidance including Keeping Children Safe in Education (KCSIE), the Children Act 1989 and 2004, and Working Together to Safeguard Children. These documents define legal duties placed upon schools and individuals.\n\nCompliance is mandatory, not discretionary. Schools must demonstrate that safeguarding arrangements are effective and actively implemented. Failure to do so constitutes a breach of statutory duty.\n\nSafeguarding infrastructure must align with local authority procedures and multi-agency safeguarding arrangements. Internal systems must not contradict national guidance.",
+                    ],
+                    [
+                        'title' => 'Roles and Accountability',
+                        'body' => "The Governing Body or Trust Board holds strategic accountability for safeguarding effectiveness. They must ensure policies are implemented and reviewed.\n\nThe Designated Safeguarding Lead (DSL) holds operational responsibility for safeguarding coordination. This includes case management, liaison with external agencies, and internal guidance.\n\nAll staff hold individual safeguarding responsibility. Safeguarding is not delegated solely to the DSL. Every adult in school must recognise and report concerns.",
+                    ],
+                    [
+                        'title' => 'Lines of Reporting',
+                        'body' => "Clear reporting lines prevent delay and confusion. All concerns must be reported directly to the DSL or Deputy DSL without filtering.\n\nVerbal reports must be followed by written records using the school's approved safeguarding recording system. Documentation must be factual and time-stamped.\n\nEscalation pathways must be defined for situations where the DSL is unavailable or implicated. Safeguarding systems must include contingency planning.",
+                    ],
+                    [
+                        'title' => 'Record Keeping Standards',
+                        'body' => "Safeguarding records must be accurate, contemporaneous, and objective. Opinion must be clearly separated from observed fact.\n\nRecords must include date, time, location, individuals involved, and actions taken. Incomplete documentation compromises safeguarding response.\n\nSecure storage and restricted access are mandatory. Safeguarding files must be stored separately from academic records.",
+                    ],
+                    [
+                        'title' => 'Confidentiality and Information Sharing',
+                        'body' => "Safeguarding information is confidential but not secret. Information must be shared on a need-to-know basis to protect children.\n\nData protection legislation does not prevent safeguarding disclosures. Where a child is at risk, safeguarding overrides general confidentiality principles.\n\nStaff must not promise confidentiality to pupils. Instead, they must explain that concerns will be passed to safeguarding leads.",
+                    ],
+                    [
+                        'title' => 'Monitoring and Review',
+                        'body' => "Safeguarding infrastructure requires ongoing monitoring. DSLs must review patterns, trends, and recurring risks.\n\nGovernors must receive safeguarding reports that enable oversight without breaching confidentiality. Data must support accountability.\n\nAnnual policy review is minimum compliance. Continuous evaluation is best-practice infrastructure.",
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'What defines safeguarding as infrastructure?',
+                        'options' => [
+                            'A' => 'A written policy stored in the office',
+                            'B' => 'A structured system embedded in operations',
+                            'C' => 'Informal staff awareness',
+                            'D' => 'Parental communication only',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Safeguarding infrastructure is a structured system embedded into daily operations. Policy alone, informal awareness, or parent communication alone are not sufficient.',
+                    ],
+                    [
+                        'question' => 'Who holds strategic safeguarding accountability?',
+                        'options' => [
+                            'A' => 'DSL',
+                            'B' => 'Class teacher',
+                            'C' => 'Governing Body or Trust Board',
+                            'D' => 'Administrative staff',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Strategic accountability sits with governors or trustees, while the DSL holds operational responsibility.',
+                    ],
+                    [
+                        'question' => 'What must follow a verbal safeguarding report?',
+                        'options' => [
+                            'A' => 'No further action',
+                            'B' => 'Parent contact',
+                            'C' => 'Written factual record',
+                            'D' => 'Staff meeting',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'All verbal safeguarding reports must be documented formally with factual, time-stamped records.',
+                    ],
+                    [
+                        'question' => 'Safeguarding files must be stored:',
+                        'options' => [
+                            'A' => 'In general pupil files',
+                            'B' => 'Publicly accessible',
+                            'C' => 'Separately and securely',
+                            'D' => 'At home by DSL',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding records must be secure and separate from general pupil records to maintain confidentiality and control.',
+                    ],
+                    [
+                        'question' => 'Information sharing in safeguarding is:',
+                        'options' => [
+                            'A' => 'Prohibited',
+                            'B' => 'Optional',
+                            'C' => 'Allowed when protecting a child',
+                            'D' => 'Limited to governors',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Safeguarding concerns can and must be shared when needed to protect a child, even where normal confidentiality principles apply.',
+                    ],
+                ],
+            ],
+            'risk_identification_early_intervention' => [
+                'key' => 'risk_identification_early_intervention',
+                'module_key' => 'safeguarding_infrastructure',
+                'title' => 'Risk Identification and Early Intervention',
+                'description' => 'This course establishes structured processes to identify safeguarding risks at the earliest stage, defining recognition indicators, documentation standards, and escalation procedures.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'slides' => [
+                    [
+                        'title' => 'The Purpose of Early Identification',
+                        'body' => "Early identification is a preventative safeguarding mechanism. It reduces escalation risk by addressing concerns before harm becomes severe or sustained. Infrastructure must prioritise recognition over reaction.\n\nAll staff must understand that safeguarding rarely begins with a disclosure. It often begins with patterns, behavioural shifts, attendance irregularities, or subtle welfare indicators. These early signals require structured attention.\n\nFailure to identify early indicators increases risk exposure for the child and institutional liability for the school. Early intervention is therefore an operational safeguard.",
+                    ],
+                    [
+                        'title' => 'Categories of Safeguarding Risk',
+                        'body' => "Safeguarding risks generally fall into recognised categories, including physical abuse, emotional abuse, sexual abuse, neglect, exploitation, and peer-on-peer harm. Staff must understand these categories to identify warning signs accurately.\n\nRisk categories are not theoretical. They provide a structured framework for observation and reporting. Clear categorisation prevents vague or minimised reporting.\n\nSchools must ensure training includes current contextual risks such as online exploitation, county lines activity, radicalisation, and harmful sexual behaviour. Risk identification must reflect modern safeguarding realities.",
+                    ],
+                    [
+                        'title' => 'Behavioural and Environmental Indicators',
+                        'body' => "Safeguarding concerns are often identified through behavioural changes. These may include withdrawal, aggression, anxiety, unexplained injuries, or sudden academic decline. Patterns are more significant than isolated incidents.\n\nEnvironmental indicators may include poor hygiene, persistent hunger, inappropriate clothing for weather, or repeated lateness. These signs require recording even if cause is not yet known.\n\nStaff must not investigate independently. Their role is recognition and reporting, not evidence gathering. Structured referral protects both child and staff.",
+                    ],
+                    [
+                        'title' => 'Recording Concerns Accurately',
+                        'body' => "Concerns must be recorded factually and without interpretation. Records must distinguish clearly between observed behaviour and professional opinion.\n\nDocumentation must include date, time, location, exact words spoken if a disclosure occurs, and immediate actions taken. Delayed recording weakens safeguarding integrity.\n\nElectronic safeguarding systems must be used consistently. Personal notebooks or informal communication channels are not compliant methods of record keeping.",
+                    ],
+                    [
+                        'title' => 'Thresholds and Escalation',
+                        'body' => "Not all concerns meet immediate referral thresholds, but all concerns must be logged. Thresholds determine whether monitoring, early help, or statutory referral is required.\n\nThe DSL assesses whether concerns meet local authority referral criteria. Staff must not make threshold decisions independently.\n\nEscalation must be immediate where a child is at risk of significant harm. Delay in escalation constitutes safeguarding failure.",
+                    ],
+                    [
+                        'title' => 'Early Help and Multi-Agency Collaboration',
+                        'body' => "Early Help frameworks support families before issues escalate to statutory intervention. Schools are often key referral partners within Early Help systems.\n\nMulti-agency collaboration may include social care, health professionals, police, and youth services. Information sharing must follow safeguarding protocols.\n\nEffective infrastructure ensures that external engagement is documented and reviewed. Schools remain accountable for follow-up.",
+                    ],
+                    [
+                        'title' => 'Monitoring and Review of Emerging Risk',
+                        'body' => "Some safeguarding concerns require monitoring over time. DSLs must track recurring patterns across attendance, behaviour, and welfare indicators.\n\nSafeguarding systems should allow data analysis to identify trends affecting groups or individuals. Monitoring must not become passive observation.\n\nRegular review meetings ensure that monitored concerns are reassessed against updated risk thresholds. Infrastructure must support dynamic risk management.",
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'What is the primary purpose of early identification in safeguarding?',
+                        'options' => [
+                            'A' => 'To complete administrative paperwork',
+                            'B' => 'To prevent escalation of harm',
+                            'C' => 'To replace statutory referral processes',
+                            'D' => 'To reduce staff workload',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Early identification reduces the likelihood that harm will escalate by addressing risks at an early stage.',
+                    ],
+                    [
+                        'question' => 'Which of the following is a recognised safeguarding risk category?',
+                        'options' => [
+                            'A' => 'Poor handwriting',
+                            'B' => 'Emotional abuse',
+                            'C' => 'Low examination scores',
+                            'D' => 'Classroom disruption only',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Emotional abuse is a formally recognised safeguarding category.',
+                    ],
+                    [
+                        'question' => 'If a staff member observes a pattern of unexplained injuries, they should:',
+                        'options' => [
+                            'A' => 'Conduct their own investigation',
+                            'B' => 'Ignore it unless a disclosure is made',
+                            'C' => 'Record and report to the DSL',
+                            'D' => 'Confront the parents immediately',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Staff should record factual observations and report to the DSL. They should not investigate independently.',
+                    ],
+                    [
+                        'question' => 'Who determines whether a concern meets referral thresholds?',
+                        'options' => [
+                            'A' => 'The reporting teacher',
+                            'B' => 'The pupil',
+                            'C' => 'The DSL',
+                            'D' => 'The school receptionist',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'The DSL assesses concerns against local authority thresholds and determines escalation level.',
+                    ],
+                    [
+                        'question' => 'When monitoring emerging risk, safeguarding systems must:',
+                        'options' => [
+                            'A' => 'Rely on memory',
+                            'B' => 'Avoid documentation until harm is confirmed',
+                            'C' => 'Track patterns over time',
+                            'D' => 'Be informal to protect relationships',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Monitoring requires structured pattern tracking over time, not passive observation.',
+                    ],
+                    [
+                        'question' => 'Which statement best describes accurate safeguarding recording?',
+                        'options' => [
+                            'A' => 'Include personal assumptions for clarity',
+                            'B' => 'Record facts separately from opinion',
+                            'C' => 'Delay recording until the end of the week',
+                            'D' => 'Store notes in personal files',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Accurate safeguarding recording separates observed facts from professional interpretation and is logged promptly.',
+                    ],
+                ],
+            ],
+            'safeguarding_response_case_management' => [
+                'key' => 'safeguarding_response_case_management',
+                'module_key' => 'safeguarding_infrastructure',
+                'title' => 'Safeguarding Response and Case Management',
+                'description' => 'This course defines structured response once a safeguarding concern is reported, covering case management, escalation protocols, and external agency engagement.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'slides' => [
+                    [
+                        'title' => 'Immediate Response Protocol',
+                        'body' => "When a safeguarding concern is received, response must be timely and structured. The DSL must assess information without delay and determine immediate risk level.\n\nIf a child is in immediate danger, emergency services must be contacted before any internal process continues. Safeguarding response prioritises safety over procedure sequencing.\n\nWhere risk is not immediate but significant, same-day action is required. Delayed decision-making increases exposure and undermines safeguarding credibility.",
+                    ],
+                    [
+                        'title' => 'Managing a Disclosure',
+                        'body' => "If a child makes a disclosure, staff must listen without interruption or leading questions. The role of the adult is to receive information, not to investigate.\n\nReassurance must be calm and factual. Staff must not promise confidentiality or specific outcomes. They must explain that information will be shared with safeguarding leads.\n\nExact words used by the child must be recorded as soon as possible. Accuracy preserves evidential integrity.",
+                    ],
+                    [
+                        'title' => 'Risk Assessment Framework',
+                        'body' => "The DSL conducts a structured risk assessment considering severity, frequency, vulnerability, and contextual factors. Risk assessment must be recorded formally.\n\nProfessional judgement must align with statutory thresholds and local authority guidance. Personal opinion without framework reference is insufficient.\n\nRisk assessment is dynamic. If new information emerges, reassessment must occur immediately.",
+                    ],
+                    [
+                        'title' => 'Referral to External Agencies',
+                        'body' => "Where thresholds are met, referrals must be made to children's social care or appropriate safeguarding partners. Referral decisions must be documented with rationale.\n\nSchools must not attempt to manage high-risk cases internally when statutory intervention is required. Over-retention of cases is a safeguarding failure.\n\nIf a referral is rejected but concern remains, escalation procedures such as professional challenge must be followed.",
+                    ],
+                    [
+                        'title' => 'Communication with Parents and Carers',
+                        'body' => "Parental communication must be carefully considered. In some cases, informing parents may increase risk to the child.\n\nThe DSL determines when and how parents are informed, in line with safeguarding guidance. Documentation of this decision is mandatory.\n\nProfessional conduct must remain neutral and factual. Safeguarding conversations require clarity and recorded outcomes.",
+                    ],
+                    [
+                        'title' => 'Case Recording and Chronology',
+                        'body' => "Each safeguarding case must maintain a clear chronology. Chronologies enable pattern recognition and support external review.\n\nAll actions, decisions, referrals, and communications must be logged. Gaps in chronology weaken safeguarding defensibility.\n\nSecure digital safeguarding systems support case continuity, particularly during staff absence or turnover.",
+                    ],
+                    [
+                        'title' => 'Case Review and Closure',
+                        'body' => "Cases must not remain open indefinitely without review. Scheduled review points ensure accountability and progress tracking.\n\nClosure decisions must be justified and documented. The rationale must demonstrate that risk has reduced or been transferred appropriately.\n\nPost-case review supports institutional learning. Safeguarding infrastructure improves through reflective evaluation.",
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'If a child is in immediate danger, the first action must be to:',
+                        'options' => [
+                            'A' => 'Inform parents',
+                            'B' => 'Complete internal paperwork',
+                            'C' => 'Contact emergency services',
+                            'D' => 'Wait for governor approval',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Immediate danger requires emergency services contact before procedural continuation.',
+                    ],
+                    [
+                        'question' => 'During a disclosure, staff should:',
+                        'options' => [
+                            'A' => 'Ask detailed investigative questions',
+                            'B' => 'Promise secrecy',
+                            'C' => 'Listen without leading',
+                            'D' => 'Challenge inconsistencies',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Staff should listen calmly without leading questions and report the concern through safeguarding channels.',
+                    ],
+                    [
+                        'question' => 'Who conducts the structured safeguarding risk assessment?',
+                        'options' => [
+                            'A' => 'The reporting pupil',
+                            'B' => 'The DSL',
+                            'C' => 'Any available teacher',
+                            'D' => 'Administrative staff',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'The DSL has responsibility for structured safeguarding risk assessment.',
+                    ],
+                    [
+                        'question' => 'If a safeguarding referral is rejected but concern remains, the school must:',
+                        'options' => [
+                            'A' => 'Close the case',
+                            'B' => 'Ignore the concern',
+                            'C' => 'Escalate using professional challenge',
+                            'D' => 'Transfer responsibility to parents',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Where concern remains, escalation pathways including professional challenge must be followed.',
+                    ],
+                    [
+                        'question' => 'Why is a safeguarding chronology essential?',
+                        'options' => [
+                            'A' => 'It replaces statutory guidance',
+                            'B' => 'It supports pattern recognition and review',
+                            'C' => 'It reduces workload',
+                            'D' => 'It avoids external scrutiny',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Chronologies support pattern recognition, case continuity, and defensible review.',
+                    ],
+                    [
+                        'question' => 'Case closure must:',
+                        'options' => [
+                            'A' => 'Occur automatically after referral',
+                            'B' => 'Be undocumented',
+                            'C' => 'Be justified and recorded',
+                            'D' => 'Be decided by teaching staff collectively',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Closure requires documented rationale showing risk has reduced or been transferred appropriately.',
+                    ],
+                ],
+            ],
+            'safer_recruitment_staff_conduct_infrastructure' => [
+                'key' => 'safer_recruitment_staff_conduct_infrastructure',
+                'module_key' => 'safeguarding_infrastructure',
+                'title' => 'Safer Recruitment and Staff Conduct Infrastructure',
+                'description' => 'This course establishes structural safeguards to prevent unsuitable individuals from working with children, covering vetting, recruitment controls, and professional conduct standards.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'slides' => [
+                    [
+                        'title' => 'Safeguarding Through Recruitment Controls',
+                        'body' => "Safeguarding begins before employment commences. Recruitment processes must act as a barrier against unsuitable individuals entering the school environment.\n\nSafer recruitment is a statutory expectation under Keeping Children Safe in Education. Schools must evidence consistent procedural compliance for all appointments, including temporary and agency staff.\n\nRecruitment controls are not administrative formalities. They are safeguarding mechanisms designed to reduce risk exposure.",
+                    ],
+                    [
+                        'title' => 'Pre-Employment Vetting Requirements',
+                        'body' => "All staff must undergo appropriate pre-employment checks. These include identity verification, enhanced DBS with barred list check, right-to-work verification, and reference validation.\n\nChecks must be completed before employment begins. Conditional start arrangements must follow strict risk assessment procedures.\n\nThe Single Central Record (SCR) must accurately document all completed checks. Inaccurate or incomplete SCR entries represent safeguarding non-compliance.",
+                    ],
+                    [
+                        'title' => 'References and Employment History Scrutiny',
+                        'body' => "References must be obtained directly from the source and verified. Open testimonials are insufficient for safeguarding assurance.\n\nEmployment history must be scrutinised for unexplained gaps or inconsistencies. Gaps must be explored and documented before appointment.\n\nSafer recruitment requires professional curiosity. Assumptions or informal assurances are not adequate safeguards.",
+                    ],
+                    [
+                        'title' => 'Interview Safeguarding Assessment',
+                        'body' => "Interviews must assess safeguarding understanding and professional suitability. Questions must evaluate attitudes toward boundaries, child protection, and reporting duties.\n\nInterview panels should include at least one trained safer-recruitment member. Documentation of safeguarding-focused questioning must be retained.\n\nDecisions must be evidence-based. Personal rapport cannot override safeguarding concerns.",
+                    ],
+                    [
+                        'title' => 'Staff Code of Conduct',
+                        'body' => "A written Code of Conduct establishes professional behavioural boundaries. It defines expectations regarding physical contact, communication, and social media interaction.\n\nAll staff must formally acknowledge the Code of Conduct upon appointment. Annual reaffirmation supports accountability.\n\nBreach of conduct expectations may constitute safeguarding risk and must be addressed formally.",
+                    ],
+                    [
+                        'title' => 'Managing Allegations Against Staff',
+                        'body' => "Allegations against staff must be treated with seriousness and procedural discipline. The headteacher or designated senior leader must consult the Local Authority Designated Officer (LADO) where required.\n\nInternal investigation must not precede LADO consultation where thresholds are met. Procedural missteps can compromise safeguarding and legal integrity.\n\nConfidentiality must be maintained throughout the process. Both child protection and staff rights must be respected.",
+                    ],
+                    [
+                        'title' => 'Ongoing Staff Suitability Monitoring',
+                        'body' => "Safeguarding does not conclude at appointment. Ongoing vigilance is required to monitor conduct and emerging concerns.\n\nStaff must understand their duty to disclose relevant changes in circumstances, including criminal investigations or restrictions.\n\nLeadership must maintain an open reporting culture where concerns about colleagues can be raised without fear of retaliation.",
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'What is the purpose of safer recruitment procedures?',
+                        'options' => [
+                            'A' => 'To reduce interview time',
+                            'B' => 'To prevent unsuitable individuals working with children',
+                            'C' => 'To increase application numbers',
+                            'D' => 'To simplify administrative processes',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Safer recruitment acts as a preventative safeguarding barrier before employment begins.',
+                    ],
+                    [
+                        'question' => 'Which document records pre-employment safeguarding checks?',
+                        'options' => [
+                            'A' => 'Attendance register',
+                            'B' => 'Staff handbook',
+                            'C' => 'Single Central Record (SCR)',
+                            'D' => 'Curriculum policy',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'The SCR is the formal record of required recruitment and vetting checks.',
+                    ],
+                    [
+                        'question' => 'If an employment history contains unexplained gaps, the school must:',
+                        'options' => [
+                            'A' => 'Ignore them',
+                            'B' => 'Document and investigate them before appointment',
+                            'C' => 'Assume personal reasons',
+                            'D' => 'Offer conditional employment without review',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Unexplained gaps require documented scrutiny before appointment decisions are made.',
+                    ],
+                    [
+                        'question' => 'Who must be consulted if an allegation against staff meets safeguarding thresholds?',
+                        'options' => [
+                            'A' => 'The pupil council',
+                            'B' => 'The Local Authority Designated Officer (LADO)',
+                            'C' => 'The finance department',
+                            'D' => 'External auditors only',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Threshold allegations require LADO consultation before internal investigation proceeds.',
+                    ],
+                    [
+                        'question' => 'Why is a Code of Conduct essential?',
+                        'options' => [
+                            'A' => 'To provide optional behavioural advice',
+                            'B' => 'To define enforceable professional boundaries',
+                            'C' => 'To replace safeguarding training',
+                            'D' => 'To reduce external oversight',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'A Code of Conduct sets clear behavioural boundaries and accountability expectations.',
+                    ],
+                    [
+                        'question' => 'Ongoing staff suitability requires:',
+                        'options' => [
+                            'A' => 'No further checks after appointment',
+                            'B' => 'Passive oversight only',
+                            'C' => 'Continuous monitoring and disclosure expectations',
+                            'D' => 'Informal peer review only',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Suitability monitoring must continue beyond appointment through structured reporting and oversight.',
+                    ],
+                ],
+            ],
+            'safeguarding_governance_audit_continuous_assurance' => [
+                'key' => 'safeguarding_governance_audit_continuous_assurance',
+                'module_key' => 'safeguarding_infrastructure',
+                'title' => 'Safeguarding Governance, Audit and Continuous Assurance',
+                'description' => 'This course defines governance mechanisms that keep safeguarding infrastructure effective, compliant, and accountable through audit cycles, scrutiny, and continuous improvement.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'slides' => [
+                    [
+                        'title' => 'Governance Responsibility for Safeguarding',
+                        'body' => "Governors and trustees hold ultimate accountability for safeguarding effectiveness. This responsibility cannot be delegated, even though operational delivery sits with leadership.\n\nGovernance oversight must be active rather than symbolic. Safeguarding must appear as a standing agenda item in governing body meetings with documented scrutiny.\n\nGovernors must ensure statutory compliance with Keeping Children Safe in Education and related legislation. Assurance must be evidence-based.",
+                    ],
+                    [
+                        'title' => 'Safeguarding Policy Control and Review',
+                        'body' => "Safeguarding policies must be formally approved and reviewed at least annually. However, policy updates must occur immediately following legislative change.\n\nPolicy review must examine implementation, not only wording. A compliant document without operational adherence represents governance failure.\n\nVersion control must be clear. All staff must have access to the current approved policy.",
+                    ],
+                    [
+                        'title' => 'Safeguarding Audit Cycles',
+                        'body' => "Structured safeguarding audits provide measurable oversight. Audits should assess record quality, referral timeliness, training compliance, and Single Central Record accuracy.\n\nAudit findings must be documented and followed by action plans. Unresolved audit findings represent unmanaged risk.\n\nExternal audits provide additional assurance and objective scrutiny. Internal confidence is not a substitute for independent review.",
+                    ],
+                    [
+                        'title' => 'Training Compliance Monitoring',
+                        'body' => "All staff must complete safeguarding training at defined intervals in line with statutory guidance. DSLs require enhanced and regularly updated training.\n\nGovernance must receive reports confirming training completion rates. Non-compliance must trigger corrective action.\n\nTraining records must be centralised, accurate, and reviewable. Incomplete records undermine defensibility.",
+                    ],
+                    [
+                        'title' => 'Data Analysis and Trend Monitoring',
+                        'body' => "Safeguarding data must be analysed to identify trends across year groups, demographics, or risk categories. Raw data alone is insufficient.\n\nTrend analysis supports early identification of systemic issues such as peer-on-peer incidents or attendance-linked welfare concerns.\n\nGovernors should receive anonymised safeguarding reports that enable oversight without breaching confidentiality.",
+                    ],
+                    [
+                        'title' => 'Ofsted and Regulatory Inspection Readiness',
+                        'body' => "Safeguarding is a core inspection judgement area. Schools must be able to evidence implementation, not merely documentation.\n\nInspection readiness requires staff confidence in reporting procedures and leaders able to articulate safeguarding systems clearly.\n\nPreparation is not performance staging. Infrastructure must function consistently regardless of inspection timelines.",
+                    ],
+                    [
+                        'title' => 'Continuous Improvement and System Resilience',
+                        'body' => "Safeguarding infrastructure must evolve in response to emerging risks and regulatory updates. Static systems degrade over time.\n\nLessons learned from serious case reviews, internal reviews, and audit outcomes must inform procedural refinement.\n\nResilience means safeguarding systems remain operational during leadership absence, staffing shortages, or emergency disruption.",
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Who holds ultimate safeguarding accountability within a school?',
+                        'options' => [
+                            'A' => 'The DSL only',
+                            'B' => 'Class teachers',
+                            'C' => 'Governors or Trustees',
+                            'D' => 'Administrative assistants',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Governors or trustees hold strategic accountability, while operational delivery sits with leadership and the DSL.',
+                    ],
+                    [
+                        'question' => 'Safeguarding policies must be reviewed:',
+                        'options' => [
+                            'A' => 'Every five years',
+                            'B' => 'Only after inspection',
+                            'C' => 'At least annually and following legislative change',
+                            'D' => 'Only if concerns arise',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Minimum compliance is annual review, with immediate updates when statutory guidance changes.',
+                    ],
+                    [
+                        'question' => 'What is the purpose of a safeguarding audit?',
+                        'options' => [
+                            'A' => 'To reduce administrative workload',
+                            'B' => 'To measure compliance and identify risk gaps',
+                            'C' => 'To replace governor oversight',
+                            'D' => 'To prepare marketing materials',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Audits provide measurable compliance assurance and highlight risks that require action plans.',
+                    ],
+                    [
+                        'question' => 'If safeguarding training records are incomplete, this:',
+                        'options' => [
+                            'A' => 'Has no impact',
+                            'B' => 'Demonstrates strong compliance',
+                            'C' => 'Undermines regulatory defensibility',
+                            'D' => 'Removes the need for audit',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Incomplete training records weaken compliance evidence and inspection defensibility.',
+                    ],
+                    [
+                        'question' => 'Why is trend analysis important in safeguarding governance?',
+                        'options' => [
+                            'A' => 'To increase statistical reporting',
+                            'B' => 'To identify emerging systemic risks',
+                            'C' => 'To reduce case numbers',
+                            'D' => 'To avoid referral procedures',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Trend analysis identifies recurring risks and systemic patterns that require governance action.',
+                    ],
+                    [
+                        'question' => 'Safeguarding infrastructure resilience ensures that systems:',
+                        'options' => [
+                            'A' => 'Operate only during inspections',
+                            'B' => 'Depend on a single leader',
+                            'C' => 'Continue functioning during disruption',
+                            'D' => 'Require no updates',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Resilient systems continue operating during staffing, leadership, or operational disruption.',
+                    ],
+                ],
+            ],
         ];
     }
 
@@ -70548,6 +71067,18 @@ final class CMN_One_Plugin {
                 'title' => 'Module 1: Behaviour Infrastructure',
                 'description' => 'Structured behaviour systems, consistency, early intervention, and safeguarding-aligned accountability.',
                 'course_keys' => ['foundations_behaviour_infrastructure'],
+            ],
+            [
+                'key' => 'safeguarding_infrastructure',
+                'title' => 'Module 2: Safeguarding Infrastructure',
+                'description' => 'Operational safeguarding systems, risk identification, case response, safer recruitment, and governance assurance.',
+                'course_keys' => [
+                    'foundations_safeguarding_infrastructure',
+                    'risk_identification_early_intervention',
+                    'safeguarding_response_case_management',
+                    'safer_recruitment_staff_conduct_infrastructure',
+                    'safeguarding_governance_audit_continuous_assurance',
+                ],
             ],
         ];
     }
