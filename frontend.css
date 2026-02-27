@@ -13345,6 +13345,30 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-day-empty {
   color: rgba(203, 213, 225, 0.66);
 }
 
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-doc-status-list {
+  display: grid;
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-doc-status-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-doc-status-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-doc-status-item .cmn-status-chip {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 /* Candidate dashboard availability CTA centering */
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero {
   background: #10151d;
