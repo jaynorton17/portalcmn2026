@@ -64908,16 +64908,6 @@ final class CMN_One_Plugin {
                                         </ul>
                                     </div>
                                 </div>
-                                <div class="cmn-profile-completion-help<?php echo $is_completion_verified ? ' is-complete' : ''; ?>" data-profile-completion-help<?php echo $is_completion_verified ? ' hidden' : ''; ?>>
-                                    <strong data-profile-completion-helper-text>To reach 100% complete:</strong>
-                                    <ul data-profile-completion-missing>
-                                        <?php if (!$is_completion_verified && !empty($completion_outstanding_links)) : ?>
-                                            <?php foreach ($completion_outstanding_links as $item) : ?>
-                                                <li><a href="<?php echo esc_url((string) ($item['url'] ?? $candidate_profile_personal_url)); ?>"><?php echo esc_html((string) ($item['label'] ?? 'Update details')); ?></a></li>
-                                            <?php endforeach; ?>
-                                        <?php endif; ?>
-                                    </ul>
-                                </div>
                             </div>
                         </div>
                     <?php endif; ?>
