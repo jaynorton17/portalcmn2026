@@ -3848,7 +3848,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-grid {
   display: grid;
-  grid-template-columns: minmax(0, 75%) minmax(0, 25%);
+  grid-template-columns: minmax(0, 60%) minmax(0, 30%);
   justify-content: space-between;
   align-items: start;
   gap: 0;
