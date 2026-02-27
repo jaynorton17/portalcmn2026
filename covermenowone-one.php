@@ -64981,10 +64981,7 @@ final class CMN_One_Plugin {
                                                     </div>
                                                     <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
                                                         <span class="cmn-profile-definition-label">Nationality</span>
-                                                        <span class="cmn-profile-definition-value cmn-profile-definition-value-with-action">
-                                                            <span data-profile-nationality><?php echo esc_html($profile_nationality !== '' ? $profile_nationality : 'Not set'); ?></span>
-                                                            <button class="cmn-ghost cmn-btn-mini cmn-profile-inline-action" type="button" data-profile-global-edit data-profile-nationality-action<?php echo $profile_nationality !== '' ? ' hidden' : ''; ?>>Set nationality</button>
-                                                        </span>
+                                                        <span class="cmn-profile-definition-value" data-profile-nationality><?php echo esc_html($profile_nationality !== '' ? $profile_nationality : 'Not set'); ?></span>
                                                     </div>
                                                     <span data-profile-full-name hidden><?php echo esc_html($profile_name); ?></span>
                                                 </div>

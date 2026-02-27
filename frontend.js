@@ -9594,10 +9594,6 @@ document.addEventListener('DOMContentLoaded', function () {
         if (nationalityEl) {
           nationalityEl.textContent = profile.nationality || 'Not set';
         }
-        var nationalityAction = document.querySelector('[data-profile-nationality-action]');
-        if (nationalityAction) {
-          nationalityAction.hidden = !!(profile.nationality && String(profile.nationality).trim() !== '');
-        }
         if (roleEl) {
           roleEl.textContent = profile.role_type || 'Not set';
         }
