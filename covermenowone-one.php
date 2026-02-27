@@ -64351,6 +64351,9 @@ final class CMN_One_Plugin {
         $qts_status = strtolower((string) $meta('cmn_qts_status'));
         $no_dbs = (string) $meta('cmn_no_dbs');
         $dbs_update_service = strtolower((string) $meta('cmn_dbs_update_service'));
+        if ($dbs_update_service === '' && $candidate_user_id > 0) {
+            $dbs_update_service = strtolower((string) get_user_meta($candidate_user_id, 'cmn_dbs_update_service', true));
+        }
         $roles_other = (string) $meta('cmn_roles_other');
         $preferred_roles = array_values(array_filter(array_map('sanitize_text_field', (array) $roles)));
         if (!$preferred_roles && $role_label !== '') {
@@ -64372,7 +64375,6 @@ final class CMN_One_Plugin {
         $driving_licence_label = $yes_no_map[$driving_licence] ?? 'Not set';
         $car_owner_label = $yes_no_map[$car_owner] ?? 'Not set';
         $qts_status_label = $yes_no_map[$qts_status] ?? 'Not set';
-        $has_dbs_label = $no_dbs === '1' ? 'No' : 'Yes';
         $dbs_update_label = $yes_no_map[$dbs_update_service] ?? 'Not set';
         $availability_days_label = $availability_days ? implode(', ', $availability_days) : 'Not set';
         $profile_address_parts = array_filter([
@@ -64388,6 +64390,10 @@ final class CMN_One_Plugin {
         $doc_dbs = $this->get_candidate_doc_status($candidate_id, $candidate_user_id, 'dbs');
         $doc_id = $this->get_candidate_doc_status($candidate_id, $candidate_user_id, 'id');
         $doc_cv = $this->get_candidate_doc_status($candidate_id, $candidate_user_id, 'cv');
+        $has_dbs_label = (
+            !empty($doc_dbs['uploaded'])
+            && (string) ($doc_dbs['review_status'] ?? '') === 'approved'
+        ) ? 'Yes' : ($no_dbs === '1' ? 'No' : 'Not set');
         $doc_summary = $this->get_candidate_doc_summary([
             'dbs' => $doc_dbs,
             'id' => $doc_id,
@@ -80239,6 +80245,11 @@ p{margin:0;line-height:1.5}
 
         $completion = $this->update_candidate_profile_completion($candidate_id, $user_id);
         $completion_state = $this->get_candidate_profile_completion_state($candidate_id, $user_id);
+        $doc_dbs_status = $this->get_candidate_doc_status($candidate_id, $user_id, 'dbs');
+        $has_dbs_label = (
+            !empty($doc_dbs_status['uploaded'])
+            && (string) ($doc_dbs_status['review_status'] ?? '') === 'approved'
+        ) ? 'Yes' : ($no_dbs === '1' ? 'No' : 'Not set');
         $this->maybe_notify_candidate_qts_required($candidate_id, $user_id);
         wp_send_json_success([
             'profile' => [
@@ -80262,6 +80273,7 @@ p{margin:0;line-height:1.5}
                 'qts_status_label' => $yes_no_map[$qts_status] ?? 'Not set',
                 'no_dbs' => $no_dbs,
                 'no_dbs_label' => $no_dbs === '1' ? 'No' : 'Yes',
+                'has_dbs_label' => $has_dbs_label,
                 'dbs_update_service' => $dbs_update_service,
                 'dbs_update_service_label' => $yes_no_map[$dbs_update_service] ?? 'Not set',
                 'availability_days' => $availability_days,

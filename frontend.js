@@ -9611,7 +9611,7 @@ document.addEventListener('DOMContentLoaded', function () {
         applyStatusPill(drivingEl, profile.driving_licence_label || '', { yesText: 'Yes', noText: 'No', unknownText: 'Not set' });
         applyStatusPill(carEl, profile.car_owner_label || '', { yesText: 'Yes', noText: 'No', unknownText: 'Not set' });
         applyStatusPill(qtsEl, profile.qts_status_label || '', { yesText: 'Yes', noText: 'No', unknownText: 'Not set' });
-        applyStatusPill(hasDbsEl, (profile.no_dbs_label || '') === 'Yes' ? 'Held' : ((profile.no_dbs_label || '') === 'No' ? 'Not Held' : 'Not set'), {
+        applyStatusPill(hasDbsEl, profile.has_dbs_label || ((profile.no_dbs_label || '') === 'Yes' ? 'Held' : ((profile.no_dbs_label || '') === 'No' ? 'Not Held' : 'Not set')), {
           yesText: 'Held',
           noText: 'Not Held',
           unknownText: 'Not set'
