@@ -16496,7 +16496,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-strip
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin: 0 0 14px;
+  margin: 14px 0 14px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-strip--single {
