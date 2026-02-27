@@ -65575,6 +65575,16 @@ final class CMN_One_Plugin {
                                             $module_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($module_item['course_keys'] ?? []))));
                                             $module_hover_details = array_values(array_filter(array_map('sanitize_text_field', (array) ($module_item['hover_details'] ?? []))));
                                             $module_icon_url = esc_url_raw((string) ($module_item['icon_url'] ?? $learning_study_icon_url));
+                                            $module_learning_units = 0;
+                                            foreach ($module_course_keys as $module_course_key_item) {
+                                                if (substr((string) $module_course_key_item, -10) === 'final_exam') {
+                                                    continue;
+                                                }
+                                                $module_learning_units++;
+                                            }
+                                            if ($module_learning_units < 1) {
+                                                $module_learning_units = count($module_course_keys);
+                                            }
                                             $is_coming_soon = !empty($module_item['coming_soon']);
                                             $is_selected_module = $learning_open_module_key !== '' && $learning_open_module_key === $module_key;
                                             ?>
@@ -65584,6 +65594,9 @@ final class CMN_One_Plugin {
                                                     data-learning-module-title="<?php echo esc_attr($module_title); ?>"
                                                     data-learning-module-coming-soon="<?php echo $is_coming_soon ? '1' : '0'; ?>"
                                                     aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>">
+                                                <div class="cmn-learning-module-tile-icon-wrap">
+                                                    <img class="cmn-learning-module-tile-icon" src="<?php echo esc_url($module_icon_url); ?>" alt="Course icon">
+                                                </div>
                                                 <h4><?php echo esc_html($module_title); ?></h4>
                                                 <p><?php echo esc_html($module_description); ?></p>
                                                 <?php if ($module_hover_details) : ?>
@@ -65600,8 +65613,9 @@ final class CMN_One_Plugin {
                                                     </div>
                                                 <?php endif; ?>
                                                 <span class="cmn-status-chip<?php echo $is_coming_soon ? '' : ' is-approved'; ?>">
-                                                    <?php echo $is_coming_soon ? 'Coming soon' : (esc_html((string) count($module_course_keys)) . ' course' . (count($module_course_keys) === 1 ? '' : 's')); ?>
+                                                    <?php echo $is_coming_soon ? 'Coming soon' : (esc_html((string) $module_learning_units) . ' module' . ($module_learning_units === 1 ? '' : 's')); ?>
                                                 </span>
+                                                <span class="cmn-learning-tile-cta"><?php echo esc_html($is_coming_soon ? 'Coming soon' : 'Start course'); ?></span>
                                             </button>
                                         <?php endforeach; ?>
                                     </div>
@@ -65621,6 +65635,7 @@ final class CMN_One_Plugin {
                                             $completion_item = is_array($learning_course_results[$course_key] ?? null) ? (array) $learning_course_results[$course_key] : [];
                                             $is_completed = !empty($completion_item['passed']);
                                             $completion_date = sanitize_text_field((string) ($completion_item['issued_date'] ?? ''));
+                                            $course_icon_url = esc_url_raw((string) ($course_item['icon_url'] ?? $learning_study_icon_url));
                                             $required_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($course_item['requires_course_keys'] ?? []))));
                                             $missing_required_titles = [];
                                             foreach ($required_course_keys as $required_course_key) {
@@ -65635,7 +65650,7 @@ final class CMN_One_Plugin {
                                             }
                                             $is_locked_course = !$is_completed && !empty($missing_required_titles);
                                             $lock_message = $is_locked_course ? ('Complete first: ' . implode(', ', $missing_required_titles)) : '';
-                                            $open_label = $is_locked_course ? 'Locked' : ($is_completed ? 'Review course' : 'Open course');
+                                            $open_label = $is_locked_course ? 'Locked' : ($is_completed ? 'Review course' : 'Start course');
                                             $is_visible_for_module = $learning_open_module_key !== '' && $course_module_key === $learning_open_module_key;
                                             if ($is_visible_for_module) {
                                                 $learning_visible_course_count++;
@@ -65647,6 +65662,9 @@ final class CMN_One_Plugin {
                                                  data-learning-course-locked="<?php echo $is_locked_course ? '1' : '0'; ?>"
                                                  data-learning-course-requires="<?php echo esc_attr(wp_json_encode($required_course_keys)); ?>"
                                                  <?php echo $is_visible_for_module ? '' : 'hidden'; ?>>
+                                                <div class="cmn-learning-course-hero">
+                                                    <img class="cmn-learning-course-icon" src="<?php echo esc_url($course_icon_url); ?>" alt="Course icon">
+                                                </div>
                                                 <div class="cmn-learning-course-head">
                                                     <h4><?php echo esc_html($course_title); ?></h4>
                                                     <span class="cmn-status-chip<?php echo $is_completed ? ' is-approved' : ''; ?>" data-learning-course-status="<?php echo esc_attr($course_key); ?>">
