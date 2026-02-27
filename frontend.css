@@ -2930,16 +2930,24 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   margin-top: 12px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 > .cmn-dashboard-card {
   margin-top: 0 !important;
+  height: 100%;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 > :only-child {
   grid-column: 1 / -1;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 @media (max-width: 720px) {
@@ -13707,10 +13715,6 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-link:
   border-color: rgba(255, 113, 132, 0.78);
   background: rgba(180, 28, 53, 0.42);
   color: #fff1f3;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-calendar-planner + .cmn-candidate-weekly-earnings-card {
-  margin-top: 12px;
 }
 
 /* Section 3 (Availability Planner): remove red card glow */
