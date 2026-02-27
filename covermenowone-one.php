@@ -65263,9 +65263,6 @@ final class CMN_One_Plugin {
                                 </form>
                             </div>
                             <div class="cmn-dashboard-card cmn-doc-upload-card" id="cmn-profile-documents" data-profile-documents-only<?php echo $profile_focus_tab === 'documents' ? '' : ' hidden'; ?>>
-                                <div class="cmn-card-header">
-                                    <h3>Documents</h3>
-                                </div>
                                 <div class="cmn-doc-actions" data-candidate-docs>
                                     <div class="cmn-doc-card cmn-doc-tile" data-doc-row="id" data-doc-type="id">
                                         <div class="cmn-doc-card-head">

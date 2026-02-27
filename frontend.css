@@ -13133,6 +13133,69 @@ body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finan
   border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
+/* My Hub tabs: keep one consistent surface style across Personal/Docs/Finance/Feedback/Calendar/Bookings */
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main:is(
+  .cmn-candidate-main--profile,
+  .cmn-candidate-main--candidate_finance,
+  .cmn-candidate-main--feedback_ratings,
+  .cmn-candidate-main--calendar,
+  .cmn-candidate-main--bookings
+) {
+  background-image: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main:is(
+  .cmn-candidate-main--profile,
+  .cmn-candidate-main--candidate_finance,
+  .cmn-candidate-main--feedback_ratings,
+  .cmn-candidate-main--calendar,
+  .cmn-candidate-main--bookings
+) .cmn-dashboard-card {
+  background: #0f1116 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.32) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main:is(
+  .cmn-candidate-main--profile,
+  .cmn-candidate-main--candidate_finance,
+  .cmn-candidate-main--feedback_ratings,
+  .cmn-candidate-main--calendar,
+  .cmn-candidate-main--bookings
+) .cmn-dashboard-card::before {
+  content: none !important;
+  background: none !important;
+  opacity: 0 !important;
+  filter: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main:is(
+  .cmn-candidate-main--profile,
+  .cmn-candidate-main--candidate_finance,
+  .cmn-candidate-main--feedback_ratings,
+  .cmn-candidate-main--calendar,
+  .cmn-candidate-main--bookings
+) .cmn-candidate-header {
+  margin-bottom: 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main:is(
+  .cmn-candidate-main--profile,
+  .cmn-candidate-main--candidate_finance,
+  .cmn-candidate-main--feedback_ratings,
+  .cmn-candidate-main--calendar,
+  .cmn-candidate-main--bookings
+) :is(.cmn-candidate-finance-page, .cmn-candidate-feedback-page, .cmn-profile-grid, .cmn-availability-layout) {
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-doc-upload-card {
+  padding: 18px 20px;
+}
+
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-photo-card {
   margin-bottom: 12px;
 }
