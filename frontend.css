@@ -14926,6 +14926,21 @@ body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finan
   border-color: rgba(148, 163, 184, 0.46) !important;
 }
 
+/* Feedback & Ratings: add visible spacing between feedback rows */
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-list {
+  gap: 14px;
+  margin-top: 4px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-entry {
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-entry .cmn-status-list {
+  gap: 10px;
+}
+
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-form-grid {
   display: grid !important;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) !important;
