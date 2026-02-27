@@ -65418,25 +65418,19 @@ final class CMN_One_Plugin {
                         </div>
                     <?php elseif ($tab === 'learning') : ?>
                         <header class="cmn-candidate-header" data-tour-target="learning-centre">
-                            <h2>Learning Centre - Coming soon</h2>
+                            <h2>Learning Centre</h2>
+                            <p>Select where you want to go.</p>
                         </header>
                         <div class="cmn-learning-grid">
-                            <div class="cmn-dashboard-card">
-                                <h3>Learning Centre - Coming soon</h3>
-                                <p>We're adding training and resources soon.</p>
-                                <label class="cmn-inline-check">
-                                    <input type="checkbox" data-learning-opt-in <?php echo $learning_opt_in ? 'checked' : ''; ?>>
-                                    Notify me when courses are available
-                                </label>
-                                <button class="cmn-primary" type="button" data-learning-save>Save preference</button>
-                                <div class="cmn-muted" data-learning-message>
-                                    <?php echo $learning_opt_in ? 'You\'ll be notified when courses go live.' : ''; ?>
-                                </div>
+                            <div class="cmn-dashboard-card cmn-learning-entry-card">
+                                <h3>View Certificates</h3>
+                                <p>Open your certificate area and manage uploaded documents.</p>
+                                <a class="cmn-primary" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Enter</a>
                             </div>
-                            <div class="cmn-dashboard-card" data-tour-target="certificates">
-                                <h3>Certificates</h3>
-                                <p>Upload and manage your compliance documents.</p>
-                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile'], $portal_url)); ?>">View Certificates</a>
+                            <div class="cmn-dashboard-card cmn-learning-entry-card" data-tour-target="certificates" id="cmn-learning-modules">
+                                <h3>View Modules &amp; Courses</h3>
+                                <p>Enter the modules area to access your courses and learning path.</p>
+                                <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'modules'], $portal_url) . '#cmn-learning-modules'); ?>">Enter</a>
                             </div>
                         </div>
                     <?php elseif ($tab === 'rewards') : ?>

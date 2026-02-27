@@ -1190,6 +1190,31 @@ body.cmn-portal-page img[src*="fasthosts"] {
   gap: 16px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-entry-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-height: 210px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-entry-card h3 {
+  margin: 0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-entry-card p {
+  margin: 0;
+  color: var(--cmn-muted);
+}
+
+body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-entry-card .cmn-primary {
+  justify-self: start;
+}
+
 .cmn-dashboard-row {
   display: grid;
   grid-template-columns: 1.35fr 1fr;
@@ -15438,6 +15463,10 @@ body.cmn-portal-page .cmn-candidate-main--bookings .cmn-candidate-bookings-grid 
   }
 
   body.cmn-portal-page .cmn-candidate-main--bookings .cmn-candidate-bookings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-grid {
     grid-template-columns: 1fr;
   }
 }
