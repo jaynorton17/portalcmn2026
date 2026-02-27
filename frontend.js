@@ -10333,9 +10333,20 @@ document.addEventListener('DOMContentLoaded', function () {
         slideIndex: 0
       };
 
-      var moduleButtons = learningRoot.querySelectorAll('[data-learning-open-module]');
+      var moduleList = learningRoot.querySelector('.cmn-learning-module-list');
+      var moduleCards = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-module-card]'));
+      var moduleButtons = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-open-module]'));
       var learningButtons = learningRoot.querySelectorAll('[data-learning-open-course]');
       var courseCards = learningRoot.querySelectorAll('[data-learning-course-card]');
+      var moduleSearchInput = learningRoot.querySelector('[data-learning-module-search]');
+      var moduleFilterSelect = learningRoot.querySelector('[data-learning-module-filter]');
+      var moduleSortSelect = learningRoot.querySelector('[data-learning-module-sort]');
+      var moduleEmptyState = learningRoot.querySelector('[data-learning-module-empty]');
+      var outcomesModal = learningRoot.querySelector('[data-learning-outcomes-modal]');
+      var outcomesModalTitle = learningRoot.querySelector('[data-learning-outcomes-title]');
+      var outcomesModalList = learningRoot.querySelector('[data-learning-outcomes-list]');
+      var outcomesOpenTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-open-outcomes]'));
+      var outcomesCloseTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-outcomes-close]'));
       var coursesTitle = learningRoot.querySelector('[data-learning-courses-title]');
       var courseEmptyState = learningRoot.querySelector('[data-learning-course-empty]');
       var isCoursePassed = function (courseKey) {
@@ -10437,19 +10448,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
       var setActiveModule = function (moduleKey, keepOpenCourse) {
         var key = String(moduleKey || '');
-        if (!key || !moduleButtons.length) {
+        if (!key || !moduleCards.length) {
           return;
         }
-        var selectedButton = null;
+        var selectedCard = null;
         var selectedComingSoon = false;
-        moduleButtons.forEach(function (button) {
-          var buttonKey = String(button.getAttribute('data-learning-open-module') || '');
-          var selected = buttonKey === key;
-          button.classList.toggle('is-selected', selected);
-          button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        moduleCards.forEach(function (card) {
+          var cardKey = String(card.getAttribute('data-learning-module-card') || '');
+          var selected = cardKey === key;
+          card.classList.toggle('is-selected', selected);
+          var openButton = card.querySelector('[data-learning-open-module]');
+          if (openButton) {
+            openButton.setAttribute('aria-pressed', selected ? 'true' : 'false');
+          }
           if (selected) {
-            selectedButton = button;
-            selectedComingSoon = String(button.getAttribute('data-learning-module-coming-soon') || '0') === '1';
+            selectedCard = card;
+            selectedComingSoon = String(card.getAttribute('data-learning-module-coming-soon') || '0') === '1';
           }
         });
         state.moduleKey = key;
@@ -10463,7 +10477,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         });
         if (coursesTitle) {
-          var moduleTitle = selectedButton ? String(selectedButton.getAttribute('data-learning-module-title') || 'Course') : 'Course';
+          var moduleTitle = selectedCard ? String(selectedCard.getAttribute('data-learning-module-title') || 'Course') : 'Course';
           coursesTitle.textContent = selectedComingSoon ? (moduleTitle + ' (Coming soon)') : (moduleTitle + ' Modules');
         }
         if (courseEmptyState) {
@@ -10500,6 +10514,134 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           node.hidden = node !== panel;
         });
+      };
+
+      var closeOutcomesModal = function () {
+        if (!outcomesModal) {
+          return;
+        }
+        outcomesModal.hidden = true;
+      };
+
+      var openOutcomesModal = function (moduleCard) {
+        if (!outcomesModal || !moduleCard || !outcomesModalList) {
+          return;
+        }
+        var moduleTitle = String(moduleCard.getAttribute('data-learning-module-title') || 'Course');
+        var rawOutcomes = String(moduleCard.getAttribute('data-learning-module-outcomes') || '[]');
+        var outcomes = learningParseJson(rawOutcomes, []);
+        if (!Array.isArray(outcomes)) {
+          outcomes = [];
+        }
+        if (outcomesModalTitle) {
+          outcomesModalTitle.textContent = moduleTitle + ' - What you\'ll learn';
+        }
+        if (!outcomes.length) {
+          outcomesModalList.innerHTML = '<li>Learning outcomes will be added soon.</li>';
+        } else {
+          outcomesModalList.innerHTML = outcomes.map(function (outcome) {
+            return '<li>' + learningEscape(String(outcome || '')) + '</li>';
+          }).join('');
+        }
+        outcomesModal.hidden = false;
+      };
+
+      var applyModuleTools = function () {
+        if (!moduleCards.length) {
+          return;
+        }
+        var searchTerm = moduleSearchInput ? String(moduleSearchInput.value || '').trim().toLowerCase() : '';
+        var category = moduleFilterSelect ? String(moduleFilterSelect.value || 'all') : 'all';
+        var sortBy = moduleSortSelect ? String(moduleSortSelect.value || 'recommended') : 'recommended';
+        var visibleCards = [];
+
+        moduleCards.forEach(function (card) {
+          var cardTitle = String(card.getAttribute('data-learning-module-title') || '').toLowerCase();
+          var cardCategory = String(card.getAttribute('data-learning-module-category') || 'compliance');
+          var matchesSearch = !searchTerm || cardTitle.indexOf(searchTerm) !== -1;
+          var matchesCategory = category === 'all' || cardCategory === category;
+          var show = matchesSearch && matchesCategory;
+          card.hidden = !show;
+          if (show) {
+            visibleCards.push(card);
+          }
+        });
+
+        var numberAttr = function (card, attrName) {
+          var value = parseInt(String(card.getAttribute(attrName) || '0'), 10);
+          return Number.isFinite(value) ? value : 0;
+        };
+        var titleAttr = function (card) {
+          return String(card.getAttribute('data-learning-module-title') || '');
+        };
+
+        visibleCards.sort(function (left, right) {
+          if (sortBy === 'az') {
+            return titleAttr(left).localeCompare(titleAttr(right));
+          }
+          if (sortBy === 'popular') {
+            var popularityDelta = numberAttr(right, 'data-learning-module-popularity') - numberAttr(left, 'data-learning-module-popularity');
+            if (popularityDelta !== 0) {
+              return popularityDelta;
+            }
+          } else if (sortBy === 'new') {
+            var orderDelta = numberAttr(right, 'data-learning-module-order') - numberAttr(left, 'data-learning-module-order');
+            if (orderDelta !== 0) {
+              return orderDelta;
+            }
+          }
+          return numberAttr(left, 'data-learning-module-order') - numberAttr(right, 'data-learning-module-order');
+        });
+
+        if (moduleList) {
+          visibleCards.forEach(function (card) {
+            moduleList.appendChild(card);
+          });
+        }
+
+        if (moduleEmptyState) {
+          moduleEmptyState.hidden = visibleCards.length > 0;
+        }
+
+        if (!visibleCards.length) {
+          state.moduleKey = '';
+          state.courseKey = '';
+          state.course = null;
+          state.slideIndex = 0;
+          learningButtons.forEach(function (button) {
+            button.classList.remove('is-selected');
+          });
+          courseCards.forEach(function (card) {
+            card.hidden = true;
+          });
+          if (coursesTitle) {
+            coursesTitle.textContent = 'Modules';
+          }
+          if (courseEmptyState) {
+            courseEmptyState.textContent = 'No modules match your current filters.';
+            courseEmptyState.hidden = false;
+          }
+          showPanel(panelEmpty);
+          return;
+        }
+
+        var activeCard = state.moduleKey
+          ? learningRoot.querySelector('[data-learning-module-card="' + state.moduleKey + '"]')
+          : null;
+        if (!activeCard || activeCard.hidden) {
+          var fallbackCard = null;
+          visibleCards.forEach(function (card) {
+            if (!fallbackCard && String(card.getAttribute('data-learning-module-coming-soon') || '0') !== '1') {
+              fallbackCard = card;
+            }
+          });
+          if (!fallbackCard) {
+            fallbackCard = visibleCards[0];
+          }
+          if (fallbackCard) {
+            setActiveModule(String(fallbackCard.getAttribute('data-learning-module-card') || ''), false);
+          }
+        }
       };
 
       var renderSummary = function () {
@@ -10740,10 +10882,50 @@ document.addEventListener('DOMContentLoaded', function () {
 
       moduleButtons.forEach(function (button) {
         button.addEventListener('click', function () {
+          if (button.disabled) {
+            return;
+          }
           var key = button.getAttribute('data-learning-open-module');
           setActiveModule(key, false);
         });
       });
+      outcomesOpenTriggers.forEach(function (trigger) {
+        var handleOpenOutcomes = function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          var moduleCard = trigger.closest('[data-learning-module-card]');
+          if (!moduleCard) {
+            return;
+          }
+          openOutcomesModal(moduleCard);
+        };
+        trigger.addEventListener('click', handleOpenOutcomes);
+        trigger.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') {
+            handleOpenOutcomes(event);
+          }
+        });
+      });
+      outcomesCloseTriggers.forEach(function (trigger) {
+        trigger.addEventListener('click', function (event) {
+          event.preventDefault();
+          closeOutcomesModal();
+        });
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          closeOutcomesModal();
+        }
+      });
+      if (moduleSearchInput) {
+        moduleSearchInput.addEventListener('input', applyModuleTools);
+      }
+      if (moduleFilterSelect) {
+        moduleFilterSelect.addEventListener('change', applyModuleTools);
+      }
+      if (moduleSortSelect) {
+        moduleSortSelect.addEventListener('change', applyModuleTools);
+      }
       learningButtons.forEach(function (button) {
         button.addEventListener('click', function () {
           var key = button.getAttribute('data-learning-open-course');
@@ -10842,24 +11024,25 @@ document.addEventListener('DOMContentLoaded', function () {
           setActiveModule(initialModuleKey, true);
         }
         openCourse(initialOpenKey);
-      } else if (moduleButtons.length) {
+      } else if (moduleCards.length) {
         var defaultModuleKey = '';
-        moduleButtons.forEach(function (button) {
+        moduleCards.forEach(function (card) {
           if (defaultModuleKey) {
             return;
           }
-          var isComingSoon = String(button.getAttribute('data-learning-module-coming-soon') || '0') === '1';
+          var isComingSoon = String(card.getAttribute('data-learning-module-coming-soon') || '0') === '1';
           if (!isComingSoon) {
-            defaultModuleKey = String(button.getAttribute('data-learning-open-module') || '');
+            defaultModuleKey = String(card.getAttribute('data-learning-module-card') || '');
           }
         });
         if (!defaultModuleKey) {
-          defaultModuleKey = String(moduleButtons[0].getAttribute('data-learning-open-module') || '');
+          defaultModuleKey = String(moduleCards[0].getAttribute('data-learning-module-card') || '');
         }
         if (defaultModuleKey) {
           setActiveModule(defaultModuleKey, false);
         }
       }
+      applyModuleTools();
       refreshCourseLocks();
     }
   }

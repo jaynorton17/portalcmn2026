@@ -65566,7 +65566,33 @@ final class CMN_One_Plugin {
                                         <h3>Courses</h3>
                                         <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => false], $portal_url)); ?>">Back</a>
                                     </div>
+                                    <div class="cmn-learning-modules-toolbar" data-learning-module-tools>
+                                        <label class="cmn-learning-tool-search">
+                                            <span class="screen-reader-text">Search courses</span>
+                                            <input type="search" data-learning-module-search placeholder="Search modules..." autocomplete="off">
+                                        </label>
+                                        <label class="cmn-learning-tool-select">
+                                            <span class="screen-reader-text">Filter module category</span>
+                                            <select data-learning-module-filter>
+                                                <option value="all">All categories</option>
+                                                <option value="safeguarding">Safeguarding</option>
+                                                <option value="behaviour">Behaviour</option>
+                                                <option value="classroom">Classroom</option>
+                                                <option value="compliance">Compliance</option>
+                                            </select>
+                                        </label>
+                                        <label class="cmn-learning-tool-select">
+                                            <span class="screen-reader-text">Sort modules</span>
+                                            <select data-learning-module-sort>
+                                                <option value="recommended">Recommended</option>
+                                                <option value="az">A-Z</option>
+                                                <option value="popular">Most popular</option>
+                                                <option value="new">New</option>
+                                            </select>
+                                        </label>
+                                    </div>
                                     <div class="cmn-learning-module-list">
+                                        <?php $learning_module_order = 0; ?>
                                         <?php foreach ((array) $learning_module_tiles as $module_item) : ?>
                                             <?php
                                             $module_key = sanitize_key((string) ($module_item['key'] ?? ''));
@@ -65585,40 +65611,65 @@ final class CMN_One_Plugin {
                                             if ($module_learning_units < 1) {
                                                 $module_learning_units = count($module_course_keys);
                                             }
+                                            $module_est_minutes = max(25, $module_learning_units * 9);
                                             $is_coming_soon = !empty($module_item['coming_soon']);
                                             $is_selected_module = $learning_open_module_key !== '' && $learning_open_module_key === $module_key;
+                                            $module_category = 'compliance';
+                                            $module_category_probe = strtolower($module_key . ' ' . $module_title);
+                                            if (strpos($module_category_probe, 'safeguarding') !== false) {
+                                                $module_category = 'safeguarding';
+                                            } elseif (strpos($module_category_probe, 'behaviour') !== false) {
+                                                $module_category = 'behaviour';
+                                            } elseif (strpos($module_category_probe, 'classroom') !== false || strpos($module_category_probe, 'cover') !== false) {
+                                                $module_category = 'classroom';
+                                            }
                                             ?>
-                                            <button class="cmn-learning-module-tile<?php echo $is_selected_module ? ' is-selected' : ''; ?><?php echo $is_coming_soon ? ' is-coming-soon' : ''; ?>"
-                                                    type="button"
-                                                    data-learning-open-module="<?php echo esc_attr($module_key); ?>"
-                                                    data-learning-module-title="<?php echo esc_attr($module_title); ?>"
-                                                    data-learning-module-coming-soon="<?php echo $is_coming_soon ? '1' : '0'; ?>"
-                                                    aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>">
-                                                <div class="cmn-learning-module-tile-icon-wrap">
-                                                    <img class="cmn-learning-module-tile-icon" src="<?php echo esc_url($module_icon_url); ?>" alt="Course icon">
-                                                </div>
-                                                <h4><?php echo esc_html($module_title); ?></h4>
-                                                <p><?php echo esc_html($module_description); ?></p>
-                                                <?php if ($module_hover_details) : ?>
-                                                    <div class="cmn-learning-module-hover" aria-hidden="true">
-                                                        <div class="cmn-learning-module-hover-head">
-                                                            <img class="cmn-learning-module-hover-icon" src="<?php echo esc_url($module_icon_url); ?>" alt="Course module icon">
-                                                            <strong>Includes:</strong>
-                                                        </div>
-                                                        <ul>
-                                                            <?php foreach ($module_hover_details as $module_detail) : ?>
-                                                                <li><?php echo esc_html($module_detail); ?></li>
-                                                            <?php endforeach; ?>
-                                                        </ul>
+                                            <article class="cmn-learning-module-tile<?php echo $is_selected_module ? ' is-selected' : ''; ?><?php echo $is_coming_soon ? ' is-coming-soon' : ''; ?>"
+                                                     data-learning-module-card="<?php echo esc_attr($module_key); ?>"
+                                                     data-learning-module-title="<?php echo esc_attr($module_title); ?>"
+                                                     data-learning-module-coming-soon="<?php echo $is_coming_soon ? '1' : '0'; ?>"
+                                                     data-learning-module-category="<?php echo esc_attr($module_category); ?>"
+                                                     data-learning-module-order="<?php echo esc_attr((string) $learning_module_order); ?>"
+                                                     data-learning-module-popularity="<?php echo esc_attr((string) $module_learning_units); ?>"
+                                                     data-learning-module-outcomes="<?php echo esc_attr(wp_json_encode($module_hover_details)); ?>">
+                                                <div class="cmn-learning-module-card-head">
+                                                    <div class="cmn-learning-module-tile-icon-wrap">
+                                                        <img class="cmn-learning-module-tile-icon" src="<?php echo esc_url($module_icon_url); ?>" alt="Course icon">
                                                     </div>
-                                                <?php endif; ?>
-                                                <span class="cmn-status-chip<?php echo $is_coming_soon ? '' : ' is-approved'; ?>">
-                                                    <?php echo $is_coming_soon ? 'Coming soon' : (esc_html((string) $module_learning_units) . ' module' . ($module_learning_units === 1 ? '' : 's')); ?>
-                                                </span>
-                                                <span class="cmn-learning-tile-cta"><?php echo esc_html($is_coming_soon ? 'Coming soon' : 'Start course'); ?></span>
-                                            </button>
+                                                    <h4 class="cmn-module-title"><?php echo esc_html($module_title); ?></h4>
+                                                    <p class="cmn-module-desc"><?php echo esc_html($module_description); ?></p>
+                                                </div>
+                                                <div class="cmn-learning-module-meta">
+                                                    <?php if ($is_coming_soon) : ?>
+                                                        <span class="cmn-chip">Coming soon</span>
+                                                    <?php else : ?>
+                                                        <span class="cmn-chip"><?php echo esc_html((string) $module_learning_units); ?> modules</span>
+                                                        <span class="cmn-chip">Est. <?php echo esc_html((string) $module_est_minutes); ?> mins</span>
+                                                        <span class="cmn-chip">Certificate</span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div class="cmn-learning-module-footer">
+                                                    <?php if ($module_hover_details) : ?>
+                                                        <span class="cmn-learning-module-learn-link"
+                                                              role="button"
+                                                              tabindex="0"
+                                                              data-learning-open-outcomes="<?php echo esc_attr($module_key); ?>">What you'll learn</span>
+                                                    <?php else : ?>
+                                                        <span class="cmn-learning-module-learn-link is-disabled">What you'll learn</span>
+                                                    <?php endif; ?>
+                                                    <button class="cmn-learning-module-open"
+                                                            type="button"
+                                                            data-learning-open-module="<?php echo esc_attr($module_key); ?>"
+                                                            aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>"
+                                                            <?php echo $is_coming_soon ? 'disabled' : ''; ?>>
+                                                        <?php echo esc_html($is_coming_soon ? 'Coming soon' : 'Open module'); ?>
+                                                    </button>
+                                                </div>
+                                            </article>
+                                            <?php $learning_module_order++; ?>
                                         <?php endforeach; ?>
                                     </div>
+                                    <div class="cmn-learning-module-empty" data-learning-module-empty hidden>No courses match your search filters.</div>
                                 </article>
                                 <article class="cmn-dashboard-card cmn-learning-courses-panel">
                                     <h3 data-learning-courses-title>Modules</h3>
@@ -65765,6 +65816,16 @@ final class CMN_One_Plugin {
                                         </div>
                                     </div>
                                 </article>
+                                <div class="cmn-learning-outcomes-modal" data-learning-outcomes-modal hidden>
+                                    <div class="cmn-learning-outcomes-modal__backdrop" data-learning-outcomes-close></div>
+                                    <div class="cmn-learning-outcomes-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="cmn-learning-outcomes-title">
+                                        <div class="cmn-learning-outcomes-modal__head">
+                                            <h4 id="cmn-learning-outcomes-title" data-learning-outcomes-title>What you'll learn</h4>
+                                            <button class="cmn-learning-outcomes-modal__close" type="button" data-learning-outcomes-close aria-label="Close what you'll learn panel">Close</button>
+                                        </div>
+                                        <ul class="cmn-learning-outcomes-modal__list" data-learning-outcomes-list></ul>
+                                    </div>
+                                </div>
                             </div>
                         <?php endif; ?>
                     <?php elseif ($tab === 'rewards') : ?>
