@@ -13428,17 +13428,31 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-section--identity
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-section--identity .cmn-profile-identity-photo {
-  display: grid;
-  gap: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-  background: #0f141b;
-  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-section--identity .cmn-profile-photo-preview {
-  width: 108px;
-  height: 108px;
+  width: 96px;
+  height: 96px;
+  flex: 0 0 96px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-section--identity .cmn-profile-photo-meta {
+  flex: 1 1 auto;
+  align-items: flex-start;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-section--identity .cmn-profile-photo-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-grid--identity {
