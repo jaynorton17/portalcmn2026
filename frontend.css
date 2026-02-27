@@ -3847,7 +3847,11 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-grid {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 60%) minmax(0, 30%);
+  justify-content: space-between;
+  align-items: start;
+  gap: 0;
   margin-top: 12px;
 }
 
@@ -3856,6 +3860,16 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-main
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-main .cmn-availability-hero {
+  margin: 0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-contact {
+  min-width: 0;
+  margin-top: 0 !important;
+  padding: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-contact .cmn-contact-card-preview.cmn-command-card {
   margin: 0;
 }
 
@@ -4017,6 +4031,11 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 }
 
 @media (max-width: 1100px) {
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
   body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 {
     grid-template-columns: 1fr;
   }
