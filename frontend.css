@@ -3841,8 +3841,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-right-column 
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-profile-card {
-  width: min(100%, 300px);
-  max-width: 320px;
+  width: min(100%, 260px);
+  max-width: 260px;
   aspect-ratio: 5 / 7;
   flex: 0 0 auto;
   align-self: flex-start;
