@@ -65469,7 +65469,7 @@ final class CMN_One_Plugin {
                                     <div class="cmn-learning-smart-hover">
                                         Pick Explore Courses to enter the Learning Center and see all available courses. Each completed course awards a certificate and adds a badge to your profile.
                                     </div>
-                                    <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'modules'], $portal_url) . '#cmn-learning-modules'); ?>">Explore courses</a>
+                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'modules'], $portal_url) . '#cmn-learning-modules'); ?>">Explore courses</a>
                                 </div>
                                 <div class="cmn-dashboard-card cmn-learning-smart-tile" data-tour-target="certificates">
                                     <div class="cmn-learning-smart-head">
@@ -65479,7 +65479,7 @@ final class CMN_One_Plugin {
                                     <div class="cmn-learning-smart-hover">
                                         This is where you can view your progress on courses and download certificates.
                                     </div>
-                                    <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'hub'], $portal_url)); ?>">Open your learning center</a>
+                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'hub'], $portal_url)); ?>">Open your learning center</a>
                                 </div>
                             </div>
                         <?php elseif ($learning_focus === 'hub') : ?>
@@ -65506,7 +65506,7 @@ final class CMN_One_Plugin {
                                 <article class="cmn-dashboard-card cmn-learning-entry-card">
                                     <h3>Progress Snapshot</h3>
                                     <p><strong><?php echo esc_html((string) count($learning_completed_items)); ?></strong> completed course<?php echo count($learning_completed_items) === 1 ? '' : 's'; ?>.</p>
-                                    <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'modules'], $portal_url) . '#cmn-learning-modules'); ?>">Explore courses</a>
+                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'modules'], $portal_url) . '#cmn-learning-modules'); ?>">Explore courses</a>
                                 </article>
                                 <article class="cmn-dashboard-card cmn-learning-entry-card">
                                     <h3>Certificates</h3>
