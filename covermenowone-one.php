@@ -67617,10 +67617,21 @@ final class CMN_One_Plugin {
             : $default_redirect;
 
         $build_redirect = static function ($target, $status, $message) {
-            return add_query_arg([
+            $target = (string) $target;
+            $fragment = '';
+            $hash_pos = strpos($target, '#');
+            if ($hash_pos !== false) {
+                $fragment = substr($target, $hash_pos + 1);
+                $target = substr($target, 0, $hash_pos);
+            }
+            $url = add_query_arg([
                 'cmn_finance_bank_status' => sanitize_key((string) $status),
                 'cmn_finance_bank_msg' => rawurlencode((string) $message),
-            ], (string) $target);
+            ], $target);
+            if ($fragment !== '') {
+                $url .= '#' . ltrim($fragment, '#');
+            }
+            return $url;
         };
 
         if (!is_user_logged_in()) {
@@ -67823,10 +67834,21 @@ final class CMN_One_Plugin {
             : $default_redirect;
 
         $build_redirect = static function ($target, $status, $message) {
-            return add_query_arg([
+            $target = (string) $target;
+            $fragment = '';
+            $hash_pos = strpos($target, '#');
+            if ($hash_pos !== false) {
+                $fragment = substr($target, $hash_pos + 1);
+                $target = substr($target, 0, $hash_pos);
+            }
+            $url = add_query_arg([
                 'cmn_finance_ack_status' => sanitize_key((string) $status),
                 'cmn_finance_ack_msg' => rawurlencode((string) $message),
-            ], (string) $target);
+            ], $target);
+            if ($fragment !== '') {
+                $url .= '#' . ltrim($fragment, '#');
+            }
+            return $url;
         };
 
         if (!is_user_logged_in()) {
