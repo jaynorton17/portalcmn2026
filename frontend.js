@@ -2499,7 +2499,7 @@ document.addEventListener('DOMContentLoaded', function () {
               if (!wasAvailable && isNowAvailable) {
                 openCenteredPortalPrompt({
                   tone: 'success',
-                  message: "Great job! We will let schools know you're available tomorrow morning! Be sure to checking the portal from 6am as you only have 10 minutes to confirm a booking",
+                  message: "Great job! We will let schools know you're available tomorrow morning! Be sure to checking the portal from 6am as you only have 15 minutes to confirm a booking",
                   primaryLabel: "I'll be awake and checking the portal",
                 });
               }
