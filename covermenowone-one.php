@@ -60497,26 +60497,75 @@ final class CMN_One_Plugin {
                 'missing' => [],
             ];
         }
-        // Soft-gate completion tracks admin/payment readiness only.
-        // Operational unlock/visibility is enforced separately (CV + DBS + Photo ID).
+        $candidate_post = get_post($candidate_id);
+        $profile_email = (string) get_post_meta($candidate_id, 'cmn_email', true);
+        $first_name = (string) get_user_meta($user_id, 'first_name', true);
+        $last_name = (string) get_user_meta($user_id, 'last_name', true);
+        $profile_phone = (string) get_user_meta($user_id, 'phone', true);
+        if ($profile_phone === '') {
+            $profile_phone = (string) get_post_meta($candidate_id, 'cmn_phone', true);
+        }
+        if ($first_name === '' && $candidate_post) {
+            $parts = preg_split('/\s+/', trim((string) $candidate_post->post_title));
+            $first_name = (string) ($parts[0] ?? '');
+            $last_name = count($parts) > 1 ? (string) end($parts) : $last_name;
+        }
+        $nationality = (string) get_post_meta($candidate_id, 'cmn_nationality', true);
+        if ($nationality === '') {
+            $nationality = (string) get_user_meta($user_id, 'cmn_nationality', true);
+        }
+        $travel_distance = (string) get_user_meta($user_id, 'travel_radius', true);
+        if ($travel_distance === '') {
+            $travel_distance = (string) get_post_meta($candidate_id, 'cmn_travel_distance', true);
+        }
+        $role_label = (string) get_user_meta($user_id, 'role_type', true);
+        if ($role_label === '') {
+            $roles = (array) get_post_meta($candidate_id, 'cmn_roles', true);
+            $role_label = $roles ? (string) $roles[0] : '';
+        }
+        $location = (string) get_post_meta($candidate_id, 'cmn_location', true);
+        $driving_licence = sanitize_key((string) get_post_meta($candidate_id, 'cmn_driving_licence', true));
+        $car_owner = sanitize_key((string) get_post_meta($candidate_id, 'cmn_car_owner', true));
+        $qts_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_qts_status', true));
+        $availability_days = $this->get_candidate_availability_days($candidate_id, $user_id);
+        $doc_dbs = $this->get_candidate_doc_status($candidate_id, $user_id, 'dbs');
+        $doc_id = $this->get_candidate_doc_status($candidate_id, $user_id, 'id');
+        $doc_cv = $this->get_candidate_doc_status($candidate_id, $user_id, 'cv');
+
+        // Soft-gate includes two final admin/payment checks.
         $bank_complete = $this->is_candidate_bank_complete_for_payroll($user_id);
         $self_employed_ack_complete = $this->is_candidate_self_employed_ack_complete_for_payroll($user_id);
 
-        $checks = [
-            ['value' => $bank_complete ? '1' : '', 'missing' => 'Add bank details'],
-            ['value' => $self_employed_ack_complete ? '1' : '', 'missing' => 'Accept self-employment notice'],
+        $core_checks = [
+            !empty($first_name),
+            !empty($last_name),
+            !empty($profile_email),
+            !empty($profile_phone),
+            !empty($nationality),
+            !empty($role_label),
+            !empty($travel_distance),
+            !empty($location),
+            in_array($driving_licence, ['yes', 'no'], true),
+            in_array($car_owner, ['yes', 'no'], true),
+            in_array($qts_status, ['yes', 'no'], true),
+            !empty($availability_days),
+            !empty($doc_cv['uploaded']),
+            !empty($doc_dbs['uploaded']),
+            !empty($doc_id['uploaded']),
         ];
-        $completed = 0;
-        $missing = [];
-        foreach ($checks as $check) {
-            if (!empty($check['value'])) {
-                $completed++;
-                continue;
-            }
-            $missing[] = (string) ($check['missing'] ?? 'Complete missing field');
-        }
-        $total = count($checks);
+        $core_total = count($core_checks);
+        $core_completed = count(array_filter($core_checks));
+        $completed = $core_completed + ($bank_complete ? 1 : 0) + ($self_employed_ack_complete ? 1 : 0);
+        $total = $core_total + 2;
         $pct = (int) round(($completed / max(1, $total)) * 100);
+
+        $missing = [];
+        if (!$bank_complete) {
+            $missing[] = 'Add bank details';
+        }
+        if (!$self_employed_ack_complete) {
+            $missing[] = 'Accept self-employment notice';
+        }
 
         return [
             'percent' => $pct,
@@ -64822,40 +64871,48 @@ final class CMN_One_Plugin {
                     }
                     ?>
                     <?php if ($is_hub_tab) : ?>
-                        <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
-                            <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'personal') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_personal_url); ?>">Personal Details</a>
-                            <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'documents') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Documents</a>
-                            <a class="cmn-tab<?php echo $tab === 'candidate_finance' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
-                            <a class="cmn-tab<?php echo $tab === 'feedback_ratings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_feedback_url); ?>">Feedback &amp; Ratings</a>
-                            <a class="cmn-tab<?php echo $tab === 'calendar' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
-                            <a class="cmn-tab<?php echo $tab === 'bookings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_bookings_url); ?>">Bookings</a>
-                        </nav>
+                        <?php $is_completion_verified = $completion_percent >= 100 && empty($completion_outstanding_links); ?>
+                        <div class="cmn-candidate-hub-toprow">
+                            <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
+                                <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'personal') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_personal_url); ?>">Personal Details</a>
+                                <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'documents') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Documents</a>
+                                <a class="cmn-tab<?php echo $tab === 'candidate_finance' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
+                                <a class="cmn-tab<?php echo $tab === 'feedback_ratings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_feedback_url); ?>">Feedback &amp; Ratings</a>
+                                <a class="cmn-tab<?php echo $tab === 'calendar' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
+                                <a class="cmn-tab<?php echo $tab === 'bookings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_bookings_url); ?>">Bookings</a>
+                            </nav>
+                            <div class="cmn-candidate-hub-status"<?php echo $tab === 'profile' ? '' : ' hidden'; ?>>
+                                <div class="cmn-profile-admin-status <?php echo $is_completion_verified ? 'is-verified' : 'is-pending'; ?>" data-profile-admin-status>
+                                    <span class="cmn-profile-admin-status-label">Status:</span>
+                                    <strong class="cmn-profile-admin-status-value" data-profile-admin-status-text data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>
+                                    <div class="cmn-profile-admin-status-tooltip" data-profile-admin-tooltip<?php echo $is_completion_verified ? ' hidden' : ''; ?>>
+                                        <p>To reach 100% complete:</p>
+                                        <ul data-profile-admin-missing>
+                                            <?php if (!$is_completion_verified && !empty($completion_outstanding_links)) : ?>
+                                                <?php foreach ($completion_outstanding_links as $item) : ?>
+                                                    <li><a href="<?php echo esc_url((string) ($item['url'] ?? $candidate_profile_personal_url)); ?>"><?php echo esc_html((string) ($item['label'] ?? 'Update details')); ?></a></li>
+                                                <?php endforeach; ?>
+                                            <?php endif; ?>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="cmn-profile-completion-help<?php echo $is_completion_verified ? ' is-complete' : ''; ?>" data-profile-completion-help<?php echo $is_completion_verified ? ' hidden' : ''; ?>>
+                                    <strong data-profile-completion-helper-text>To reach 100% complete:</strong>
+                                    <ul data-profile-completion-missing>
+                                        <?php if (!$is_completion_verified && !empty($completion_outstanding_links)) : ?>
+                                            <?php foreach ($completion_outstanding_links as $item) : ?>
+                                                <li><a href="<?php echo esc_url((string) ($item['url'] ?? $candidate_profile_personal_url)); ?>"><?php echo esc_html((string) ($item['label'] ?? 'Update details')); ?></a></li>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
                     <?php endif; ?>
                     <?php if ($tab === 'profile') : ?>
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
                             <h2>My Hub</h2>
                         </header>
-                        <?php if ($completion_percent < 100) : ?>
-                            <div class="cmn-profile-progress" data-tour-target="profile-sections">
-                                <div class="cmn-profile-progress-main">
-                                    <span>Profile Completion</span>
-                                    <div class="cmn-progress-bar"><span data-profile-completion-bar style="width: <?php echo esc_attr($completion_percent); ?>%;"></span></div>
-                                </div>
-                                <div class="cmn-profile-progress-actions">
-                                    <strong data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>
-                                </div>
-                            </div>
-                            <?php if (!empty($completion_missing_items)) : ?>
-                                <div class="cmn-profile-completion-help" data-profile-completion-help>
-                                    <strong data-profile-completion-helper-text>To reach 100% complete:</strong>
-                                    <ul data-profile-completion-missing>
-                                        <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
-                                            <li><?php echo esc_html((string) $missing_item); ?></li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                            <?php endif; ?>
-                        <?php endif; ?>
                         <div class="cmn-profile-global-editbar" data-profile-global-actions hidden<?php echo $profile_focus_tab === 'documents' ? ' data-profile-doc-hidden="1"' : ''; ?>>
                             <span class="cmn-muted" data-profile-global-msg></span>
                             <div class="cmn-profile-global-editbar-actions">
@@ -64867,7 +64924,6 @@ final class CMN_One_Plugin {
                             <div class="cmn-dashboard-card" id="cmn-profile-personal" data-profile-personal-card<?php echo $profile_focus_tab === 'documents' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Profile Details</h3>
-                                    <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit personal details">✎</button>
                                 </div>
                                 <div data-profile-view="personal">
                                     <?php
@@ -64907,7 +64963,6 @@ final class CMN_One_Plugin {
                                         $availability_day_short[] = substr($day_label, 0, 3);
                                     }
                                     $availability_day_short = array_values(array_unique($availability_day_short));
-                                    $is_admin_verified = $completion_percent >= 100 && empty($completion_outstanding_links);
                                     ?>
                                     <div class="cmn-profile-summary-strip" data-profile-summary-strip data-profile-personal-url="<?php echo esc_url($candidate_profile_personal_url); ?>" data-profile-documents-url="<?php echo esc_url($candidate_profile_documents_url); ?>" data-profile-finance-bank-url="<?php echo esc_url($candidate_finance_bank_url); ?>" data-profile-finance-ack-url="<?php echo esc_url($candidate_finance_ack_url); ?>">
                                         <div class="cmn-profile-summary-meta">
@@ -64928,27 +64983,14 @@ final class CMN_One_Plugin {
                                                 <strong class="cmn-profile-summary-value">⭐ <?php echo esc_html($tier_label); ?></strong>
                                             </div>
                                         </div>
-                                        <div class="cmn-profile-admin-status <?php echo $is_admin_verified ? 'is-verified' : 'is-pending'; ?>" data-profile-admin-status>
-                                            <span class="cmn-profile-admin-status-label">Status:</span>
-                                            <strong class="cmn-profile-admin-status-value" data-profile-admin-status-text><?php echo $is_admin_verified ? 'Verified' : '&lt;100%'; ?></strong>
-                                            <div class="cmn-profile-admin-status-tooltip" data-profile-admin-tooltip<?php echo $is_admin_verified ? ' hidden' : ''; ?>>
-                                                <p>Complete the following:</p>
-                                                <ul data-profile-admin-missing>
-                                                    <?php if (!$is_admin_verified && !empty($completion_outstanding_links)) : ?>
-                                                        <?php foreach ($completion_outstanding_links as $item) : ?>
-                                                            <li><a href="<?php echo esc_url((string) ($item['url'] ?? $candidate_profile_personal_url)); ?>"><?php echo esc_html((string) ($item['label'] ?? 'Update details')); ?></a></li>
-                                                        <?php endforeach; ?>
-                                                    <?php elseif (!$is_admin_verified) : ?>
-                                                        <li><a href="<?php echo esc_url($candidate_profile_personal_url); ?>">Update profile details</a></li>
-                                                    <?php endif; ?>
-                                                </ul>
-                                            </div>
-                                        </div>
                                     </div>
 
                                     <div class="cmn-profile-sections cmn-profile-sections--structured">
                                         <section class="cmn-profile-section cmn-profile-section--identity" id="cmn-profile-section-identity">
-                                            <h4 class="cmn-profile-section-title">Identity</h4>
+                                            <div class="cmn-profile-section-head">
+                                                <h4 class="cmn-profile-section-title">Identity</h4>
+                                                <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit identity">✎</button>
+                                            </div>
                                             <div class="cmn-profile-identity-grid">
                                                 <div class="cmn-profile-identity-photo" data-profile-photo-root data-fallback-url="<?php echo esc_attr($profile_photo_fallback); ?>">
                                                     <img class="cmn-profile-photo-preview" src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name); ?> profile photo" data-profile-photo-preview>
@@ -64958,7 +65000,6 @@ final class CMN_One_Plugin {
                                                             <button class="cmn-primary" type="button" data-profile-photo-upload-trigger>Upload photo</button>
                                                             <button class="cmn-ghost" type="button" data-profile-photo-remove data-has-photo="<?php echo $has_profile_photo ? '1' : '0'; ?>"<?php echo $has_profile_photo ? '' : ' disabled'; ?>>Remove photo</button>
                                                         </div>
-                                                        <p class="cmn-muted">Profiles with a photo are 34% more likely to receive an enquiry.</p>
                                                         <p class="cmn-muted cmn-profile-photo-message" data-profile-photo-message></p>
                                                     </div>
                                                 </div>
@@ -64989,7 +65030,10 @@ final class CMN_One_Plugin {
                                         </section>
 
                                         <section class="cmn-profile-section cmn-profile-section--professional" id="cmn-profile-section-professional">
-                                            <h4 class="cmn-profile-section-title">Professional Credentials</h4>
+                                            <div class="cmn-profile-section-head">
+                                                <h4 class="cmn-profile-section-title">Professional Credentials</h4>
+                                                <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit professional credentials">✎</button>
+                                            </div>
                                             <div class="cmn-profile-definition-grid">
                                                 <div class="cmn-profile-definition-row">
                                                     <span class="cmn-profile-definition-label">Role type</span>
@@ -65027,7 +65071,10 @@ final class CMN_One_Plugin {
                                         </section>
 
                                         <section class="cmn-profile-section cmn-profile-section--availability" id="cmn-profile-section-availability">
-                                            <h4 class="cmn-profile-section-title">Availability</h4>
+                                            <div class="cmn-profile-section-head">
+                                                <h4 class="cmn-profile-section-title">Availability</h4>
+                                                <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit availability">✎</button>
+                                            </div>
                                             <div class="cmn-profile-availability-panel">
                                                 <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
                                                     <span class="cmn-profile-definition-label">Availability days</span>
@@ -65045,6 +65092,10 @@ final class CMN_One_Plugin {
                                         </section>
 
                                         <section class="cmn-profile-section cmn-profile-section--address" id="cmn-profile-section-address">
+                                            <div class="cmn-profile-section-head">
+                                                <h4 class="cmn-profile-section-title">Address</h4>
+                                                <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit address">✎</button>
+                                            </div>
                                             <details class="cmn-profile-address-details">
                                                 <summary>Address Details</summary>
                                                 <div class="cmn-profile-definition-grid">
@@ -66970,7 +67021,7 @@ final class CMN_One_Plugin {
 
     private function get_candidate_finance_focus_url($focus = '') {
         $url = $this->get_candidate_finance_tab_url();
-        $focus = sanitize_key((string) $focus);
+        $focus = str_replace('_', '-', sanitize_key((string) $focus));
         if ($focus === '') {
             return $url;
         }
@@ -67557,7 +67608,7 @@ final class CMN_One_Plugin {
      * 3) Audit metadata never includes raw bank fields.
      */
     public function handle_save_candidate_bank_details() {
-        $default_redirect = $this->get_candidate_finance_tab_url();
+        $default_redirect = $this->get_candidate_finance_focus_url('bank-details');
         $redirect_raw = isset($_POST['cmn_redirect']) ? (string) wp_unslash($_POST['cmn_redirect']) : '';
         $redirect = $redirect_raw !== ''
             ? wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect)
@@ -67763,7 +67814,7 @@ final class CMN_One_Plugin {
      * 4) compliance_ack_accepted audit event is written without sensitive finance fields.
      */
     public function handle_candidate_accept_compliance_ack() {
-        $default_redirect = $this->get_candidate_finance_tab_url();
+        $default_redirect = $this->get_candidate_finance_focus_url('compliance-ack');
         $redirect_raw = isset($_POST['cmn_redirect']) ? (string) wp_unslash($_POST['cmn_redirect']) : '';
         $redirect = $redirect_raw !== ''
             ? wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect)
@@ -68964,7 +69015,7 @@ final class CMN_One_Plugin {
         $has_bank_details = ($bank_sort_code_display !== '' && strlen($bank_account_last4) === 4);
         $bank_status_label = $has_bank_details ? 'Added' : 'Not added';
         $bank_status_chip = $has_bank_details ? 'is-approved' : 'is-pending';
-        $bank_action_label = $has_bank_details ? 'Update bank details' : 'Save bank details';
+        $bank_action_label = $has_bank_details ? 'Edit' : 'Save bank details';
         $bank_account_name = sanitize_text_field((string) ($bank_details['account_name'] ?? ''));
         $bank_account_number_display = $has_bank_details ? ('****' . $bank_account_last4) : '';
         $finance_notice_status = sanitize_key((string) wp_unslash($_GET['cmn_finance_bank_status'] ?? ''));
@@ -69192,7 +69243,7 @@ final class CMN_One_Plugin {
                     </div>
                 </div>
                 <div class="cmn-candidate-finance-actions">
-                    <a class="cmn-ghost" href="#cmn-candidate-bank-details"><?php echo esc_html($has_bank_details ? 'Update bank details' : 'Add bank details'); ?></a>
+                    <a class="cmn-ghost" href="#cmn-candidate-bank-details"><?php echo esc_html($has_bank_details ? 'Edit' : 'Add bank details'); ?></a>
                 </div>
             </article>
             <article class="cmn-dashboard-card cmn-candidate-finance-bank-card" id="cmn-candidate-bank-details">
@@ -69201,7 +69252,7 @@ final class CMN_One_Plugin {
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-bank-form">
                     <?php wp_nonce_field('cmn_save_candidate_bank_details', 'cmn_candidate_bank_details_nonce'); ?>
                     <input type="hidden" name="action" value="cmn_save_candidate_bank_details">
-                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('bank_details')); ?>">
+                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('bank-details')); ?>">
                     <div class="cmn-candidate-finance-bank-form-grid">
                         <label>Account holder name
                             <input type="text" name="cmn_bank_account_name" value="<?php echo esc_attr($bank_account_name); ?>" minlength="2" maxlength="150" required>
@@ -69230,75 +69281,6 @@ final class CMN_One_Plugin {
                     </div>
                 <?php endif; ?>
             </article>
-            <article class="cmn-dashboard-card cmn-candidate-finance-documents-card">
-                <h3>Documents</h3>
-                <p class="cmn-muted">Weekly remittance statements are available once a payout run exists for the period.</p>
-                <?php if ($finance_docs_notice_message !== '') : ?>
-                    <div class="<?php echo esc_attr($finance_docs_notice_class); ?> cmn-candidate-finance-docs-message"><?php echo esc_html($finance_docs_notice_message); ?></div>
-                <?php endif; ?>
-                <div class="cmn-candidate-finance-status-list">
-                    <?php if ($remittance_period_rows) : ?>
-                        <?php foreach ($remittance_period_rows as $remittance_period_row) : ?>
-                            <?php
-                            $remittance_period_id = sanitize_text_field((string) ($remittance_period_row['period_id'] ?? ''));
-                            $remittance_label = sanitize_text_field((string) ($remittance_period_row['label'] ?? $remittance_period_id));
-                            $remittance_pay_date = $this->normalize_invoice_date((string) ($remittance_period_row['pay_date'] ?? ''));
-                            $remittance_pay_date_label = $remittance_pay_date !== '' ? $remittance_pay_date : 'TBC';
-                            $remittance_has_payout_item = !empty($remittance_period_row['has_payout_item']);
-                            $remittance_doc_row = is_array($remittance_period_row['doc_row'] ?? null) ? (array) $remittance_period_row['doc_row'] : [];
-                            $remittance_has_doc = !empty($remittance_period_row['has_doc']);
-                            $remittance_download_url = (string) ($remittance_period_row['download_url'] ?? '');
-                            $remittance_doc_created_at = $this->normalize_invoice_datetime((string) ($remittance_doc_row['created_at'] ?? ''));
-                            $remittance_doc_created_label = $remittance_doc_created_at !== '' ? mysql2date('j M Y g:ia', $remittance_doc_created_at, false) : '';
-                            $remittance_payout_item = is_array($remittance_period_row['payout_item'] ?? null) ? (array) $remittance_period_row['payout_item'] : [];
-                            $remittance_gross_amount = round((float) ($remittance_payout_item['gross_amount'] ?? 0), 2);
-                            $remittance_shifts_count = max(0, (int) ($remittance_payout_item['shifts_count'] ?? 0));
-                            ?>
-                            <div class="cmn-candidate-finance-status-row">
-                                <span>
-                                    <strong><?php echo esc_html($remittance_label); ?></strong><br>
-                                    <small class="cmn-muted">Pay date: <?php echo esc_html($remittance_pay_date_label); ?><?php if ($remittance_has_payout_item) : ?> | Gross: <?php echo esc_html('GBP ' . number_format($remittance_gross_amount, 2)); ?> | Shifts: <?php echo esc_html(number_format($remittance_shifts_count)); ?><?php endif; ?></small>
-                                    <?php if ($remittance_has_doc && $remittance_doc_created_label !== '') : ?><br><small class="cmn-muted">Generated: <?php echo esc_html($remittance_doc_created_label); ?></small><?php endif; ?>
-                                </span>
-                                <strong>
-                                    <?php if ($remittance_has_doc) : ?>
-                                        <span class="cmn-status-chip is-approved">Generated</span>
-                                    <?php elseif ($remittance_has_payout_item) : ?>
-                                        <span class="cmn-status-chip is-pending">Ready to generate</span>
-                                    <?php else : ?>
-                                        <span class="cmn-status-chip is-pending">Not available yet</span>
-                                    <?php endif; ?>
-                                </strong>
-                            </div>
-                            <?php if ($remittance_has_payout_item) : ?>
-                                <div class="cmn-candidate-finance-actions">
-                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
-                                        <?php wp_nonce_field('cmn_candidate_generate_remittance_pdf', 'cmn_candidate_generate_remittance_pdf_nonce'); ?>
-                                        <input type="hidden" name="action" value="cmn_candidate_generate_remittance_pdf">
-                                        <input type="hidden" name="cmn_period_id" value="<?php echo esc_attr($remittance_period_id); ?>">
-                                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_tab_url()); ?>">
-                                        <button class="cmn-ghost cmn-btn-mini" type="submit"><?php echo esc_html($remittance_has_doc ? 'Regenerate PDF' : 'Generate PDF'); ?></button>
-                                    </form>
-                                    <?php if ($remittance_has_doc && $remittance_download_url !== '') : ?>
-                                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($remittance_download_url); ?>">Download PDF</a>
-                                    <?php endif; ?>
-                                </div>
-                            <?php else : ?>
-                                <div class="cmn-muted">Available after payout run generation for this period.</div>
-                            <?php endif; ?>
-                        <?php endforeach; ?>
-                    <?php else : ?>
-                        <?php
-                        echo $this->render_empty_explain_panel(
-                            'No remittances yet',
-                            'Remittance statements appear once a payout run is generated for a period.',
-                            'Contact support',
-                            $candidate_support_url
-                        );
-                        ?>
-                    <?php endif; ?>
-                </div>
-            </article>
             <article class="cmn-dashboard-card cmn-candidate-finance-self-employed-card" id="cmn-candidate-compliance-ack">
                 <h3>Self-Employed Notice</h3>
                 <p>You are self-employed. CoverMeNow does not deduct tax/NIC.</p>
@@ -69316,22 +69298,19 @@ final class CMN_One_Plugin {
                     <?php if ($ack_accepted_display !== '') : ?>
                         <p class="cmn-muted">Accepted on <?php echo esc_html($ack_accepted_display); ?>.</p>
                     <?php endif; ?>
-                    <label class="cmn-inline-check">
-                        <input type="checkbox" checked disabled>
-                        I understand and accept
-                    </label>
+                    <div class="cmn-status-chip is-approved">Acknowledged</div>
                 <?php else : ?>
                     <div class="cmn-register-warning">Payout readiness is on hold until this acknowledgement is confirmed.</div>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-ack-form">
                         <?php wp_nonce_field('cmn_candidate_accept_compliance_ack', 'cmn_candidate_compliance_ack_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_candidate_accept_compliance_ack">
-                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_tab_url()); ?>">
+                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('compliance-ack')); ?>">
                         <label class="cmn-inline-check">
                             <input type="checkbox" name="cmn_self_employed_ack_confirm" value="1" required>
                             I understand and accept
                         </label>
                         <div class="cmn-candidate-finance-actions">
-                            <button class="cmn-primary" type="submit">Confirm</button>
+                            <button class="cmn-primary" type="submit">I understand and accept and confirm</button>
                         </div>
                     </form>
                 <?php endif; ?>

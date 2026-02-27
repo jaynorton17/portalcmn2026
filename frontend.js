@@ -9063,10 +9063,19 @@ document.addEventListener('DOMContentLoaded', function () {
     profileCompletionMissing.innerHTML = '';
     if (items.length) {
       profileCompletionHelp.classList.remove('is-complete');
+      profileCompletionHelp.hidden = false;
       profileCompletionHelpText.textContent = 'To reach 100% complete:';
       items.forEach(function (item) {
         var li = document.createElement('li');
-        li.textContent = String(item);
+        var mapped = (typeof mapMissingItemToLink === 'function') ? mapMissingItemToLink(item) : null;
+        if (mapped && mapped.url) {
+          var anchor = document.createElement('a');
+          anchor.href = String(mapped.url);
+          anchor.textContent = String(mapped.label || item);
+          li.appendChild(anchor);
+        } else {
+          li.textContent = String(item);
+        }
         profileCompletionMissing.appendChild(li);
       });
       profileCompletionMissing.hidden = false;
@@ -9077,6 +9086,7 @@ document.addEventListener('DOMContentLoaded', function () {
       ? 'Profile complete. You are at 100%.'
       : 'All key profile items are complete.';
     profileCompletionMissing.hidden = true;
+    profileCompletionHelp.hidden = true;
   };
   if (candidateProfileRoot && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateProfileNonce) {
     var profileMain = candidateProfileRoot.closest('.cmn-candidate-main');
@@ -9439,7 +9449,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     var applyAdminStatus = function (pct, missingItems) {
-      if (!profileAdminStatus || !profileAdminStatusText || !profileAdminTooltip) {
+      if (!profileAdminStatus || !profileAdminStatusText) {
         return;
       }
       var percent = typeof pct === 'number' ? pct : 0;
@@ -9447,10 +9457,12 @@ document.addEventListener('DOMContentLoaded', function () {
       var verified = percent >= 100 && missing.length === 0;
       profileAdminStatus.classList.toggle('is-verified', verified);
       profileAdminStatus.classList.toggle('is-pending', !verified);
-      profileAdminStatusText.textContent = verified ? 'Verified' : '<100%';
-      profileAdminTooltip.hidden = verified;
-      if (!verified) {
-        renderAdminMissingLinks(missing);
+      profileAdminStatusText.textContent = percent + '% Complete';
+      if (profileAdminTooltip) {
+        profileAdminTooltip.hidden = verified;
+        if (!verified) {
+          renderAdminMissingLinks(missing);
+        }
       }
     };
 
