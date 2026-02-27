@@ -65969,92 +65969,88 @@ final class CMN_One_Plugin {
                                 <span class="cmn-candidate-summary-subtext"><?php echo esc_html($learning_progress_subtext); ?></span>
                             </a>
                         </div>
-                        <div class="cmn-dashboard-card cmn-calendar-planner" data-candidate-calendar data-tour-target="availability-planner"
-                             data-calendar-month="<?php echo esc_attr($calendar_min_month); ?>"
-                             data-calendar-min="<?php echo esc_attr($calendar_min_month); ?>"
-                             data-calendar-max="<?php echo esc_attr($calendar_max_month); ?>"
-                             data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
-                            <div class="cmn-card-header cmn-calendar-header">
-                                <h2 class="cmn-calendar-title">Availability Planner</h2>
-                                <button class="cmn-calendar-link-action" type="button" data-calendar-clear="next30">Clear next 30 days</button>
+                        <div class="cmn-candidate-section-row cmn-candidate-section-row--sections-3-4">
+                            <div class="cmn-dashboard-card cmn-calendar-planner" data-candidate-calendar data-tour-target="availability-planner"
+                                 data-calendar-month="<?php echo esc_attr($calendar_min_month); ?>"
+                                 data-calendar-min="<?php echo esc_attr($calendar_min_month); ?>"
+                                 data-calendar-max="<?php echo esc_attr($calendar_max_month); ?>"
+                                 data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
+                                <div class="cmn-card-header cmn-calendar-header">
+                                    <h2 class="cmn-calendar-title">Availability Planner</h2>
+                                </div>
+                                <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
+                                <div class="cmn-calendar-range-controls">
+                                    <label>Start date
+                                        <select data-calendar-range-start>
+                                            <?php foreach ($calendar_weekday_options as $calendar_option) : ?>
+                                                <option value="<?php echo esc_attr((string) ($calendar_option['value'] ?? '')); ?>"<?php selected((string) ($calendar_option['value'] ?? ''), $calendar_default_start_date); ?>>
+                                                    <?php echo esc_html((string) ($calendar_option['label'] ?? '')); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
+                                    <label>End date
+                                        <select data-calendar-range-end>
+                                            <?php foreach ($calendar_weekday_options as $calendar_option) : ?>
+                                                <option value="<?php echo esc_attr((string) ($calendar_option['value'] ?? '')); ?>"<?php selected((string) ($calendar_option['value'] ?? ''), $calendar_default_end_date); ?>>
+                                                    <?php echo esc_html((string) ($calendar_option['label'] ?? '')); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
+                                    <label>Action
+                                        <select data-calendar-bulk-action>
+                                            <option value="available">Mark as Available</option>
+                                            <option value="unavailable">Mark as Unavailable</option>
+                                            <option value="clear_range">Clear range</option>
+                                        </select>
+                                    </label>
+                                    <button class="cmn-primary" type="button" data-calendar-bulk-submit>Update Availability</button>
+                                </div>
+                                <div class="cmn-calendar-legend">
+                                    <span><span class="cmn-dot is-available"></span> Available</span>
+                                    <span><span class="cmn-dot is-unavailable"></span> Unavailable</span>
+                                    <span><span class="cmn-dot is-booked-confirmed"></span> Booking confirmed</span>
+                                    <span><span class="cmn-dot"></span> Neutral</span>
+                                </div>
+                                <div class="cmn-calendar-feedback" data-calendar-feedback></div>
                             </div>
-                            <div class="cmn-calendar-month-row">
-                                <button class="cmn-ghost" type="button" data-calendar-prev aria-label="Previous month">&larr;</button>
-                                <span data-calendar-label></span>
-                                <button class="cmn-ghost" type="button" data-calendar-next aria-label="Next month">&rarr;</button>
-                            </div>
-                            <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
-                            <div class="cmn-calendar-range-controls">
-                                <label>Start date
-                                    <select data-calendar-range-start>
-                                        <?php foreach ($calendar_weekday_options as $calendar_option) : ?>
-                                            <option value="<?php echo esc_attr((string) ($calendar_option['value'] ?? '')); ?>"<?php selected((string) ($calendar_option['value'] ?? ''), $calendar_default_start_date); ?>>
-                                                <?php echo esc_html((string) ($calendar_option['label'] ?? '')); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </label>
-                                <label>End date
-                                    <select data-calendar-range-end>
-                                        <?php foreach ($calendar_weekday_options as $calendar_option) : ?>
-                                            <option value="<?php echo esc_attr((string) ($calendar_option['value'] ?? '')); ?>"<?php selected((string) ($calendar_option['value'] ?? ''), $calendar_default_end_date); ?>>
-                                                <?php echo esc_html((string) ($calendar_option['label'] ?? '')); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </label>
-                                <label>Action
-                                    <select data-calendar-bulk-action>
-                                        <option value="available">Mark as Available</option>
-                                        <option value="unavailable">Mark as Unavailable</option>
-                                        <option value="clear_range">Clear range</option>
-                                    </select>
-                                </label>
-                                <button class="cmn-primary" type="button" data-calendar-bulk-submit>Update Availability</button>
-                            </div>
-                            <div class="cmn-calendar-legend">
-                                <span><span class="cmn-dot is-available"></span> Available</span>
-                                <span><span class="cmn-dot is-unavailable"></span> Unavailable</span>
-                                <span><span class="cmn-dot is-booked-confirmed"></span> Booking confirmed</span>
-                                <span><span class="cmn-dot"></span> Neutral</span>
-                            </div>
-                            <div class="cmn-calendar-feedback" data-calendar-feedback></div>
+                            <?php if ($is_candidate_rewards_allowed) : ?>
+                                <div class="cmn-dashboard-card cmn-candidate-weekly-earnings-card"
+                                     data-cmn-weekly-earnings-root
+                                     data-cmn-weekly-earnings-action="cmn_candidate_weekly_earnings_overview"
+                                     data-cmn-weekly-earnings-nonce="<?php echo esc_attr(wp_create_nonce('cmn_candidate_weekly_earnings_view')); ?>">
+                                    <div class="cmn-card-header">
+                                        <h3>Weekly Earnings</h3>
+                                        <span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>" data-cmn-weekly-earnings-chip><?php echo esc_html($weekly_state_label); ?></span>
+                                    </div>
+                                    <p class="cmn-muted cmn-candidate-weekly-earnings-range" data-cmn-weekly-earnings-range><?php echo esc_html($weekly_earnings_week_label); ?> (Fri-Thu)</p>
+                                    <div class="cmn-profile-meta-grid cmn-candidate-weekly-earnings-grid">
+                                        <div class="cmn-profile-meta-item">
+                                            <span class="cmn-profile-meta-label">Earnings this week (Fri-Thu)</span>
+                                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-total><?php echo esc_html('GBP ' . number_format($weekly_earnings_total, 2)); ?></strong>
+                                        </div>
+                                        <div class="cmn-profile-meta-item">
+                                            <span class="cmn-profile-meta-label">Expected payout (Friday)</span>
+                                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-expected><?php echo esc_html($weekly_expected_display); ?></strong>
+                                        </div>
+                                        <div class="cmn-profile-meta-item">
+                                            <span class="cmn-profile-meta-label">Last week total</span>
+                                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-last-week><?php echo esc_html('GBP ' . number_format($weekly_last_week_total, 2)); ?></strong>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-candidate-weekly-earnings-notes">
+                                        <p class="cmn-muted">Self-employed: you're responsible for your own tax/NIC.</p>
+                                        <p class="cmn-muted" data-cmn-weekly-earnings-note><?php echo esc_html($weekly_state_note); ?></p>
+                                    </div>
+                                    <?php if ($weekly_earnings_error !== '') : ?>
+                                        <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error><?php echo esc_html($weekly_earnings_error); ?></div>
+                                    <?php else : ?>
+                                        <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error hidden></div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
-                        <?php if ($is_candidate_rewards_allowed) : ?>
-                            <div class="cmn-dashboard-card cmn-candidate-weekly-earnings-card"
-                                 data-cmn-weekly-earnings-root
-                                 data-cmn-weekly-earnings-action="cmn_candidate_weekly_earnings_overview"
-                                 data-cmn-weekly-earnings-nonce="<?php echo esc_attr(wp_create_nonce('cmn_candidate_weekly_earnings_view')); ?>">
-                                <div class="cmn-card-header">
-                                    <h3>Weekly Earnings</h3>
-                                    <span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>" data-cmn-weekly-earnings-chip><?php echo esc_html($weekly_state_label); ?></span>
-                                </div>
-                                <p class="cmn-muted cmn-candidate-weekly-earnings-range" data-cmn-weekly-earnings-range><?php echo esc_html($weekly_earnings_week_label); ?> (Fri-Thu)</p>
-                                <div class="cmn-profile-meta-grid cmn-candidate-weekly-earnings-grid">
-                                    <div class="cmn-profile-meta-item">
-                                        <span class="cmn-profile-meta-label">Earnings this week (Fri-Thu)</span>
-                                        <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-total><?php echo esc_html('GBP ' . number_format($weekly_earnings_total, 2)); ?></strong>
-                                    </div>
-                                    <div class="cmn-profile-meta-item">
-                                        <span class="cmn-profile-meta-label">Expected payout (Friday)</span>
-                                        <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-expected><?php echo esc_html($weekly_expected_display); ?></strong>
-                                    </div>
-                                    <div class="cmn-profile-meta-item">
-                                        <span class="cmn-profile-meta-label">Last week total</span>
-                                        <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-last-week><?php echo esc_html('GBP ' . number_format($weekly_last_week_total, 2)); ?></strong>
-                                    </div>
-                                </div>
-                                <div class="cmn-candidate-weekly-earnings-notes">
-                                    <p class="cmn-muted">Self-employed: you're responsible for your own tax/NIC.</p>
-                                    <p class="cmn-muted" data-cmn-weekly-earnings-note><?php echo esc_html($weekly_state_note); ?></p>
-                                </div>
-                                <?php if ($weekly_earnings_error !== '') : ?>
-                                    <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error><?php echo esc_html($weekly_earnings_error); ?></div>
-                                <?php else : ?>
-                                    <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error hidden></div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
                     <?php endif; ?>
                     <?php if ($is_preview) : ?>
                         <div class="cmn-preview-register">

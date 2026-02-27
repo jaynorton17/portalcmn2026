@@ -2807,42 +2807,6 @@ body.cmn-booking-feedback-lock {
   letter-spacing: -0.01em;
 }
 
-.cmn-calendar-link-action {
-  border: 0;
-  background: transparent;
-  color: rgba(203, 213, 225, 0.74);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.2;
-  padding: 0;
-  margin: 0;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.cmn-calendar-link-action:hover,
-.cmn-calendar-link-action:focus-visible {
-  color: #f8fafc;
-}
-
-.cmn-calendar-month-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 2px;
-  margin-bottom: 2px;
-}
-
-.cmn-calendar-month-row [data-calendar-label] {
-  min-width: 150px;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(226, 232, 240, 0.9);
-}
-
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
@@ -2962,15 +2926,33 @@ body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .c
   background: rgba(148, 163, 184, 0.6);
 }
 
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 > .cmn-dashboard-card {
+  margin-top: 0 !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 > :only-child {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 720px) {
   .cmn-calendar-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;
   }
+}
 
-  .cmn-calendar-month-row {
-    justify-content: space-between;
+@media (max-width: 1100px) {
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 {
+    grid-template-columns: 1fr;
   }
 }
 
