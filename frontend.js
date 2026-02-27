@@ -10299,6 +10299,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
       var slideCount = learningPlayer.querySelector('[data-learning-slide-count]');
       var slideTitle = learningPlayer.querySelector('[data-learning-slide-title]');
+      var slideImageWrap = learningPlayer.querySelector('[data-learning-slide-image-wrap]');
+      var slideImage = learningPlayer.querySelector('[data-learning-slide-image]');
+      var slideImageCaption = learningPlayer.querySelector('[data-learning-slide-image-caption]');
       var slideBody = learningPlayer.querySelector('[data-learning-slide-body]');
       var prevSlideBtn = learningPlayer.querySelector('[data-learning-prev-slide]');
       var nextSlideBtn = learningPlayer.querySelector('[data-learning-next-slide]');
@@ -10403,6 +10406,32 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (slideTitle) {
           slideTitle.textContent = String(slide.title || 'Slide');
+        }
+        var imageUrl = String(slide.image_url || slide.imageUrl || slide.image || '');
+        var imageAlt = String(slide.image_alt || slide.imageAlt || slide.title || 'Course slide image');
+        var imageCaption = String(slide.image_caption || slide.imageCaption || '');
+        if (slideImageWrap) {
+          var hasImage = imageUrl !== '';
+          slideImageWrap.hidden = !hasImage;
+          if (hasImage) {
+            if (slideImage) {
+              slideImage.src = imageUrl;
+              slideImage.alt = imageAlt;
+            }
+            if (slideImageCaption) {
+              slideImageCaption.textContent = imageCaption;
+              slideImageCaption.hidden = imageCaption === '';
+            }
+          } else {
+            if (slideImage) {
+              slideImage.removeAttribute('src');
+              slideImage.alt = '';
+            }
+            if (slideImageCaption) {
+              slideImageCaption.textContent = '';
+              slideImageCaption.hidden = true;
+            }
+          }
         }
         if (slideBody) {
           slideBody.textContent = String(slide.body || '');

@@ -65560,6 +65560,10 @@ final class CMN_One_Plugin {
                                             <span data-learning-slide-count></span>
                                         </div>
                                         <h3 data-learning-slide-title></h3>
+                                        <figure class="cmn-learning-slide-image-wrap" data-learning-slide-image-wrap hidden>
+                                            <img class="cmn-learning-slide-image" data-learning-slide-image src="" alt="">
+                                            <figcaption class="cmn-learning-slide-image-caption" data-learning-slide-image-caption hidden></figcaption>
+                                        </figure>
                                         <p data-learning-slide-body></p>
                                         <div class="cmn-learning-player-actions">
                                             <button class="cmn-ghost" type="button" data-learning-prev-slide>Previous</button>
@@ -70442,6 +70446,7 @@ final class CMN_One_Plugin {
     }
 
     private function get_candidate_learning_course_catalog() {
+        $safeguarding_course1_image_base = plugin_dir_url(__FILE__) . 'assets/learning/safeguarding/';
         return [
             'foundations_behaviour_infrastructure' => [
                 'key' => 'foundations_behaviour_infrastructure',
@@ -70549,30 +70554,44 @@ final class CMN_One_Plugin {
                     [
                         'title' => 'Safeguarding as Infrastructure',
                         'body' => "Safeguarding in schools is not a reactive function. It is a structured system of prevention, detection, reporting, and response embedded into daily operations. Infrastructure means systems must function regardless of personnel changes.\n\nSafeguarding infrastructure includes leadership oversight, defined reporting pathways, documented procedures, training cycles, and monitoring mechanisms. It must operate consistently across all departments and roles. Informal or personality-led systems are not compliant systems.\n\nA safeguarding infrastructure must be auditable. Decisions must be recorded, reviewable, and capable of external scrutiny. This ensures accountability and reliability.",
+                        'image_url' => $safeguarding_course1_image_base . 'course1-slide1.png',
+                        'image_alt' => 'Safeguarding policy infrastructure in a UK school office',
                     ],
                     [
                         'title' => 'Statutory Framework',
                         'body' => "UK safeguarding practice is governed by statutory guidance including Keeping Children Safe in Education (KCSIE), the Children Act 1989 and 2004, and Working Together to Safeguard Children. These documents define legal duties placed upon schools and individuals.\n\nCompliance is mandatory, not discretionary. Schools must demonstrate that safeguarding arrangements are effective and actively implemented. Failure to do so constitutes a breach of statutory duty.\n\nSafeguarding infrastructure must align with local authority procedures and multi-agency safeguarding arrangements. Internal systems must not contradict national guidance.",
+                        'image_url' => $safeguarding_course1_image_base . 'course1-slide2.png',
+                        'image_alt' => 'UK safeguarding statutory guidance documents on school office desk',
                     ],
                     [
                         'title' => 'Roles and Accountability',
                         'body' => "The Governing Body or Trust Board holds strategic accountability for safeguarding effectiveness. They must ensure policies are implemented and reviewed.\n\nThe Designated Safeguarding Lead (DSL) holds operational responsibility for safeguarding coordination. This includes case management, liaison with external agencies, and internal guidance.\n\nAll staff hold individual safeguarding responsibility. Safeguarding is not delegated solely to the DSL. Every adult in school must recognise and report concerns.",
+                        'image_url' => $safeguarding_course1_image_base . 'course1-slide3.png',
+                        'image_alt' => 'School governing body safeguarding review meeting',
                     ],
                     [
                         'title' => 'Lines of Reporting',
                         'body' => "Clear reporting lines prevent delay and confusion. All concerns must be reported directly to the DSL or Deputy DSL without filtering.\n\nVerbal reports must be followed by written records using the school's approved safeguarding recording system. Documentation must be factual and time-stamped.\n\nEscalation pathways must be defined for situations where the DSL is unavailable or implicated. Safeguarding systems must include contingency planning.",
+                        'image_url' => $safeguarding_course1_image_base . 'course1-slide4.png',
+                        'image_alt' => 'Teacher entering safeguarding concern into secure reporting system',
                     ],
                     [
                         'title' => 'Record Keeping Standards',
                         'body' => "Safeguarding records must be accurate, contemporaneous, and objective. Opinion must be clearly separated from observed fact.\n\nRecords must include date, time, location, individuals involved, and actions taken. Incomplete documentation compromises safeguarding response.\n\nSecure storage and restricted access are mandatory. Safeguarding files must be stored separately from academic records.",
+                        'image_url' => $safeguarding_course1_image_base . 'course1-slide5.png',
+                        'image_alt' => 'Locked safeguarding records cabinet in secure school office',
                     ],
                     [
                         'title' => 'Confidentiality and Information Sharing',
                         'body' => "Safeguarding information is confidential but not secret. Information must be shared on a need-to-know basis to protect children.\n\nData protection legislation does not prevent safeguarding disclosures. Where a child is at risk, safeguarding overrides general confidentiality principles.\n\nStaff must not promise confidentiality to pupils. Instead, they must explain that concerns will be passed to safeguarding leads.",
+                        'image_url' => $safeguarding_course1_image_base . 'course1-slide6.png',
+                        'image_alt' => 'Staff member reviewing confidential safeguarding protocol',
                     ],
                     [
                         'title' => 'Monitoring and Review',
                         'body' => "Safeguarding infrastructure requires ongoing monitoring. DSLs must review patterns, trends, and recurring risks.\n\nGovernors must receive safeguarding reports that enable oversight without breaching confidentiality. Data must support accountability.\n\nAnnual policy review is minimum compliance. Continuous evaluation is best-practice infrastructure.",
+                        'image_url' => $safeguarding_course1_image_base . 'course1-slide7.png',
+                        'image_alt' => 'Governors reviewing safeguarding trend data in school conference room',
                     ],
                 ],
                 'exam' => [
