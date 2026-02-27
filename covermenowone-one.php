@@ -64531,6 +64531,21 @@ final class CMN_One_Plugin {
         if ($weekly_state_note === '') {
             $weekly_state_note = 'Estimate (pending lock).';
         }
+        $weekly_pay_date = $this->normalize_invoice_date((string) ($weekly_earnings_payload['pay_date'] ?? ''));
+        $weekly_pay_friday_label = 'TBC';
+        if ($weekly_pay_date !== '' && strtotime($weekly_pay_date) !== false) {
+            $weekly_pay_friday_label = date_i18n('dmY', strtotime($weekly_pay_date));
+        }
+        $weekly_expected_summary_value = 'GBP ' . number_format($weekly_expected_payout, 2);
+        $weekly_expected_summary_note = $weekly_state_note;
+        if ($weekly_expected_is_hold && $weekly_expected_hold_message !== '') {
+            if (stripos($weekly_expected_summary_note, $weekly_expected_hold_message) === false) {
+                $weekly_expected_summary_note = rtrim($weekly_expected_hold_message, '.');
+                if ($weekly_state_note !== '') {
+                    $weekly_expected_summary_note .= '. ' . ltrim($weekly_state_note);
+                }
+            }
+        }
 
         $portal_page = get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
@@ -64558,6 +64573,7 @@ final class CMN_One_Plugin {
             'view' => false,
         ], $portal_url);
         $candidate_finance_bank_url = $candidate_finance_url . '#cmn-candidate-bank-details';
+        $candidate_card_logo_url = 'https://covermenow.co.uk/wp-content/uploads/2026/02/cropped-73fa2b5c-e425-4854-a404-96824acab169.png';
         $weekly_expected_has_bank_hold = $weekly_expected_is_hold && stripos((string) $weekly_expected_display, 'bank details') !== false;
 
         $completion_missing_map = [
@@ -65975,6 +65991,14 @@ final class CMN_One_Plugin {
                                 <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small"><?php echo esc_html($learning_progress_text); ?></strong>
                                 <span class="cmn-candidate-summary-subtext"><?php echo esc_html($learning_progress_subtext); ?></span>
                             </a>
+                            <a class="cmn-candidate-summary-card cmn-candidate-summary-card--expected-pay" href="<?php echo esc_url($candidate_finance_bank_url); ?>">
+                                <span class="cmn-candidate-summary-label">Expected Pay Friday (<?php echo esc_html($weekly_pay_friday_label); ?>)</span>
+                                <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small"><?php echo esc_html($weekly_expected_summary_value); ?></strong>
+                                <span class="cmn-candidate-summary-subtext">
+                                    <span class="cmn-candidate-summary-subtext-line">Self-employed: you're responsible for your own tax/NIC.</span>
+                                    <span class="cmn-candidate-summary-subtext-line"><?php echo esc_html($weekly_expected_summary_note); ?></span>
+                                </span>
+                            </a>
                         </div>
                         <div class="cmn-candidate-section-row cmn-candidate-section-row--sections-3-4">
                             <div class="cmn-dashboard-card cmn-calendar-planner" data-candidate-calendar data-tour-target="availability-planner"
@@ -66022,47 +66046,9 @@ final class CMN_One_Plugin {
                                 </div>
                                 <div class="cmn-calendar-feedback" data-calendar-feedback></div>
                             </div>
-                            <?php if ($is_candidate_rewards_allowed) : ?>
-                                <div class="cmn-dashboard-card cmn-candidate-weekly-earnings-card"
-                                     data-cmn-weekly-earnings-root
-                                     data-cmn-weekly-earnings-action="cmn_candidate_weekly_earnings_overview"
-                                     data-cmn-weekly-earnings-nonce="<?php echo esc_attr(wp_create_nonce('cmn_candidate_weekly_earnings_view')); ?>">
-                                    <div class="cmn-card-header">
-                                        <h3>Weekly Earnings</h3>
-                                        <span class="cmn-status-chip <?php echo esc_attr($weekly_state_chip_class); ?>" data-cmn-weekly-earnings-chip><?php echo esc_html($weekly_state_label); ?></span>
-                                    </div>
-                                    <p class="cmn-muted cmn-candidate-weekly-earnings-range" data-cmn-weekly-earnings-range><?php echo esc_html($weekly_earnings_week_label); ?> (Fri-Thu)</p>
-                                    <div class="cmn-profile-meta-grid cmn-candidate-weekly-earnings-grid">
-                                        <div class="cmn-profile-meta-item">
-                                            <span class="cmn-profile-meta-label">Earnings this week (Fri-Thu)</span>
-                                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-total><?php echo esc_html('GBP ' . number_format($weekly_earnings_total, 2)); ?></strong>
-                                        </div>
-                                    <div class="cmn-profile-meta-item">
-                                        <span class="cmn-profile-meta-label">Expected payout (Friday)</span>
-                                        <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-expected data-cmn-weekly-bank-url="<?php echo esc_url($candidate_finance_bank_url); ?>">
-                                            <?php if ($weekly_expected_has_bank_hold) : ?>
-                                                <a class="cmn-weekly-earnings-expected-link" href="<?php echo esc_url($candidate_finance_bank_url); ?>"><?php echo esc_html($weekly_expected_display); ?></a>
-                                            <?php else : ?>
-                                                <?php echo esc_html($weekly_expected_display); ?>
-                                            <?php endif; ?>
-                                        </strong>
-                                    </div>
-                                        <div class="cmn-profile-meta-item">
-                                            <span class="cmn-profile-meta-label">Last week total</span>
-                                            <strong class="cmn-profile-meta-value" data-cmn-weekly-earnings-last-week><?php echo esc_html('GBP ' . number_format($weekly_last_week_total, 2)); ?></strong>
-                                        </div>
-                                    </div>
-                                    <div class="cmn-candidate-weekly-earnings-notes">
-                                        <p class="cmn-muted">Self-employed: you're responsible for your own tax/NIC.</p>
-                                        <p class="cmn-muted" data-cmn-weekly-earnings-note><?php echo esc_html($weekly_state_note); ?></p>
-                                    </div>
-                                    <?php if ($weekly_earnings_error !== '') : ?>
-                                        <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error><?php echo esc_html($weekly_earnings_error); ?></div>
-                                    <?php else : ?>
-                                        <div class="cmn-register-warning cmn-candidate-weekly-earnings-error" data-cmn-weekly-earnings-error hidden></div>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endif; ?>
+                            <div class="cmn-dashboard-card cmn-candidate-card-placeholder" data-candidate-card-placeholder>
+                                <img src="<?php echo esc_url($candidate_card_logo_url); ?>" alt="CoverMeNow logo">
+                            </div>
                         </div>
                     <?php endif; ?>
                     <?php if ($is_preview) : ?>
