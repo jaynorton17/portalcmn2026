@@ -65643,9 +65643,9 @@ final class CMN_One_Plugin {
                                                 </span>
                                             </div>
                                         </div>
-                                        <div class="cmn-command-meta">
-                                            <span data-contact-card-preview-role>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
-                                            <span data-contact-card-preview-distance>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
+                                        <div class="cmn-command-meta cmn-contact-card-meta-pills">
+                                            <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-role>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
+                                            <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-distance>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
                                         </div>
                                         <div class="cmn-command-status-wrap">
                                             <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
