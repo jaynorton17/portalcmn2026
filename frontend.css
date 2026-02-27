@@ -2961,29 +2961,32 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
   grid-column: 1 / -1;
 }
 
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card {
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-contact-card {
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto 1fr;
   row-gap: 12px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-card-header h3 {
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-contact-card .cmn-card-header h3 {
   margin: 0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-candidate-weekly-earnings-range {
-  margin-top: clamp(12px, 7%, 34px);
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-contact-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.02);
 }
 
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-candidate-weekly-earnings-notes {
-  margin-top: 0;
-  align-self: end;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-candidate-weekly-earnings-grid {
-  gap: 12px;
-  align-self: center;
-  transform: translateY(-16px);
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-contact-card-logo {
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  object-fit: cover;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.36);
 }
 
 @media (max-width: 720px) {
@@ -13682,7 +13685,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-bl
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-strip {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin: 0 0 14px;
 }
@@ -13742,6 +13745,12 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-subte
   justify-self: start;
   align-self: center;
   text-align: left;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-value-link {
+  color: #fecaca;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-links {
