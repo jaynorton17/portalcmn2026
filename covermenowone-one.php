@@ -66593,7 +66593,9 @@ final class CMN_One_Plugin {
                                             <h4>Latest News</h4>
                                             <strong class="cmn-candidate-section4-highlight">LEARNING CENTER IS NOW LIVE!</strong>
                                             <div class="cmn-candidate-news-card-media">
-                                                <img class="cmn-candidate-news-card-image" src="<?php echo esc_url(plugin_dir_url(__FILE__) . 'assets/latest-news.png'); ?>" alt="Learning Center is now live">
+                                                <a class="cmn-candidate-news-card-link" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'modules'], $portal_url) . '#cmn-learning-modules'); ?>">
+                                                    <img class="cmn-candidate-news-card-image" src="<?php echo esc_url(plugin_dir_url(__FILE__) . 'assets/latest-news.png'); ?>" alt="Learning Center is now live">
+                                                </a>
                                             </div>
                                         </section>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
