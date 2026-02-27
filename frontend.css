@@ -15236,7 +15236,8 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-pending {
   background: linear-gradient(180deg, #facc15, #eab308);
   border-color: #fbbf24;
-  color: #000000;
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000;
 }
 
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-available {
@@ -17311,7 +17312,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-pending-confirmation .cmn-live-presence.is-live .cmn-live-presence-dot::after{border-color:rgba(250,204,21,.5)}
 .cmn-live-strip{display:grid;grid-template-columns:1fr auto;gap:8px}
 .cmn-live-banner{background:#22c55e;border:1px solid #22c55e;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.2;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#06110a;font-weight:900;box-shadow:0 0 22px rgba(34,197,94,.55),0 0 34px rgba(34,197,94,.3)}
-.cmn-live-banner.is-pending{background:linear-gradient(180deg,#facc15,#eab308);border-color:#fbbf24;color:#111827;font-weight:800;box-shadow:0 0 16px rgba(250,204,21,.36)}
+.cmn-live-banner.is-pending{background:linear-gradient(180deg,#facc15,#eab308);border-color:#fbbf24;color:#000 !important;-webkit-text-fill-color:#000;font-weight:800;box-shadow:0 0 16px rgba(250,204,21,.36)}
 .cmn-live-banner small{display:block;margin-top:2px;font-size:11px;font-weight:800;color:inherit}
 .cmn-live-rate{background:rgba(20,16,36,.86);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:7px 10px;font-size:23px;font-weight:800;line-height:1}
 .cmn-live-rate span{display:block;font-size:11px;font-weight:500;margin-top:4px}
