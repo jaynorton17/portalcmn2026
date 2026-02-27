@@ -9776,6 +9776,8 @@ document.addEventListener('DOMContentLoaded', function () {
       if (pctMatch && pctMatch[1]) {
         initialPct = parseInt(pctMatch[1], 10) || 0;
       }
+    } else if (profileAdminStatus && profileAdminStatus.classList.contains('is-verified')) {
+      initialPct = 100;
     }
     var initialMissingItems = [];
     if (profileCompletionMissing) {

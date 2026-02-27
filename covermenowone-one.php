@@ -64844,24 +64844,26 @@ final class CMN_One_Plugin {
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
                             <h2>My Hub</h2>
                         </header>
-                        <div class="cmn-profile-progress" data-tour-target="profile-sections" data-profile-root>
-                            <div class="cmn-profile-progress-main">
-                                <span>Profile Completion</span>
-                                <div class="cmn-progress-bar"><span data-profile-completion-bar style="width: <?php echo esc_attr($completion_percent); ?>%;"></span></div>
+                        <?php if ($completion_percent < 100) : ?>
+                            <div class="cmn-profile-progress" data-tour-target="profile-sections" data-profile-root>
+                                <div class="cmn-profile-progress-main">
+                                    <span>Profile Completion</span>
+                                    <div class="cmn-progress-bar"><span data-profile-completion-bar style="width: <?php echo esc_attr($completion_percent); ?>%;"></span></div>
+                                </div>
+                                <div class="cmn-profile-progress-actions">
+                                    <strong data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>
+                                </div>
                             </div>
-                            <div class="cmn-profile-progress-actions">
-                                <strong data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>
-                            </div>
-                        </div>
-                        <?php if ($completion_percent < 100 && !empty($completion_missing_items)) : ?>
-                            <div class="cmn-profile-completion-help" data-profile-completion-help>
-                                <strong data-profile-completion-helper-text>To reach 100% complete:</strong>
-                                <ul data-profile-completion-missing>
-                                    <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
-                                        <li><?php echo esc_html((string) $missing_item); ?></li>
-                                    <?php endforeach; ?>
-                                </ul>
-                            </div>
+                            <?php if (!empty($completion_missing_items)) : ?>
+                                <div class="cmn-profile-completion-help" data-profile-completion-help>
+                                    <strong data-profile-completion-helper-text>To reach 100% complete:</strong>
+                                    <ul data-profile-completion-missing>
+                                        <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
+                                            <li><?php echo esc_html((string) $missing_item); ?></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                            <?php endif; ?>
                         <?php endif; ?>
                         <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
                             <a class="cmn-tab is-active" href="<?php echo esc_url($candidate_profile_url); ?>">Personal Details</a>
