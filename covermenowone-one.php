@@ -859,6 +859,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_candidate_profile_photo_upload', [$this, 'handle_candidate_profile_photo_upload']);
         add_action('wp_ajax_cmn_candidate_profile_photo_remove', [$this, 'handle_candidate_profile_photo_remove']);
         add_action('wp_ajax_cmn_candidate_learning_opt_in', [$this, 'handle_candidate_learning_opt_in']);
+        add_action('wp_ajax_cmn_candidate_learning_complete_course', [$this, 'handle_candidate_learning_complete_course']);
         add_action('wp_ajax_cmn_candidate_rewards_overview', [$this, 'handle_candidate_rewards_overview']);
         add_action('wp_ajax_cmn_candidate_rewards_open_appeal', [$this, 'handle_candidate_rewards_open_appeal']);
         add_action('wp_ajax_cmn_candidate_weekly_earnings_overview', [$this, 'handle_candidate_weekly_earnings_overview']);
@@ -64669,6 +64670,9 @@ final class CMN_One_Plugin {
             'candidate' => 'bookings',
             'cmn_tab' => false,
         ], $portal_url);
+        $learning_focus_raw = sanitize_key((string) wp_unslash($_GET['cmn_learning_focus'] ?? ''));
+        $learning_focus = $learning_focus_raw === 'modules' ? 'modules' : 'landing';
+        $learning_open_course_key = sanitize_key((string) wp_unslash($_GET['cmn_learning_course'] ?? ''));
         $candidate_finance_url = add_query_arg([
             'cmn_tab' => 'candidate_finance',
             'candidate' => false,
@@ -64718,6 +64722,8 @@ final class CMN_One_Plugin {
         }
 
         $learning_catalog = get_option('cmn_learning_courses_catalog', []);
+        $learning_modules_catalog = $this->get_candidate_learning_modules_catalog();
+        $learning_course_catalog = $this->get_candidate_learning_course_catalog();
         if (is_string($learning_catalog) && $learning_catalog !== '') {
             $decoded_learning_catalog = json_decode($learning_catalog, true);
             if (is_array($decoded_learning_catalog)) {
@@ -64727,19 +64733,32 @@ final class CMN_One_Plugin {
         if (!is_array($learning_catalog)) {
             $learning_catalog = [];
         }
-        $learning_total_courses = 0;
+        $learning_course_keys = [];
+        foreach ((array) $learning_course_catalog as $course_key => $course_item) {
+            $normalized_key = sanitize_key((string) $course_key);
+            if ($normalized_key === '') {
+                continue;
+            }
+            $learning_course_keys[$normalized_key] = true;
+        }
         foreach ((array) $learning_catalog as $course_item) {
             if (is_array($course_item)) {
                 $is_active = !isset($course_item['active']) || (string) $course_item['active'] !== '0';
                 if ($is_active) {
-                    $learning_total_courses++;
+                    $course_key = sanitize_key((string) ($course_item['key'] ?? $course_item['slug'] ?? ''));
+                    if ($course_key === '') {
+                        $course_key = 'catalog_' . substr(md5(wp_json_encode($course_item)), 0, 10);
+                    }
+                    $learning_course_keys[$course_key] = true;
                 }
                 continue;
             }
             if ((string) $course_item !== '') {
-                $learning_total_courses++;
+                $course_key = 'catalog_' . substr(md5((string) $course_item), 0, 10);
+                $learning_course_keys[$course_key] = true;
             }
         }
+        $learning_total_courses = count($learning_course_keys);
         $learning_completed_courses = 0;
         $learning_completed_meta = $candidate_user_id > 0 ? get_user_meta($candidate_user_id, 'cmn_learning_courses_completed', true) : [];
         if (is_string($learning_completed_meta) && $learning_completed_meta !== '') {
@@ -64751,7 +64770,12 @@ final class CMN_One_Plugin {
             }
         }
         if (is_array($learning_completed_meta)) {
-            $learning_completed_courses = count(array_filter(array_map('trim', array_map('strval', $learning_completed_meta))));
+            foreach (array_filter(array_map('trim', array_map('strval', $learning_completed_meta))) as $completed_course_key) {
+                $normalized_key = sanitize_key((string) $completed_course_key);
+                if (isset($learning_course_keys[$normalized_key])) {
+                    $learning_completed_courses++;
+                }
+            }
         }
         $learning_completed_courses = max(0, min($learning_total_courses, $learning_completed_courses));
         $learning_progress_text = $learning_total_courses > 0
@@ -65417,22 +65441,172 @@ final class CMN_One_Plugin {
                             </div>
                         </div>
                     <?php elseif ($tab === 'learning') : ?>
-                        <header class="cmn-candidate-header" data-tour-target="learning-centre">
-                            <h2>Learning Centre</h2>
-                            <p>Select where you want to go.</p>
-                        </header>
-                        <div class="cmn-learning-grid">
-                            <div class="cmn-dashboard-card cmn-learning-entry-card">
-                                <h3>View Certificates</h3>
-                                <p>Open your certificate area and manage uploaded documents.</p>
-                                <a class="cmn-primary" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Enter</a>
+                        <?php
+                        $learning_course_results = $candidate_user_id > 0 ? get_user_meta($candidate_user_id, 'cmn_learning_course_results', true) : [];
+                        if (is_string($learning_course_results) && $learning_course_results !== '') {
+                            $decoded_learning_results = json_decode($learning_course_results, true);
+                            if (is_array($decoded_learning_results)) {
+                                $learning_course_results = $decoded_learning_results;
+                            }
+                        }
+                        if (!is_array($learning_course_results)) {
+                            $learning_course_results = [];
+                        }
+                        ?>
+                        <?php if ($learning_focus === 'landing') : ?>
+                            <header class="cmn-candidate-header" data-tour-target="learning-centre">
+                                <h2>Learning Centre</h2>
+                                <p>Select where you want to go.</p>
+                            </header>
+                            <div class="cmn-learning-grid cmn-learning-grid--entry">
+                                <div class="cmn-dashboard-card cmn-learning-entry-card">
+                                    <h3>View Certificates</h3>
+                                    <p>Open your certificate area and manage uploaded documents.</p>
+                                    <a class="cmn-primary" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Enter</a>
+                                </div>
+                                <div class="cmn-dashboard-card cmn-learning-entry-card" data-tour-target="certificates">
+                                    <h3>View Modules &amp; Courses</h3>
+                                    <p>Enter the modules area to access your courses and learning path.</p>
+                                    <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'modules'], $portal_url) . '#cmn-learning-modules'); ?>">Enter</a>
+                                </div>
                             </div>
-                            <div class="cmn-dashboard-card cmn-learning-entry-card" data-tour-target="certificates" id="cmn-learning-modules">
-                                <h3>View Modules &amp; Courses</h3>
-                                <p>Enter the modules area to access your courses and learning path.</p>
-                                <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => 'modules'], $portal_url) . '#cmn-learning-modules'); ?>">Enter</a>
+                        <?php else : ?>
+                            <header class="cmn-candidate-header" data-tour-target="learning-centre">
+                                <h2>Modules &amp; Courses</h2>
+                                <p>Select a course to view summary, complete slides, and sit the end-of-course exam.</p>
+                            </header>
+                            <div class="cmn-learning-modules-shell" id="cmn-learning-modules" data-learning-root>
+                                <div class="cmn-learning-modules-grid">
+                                    <article class="cmn-dashboard-card cmn-learning-modules-panel">
+                                        <div class="cmn-card-header">
+                                            <h3>Modules</h3>
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => false], $portal_url)); ?>">Back</a>
+                                        </div>
+                                        <div class="cmn-learning-module-list">
+                                            <?php foreach ((array) $learning_modules_catalog as $module_item) : ?>
+                                                <?php
+                                                $module_title = sanitize_text_field((string) ($module_item['title'] ?? 'Module'));
+                                                $module_description = sanitize_textarea_field((string) ($module_item['description'] ?? ''));
+                                                $module_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($module_item['course_keys'] ?? []))));
+                                                ?>
+                                                <div class="cmn-learning-module-item">
+                                                    <h4><?php echo esc_html($module_title); ?></h4>
+                                                    <p><?php echo esc_html($module_description); ?></p>
+                                                    <span class="cmn-status-chip"><?php echo esc_html((string) count($module_course_keys)); ?> course<?php echo count($module_course_keys) === 1 ? '' : 's'; ?></span>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </article>
+                                    <article class="cmn-dashboard-card cmn-learning-courses-panel">
+                                        <h3>Courses</h3>
+                                        <div class="cmn-learning-course-list">
+                                            <?php foreach ((array) $learning_course_catalog as $course_key => $course_item) : ?>
+                                                <?php
+                                                $course_key = sanitize_key((string) $course_key);
+                                                $course_title = sanitize_text_field((string) ($course_item['title'] ?? 'Course'));
+                                                $course_description = sanitize_textarea_field((string) ($course_item['description'] ?? ''));
+                                                $slides_count = count((array) ($course_item['slides'] ?? []));
+                                                $exam_count = count((array) ($course_item['exam'] ?? []));
+                                                $completion_item = is_array($learning_course_results[$course_key] ?? null) ? (array) $learning_course_results[$course_key] : [];
+                                                $is_completed = !empty($completion_item['passed']);
+                                                $completion_date = sanitize_text_field((string) ($completion_item['issued_date'] ?? ''));
+                                                ?>
+                                                <div class="cmn-learning-course-item<?php echo $is_completed ? ' is-completed' : ''; ?>" data-learning-course-card="<?php echo esc_attr($course_key); ?>">
+                                                    <div class="cmn-learning-course-head">
+                                                        <h4><?php echo esc_html($course_title); ?></h4>
+                                                        <span class="cmn-status-chip<?php echo $is_completed ? ' is-approved' : ''; ?>" data-learning-course-status="<?php echo esc_attr($course_key); ?>">
+                                                            <?php echo $is_completed ? 'Completed' : 'Not started'; ?>
+                                                        </span>
+                                                    </div>
+                                                    <p><?php echo esc_html($course_description); ?></p>
+                                                    <div class="cmn-learning-course-meta">
+                                                        <span><?php echo esc_html((string) $slides_count); ?> slides</span>
+                                                        <span><?php echo esc_html((string) $exam_count); ?> exam questions</span>
+                                                    </div>
+                                                    <?php if ($is_completed && $completion_date !== '') : ?>
+                                                        <small>Completed: <?php echo esc_html($completion_date); ?></small>
+                                                    <?php endif; ?>
+                                                    <button class="cmn-primary" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>">Open course</button>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </article>
+                                </div>
+                                <article class="cmn-dashboard-card cmn-learning-player"
+                                         data-learning-player
+                                         data-learning-courses="<?php echo esc_attr(wp_json_encode($learning_course_catalog)); ?>"
+                                         data-learning-results="<?php echo esc_attr(wp_json_encode($learning_course_results)); ?>"
+                                         data-learning-open-key="<?php echo esc_attr($learning_open_course_key); ?>"
+                                         data-learning-candidate-name="<?php echo esc_attr((string) ($user ? $user->display_name : 'Candidate')); ?>">
+                                    <div class="cmn-learning-player-empty" data-learning-player-empty>
+                                        <h3>Select a Course</h3>
+                                        <p>Choose a course above to read the summary, work through each slide, and complete the exam.</p>
+                                    </div>
+                                    <div class="cmn-learning-player-summary" data-learning-player-summary hidden>
+                                        <h3 data-learning-summary-title></h3>
+                                        <p data-learning-summary-description></p>
+                                        <ul class="cmn-learning-summary-meta">
+                                            <li><strong>Pass mark:</strong> <span data-learning-summary-pass></span></li>
+                                            <li><strong>Slides:</strong> <span data-learning-summary-slides></span></li>
+                                            <li><strong>Exam questions:</strong> <span data-learning-summary-exam-count></span></li>
+                                            <li><strong>Retakes:</strong> Unlimited</li>
+                                        </ul>
+                                        <div class="cmn-learning-player-actions">
+                                            <button class="cmn-primary" type="button" data-learning-start-course>Start course</button>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-learning-player-slides" data-learning-player-slides hidden>
+                                        <div class="cmn-learning-slide-head">
+                                            <span data-learning-slide-count></span>
+                                        </div>
+                                        <h3 data-learning-slide-title></h3>
+                                        <p data-learning-slide-body></p>
+                                        <div class="cmn-learning-player-actions">
+                                            <button class="cmn-ghost" type="button" data-learning-prev-slide>Previous</button>
+                                            <button class="cmn-primary" type="button" data-learning-next-slide>Next</button>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-learning-player-exam" data-learning-player-exam hidden>
+                                        <h3>Course Exam</h3>
+                                        <p class="cmn-muted">Pass mark: <span data-learning-exam-pass-mark></span>. You can retake as many times as needed.</p>
+                                        <form data-learning-exam-form>
+                                            <div class="cmn-learning-exam-questions" data-learning-exam-questions></div>
+                                            <div class="cmn-learning-player-actions">
+                                                <button class="cmn-primary" type="submit">Submit exam</button>
+                                                <button class="cmn-ghost" type="button" data-learning-back-to-slides>Back to slides</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="cmn-learning-player-result" data-learning-player-result hidden>
+                                        <h3 data-learning-result-title></h3>
+                                        <p data-learning-result-score></p>
+                                        <div class="cmn-learning-exam-feedback" data-learning-result-feedback></div>
+                                        <div class="cmn-learning-certificate" data-learning-certificate hidden>
+                                            <div class="cmn-learning-certificate-head">
+                                                <strong>COVERMENOW ONE</strong>
+                                                <span>Structured Emergency Cover Infrastructure</span>
+                                            </div>
+                                            <h4>Certificate of Course Completion</h4>
+                                            <p>This certifies that:</p>
+                                            <p class="cmn-learning-certificate-name" data-learning-certificate-name></p>
+                                            <p>has successfully completed:</p>
+                                            <p class="cmn-learning-certificate-course" data-learning-certificate-course></p>
+                                            <p>and achieved a <strong data-learning-certificate-score></strong>.</p>
+                                            <div class="cmn-learning-certificate-meta">
+                                                <span>Version: <strong data-learning-certificate-version></strong></span>
+                                                <span>Issued: <strong data-learning-certificate-issued></strong></span>
+                                                <span>Verification Code: <strong data-learning-certificate-code></strong></span>
+                                            </div>
+                                            <p class="cmn-learning-certificate-tagline">One system. Total cover.</p>
+                                        </div>
+                                        <div class="cmn-learning-player-actions">
+                                            <button class="cmn-primary" type="button" data-learning-retake-exam>Retake exam</button>
+                                            <button class="cmn-ghost" type="button" data-learning-back-to-summary>Back to summary</button>
+                                        </div>
+                                    </div>
+                                </article>
                             </div>
-                        </div>
+                        <?php endif; ?>
                     <?php elseif ($tab === 'rewards') : ?>
                         <?php echo $this->render_candidate_rewards_tab($candidate_id, $portal_url); ?>
                     <?php elseif ($tab === 'candidate_finance') : ?>
@@ -70265,6 +70439,117 @@ final class CMN_One_Plugin {
         </section>
         <?php
         return ob_get_clean();
+    }
+
+    private function get_candidate_learning_course_catalog() {
+        return [
+            'foundations_behaviour_infrastructure' => [
+                'key' => 'foundations_behaviour_infrastructure',
+                'module_key' => 'behaviour_infrastructure',
+                'title' => 'Foundations of Behaviour Infrastructure',
+                'description' => 'This course establishes the operational foundations of behaviour management within a structured school environment. It defines behaviour as a managed system rather than a reactive response, with focus on accountability, clarity, and safeguarding alignment.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'slides' => [
+                    [
+                        'title' => 'Behaviour as Infrastructure',
+                        'body' => "Behaviour management is not a personality trait or an instinctive skill. It is a structured infrastructure embedded within school systems. Effective schools treat behaviour as an operational function, not an emotional reaction.\n\nWhen behaviour systems are clear, staff act consistently. Consistency reduces ambiguity for pupils and protects staff from subjective decision-making. This safeguards both learning and professional standards.",
+                    ],
+                    [
+                        'title' => 'The Role of Predictability',
+                        'body' => "Predictability reduces escalation. When pupils understand expectations, routines, and consequences, they are less likely to test boundaries.\n\nPredictable systems also protect staff. Staff confidence increases when they know exactly what action follows disruption. This prevents hesitation and uneven enforcement.",
+                    ],
+                    [
+                        'title' => 'Clear Expectations and Language',
+                        'body' => "Behaviour expectations must be explicit, not implied. Ambiguity leads to inconsistent correction and increased challenge.\n\nLanguage should be direct, calm, and instructional. Staff should state the required behaviour rather than describe the disruption. This keeps authority neutral and professional.",
+                    ],
+                    [
+                        'title' => 'Consistency Across Staff',
+                        'body' => "A behaviour system fails when applied unevenly. Inconsistent enforcement encourages pupils to test different adults.\n\nWhole-school alignment ensures accountability. Staff must follow agreed procedures regardless of personal tolerance levels. This protects collective authority.",
+                    ],
+                    [
+                        'title' => 'Early Intervention',
+                        'body' => "Low-level disruption escalates when ignored. Early correction prevents repeated boundary testing.\n\nIntervention should be proportionate and immediate. Delayed correction weakens authority and increases the likelihood of repeated behaviour.",
+                    ],
+                    [
+                        'title' => 'Safeguarding and Behaviour',
+                        'body' => "Behaviour and safeguarding are interconnected. Persistent disruption may signal unmet needs or wider risk indicators.\n\nStaff must distinguish between deliberate defiance and potential safeguarding concerns. Escalation routes must be followed where patterns indicate vulnerability.",
+                    ],
+                    [
+                        'title' => 'Recording and Accountability',
+                        'body' => "Accurate recording protects staff and pupils. Behaviour incidents must be logged factually and without emotional commentary.\n\nDocumentation supports pattern recognition and leadership oversight. It ensures behaviour management remains evidence-based and defensible.",
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Why is behaviour described as infrastructure?',
+                        'options' => [
+                            'A' => 'Because it depends on personality',
+                            'B' => 'Because it is a structured system within school operations',
+                            'C' => 'Because it is informal',
+                            'D' => 'Because it is optional',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Behaviour is treated as a structured operational system embedded in school processes. Personality-led, informal, or optional approaches undermine consistency and control.',
+                    ],
+                    [
+                        'question' => 'What does predictability reduce?',
+                        'options' => [
+                            'A' => 'Learning time',
+                            'B' => 'Teacher workload',
+                            'C' => 'Escalation',
+                            'D' => 'Accountability',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Predictability reduces escalation by clarifying expectations, routines, and consequences.',
+                    ],
+                    [
+                        'question' => 'Why must expectations be explicit?',
+                        'options' => [
+                            'A' => 'To increase complexity',
+                            'B' => 'To avoid ambiguity',
+                            'C' => 'To reduce documentation',
+                            'D' => 'To allow negotiation',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Explicit expectations prevent ambiguity and inconsistent correction.',
+                    ],
+                    [
+                        'question' => 'What risk does inconsistent enforcement create?',
+                        'options' => [
+                            'A' => 'Reduced paperwork',
+                            'B' => 'Improved flexibility',
+                            'C' => 'Pupils testing adults',
+                            'D' => 'Faster escalation',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Inconsistent enforcement encourages pupils to test boundaries across different staff.',
+                    ],
+                    [
+                        'question' => 'Why must behaviour incidents be recorded factually?',
+                        'options' => [
+                            'A' => 'To increase narrative detail',
+                            'B' => 'To assign blame',
+                            'C' => 'To protect staff and support oversight',
+                            'D' => 'To reduce transparency',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Factual logging protects accountability and supports leadership oversight and pattern monitoring.',
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    private function get_candidate_learning_modules_catalog() {
+        return [
+            [
+                'key' => 'behaviour_infrastructure',
+                'title' => 'Module 1: Behaviour Infrastructure',
+                'description' => 'Structured behaviour systems, consistency, early intervention, and safeguarding-aligned accountability.',
+                'course_keys' => ['foundations_behaviour_infrastructure'],
+            ],
+        ];
     }
 
     private function render_candidate_rewards_tab($candidate_id, $portal_url) {
@@ -80316,6 +80601,91 @@ p{margin:0;line-height:1.5}
         wp_send_json_success([
             'enabled' => $enabled ? 1 : 0,
             'message' => $enabled ? 'You will be notified when courses go live.' : 'Learning notifications turned off.',
+        ]);
+    }
+
+    public function handle_candidate_learning_complete_course() {
+        if (!check_ajax_referer('cmn_candidate_learning', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in() || !$this->is_candidate_user()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+
+        $course_key = sanitize_key((string) ($_POST['course_key'] ?? ''));
+        $score = max(0, min(100, (int) ($_POST['score'] ?? 0)));
+        $catalog = $this->get_candidate_learning_course_catalog();
+        if ($course_key === '' || !isset($catalog[$course_key])) {
+            wp_send_json_error(['message' => 'Course not found.'], 404);
+        }
+
+        $pass_mark = max(1, min(100, (int) ($catalog[$course_key]['pass_mark'] ?? 100)));
+        if ($score < $pass_mark) {
+            wp_send_json_error(['message' => 'Pass mark not reached.'], 400);
+        }
+
+        $user_id = (int) get_current_user_id();
+        $results = get_user_meta($user_id, 'cmn_learning_course_results', true);
+        if (is_string($results) && $results !== '') {
+            $decoded_results = json_decode($results, true);
+            if (is_array($decoded_results)) {
+                $results = $decoded_results;
+            }
+        }
+        if (!is_array($results)) {
+            $results = [];
+        }
+
+        $existing_code = sanitize_text_field((string) (($results[$course_key]['verification_code'] ?? '')));
+        if ($existing_code === '') {
+            $existing_code = 'CMN-' . strtoupper(substr(md5($user_id . '|' . $course_key . '|' . time()), 0, 10));
+        }
+        $issued_mysql = current_time('mysql');
+        $issued_display = date_i18n('j M Y', strtotime($issued_mysql));
+        $version = sanitize_text_field((string) ($catalog[$course_key]['version'] ?? 'v1.0'));
+
+        $results[$course_key] = [
+            'course_key' => $course_key,
+            'passed' => 1,
+            'score' => $score,
+            'issued_at' => $issued_mysql,
+            'issued_date' => $issued_display,
+            'verification_code' => $existing_code,
+            'version' => $version,
+        ];
+        update_user_meta($user_id, 'cmn_learning_course_results', $results);
+
+        $completed = get_user_meta($user_id, 'cmn_learning_courses_completed', true);
+        if (is_string($completed) && $completed !== '') {
+            $decoded_completed = json_decode($completed, true);
+            if (is_array($decoded_completed)) {
+                $completed = $decoded_completed;
+            } else {
+                $completed = array_map('trim', explode(',', $completed));
+            }
+        }
+        if (!is_array($completed)) {
+            $completed = [];
+        }
+        $completed[] = $course_key;
+        $completed = array_values(array_unique(array_filter(array_map('sanitize_key', array_map('strval', $completed)))));
+        update_user_meta($user_id, 'cmn_learning_courses_completed', $completed);
+
+        $this->add_audit_log('candidate_learning_course_completed', 'candidate', (string) ((int) $this->get_candidate_id_for_user($user_id)), [
+            'candidate_user_id' => $user_id,
+            'course_key' => $course_key,
+            'score' => $score,
+            'verification_code' => $existing_code,
+            'version' => $version,
+        ], $user_id);
+
+        wp_send_json_success([
+            'course_key' => $course_key,
+            'score' => $score,
+            'issued_date' => $issued_display,
+            'verification_code' => $existing_code,
+            'version' => $version,
+            'message' => 'Course completion saved.',
         ]);
     }
 

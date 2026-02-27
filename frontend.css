@@ -1190,6 +1190,227 @@ body.cmn-portal-page img[src*="fasthosts"] {
   gap: 16px;
 }
 
+.cmn-learning-modules-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.cmn-learning-modules-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.cmn-learning-module-list,
+.cmn-learning-course-list {
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-learning-module-item,
+.cmn-learning-course-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.cmn-learning-module-item h4,
+.cmn-learning-course-item h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.cmn-learning-module-item p,
+.cmn-learning-course-item p {
+  margin: 0;
+  color: var(--cmn-muted);
+  font-size: 13px;
+}
+
+.cmn-learning-course-item.is-completed {
+  border-color: rgba(34, 197, 94, 0.45);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.18) inset;
+}
+
+.cmn-learning-course-item .cmn-primary.is-selected {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
+}
+
+.cmn-learning-course-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.cmn-learning-course-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--cmn-muted);
+  font-size: 12px;
+}
+
+.cmn-learning-player {
+  display: grid;
+  gap: 14px;
+}
+
+.cmn-learning-player :is(.cmn-learning-player-summary, .cmn-learning-player-slides, .cmn-learning-player-exam, .cmn-learning-player-result) {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-learning-player-empty h3 {
+  margin: 0;
+}
+
+.cmn-learning-player-empty p {
+  margin: 0;
+  color: var(--cmn-muted);
+}
+
+.cmn-learning-summary-meta {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.cmn-learning-player-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.cmn-learning-slide-head {
+  color: var(--cmn-muted);
+  font-size: 12px;
+}
+
+.cmn-learning-player [data-learning-slide-body] {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.6;
+}
+
+.cmn-learning-exam-questions {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-learning-exam-question {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.cmn-learning-exam-question legend {
+  padding: 0 4px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.cmn-learning-exam-option {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  color: var(--cmn-text);
+}
+
+.cmn-learning-exam-option input {
+  margin-top: 2px;
+}
+
+.cmn-learning-exam-feedback {
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-learning-exam-feedback-row {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.cmn-learning-exam-feedback-row strong {
+  font-size: 13px;
+}
+
+.cmn-learning-exam-feedback-row span,
+.cmn-learning-exam-feedback-row p {
+  margin: 0;
+  color: var(--cmn-muted);
+  font-size: 12px;
+}
+
+.cmn-learning-exam-feedback-row.is-correct {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+.cmn-learning-exam-feedback-row.is-incorrect {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.cmn-learning-certificate {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.cmn-learning-certificate-head {
+  display: grid;
+  gap: 2px;
+}
+
+.cmn-learning-certificate-head strong {
+  font-size: 15px;
+}
+
+.cmn-learning-certificate-head span {
+  color: var(--cmn-muted);
+  font-size: 12px;
+}
+
+.cmn-learning-certificate h4,
+.cmn-learning-certificate p {
+  margin: 0;
+}
+
+.cmn-learning-certificate-name,
+.cmn-learning-certificate-course {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.cmn-learning-certificate-meta {
+  display: grid;
+  gap: 4px;
+  color: var(--cmn-muted);
+  font-size: 12px;
+}
+
+.cmn-learning-certificate-tagline {
+  margin-top: 4px;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
@@ -15467,6 +15688,10 @@ body.cmn-portal-page .cmn-candidate-main--bookings .cmn-candidate-bookings-grid 
   }
 
   body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-learning-modules-grid {
     grid-template-columns: 1fr;
   }
 }

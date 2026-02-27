@@ -10256,40 +10256,389 @@ document.addEventListener('DOMContentLoaded', function () {
     updateComplianceSummary();
   }
 
-  var learningSaveBtn = document.querySelector('[data-learning-save]');
-  if (learningSaveBtn && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateLearningNonce) {
-    var learningToggle = document.querySelector('[data-learning-opt-in]');
-    var learningMessage = document.querySelector('[data-learning-message]');
-    learningSaveBtn.addEventListener('click', function () {
-      var formData = new FormData();
-      formData.append('action', 'cmn_candidate_learning_opt_in');
-      formData.append('nonce', window.cmnPortal.candidateLearningNonce);
-      formData.append('enabled', learningToggle && learningToggle.checked ? '1' : '0');
-      if (learningMessage) {
-        learningMessage.textContent = 'Saving...';
-      }
-      fetch(window.cmnPortal.ajaxUrl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        body: formData
-      }).then(function (response) {
-        return response.json();
-      }).then(function (data) {
-        if (!data || !data.success) {
-          if (learningMessage) {
-            learningMessage.textContent = data && data.data && data.data.message ? data.data.message : 'Unable to save preference.';
+  var learningRoot = document.querySelector('[data-learning-root]');
+  if (learningRoot) {
+    var learningPlayer = learningRoot.querySelector('[data-learning-player]');
+    if (learningPlayer) {
+      var learningParseJson = function (raw, fallback) {
+        if (!raw) {
+          return fallback;
+        }
+        try {
+          var parsed = JSON.parse(raw);
+          return parsed && typeof parsed === 'object' ? parsed : fallback;
+        } catch (error) {
+          return fallback;
+        }
+      };
+      var learningEscape = function (value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      };
+      var learningCourses = learningParseJson(learningPlayer.getAttribute('data-learning-courses'), {});
+      var learningResults = learningParseJson(learningPlayer.getAttribute('data-learning-results'), {});
+      var candidateName = String(learningPlayer.getAttribute('data-learning-candidate-name') || 'Candidate');
+      var initialOpenKey = String(learningPlayer.getAttribute('data-learning-open-key') || '');
+
+      var panelEmpty = learningPlayer.querySelector('[data-learning-player-empty]');
+      var panelSummary = learningPlayer.querySelector('[data-learning-player-summary]');
+      var panelSlides = learningPlayer.querySelector('[data-learning-player-slides]');
+      var panelExam = learningPlayer.querySelector('[data-learning-player-exam]');
+      var panelResult = learningPlayer.querySelector('[data-learning-player-result]');
+
+      var summaryTitle = learningPlayer.querySelector('[data-learning-summary-title]');
+      var summaryDescription = learningPlayer.querySelector('[data-learning-summary-description]');
+      var summaryPass = learningPlayer.querySelector('[data-learning-summary-pass]');
+      var summarySlides = learningPlayer.querySelector('[data-learning-summary-slides]');
+      var summaryExamCount = learningPlayer.querySelector('[data-learning-summary-exam-count]');
+      var startCourseBtn = learningPlayer.querySelector('[data-learning-start-course]');
+
+      var slideCount = learningPlayer.querySelector('[data-learning-slide-count]');
+      var slideTitle = learningPlayer.querySelector('[data-learning-slide-title]');
+      var slideBody = learningPlayer.querySelector('[data-learning-slide-body]');
+      var prevSlideBtn = learningPlayer.querySelector('[data-learning-prev-slide]');
+      var nextSlideBtn = learningPlayer.querySelector('[data-learning-next-slide]');
+
+      var examPassMark = learningPlayer.querySelector('[data-learning-exam-pass-mark]');
+      var examForm = learningPlayer.querySelector('[data-learning-exam-form]');
+      var examQuestions = learningPlayer.querySelector('[data-learning-exam-questions]');
+      var backToSlidesBtn = learningPlayer.querySelector('[data-learning-back-to-slides]');
+
+      var resultTitle = learningPlayer.querySelector('[data-learning-result-title]');
+      var resultScore = learningPlayer.querySelector('[data-learning-result-score]');
+      var resultFeedback = learningPlayer.querySelector('[data-learning-result-feedback]');
+      var retakeExamBtn = learningPlayer.querySelector('[data-learning-retake-exam]');
+      var backToSummaryBtn = learningPlayer.querySelector('[data-learning-back-to-summary]');
+
+      var certificateBlock = learningPlayer.querySelector('[data-learning-certificate]');
+      var certificateName = learningPlayer.querySelector('[data-learning-certificate-name]');
+      var certificateCourse = learningPlayer.querySelector('[data-learning-certificate-course]');
+      var certificateScore = learningPlayer.querySelector('[data-learning-certificate-score]');
+      var certificateVersion = learningPlayer.querySelector('[data-learning-certificate-version]');
+      var certificateIssued = learningPlayer.querySelector('[data-learning-certificate-issued]');
+      var certificateCode = learningPlayer.querySelector('[data-learning-certificate-code]');
+
+      var state = {
+        courseKey: '',
+        course: null,
+        slideIndex: 0
+      };
+
+      var learningButtons = learningRoot.querySelectorAll('[data-learning-open-course]');
+      var setCourseCardStatus = function (courseKey, completed, dateLabel) {
+        var card = learningRoot.querySelector('[data-learning-course-card="' + courseKey + '"]');
+        if (card) {
+          card.classList.toggle('is-completed', !!completed);
+          var status = card.querySelector('[data-learning-course-status="' + courseKey + '"]');
+          if (status) {
+            status.textContent = completed ? 'Completed' : 'Not started';
+            status.classList.toggle('is-approved', !!completed);
           }
+          var existingDate = card.querySelector('small');
+          if (completed && dateLabel) {
+            if (!existingDate) {
+              existingDate = document.createElement('small');
+              card.insertBefore(existingDate, card.querySelector('[data-learning-open-course]'));
+            }
+            existingDate.textContent = 'Completed: ' + dateLabel;
+          }
+        }
+      };
+
+      var showPanel = function (panel) {
+        [panelEmpty, panelSummary, panelSlides, panelExam, panelResult].forEach(function (node) {
+          if (!node) {
+            return;
+          }
+          node.hidden = node !== panel;
+        });
+      };
+
+      var renderSummary = function () {
+        if (!state.course) {
+          showPanel(panelEmpty);
           return;
         }
-        if (learningMessage) {
-          learningMessage.textContent = data.data && data.data.message ? data.data.message : 'Saved.';
+        var passMark = parseInt(state.course.pass_mark || '100', 10);
+        if (!isFinite(passMark) || passMark < 1) {
+          passMark = 100;
         }
-      }).catch(function () {
-        if (learningMessage) {
-          learningMessage.textContent = 'Unable to save preference.';
+        if (summaryTitle) {
+          summaryTitle.textContent = String(state.course.title || 'Course');
         }
+        if (summaryDescription) {
+          summaryDescription.textContent = String(state.course.description || '');
+        }
+        if (summaryPass) {
+          summaryPass.textContent = String(passMark) + '%';
+        }
+        if (summarySlides) {
+          summarySlides.textContent = String(Array.isArray(state.course.slides) ? state.course.slides.length : 0);
+        }
+        if (summaryExamCount) {
+          summaryExamCount.textContent = String(Array.isArray(state.course.exam) ? state.course.exam.length : 0);
+        }
+        showPanel(panelSummary);
+      };
+
+      var renderSlide = function () {
+        if (!state.course || !Array.isArray(state.course.slides) || !state.course.slides.length) {
+          renderSummary();
+          return;
+        }
+        var slides = state.course.slides;
+        if (state.slideIndex < 0) {
+          state.slideIndex = 0;
+        }
+        if (state.slideIndex > slides.length - 1) {
+          state.slideIndex = slides.length - 1;
+        }
+        var slide = slides[state.slideIndex] || {};
+        if (slideCount) {
+          slideCount.textContent = 'Slide ' + String(state.slideIndex + 1) + ' of ' + String(slides.length);
+        }
+        if (slideTitle) {
+          slideTitle.textContent = String(slide.title || 'Slide');
+        }
+        if (slideBody) {
+          slideBody.textContent = String(slide.body || '');
+        }
+        if (prevSlideBtn) {
+          prevSlideBtn.disabled = state.slideIndex === 0;
+        }
+        if (nextSlideBtn) {
+          nextSlideBtn.textContent = state.slideIndex === (slides.length - 1) ? 'Go to exam' : 'Next';
+        }
+        showPanel(panelSlides);
+      };
+
+      var renderExam = function () {
+        if (!state.course || !Array.isArray(state.course.exam) || !state.course.exam.length) {
+          renderSummary();
+          return;
+        }
+        var passMark = parseInt(state.course.pass_mark || '100', 10);
+        if (!isFinite(passMark) || passMark < 1) {
+          passMark = 100;
+        }
+        if (examPassMark) {
+          examPassMark.textContent = String(passMark) + '%';
+        }
+        if (examQuestions) {
+          examQuestions.innerHTML = state.course.exam.map(function (question, index) {
+            var options = (question && typeof question.options === 'object') ? question.options : {};
+            var optionRows = Object.keys(options).map(function (optionKey) {
+              var optionLabel = String(options[optionKey] || '');
+              return '' +
+                '<label class="cmn-learning-exam-option">' +
+                  '<input type="radio" name="q' + String(index) + '" value="' + learningEscape(optionKey) + '" required>' +
+                  '<span><strong>' + learningEscape(optionKey) + '.</strong> ' + learningEscape(optionLabel) + '</span>' +
+                '</label>';
+            }).join('');
+            return '' +
+              '<fieldset class="cmn-learning-exam-question">' +
+                '<legend>Question ' + String(index + 1) + ': ' + learningEscape(String(question.question || '')) + '</legend>' +
+                optionRows +
+              '</fieldset>';
+          }).join('');
+        }
+        showPanel(panelExam);
+      };
+
+      var persistCompletion = function (courseKey, score) {
+        if (!(window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateLearningNonce)) {
+          return Promise.resolve({
+            issued_date: new Date().toLocaleDateString('en-GB'),
+            verification_code: 'CMN-' + String(Date.now()),
+            version: String((state.course && state.course.version) || 'v1.0')
+          });
+        }
+        var formData = new FormData();
+        formData.append('action', 'cmn_candidate_learning_complete_course');
+        formData.append('nonce', window.cmnPortal.candidateLearningNonce);
+        formData.append('course_key', courseKey);
+        formData.append('score', String(score));
+        return fetch(window.cmnPortal.ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: formData
+        }).then(function (response) {
+          return response.json();
+        }).then(function (data) {
+          if (!data || !data.success || !data.data) {
+            throw new Error(data && data.data && data.data.message ? data.data.message : 'Unable to save completion.');
+          }
+          return data.data;
+        });
+      };
+
+      var renderResult = function (passed, score, feedbackRows) {
+        if (resultTitle) {
+          resultTitle.textContent = passed ? 'Exam passed' : 'Exam not passed';
+        }
+        if (resultScore) {
+          var passMark = parseInt(state.course && state.course.pass_mark ? state.course.pass_mark : '100', 10);
+          resultScore.textContent = 'Score: ' + String(score) + '% (Pass mark: ' + String(passMark) + '%)';
+        }
+        if (resultFeedback) {
+          resultFeedback.innerHTML = feedbackRows.join('');
+        }
+        if (certificateBlock) {
+          certificateBlock.hidden = !passed;
+        }
+        if (passed) {
+          if (certificateName) {
+            certificateName.textContent = candidateName;
+          }
+          if (certificateCourse) {
+            certificateCourse.textContent = String((state.course && state.course.title) || 'Course');
+          }
+          if (certificateScore) {
+            certificateScore.textContent = String(score) + '% pass score';
+          }
+          if (certificateVersion) {
+            certificateVersion.textContent = String((state.course && state.course.version) || 'v1.0');
+          }
+          if (certificateIssued) {
+            certificateIssued.textContent = new Date().toLocaleDateString('en-GB');
+          }
+          if (certificateCode) {
+            certificateCode.textContent = 'Generating...';
+          }
+          persistCompletion(state.courseKey, score)
+            .then(function (completionData) {
+              if (certificateIssued && completionData.issued_date) {
+                certificateIssued.textContent = String(completionData.issued_date);
+              }
+              if (certificateCode && completionData.verification_code) {
+                certificateCode.textContent = String(completionData.verification_code);
+              }
+              if (certificateVersion && completionData.version) {
+                certificateVersion.textContent = String(completionData.version);
+              }
+              learningResults[state.courseKey] = completionData;
+              setCourseCardStatus(state.courseKey, true, String(completionData.issued_date || ''));
+            })
+            .catch(function () {
+              if (certificateCode) {
+                certificateCode.textContent = 'Pending verification';
+              }
+            });
+        }
+        showPanel(panelResult);
+      };
+
+      var openCourse = function (courseKey) {
+        var key = String(courseKey || '');
+        if (!key || !learningCourses[key]) {
+          return;
+        }
+        state.courseKey = key;
+        state.course = learningCourses[key];
+        state.slideIndex = 0;
+        learningButtons.forEach(function (button) {
+          var selected = button.getAttribute('data-learning-open-course') === key;
+          button.classList.toggle('is-selected', selected);
+        });
+        renderSummary();
+      };
+
+      learningButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          var key = button.getAttribute('data-learning-open-course');
+          openCourse(key);
+        });
       });
-    });
+
+      if (startCourseBtn) {
+        startCourseBtn.addEventListener('click', function () {
+          state.slideIndex = 0;
+          renderSlide();
+        });
+      }
+      if (prevSlideBtn) {
+        prevSlideBtn.addEventListener('click', function () {
+          state.slideIndex -= 1;
+          renderSlide();
+        });
+      }
+      if (nextSlideBtn) {
+        nextSlideBtn.addEventListener('click', function () {
+          if (!state.course || !Array.isArray(state.course.slides)) {
+            return;
+          }
+          if (state.slideIndex >= state.course.slides.length - 1) {
+            renderExam();
+            return;
+          }
+          state.slideIndex += 1;
+          renderSlide();
+        });
+      }
+      if (backToSlidesBtn) {
+        backToSlidesBtn.addEventListener('click', function () {
+          renderSlide();
+        });
+      }
+      if (backToSummaryBtn) {
+        backToSummaryBtn.addEventListener('click', function () {
+          renderSummary();
+        });
+      }
+      if (retakeExamBtn) {
+        retakeExamBtn.addEventListener('click', function () {
+          renderExam();
+        });
+      }
+      if (examForm) {
+        examForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          if (!state.course || !Array.isArray(state.course.exam) || !state.course.exam.length) {
+            return;
+          }
+          var allAnswered = true;
+          var correctCount = 0;
+          var feedbackRows = [];
+          state.course.exam.forEach(function (question, index) {
+            var selected = examForm.querySelector('input[name="q' + String(index) + '"]:checked');
+            var selectedValue = selected ? String(selected.value || '') : '';
+            if (!selectedValue) {
+              allAnswered = false;
+            }
+            var answer = String(question && question.answer ? question.answer : '');
+            var isCorrect = selectedValue !== '' && selectedValue === answer;
+            if (isCorrect) {
+              correctCount += 1;
+            }
+            feedbackRows.push(
+              '<div class="cmn-learning-exam-feedback-row ' + (isCorrect ? 'is-correct' : 'is-incorrect') + '">' +
+                '<strong>Question ' + String(index + 1) + ': ' + (isCorrect ? 'Correct' : 'Incorrect') + '</strong>' +
+                '<span>Your answer: ' + learningEscape(selectedValue || 'Not answered') + ' | Correct answer: ' + learningEscape(answer) + '</span>' +
+                '<p>' + learningEscape(String(question && question.explanation ? question.explanation : '')) + '</p>' +
+              '</div>'
+            );
+          });
+          if (!allAnswered) {
+            renderResult(false, 0, ['<div class="cmn-learning-exam-feedback-row is-incorrect"><strong>Complete all questions before submitting.</strong></div>']);
+            return;
+          }
+          var score = Math.round((correctCount / state.course.exam.length) * 100);
+          var passMark = parseInt(state.course.pass_mark || '100', 10);
+          if (!isFinite(passMark) || passMark < 1) {
+            passMark = 100;
+          }
+          renderResult(score >= passMark, score, feedbackRows);
+        });
+      }
+
+      if (initialOpenKey && learningCourses[initialOpenKey]) {
+        openCourse(initialOpenKey);
+      }
+    }
   }
 
   var requestCountdowns = document.querySelectorAll('[data-request-expires]');
