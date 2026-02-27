@@ -1190,6 +1190,61 @@ body.cmn-portal-page img[src*="fasthosts"] {
   gap: 16px;
 }
 
+.cmn-learning-smart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.cmn-learning-smart-tile {
+  display: grid;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.cmn-learning-smart-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cmn-learning-smart-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.cmn-learning-smart-tile > p {
+  margin: 0;
+  color: var(--cmn-muted);
+  font-size: 13px;
+}
+
+.cmn-learning-smart-hover {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(2, 6, 23, 0.55);
+  border-radius: 10px;
+  padding: 10px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .18s ease, transform .18s ease;
+  pointer-events: none;
+}
+
+.cmn-learning-smart-tile:hover .cmn-learning-smart-hover,
+.cmn-learning-smart-tile:focus-within .cmn-learning-smart-hover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .cmn-learning-modules-shell {
   display: grid;
   gap: 16px;
@@ -15760,6 +15815,10 @@ body.cmn-portal-page .cmn-candidate-main--bookings .cmn-candidate-bookings-grid 
   }
 
   body.cmn-portal-page .cmn-candidate-main--learning .cmn-learning-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-learning-smart-grid {
     grid-template-columns: 1fr;
   }
 
