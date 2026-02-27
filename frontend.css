@@ -14927,7 +14927,8 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-brand {
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-brand span {
-  color: #ef4444;
+  color: #ff1f43 !important;
+  font-weight: 900;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-head-check {
@@ -16823,7 +16824,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card{background:linear-gradient(180deg,rgba(197,17,47,.95),rgba(102,7,28,.96));border:1px solid rgba(255,71,99,.65);border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.35);padding:12px;display:flex;flex-direction:column;gap:8px;min-height:100%}
 .cmn-live-card.is-pending-confirmation{background:linear-gradient(180deg,rgba(151,109,12,.94),rgba(92,66,10,.96));border-color:rgba(250,204,21,.6);box-shadow:0 10px 24px rgba(24,18,4,.42),0 0 18px rgba(250,204,21,.2)}
 .cmn-live-brand{font-size:13px;font-weight:800;letter-spacing:.02em;color:#f3f4f6}
-.cmn-live-brand span{color:#ef4444}
+.cmn-live-brand span{color:#ff1f43 !important;font-weight:900}
 .cmn-live-card-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .cmn-live-ident{display:flex;align-items:center;gap:10px;min-width:0}
 .cmn-live-avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.22);background:#20182f}
