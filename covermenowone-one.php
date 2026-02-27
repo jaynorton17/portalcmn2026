@@ -22955,6 +22955,23 @@ final class CMN_One_Plugin {
             $_GET['candidate'] = 'settings';
             return $this->render_candidate_dashboard_shortcode();
         }
+        if (in_array($view, ['candidate-finance', 'candidate_finance'], true)) {
+            if (!is_user_logged_in()) {
+                return $this->render_login_shortcode(true);
+            }
+            if (!$this->is_candidate_user()) {
+                return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to candidates only.</p></div></section>';
+            }
+            if (function_exists('cmn_require_ability')) {
+                $ability_check = cmn_require_ability('finance.view_self', ['candidate_user_id' => (int) get_current_user_id()]);
+                if (is_wp_error($ability_check)) {
+                    return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access denied</h3><p>You do not have permission to access this page.</p></div></section>';
+                }
+            }
+            $_GET['candidate'] = 'candidate_finance';
+            $_GET['cmn_tab'] = 'candidate_finance';
+            return $this->render_candidate_dashboard_shortcode();
+        }
         if (in_array($view, ['candidate-rewards', 'candidate_rewards', 'candidate-rewards-admin', 'candidate_rewards_admin'], true)) {
             if (!is_user_logged_in()) {
                 return $this->render_login_shortcode(true);
@@ -67016,9 +67033,9 @@ final class CMN_One_Plugin {
 
     private function get_candidate_finance_tab_url() {
         return add_query_arg([
+            'view' => 'candidate-finance',
             'candidate' => 'candidate_finance',
             'cmn_tab' => 'candidate_finance',
-            'view' => false,
         ], $this->get_portal_base_url());
     }
 
