@@ -65615,7 +65615,10 @@ final class CMN_One_Plugin {
                                         <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                         <div class="cmn-command-card-head">
                                             <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
-                                            <span class="cmn-command-head-check" aria-hidden="true">&#10003;</span>
+                                            <span class="cmn-command-head-presence <?php echo $contact_card_is_online_now ? 'is-live' : 'is-offline'; ?>" data-contact-card-head-presence>
+                                                <span class="cmn-command-head-presence-dot" aria-hidden="true"></span>
+                                                <span data-contact-card-head-presence-text><?php echo esc_html($contact_card_is_online_now ? 'ONLINE' : $contact_card_last_online_label); ?></span>
+                                            </span>
                                         </div>
                                         <div class="cmn-command-identity">
                                             <div class="cmn-contact-card-preview-photo-wrap">
@@ -65631,6 +65634,14 @@ final class CMN_One_Plugin {
                                                 </div>
                                                 <span class="cmn-contact-card-preview-score" data-contact-card-preview-score><?php echo esc_html($contact_card_feedback_text); ?></span>
                                             </div>
+                                            <div class="cmn-command-identity-trust">
+                                                <span class="cmn-command-inline-trust <?php echo $contact_card_verified_bundle ? 'is-ok' : 'is-pending'; ?>">
+                                                    <?php echo esc_html($contact_card_verified_bundle ? 'ID & DBS Verified' : 'ID / DBS Pending'); ?>
+                                                </span>
+                                                <span class="cmn-command-inline-trust <?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>">
+                                                    <?php echo esc_html($contact_card_compliance_complete ? 'Fully Compliant' : 'Compliance In Progress'); ?>
+                                                </span>
+                                            </div>
                                         </div>
                                         <div class="cmn-command-meta">
                                             <span data-contact-card-preview-role>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
@@ -65641,8 +65652,6 @@ final class CMN_One_Plugin {
                                             <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                         </div>
                                         <ul class="cmn-command-trust-list">
-                                            <li class="<?php echo $contact_card_verified_bundle ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_verified_bundle ? 'ID & DBS Verified' : 'ID / DBS Verification Pending'; ?></li>
-                                            <li class="<?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_compliance_complete ? 'Fully Compliant' : 'Compliance In Progress'; ?></li>
                                             <li class="cmn-command-live-row <?php echo $contact_card_is_online_now ? 'is-ok is-live-state' : 'is-pending'; ?>" data-contact-card-live-row><?php echo esc_html($contact_card_is_online_now ? 'ONLINE NOW' : $contact_card_last_online_label); ?></li>
                                         </ul>
                                         <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
@@ -65725,11 +65734,14 @@ final class CMN_One_Plugin {
                                             ?>
                                             <section class="cmn-contact-card-design-item">
                                                 <h4><?php echo esc_html($variant_name); ?></h4>
-                                                <div class="cmn-contact-card-preview cmn-command-card cmn-contact-card-design-preview cmn-contact-card-design-preview--<?php echo esc_attr($variant_slug); ?> <?php echo $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation'; ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>">
+                                                <div class="cmn-contact-card-preview cmn-command-card cmn-contact-card-design-preview cmn-contact-card-design-preview--<?php echo esc_attr($variant_slug); ?> <?php echo $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation'; ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-contact-card-design-card>
                                                     <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                                     <div class="cmn-command-card-head">
                                                         <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
-                                                        <span class="cmn-command-head-check" aria-hidden="true">&#10003;</span>
+                                                        <span class="cmn-command-head-presence <?php echo $contact_card_is_online_now ? 'is-live' : 'is-offline'; ?>" data-contact-card-design-head-presence>
+                                                            <span class="cmn-command-head-presence-dot" aria-hidden="true"></span>
+                                                            <span data-contact-card-design-head-presence-text><?php echo esc_html($contact_card_is_online_now ? 'ONLINE' : $contact_card_last_online_label); ?></span>
+                                                        </span>
                                                     </div>
                                                     <div class="cmn-command-identity">
                                                         <div class="cmn-contact-card-preview-photo-wrap">
@@ -65745,16 +65757,24 @@ final class CMN_One_Plugin {
                                                             </div>
                                                             <span class="cmn-contact-card-preview-score"><?php echo esc_html($contact_card_feedback_text); ?></span>
                                                         </div>
+                                                        <div class="cmn-command-identity-trust">
+                                                            <span class="cmn-command-inline-trust <?php echo $contact_card_verified_bundle ? 'is-ok' : 'is-pending'; ?>">
+                                                                <?php echo esc_html($contact_card_verified_bundle ? 'ID & DBS Verified' : 'ID / DBS Pending'); ?>
+                                                            </span>
+                                                            <span class="cmn-command-inline-trust <?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>">
+                                                                <?php echo esc_html($contact_card_compliance_complete ? 'Fully Compliant' : 'Compliance In Progress'); ?>
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                     <div class="cmn-command-meta">
                                                         <span>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
                                                         <span>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
                                                     </div>
                                                     <div class="cmn-command-status-wrap">
-                                                        <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>"><?php echo esc_html($contact_card_availability_label); ?></span>
-                                                        <span class="cmn-contact-card-preview-time"<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
+                                                        <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-design-availability><?php echo esc_html($contact_card_availability_label); ?></span>
+                                                        <span class="cmn-contact-card-preview-time" data-contact-card-design-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                                     </div>
-                                                    <div class="cmn-contact-card-design-presence <?php echo $contact_card_is_online_now ? 'is-live' : 'is-offline'; ?>"><?php echo esc_html($contact_card_presence_preview_label); ?></div>
+                                                    <div class="cmn-contact-card-design-presence <?php echo $contact_card_is_online_now ? 'is-live' : 'is-offline'; ?>" data-contact-card-design-presence><?php echo esc_html($contact_card_presence_preview_label); ?></div>
                                                     <div class="cmn-contact-card-preview-skills">
                                                         <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
                                                             <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
@@ -82471,6 +82491,24 @@ p{margin:0;line-height:1.5}
         if ($last_seen_ts < 1) {
             return 'Last seen at --:--';
         }
+        $idle_seconds = max(0, $now_ts - $last_seen_ts);
+        if ($idle_seconds < 60) {
+            return 'Last seen just now';
+        }
+        if ($idle_seconds < 3600) {
+            $minutes = (int) floor($idle_seconds / 60);
+            if ($minutes < 1) {
+                $minutes = 1;
+            }
+            return 'Last seen ' . $minutes . ' min' . ($minutes === 1 ? '' : 's') . ' ago';
+        }
+        if ($idle_seconds < 86400) {
+            $hours = (int) floor($idle_seconds / 3600);
+            if ($hours < 1) {
+                $hours = 1;
+            }
+            return 'Last seen ' . $hours . ' hour' . ($hours === 1 ? '' : 's') . ' ago';
+        }
         try {
             $tz = wp_timezone();
             $now_dt = new DateTime('@' . $now_ts);
@@ -82478,13 +82516,15 @@ p{margin:0;line-height:1.5}
             $last_seen_dt = new DateTime('@' . $last_seen_ts);
             $last_seen_dt->setTimezone($tz);
             $time_label = $last_seen_dt->format('H:i');
-            $suffix = 'on ' . $last_seen_dt->format('d/m');
-            if ($last_seen_dt->format('Y-m-d') === $now_dt->format('Y-m-d')) {
-                $suffix = 'today';
-            } elseif ($last_seen_dt->format('Y-m-d') === $now_dt->modify('-1 day')->format('Y-m-d')) {
-                $suffix = 'yesterday';
+            $today_label = $now_dt->format('Y-m-d');
+            $yesterday_label = (clone $now_dt)->modify('-1 day')->format('Y-m-d');
+            if ($last_seen_dt->format('Y-m-d') === $yesterday_label) {
+                return 'Last seen yesterday at ' . $time_label;
             }
-            return 'Last seen at ' . $time_label . ' ' . $suffix;
+            if ($last_seen_dt->format('Y-m-d') === $today_label) {
+                return 'Last seen today at ' . $time_label;
+            }
+            return 'Last seen ' . $last_seen_dt->format('d/m') . ' at ' . $time_label;
         } catch (Exception $e) {
             return 'Last seen at --:--';
         }

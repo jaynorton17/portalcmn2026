@@ -9953,6 +9953,14 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardPreviewTime = document.querySelector('[data-contact-card-preview-time]');
       var contactCardPreviewCard = document.querySelector('[data-contact-card-preview]');
       var contactCardLiveRow = document.querySelector('[data-contact-card-live-row]');
+      var contactCardHeadPresence = document.querySelector('[data-contact-card-head-presence]');
+      var contactCardHeadPresenceText = document.querySelector('[data-contact-card-head-presence-text]');
+      var contactCardDesignCards = Array.prototype.slice.call(document.querySelectorAll('[data-contact-card-design-card]'));
+      var contactCardDesignAvailability = Array.prototype.slice.call(document.querySelectorAll('[data-contact-card-design-availability]'));
+      var contactCardDesignTimes = Array.prototype.slice.call(document.querySelectorAll('[data-contact-card-design-time]'));
+      var contactCardDesignPresence = Array.prototype.slice.call(document.querySelectorAll('[data-contact-card-design-presence]'));
+      var contactCardDesignHeadPresence = Array.prototype.slice.call(document.querySelectorAll('[data-contact-card-design-head-presence]'));
+      var contactCardDesignHeadPresenceText = Array.prototype.slice.call(document.querySelectorAll('[data-contact-card-design-head-presence-text]'));
       var contactCardBusy = false;
       var contactCardDefaultSkills = [];
       var contactCardInitialSkills = [];
@@ -10001,6 +10009,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
       var applyContactCardAvailabilityState = function (showAvailable) {
         var isAvailable = !!showAvailable;
+        var statusDetail = isAvailable
+          ? (contactCardAvailableDetail || contactCardButtonTimeLabel || '')
+          : (contactCardPendingDetail || '');
         if (contactCardAvailabilityToggle) {
           contactCardAvailabilityToggle.checked = isAvailable;
         }
@@ -10008,25 +10019,80 @@ document.addEventListener('DOMContentLoaded', function () {
           contactCardPreviewCard.classList.toggle('is-bookable', isAvailable);
           contactCardPreviewCard.classList.toggle('is-pending-confirmation', !isAvailable);
         }
+        contactCardDesignCards.forEach(function (cardNode) {
+          if (!cardNode) {
+            return;
+          }
+          cardNode.classList.toggle('is-bookable', isAvailable);
+          cardNode.classList.toggle('is-pending-confirmation', !isAvailable);
+        });
         if (contactCardPreviewAvailability) {
           contactCardPreviewAvailability.classList.remove('is-available', 'is-pending');
           contactCardPreviewAvailability.classList.add(isAvailable ? 'is-available' : 'is-pending');
           contactCardPreviewAvailability.textContent = isAvailable ? contactCardAvailableLabel : contactCardPendingLabel;
         }
+        contactCardDesignAvailability.forEach(function (stateNode) {
+          if (!stateNode) {
+            return;
+          }
+          stateNode.classList.remove('is-available', 'is-pending');
+          stateNode.classList.add(isAvailable ? 'is-available' : 'is-pending');
+          stateNode.textContent = isAvailable ? contactCardAvailableLabel : contactCardPendingLabel;
+        });
         if (contactCardPreviewTime) {
-          var statusDetail = isAvailable
-            ? (contactCardAvailableDetail || contactCardButtonTimeLabel || '')
-            : (contactCardPendingDetail || '');
           contactCardPreviewTime.hidden = statusDetail === '';
           contactCardPreviewTime.textContent = statusDetail;
         }
+        contactCardDesignTimes.forEach(function (timeNode) {
+          if (!timeNode) {
+            return;
+          }
+          timeNode.hidden = statusDetail === '';
+          timeNode.textContent = statusDetail;
+        });
       };
 
       var applyContactCardPresenceState = function (isOnline, lastOnlineLabel) {
         var online = !!isOnline;
+        var lastSeenText = String(lastOnlineLabel || 'Last seen at --:--');
+        var headLabel = online ? 'ONLINE' : lastSeenText;
         if (contactCardPreviewCard) {
           contactCardPreviewCard.classList.toggle('is-live', online);
         }
+        contactCardDesignCards.forEach(function (cardNode) {
+          if (!cardNode) {
+            return;
+          }
+          cardNode.classList.toggle('is-live', online);
+        });
+        if (contactCardHeadPresence) {
+          contactCardHeadPresence.classList.toggle('is-live', online);
+          contactCardHeadPresence.classList.toggle('is-offline', !online);
+        }
+        if (contactCardHeadPresenceText) {
+          contactCardHeadPresenceText.textContent = headLabel;
+        }
+        contactCardDesignHeadPresence.forEach(function (presenceNode) {
+          if (!presenceNode) {
+            return;
+          }
+          presenceNode.classList.toggle('is-live', online);
+          presenceNode.classList.toggle('is-offline', !online);
+        });
+        contactCardDesignHeadPresenceText.forEach(function (labelNode) {
+          if (!labelNode) {
+            return;
+          }
+          labelNode.textContent = headLabel;
+        });
+        contactCardDesignPresence.forEach(function (presenceNode) {
+          if (!presenceNode) {
+            return;
+          }
+          presenceNode.classList.toggle('is-live', online);
+          presenceNode.classList.toggle('is-offline', !online);
+          presenceNode.textContent = online ? 'ONLINE NOW' : lastSeenText;
+        });
         if (!contactCardLiveRow) {
           return;
         }
@@ -10037,7 +10103,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         contactCardLiveRow.classList.add('is-pending');
-        contactCardLiveRow.textContent = String(lastOnlineLabel || 'Last seen at --:--');
+        contactCardLiveRow.textContent = lastSeenText;
       };
 
       var renderContactCardPreviewSkills = function (skills) {
