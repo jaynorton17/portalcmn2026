@@ -75441,13 +75441,14 @@ final class CMN_One_Plugin {
                 <article class="cmn-dashboard-card cmn-candidate-clp-card cmn-candidate-clp-card--visibility">
                     <h3>How Schools See You</h3>
                     <ol class="cmn-candidate-clp-ranking">
+                        <li><strong>Physically Online</strong> (shown first)</li>
                         <li><strong>Star Rating</strong> (highest first)</li>
                         <li><strong>Loyalty Tier</strong></li>
                         <li><strong>Distance to school</strong></li>
                         <li><strong>Total completed bookings</strong></li>
                     </ol>
-                    <p class="cmn-candidate-clp-highlight">Higher ratings = higher visibility.</p>
-                    <p class="cmn-muted">Performance ranks ahead of tenure, then tier, then proximity.</p>
+                    <p class="cmn-candidate-clp-highlight">Physically online candidates are prioritised first.</p>
+                    <p class="cmn-muted">After online status, visibility ranks by performance, tier, proximity, then completed bookings.</p>
                 </article>
 
                 <article class="cmn-dashboard-card cmn-candidate-clp-card">
@@ -75904,6 +75905,16 @@ final class CMN_One_Plugin {
             $first_name = $name_parts ? (string) $name_parts[0] : (string) $candidate->post_title;
             $is_confirmed = !empty($item['is_confirmed']);
             $status_key = $is_confirmed ? 'available' : 'not_responded';
+            $physically_online_raw = '';
+            if ($candidate_user_id > 0) {
+                $physically_online_raw = (string) get_user_meta($candidate_user_id, 'cmn_contact_card_show_available', true);
+            }
+            if ($physically_online_raw === '' && $candidate_id > 0) {
+                $physically_online_raw = (string) get_post_meta($candidate_id, 'cmn_contact_card_show_available', true);
+            }
+            $is_physically_online = ($physically_online_raw !== '')
+                ? in_array(strtolower(trim($physically_online_raw)), ['1', 'true', 'yes', 'on'], true)
+                : ($status_key === 'available');
             if ($status_key === 'available') {
                 $available_now_count++;
             } else {
@@ -75934,12 +75945,30 @@ final class CMN_One_Plugin {
                 'confirmed_at' => $status_key === 'available' ? date_i18n('H:i', strtotime((string) ($item['created_at'] ?? current_time('mysql')))) : '',
                 'day_rate' => round($day_rate, 0),
                 'is_shortlisted' => $is_shortlisted ? 1 : 0,
+                'is_physically_online' => $is_physically_online ? 1 : 0,
                 'target_date' => (string) ($item['availability_date'] ?? $target_date),
             ];
         }
-        usort($all, function($a, $b){
-            if ($a['status'] === $b['status']) { return 0; }
-            return $a['status'] === 'available' ? -1 : 1;
+        usort($all, static function($a, $b){
+            $a_online = !empty($a['is_physically_online']) ? 1 : 0;
+            $b_online = !empty($b['is_physically_online']) ? 1 : 0;
+            if ($a_online !== $b_online) {
+                return ($a_online > $b_online) ? -1 : 1;
+            }
+            if (($a['status'] ?? '') !== ($b['status'] ?? '')) {
+                return (($a['status'] ?? '') === 'available') ? -1 : 1;
+            }
+            $a_rating = (float) ($a['rating'] ?? 0);
+            $b_rating = (float) ($b['rating'] ?? 0);
+            if ($a_rating !== $b_rating) {
+                return ($a_rating > $b_rating) ? -1 : 1;
+            }
+            $a_reviews = (int) ($a['reviews'] ?? 0);
+            $b_reviews = (int) ($b['reviews'] ?? 0);
+            if ($a_reviews !== $b_reviews) {
+                return ($a_reviews > $b_reviews) ? -1 : 1;
+            }
+            return strcmp((string) ($a['first_name'] ?? ''), (string) ($b['first_name'] ?? ''));
         });
         $payload = [
             'all' => $all,
