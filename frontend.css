@@ -2961,24 +2961,29 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
   grid-column: 1 / -1;
 }
 
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-card-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-  overflow: hidden;
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  row-gap: 12px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-card-placeholder::before {
-  content: none !important;
-  opacity: 0 !important;
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-card-header h3 {
+  margin: 0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-card-placeholder img {
-  width: min(220px, 62%);
-  height: auto;
-  display: block;
-  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.35));
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-candidate-weekly-earnings-range {
+  margin-top: clamp(12px, 7%, 34px);
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-candidate-weekly-earnings-notes {
+  margin-top: 0;
+  align-self: end;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-candidate-weekly-earnings-grid {
+  gap: 12px;
+  align-self: center;
+  transform: translateY(-16px);
 }
 
 @media (max-width: 720px) {
@@ -13677,7 +13682,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-bl
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-strip {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin: 0 0 14px;
 }
@@ -13737,17 +13742,6 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-subte
   justify-self: start;
   align-self: center;
   text-align: left;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-card--expected-pay .cmn-candidate-summary-subtext {
-  display: grid;
-  gap: 2px;
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-subtext-line {
-  display: block;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-links {
