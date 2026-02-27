@@ -66195,7 +66195,7 @@ final class CMN_One_Plugin {
                                     <div class="cmn-candidate-section4-carousel-track" data-candidate-section4-track>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
                                             <h4>Latest News</h4>
-                                            <strong class="cmn-candidate-section4-highlight">Portal updates</strong>
+                                            <strong class="cmn-candidate-section4-highlight">COVERMENOW Latest News</strong>
                                             <p>Latest candidate updates and announcements will appear here.</p>
                                         </section>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
