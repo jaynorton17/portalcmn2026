@@ -64560,6 +64560,10 @@ final class CMN_One_Plugin {
             'candidate' => 'profile',
             'cmn_profile_focus' => 'documents',
         ], $portal_url) . '#cmn-profile-documents';
+        $profile_focus_tab_raw = strtolower(trim((string) (wp_unslash($_GET['cmn_profile_focus'] ?? 'personal'))));
+        $profile_focus_tab = in_array($profile_focus_tab_raw, ['documents', 'document', 'doc', 'docs'], true) ? 'documents' : 'personal';
+        $hub_tabs = ['profile', 'candidate_finance', 'feedback_ratings', 'calendar', 'bookings'];
+        $is_hub_tab = in_array($tab, $hub_tabs, true);
         $candidate_learning_url = add_query_arg(['candidate' => 'learning'], $portal_url);
         $candidate_rewards_url = add_query_arg(['candidate' => 'rewards'], $portal_url);
         $candidate_feedback_url = add_query_arg(['candidate' => 'feedback_ratings'], $portal_url);
@@ -64704,11 +64708,7 @@ final class CMN_One_Plugin {
             'dashboard' => 'Dashboard',
             'profile' => 'My Hub',
             'rewards' => 'CMN Rewards',
-            'candidate_finance' => 'Finance',
-            'feedback_ratings' => 'Feedback & Ratings',
             'learning' => 'Learning Centre',
-            'bookings' => 'Bookings',
-            'calendar' => 'Calendar',
             'support' => 'Support',
             'settings' => 'Settings',
         ];
@@ -64776,23 +64776,10 @@ final class CMN_One_Plugin {
                             <?php
                             $link = $key === 'settings'
                                 ? add_query_arg(['view' => 'candidate-settings', 'cmn_tab' => false], $this->get_portal_base_url())
-                                : ($key === 'candidate_finance'
-                                    ? add_query_arg(['cmn_tab' => 'candidate_finance', 'candidate' => false, 'view' => false], $portal_url)
-                                    : add_query_arg(['candidate' => $key, 'cmn_tab' => false], $portal_url));
-                            $active = $tab === $key ? ' is-active' : '';
-                            $has_icon = $key === 'candidate_finance';
+                                : add_query_arg(['candidate' => $key, 'cmn_tab' => false], $portal_url);
+                            $active = ($tab === $key || ($key === 'profile' && in_array($tab, ['candidate_finance', 'feedback_ratings', 'bookings', 'calendar'], true))) ? ' is-active' : '';
                             ?>
-                            <a class="cmn-candidate-nav-link<?php echo esc_attr($active); ?><?php echo $has_icon ? ' cmn-candidate-nav-link--with-icon' : ''; ?>" href="<?php echo esc_url($link); ?>" data-candidate-nav="<?php echo esc_attr($key); ?>">
-                                <?php if ($has_icon) : ?>
-                                    <span class="cmn-school-nav-icon" aria-hidden="true">
-                                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                                            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                                            <path d="M3 10h18"></path>
-                                            <path d="M7 15h4"></path>
-                                            <path d="M14 15h3"></path>
-                                        </svg>
-                                    </span>
-                                <?php endif; ?>
+                            <a class="cmn-candidate-nav-link<?php echo esc_attr($active); ?>" href="<?php echo esc_url($link); ?>" data-candidate-nav="<?php echo esc_attr($key); ?>">
                                 <span class="cmn-candidate-nav-label"><?php echo esc_html($label); ?></span>
                             </a>
                         <?php endforeach; ?>
@@ -64840,11 +64827,17 @@ final class CMN_One_Plugin {
                         endif;
                     }
                     ?>
+                    <?php if ($is_hub_tab) : ?>
+                        <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
+                            <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'personal') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_personal_url); ?>">Personal Details</a>
+                            <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'documents') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Documents</a>
+                            <a class="cmn-tab<?php echo $tab === 'candidate_finance' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
+                            <a class="cmn-tab<?php echo $tab === 'feedback_ratings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_feedback_url); ?>">Feedback &amp; Ratings</a>
+                            <a class="cmn-tab<?php echo $tab === 'calendar' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
+                            <a class="cmn-tab<?php echo $tab === 'bookings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_bookings_url); ?>">Bookings</a>
+                        </nav>
+                    <?php endif; ?>
                     <?php if ($tab === 'profile') : ?>
-                        <?php
-                        $profile_focus_tab_raw = strtolower(trim((string) (wp_unslash($_GET['cmn_profile_focus'] ?? 'personal'))));
-                        $profile_focus_tab = in_array($profile_focus_tab_raw, ['documents', 'document', 'doc', 'docs'], true) ? 'documents' : 'personal';
-                        ?>
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
                             <h2>My Hub</h2>
                         </header>
@@ -64869,15 +64862,7 @@ final class CMN_One_Plugin {
                                 </div>
                             <?php endif; ?>
                         <?php endif; ?>
-                        <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
-                            <a class="cmn-tab<?php echo $profile_focus_tab === 'personal' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_personal_url); ?>">Personal Details</a>
-                            <a class="cmn-tab<?php echo $profile_focus_tab === 'documents' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Documents</a>
-                            <a class="cmn-tab" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
-                            <a class="cmn-tab" href="<?php echo esc_url($candidate_feedback_url); ?>">Feedback &amp; Ratings</a>
-                            <a class="cmn-tab" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
-                            <a class="cmn-tab" href="<?php echo esc_url($candidate_bookings_url); ?>">Bookings</a>
-                        </nav>
-                        <div class="cmn-dashboard-card cmn-profile-photo-card" data-profile-photo-root data-fallback-url="<?php echo esc_attr($profile_photo_fallback); ?>">
+                        <div class="cmn-dashboard-card cmn-profile-photo-card" data-profile-photo-root data-fallback-url="<?php echo esc_attr($profile_photo_fallback); ?>"<?php echo $profile_focus_tab === 'documents' ? ' hidden' : ''; ?>>
                             <div class="cmn-card-header">
                                 <h3>Profile photo</h3>
                             </div>
@@ -64894,7 +64879,7 @@ final class CMN_One_Plugin {
                                 </div>
                             </div>
                         </div>
-                        <div class="cmn-profile-global-editbar" data-profile-global-actions hidden>
+                        <div class="cmn-profile-global-editbar" data-profile-global-actions hidden<?php echo $profile_focus_tab === 'documents' ? ' data-profile-doc-hidden="1"' : ''; ?>>
                             <span class="cmn-muted" data-profile-global-msg></span>
                             <div class="cmn-profile-global-editbar-actions">
                                 <button class="cmn-primary" type="button" data-profile-global-save disabled>Save changes</button>
@@ -64902,7 +64887,7 @@ final class CMN_One_Plugin {
                             </div>
                         </div>
                         <div class="cmn-profile-grid cmn-profile-grid--candidate-profile" data-profile-root>
-                            <div class="cmn-dashboard-card" id="cmn-profile-personal" data-profile-personal-card>
+                            <div class="cmn-dashboard-card" id="cmn-profile-personal" data-profile-personal-card<?php echo $profile_focus_tab === 'documents' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Profile Details</h3>
                                     <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit personal details">✎</button>
@@ -65080,23 +65065,6 @@ final class CMN_One_Plugin {
                                             </div>
                                         </section>
 
-                                        <section class="cmn-profile-section" id="cmn-profile-section-documents">
-                                            <h4 class="cmn-profile-section-title">Documents</h4>
-                                            <div class="cmn-profile-doc-status-list">
-                                                <div class="cmn-profile-doc-status-item">
-                                                    <span class="cmn-profile-definition-label">Photo ID</span>
-                                                    <span class="cmn-status-chip <?php echo esc_attr($doc_id['badge_class'] ?? ($doc_id['uploaded'] ? 'is-pending' : 'is-declined')); ?>"><?php echo esc_html($doc_id['status_label'] ?? ($doc_id['uploaded'] ? 'Pending Review' : 'Not Uploaded')); ?></span>
-                                                </div>
-                                                <div class="cmn-profile-doc-status-item">
-                                                    <span class="cmn-profile-definition-label">DBS</span>
-                                                    <span class="cmn-status-chip <?php echo esc_attr($doc_dbs['badge_class'] ?? ($doc_dbs['uploaded'] ? 'is-pending' : 'is-declined')); ?>"><?php echo esc_html($doc_dbs['status_label'] ?? ($doc_dbs['uploaded'] ? 'Pending Review' : 'Not Uploaded')); ?></span>
-                                                </div>
-                                                <div class="cmn-profile-doc-status-item">
-                                                    <span class="cmn-profile-definition-label">CV</span>
-                                                    <span class="cmn-status-chip <?php echo esc_attr($doc_cv['badge_class'] ?? ($doc_cv['uploaded'] ? 'is-pending' : 'is-declined')); ?>"><?php echo esc_html($doc_cv['status_label'] ?? ($doc_cv['uploaded'] ? 'Pending Review' : 'Not Uploaded')); ?></span>
-                                                </div>
-                                            </div>
-                                        </section>
                                     </div>
                                 </div>
                                 <form class="cmn-form cmn-inline-edit-form" data-profile-form="personal" hidden>
@@ -65195,7 +65163,7 @@ final class CMN_One_Plugin {
                                     </label>
                                 </form>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-edit-only hidden>
+                            <div class="cmn-dashboard-card" data-profile-documents-only<?php echo $profile_focus_tab === 'documents' ? '' : ' hidden'; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Compliance Status</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>" data-compliance-status><?php echo esc_html($doc_summary['badge_label']); ?></span>
@@ -65232,7 +65200,7 @@ final class CMN_One_Plugin {
                                     </ul>
                                 </details>
                             </div>
-                            <div class="cmn-dashboard-card cmn-doc-upload-card" id="cmn-profile-documents" data-profile-edit-only hidden>
+                            <div class="cmn-dashboard-card cmn-doc-upload-card" id="cmn-profile-documents" data-profile-documents-only<?php echo $profile_focus_tab === 'documents' ? '' : ' hidden'; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Documents Upload</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>"><?php echo esc_html($doc_summary['badge_label']); ?></span>
@@ -65316,7 +65284,7 @@ final class CMN_One_Plugin {
                                     <div class="cmn-muted" data-doc-message></div>
                                 </div>
                             </div>
-                            <div class="cmn-dashboard-card cmn-dashboard-card-wide" data-profile-readonly-only>
+                            <div class="cmn-dashboard-card cmn-dashboard-card-wide" data-profile-documents-only<?php echo $profile_focus_tab === 'documents' ? '' : ' hidden'; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Status</h3>
                                     <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>" data-admin-verification-status><?php echo esc_html($doc_summary['badge_label']); ?></span>
