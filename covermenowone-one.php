@@ -64791,7 +64791,7 @@ final class CMN_One_Plugin {
         $nav_items = [
             'dashboard' => 'Dashboard',
             'profile' => 'My Hub',
-            'rewards' => 'CMN Rewards',
+            'rewards' => 'Candidate Loyalty Programme (CLP)',
             'learning' => 'Learning Centre',
             'support' => 'Support',
             'settings' => 'Settings',
@@ -70235,7 +70235,6 @@ final class CMN_One_Plugin {
 
         $state = (array) ($payload['state'] ?? []);
         $bonus = (array) ($payload['bonus'] ?? []);
-        $referral = (array) ($payload['referral'] ?? []);
         $conduct = (array) ($payload['conduct'] ?? []);
         $awards = is_array($bonus['awards'] ?? null) ? (array) $bonus['awards'] : [];
         $appeal_options = is_array($conduct['appeal_booking_options'] ?? null) ? (array) $conduct['appeal_booking_options'] : [];
@@ -70256,17 +70255,15 @@ final class CMN_One_Plugin {
         $next_bonus_at = max(30, (int) ($bonus['next_bonus_at'] ?? 30));
         $shifts_to_next_bonus = max(0, (int) ($bonus['shifts_to_next_bonus'] ?? 30));
         $elite_plus_active = !empty($bonus['elite_plus_active']);
-        $ticket_count = max(0, (int) ($referral['ticket_count'] ?? 0));
-        $referral_code = sanitize_text_field((string) ($referral['referral_code'] ?? ''));
         $support_url = add_query_arg(['candidate' => 'support'], $portal_url);
 
         ob_start();
         ?>
         <header class="cmn-candidate-header">
-            <h2>CMN Rewards</h2>
-            <p>Track your progress, bonus milestones, referral tickets, and conduct status.</p>
+            <h2>Candidate Loyalty Programme (CLP)</h2>
+            <p>Loyalty is rewarded through consistency, reliability, and long-term professional standards.</p>
         </header>
-        <section class="cmn-rewards-dashboard cmn-candidate-rewards"
+        <section class="cmn-rewards-dashboard cmn-candidate-rewards cmn-candidate-clp"
                  data-cmn-rewards-root
                  data-cmn-rewards-fetch-action="cmn_candidate_rewards_overview"
                  data-cmn-rewards-fetch-nonce="<?php echo esc_attr(wp_create_nonce('cmn_candidate_rewards_view')); ?>"
@@ -70281,7 +70278,7 @@ final class CMN_One_Plugin {
             <article class="cmn-dashboard-card cmn-candidate-rewards-summary">
                 <div class="cmn-candidate-rewards-summary-head">
                     <div>
-                        <h3>Rewards Summary</h3>
+                        <h3>CLP Snapshot</h3>
                         <p class="cmn-muted">Academic year: <span data-cmn-rewards-year><?php echo esc_html($academic_year_label); ?></span></p>
                     </div>
                     <span class="cmn-status-chip cmn-rewards-tier-badge is-<?php echo esc_attr($tier); ?>" data-cmn-rewards-tier-badge><?php echo esc_html($tier_label); ?></span>
@@ -70307,28 +70304,90 @@ final class CMN_One_Plugin {
                         </small>
                     </div>
                     <div>
-                        <span>Conduct Status</span>
+                        <span>Professional Status</span>
                         <strong><span class="cmn-status-chip <?php echo esc_attr($conduct_chip_class); ?>" data-cmn-rewards-conduct-badge><?php echo esc_html($conduct_label); ?></span></strong>
                     </div>
+                </div>
+                <div class="cmn-candidate-clp-pill-row">
+                    <span class="cmn-status-chip">Revenue-backed</span>
+                    <span class="cmn-status-chip">Not gamified</span>
+                    <span class="cmn-status-chip">Performance-led visibility</span>
                 </div>
             </article>
 
             <div class="cmn-candidate-rewards-card-grid">
                 <article class="cmn-dashboard-card cmn-candidate-rewards-card">
-                    <h3>Bonus Tracker</h3>
+                    <h3>Tier Structure</h3>
+                    <div class="cmn-candidate-clp-table-wrap">
+                        <table class="cmn-candidate-clp-table">
+                            <thead>
+                                <tr>
+                                    <th>Tier</th>
+                                    <th>Trigger</th>
+                                    <th>Reward Multiplier</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Standard</td><td>0-29 shifts</td><td>None</td></tr>
+                                <tr><td>Bronze</td><td>30 completed shifts</td><td>1.0x</td></tr>
+                                <tr><td>Silver</td><td>60 completed shifts</td><td>1.1x</td></tr>
+                                <tr><td>Gold</td><td>90 completed shifts</td><td>1.25x</td></tr>
+                                <tr><td>Elite</td><td>120 completed shifts</td><td>1.5x</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="cmn-muted">After Elite, every additional 30 completed shifts continues the 1.5x milestone bonus.</p>
+                </article>
+
+                <article class="cmn-dashboard-card cmn-candidate-rewards-card">
+                    <h3>Bonus Calculation Structure</h3>
+                    <p class="cmn-candidate-rewards-metric-line">
+                        Bonus = <strong>Protected Average Daily Pay</strong> x <strong>Tier Multiplier</strong>
+                    </p>
                     <p class="cmn-candidate-rewards-metric-line">Last bonus awarded:
                         <strong data-cmn-rewards-last-bonus><?php echo esc_html('GBP ' . number_format($last_bonus_amount, 2)); ?></strong>
                         <span data-cmn-rewards-last-bonus-date><?php echo esc_html($last_bonus_awarded_at_label); ?></span>
                     </p>
                     <p class="cmn-candidate-rewards-metric-line" data-cmn-rewards-next-bonus>Next bonus at <?php echo esc_html((string) $next_bonus_at); ?> shifts (<?php echo esc_html((string) $shifts_to_next_bonus); ?> to go)</p>
                     <p class="cmn-candidate-rewards-elite-note<?php echo $elite_plus_active ? '' : ' is-hidden'; ?>" data-cmn-rewards-elite-note>Elite+ bonus active: 1.5x every 30 shifts.</p>
+                    <div class="cmn-candidate-clp-table-wrap">
+                        <table class="cmn-candidate-clp-table">
+                            <thead>
+                                <tr>
+                                    <th>Tier</th>
+                                    <th>Protected Average Window</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Bronze</td><td>Average of last 30 shifts</td></tr>
+                                <tr><td>Silver</td><td>Average of last 60 shifts</td></tr>
+                                <tr><td>Gold</td><td>Average of last 90 shifts</td></tr>
+                                <tr><td>Elite</td><td>Average of last 120 shifts</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </div>
+
+            <div class="cmn-candidate-rewards-card-grid">
+                <article class="cmn-dashboard-card cmn-candidate-rewards-card">
+                    <h3>Eligibility Requirements</h3>
+                    <ul class="cmn-candidate-clp-checklist">
+                        <li>All 30 shifts in the milestone block must be completed.</li>
+                        <li>No attendance breaches.</li>
+                        <li>Confirmation compliance must be 80% or higher.</li>
+                        <li>No active compliance flags.</li>
+                        <li>No active disputes.</li>
+                    </ul>
+                    <p class="cmn-muted">These conditions keep the programme performance-driven and operationally fair.</p>
+                    <h4>Recent Milestone Awards</h4>
                     <div class="cmn-candidate-rewards-awards" data-cmn-rewards-awards>
                         <?php if ($awards) : ?>
                             <?php foreach (array_slice($awards, 0, 3) as $award_row) : ?>
                                 <?php
                                 $award_block = max(1, (int) ($award_row['block_index'] ?? 1));
                                 $award_amount = round((float) ($award_row['bonus_amount'] ?? 0), 2);
-                                $award_date = sanitize_text_field((string) ($award_row['awarded_at_label'] ?? '—'));
+                                $award_date = sanitize_text_field((string) ($award_row['awarded_at_label'] ?? '-'));
                                 ?>
                                 <div class="cmn-candidate-rewards-award-row">
                                     <span>Block <?php echo esc_html((string) $award_block); ?></span>
@@ -70341,24 +70400,33 @@ final class CMN_One_Plugin {
                 </article>
 
                 <article class="cmn-dashboard-card cmn-candidate-rewards-card">
-                    <h3>Referral Giveaway</h3>
-                    <p class="cmn-candidate-rewards-metric-line">Your referral tickets this year: <strong data-cmn-rewards-ticket-count><?php echo esc_html((string) $ticket_count); ?></strong></p>
-                    <p class="cmn-muted">Tickets are added when your referral completes their first shift.</p>
-                    <label class="cmn-candidate-rewards-code-label" for="cmn-rewards-referral-code">Referral code</label>
-                    <div class="cmn-candidate-rewards-code-wrap">
-                        <input id="cmn-rewards-referral-code" type="text" readonly value="<?php echo esc_attr($referral_code); ?>" data-cmn-rewards-referral-code>
-                        <button class="cmn-ghost" type="button" data-cmn-rewards-copy-code>Copy</button>
+                    <h3>Candidate Weighted Visibility</h3>
+                    <ol class="cmn-candidate-clp-ranking">
+                        <li><strong>Star Rating</strong> (highest first)</li>
+                        <li><strong>Loyalty Tier</strong> (Elite, Gold, Silver, Bronze, Standard)</li>
+                        <li><strong>Distance to school</strong></li>
+                        <li><strong>Total completed bookings</strong></li>
+                    </ol>
+                    <p class="cmn-muted">Performance always outweighs tenure. A higher-rated candidate can rank above a higher-tier candidate.</p>
+                    <h4>Star Rating Modules</h4>
+                    <div class="cmn-candidate-clp-modules">
+                        <span>Punctuality</span>
+                        <span>Classroom Management</span>
+                        <span>Professional Conduct</span>
+                        <span>Communication</span>
+                        <span>Safeguarding Awareness</span>
+                        <span>Preparedness</span>
+                        <span>Overall Effectiveness</span>
                     </div>
-                    <p class="cmn-muted" data-cmn-rewards-copy-feedback></p>
                 </article>
             </div>
 
             <article class="cmn-dashboard-card cmn-candidate-rewards-card cmn-candidate-rewards-conduct-panel">
                 <h3>Conduct & Appeals</h3>
-                <p class="cmn-muted">No-show means the school expected you and there was no communication logged in the booking chat.</p>
+                <p class="cmn-muted">No-show means the school expected you and there was no communication logged in booking chat.</p>
                 <ul class="cmn-candidate-rewards-policy">
                     <li>Each no-show deducts 3 shifts from your rewards count.</li>
-                    <li>First no-show issues a Yellow warning.</li>
+                    <li>First no-show issues a yellow warning.</li>
                     <li>Second no-show triggers a formal review meeting.</li>
                     <li>Third no-show can remove rewards eligibility.</li>
                 </ul>
@@ -70379,7 +70447,7 @@ final class CMN_One_Plugin {
                     <?php foreach (array_slice($recent_conduct, 0, 4) as $event_row) : ?>
                         <?php
                         $event_label = sanitize_text_field((string) ($event_row['label'] ?? 'Event'));
-                        $event_when = sanitize_text_field((string) ($event_row['occurred_at_label'] ?? '—'));
+                        $event_when = sanitize_text_field((string) ($event_row['occurred_at_label'] ?? '-'));
                         ?>
                         <div class="cmn-candidate-rewards-conduct-row">
                             <strong><?php echo esc_html($event_label); ?></strong>

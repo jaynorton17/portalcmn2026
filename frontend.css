@@ -6430,6 +6430,84 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   justify-self: start;
 }
 
+.cmn-candidate-clp-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-candidate-clp-table-wrap {
+  overflow-x: auto;
+}
+
+.cmn-candidate-clp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cmn-candidate-clp-table th,
+.cmn-candidate-clp-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cmn-candidate-clp-table th {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cmn-muted);
+}
+
+.cmn-candidate-clp-table td {
+  color: var(--cmn-text);
+}
+
+.cmn-candidate-clp-checklist {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: var(--cmn-text);
+}
+
+.cmn-candidate-clp-ranking {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  color: var(--cmn-text);
+}
+
+.cmn-candidate-clp-ranking strong {
+  color: #ffffff;
+}
+
+.cmn-candidate-clp-modules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmn-candidate-clp-modules span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--cmn-text);
+}
+
+.cmn-candidate-rewards-card h4 {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+
 .cmn-rewards-admin-override-section {
   margin-top: 16px;
   padding-top: 14px;
