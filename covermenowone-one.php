@@ -65559,15 +65559,17 @@ final class CMN_One_Plugin {
                                             </label>
                                         </div>
                                     </div>
-                                    <div class="cmn-contact-card-preview cmn-command-card" data-contact-card-preview>
+                                    <div class="cmn-contact-card-preview cmn-command-card<?php echo $contact_card_show_available ? ' is-live' : ''; ?>" data-contact-card-preview>
                                         <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                         <div class="cmn-command-card-head">
                                             <div class="cmn-command-brand">COVERMENow <span>ONE</span></div>
                                             <span class="cmn-command-head-check" aria-hidden="true">&#10003;</span>
                                         </div>
                                         <div class="cmn-command-identity">
-                                            <div class="cmn-contact-card-preview-photo">
-                                                <img src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name !== '' ? $profile_name : 'Candidate'); ?> profile photo" data-contact-card-preview-photo>
+                                            <div class="cmn-contact-card-preview-photo-wrap">
+                                                <div class="cmn-contact-card-preview-photo">
+                                                    <img src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name !== '' ? $profile_name : 'Candidate'); ?> profile photo" data-contact-card-preview-photo>
+                                                </div>
                                             </div>
                                             <div class="cmn-command-identity-main">
                                                 <strong data-contact-card-preview-name><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></strong>
@@ -65583,6 +65585,7 @@ final class CMN_One_Plugin {
                                             <span data-contact-card-preview-distance>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
                                         </div>
                                         <div class="cmn-command-status-wrap">
+                                            <span class="cmn-command-live-indicator" data-contact-card-preview-live-indicator<?php echo $contact_card_show_available ? '' : ' hidden'; ?>><span class="cmn-command-live-dot" aria-hidden="true"></span>ONLINE NOW</span>
                                             <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
                                             <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                         </div>
