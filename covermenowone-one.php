@@ -64531,6 +64531,17 @@ final class CMN_One_Plugin {
         if ($weekly_state_note === '') {
             $weekly_state_note = 'Estimate (pending lock).';
         }
+        $weekly_pay_date_raw = $this->normalize_invoice_date((string) ($weekly_earnings_payload['pay_date'] ?? ''));
+        if ($weekly_pay_date_raw === '') {
+            $range_end_for_payday = $this->normalize_invoice_date((string) (($weekly_earnings_payload['week_range']['end_date'] ?? '')));
+            if ($range_end_for_payday !== '' && strtotime($range_end_for_payday) !== false) {
+                $weekly_pay_date_raw = gmdate('Y-m-d', strtotime($range_end_for_payday . ' +1 day'));
+            }
+        }
+        if ($weekly_pay_date_raw === '' || strtotime($weekly_pay_date_raw) === false) {
+            $weekly_pay_date_raw = gmdate('Y-m-d', strtotime(current_time('Y-m-d') . ' next friday'));
+        }
+        $weekly_pay_date_display = date_i18n('d/m/Y', strtotime($weekly_pay_date_raw));
 
         $portal_page = get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
@@ -65969,7 +65980,7 @@ final class CMN_One_Plugin {
                                 <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small">
                                     <?php echo esc_html($expected_pay_card_amount); ?>
                                 </strong>
-                                <span class="cmn-candidate-summary-subtext"><?php echo esc_html($weekly_expected_has_bank_hold ? 'On hold until bank details added.' : 'Estimate (pending lock).'); ?></span>
+                                <span class="cmn-candidate-summary-subtext"><?php echo esc_html('Next pay day ' . $weekly_pay_date_display); ?></span>
                             </a>
                         </div>
                         <div class="cmn-candidate-section-row cmn-candidate-section-row--sections-3-4">
