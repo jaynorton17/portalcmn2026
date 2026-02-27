@@ -3885,6 +3885,43 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-contact-card-
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.36);
 }
 
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card {
+  padding: 12px;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-candidate-dashboard-live-card {
+  min-height: 0;
+  height: calc(100% - 30px);
+  padding: 10px;
+  gap: 7px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-name {
+  font-size: 16px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-role,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-rating,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-presence,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-skill {
+  font-size: 11px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-rate {
+  font-size: 16px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-actions {
+  margin-top: 4px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-actions .cmn-primary,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-slide--contact-card .cmn-live-actions .cmn-ghost {
+  min-height: 32px;
+  font-size: 11px;
+}
+
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-news-card-media {
   width: 100%;
   aspect-ratio: 16 / 9;

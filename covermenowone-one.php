@@ -65112,8 +65112,8 @@ final class CMN_One_Plugin {
                         <div class="cmn-candidate-hub-toprow">
                             <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
                                 <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'personal') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_personal_url); ?>">Personal Details</a>
-                                <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'documents') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Documents</a>
                                 <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'contact_card') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>">Contact Card</a>
+                                <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'documents') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Documents</a>
                                 <a class="cmn-tab<?php echo $tab === 'candidate_finance' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
                                 <a class="cmn-tab<?php echo $tab === 'feedback_ratings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_feedback_url); ?>">Feedback &amp; Ratings</a>
                                 <a class="cmn-tab<?php echo $tab === 'calendar' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
@@ -66959,11 +66959,50 @@ final class CMN_One_Plugin {
                                                 </a>
                                             </div>
                                         </section>
-                                        <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
+                                        <section class="cmn-candidate-section4-slide cmn-candidate-section4-slide--contact-card" data-candidate-section4-slide>
                                             <h4>Contact Card</h4>
-                                            <div class="cmn-candidate-contact-card-body">
-                                                <img class="cmn-candidate-contact-card-logo" src="https://covermenow.co.uk/wp-content/uploads/2026/02/cropped-73fa2b5c-e425-4854-a404-96824acab169.png" alt="CoverMeNow logo">
-                                            </div>
+                                            <?php
+                                            $dashboard_live_card_state_class = $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation';
+                                            $dashboard_live_card_status_class = $contact_card_show_available ? 'available' : 'not_responded';
+                                            $dashboard_live_card_status_label = $contact_card_show_available ? 'AVAILABLE NOW' : 'NOT YET CONFIRMED';
+                                            $dashboard_live_card_presence_label = $contact_card_is_online_now ? 'ONLINE NOW' : $contact_card_last_online_label;
+                                            $dashboard_live_card_rate_text = $contact_card_distance_label !== 'Not set' ? $contact_card_distance_label : '--';
+                                            ?>
+                                            <article class="cmn-live-card cmn-candidate-dashboard-live-card <?php echo esc_attr($dashboard_live_card_state_class); ?>">
+                                                <div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>
+                                                <div class="cmn-live-card-row">
+                                                    <div class="cmn-live-ident">
+                                                        <img class="cmn-live-avatar" src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?>">
+                                                        <div>
+                                                            <div class="cmn-live-name"><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></div>
+                                                            <div class="cmn-live-role"><?php echo esc_html($contact_card_primary_role); ?></div>
+                                                            <div class="cmn-live-rating"><?php echo esc_html($contact_card_feedback_text); ?></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="cmn-live-status <?php echo esc_attr($dashboard_live_card_status_class); ?>"><?php echo esc_html($dashboard_live_card_status_label); ?></div>
+                                                </div>
+                                                <div class="cmn-live-presence<?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>">
+                                                    <span class="cmn-live-presence-dot" aria-hidden="true"></span>
+                                                    <?php echo esc_html($dashboard_live_card_presence_label); ?>
+                                                </div>
+                                                <div class="cmn-live-strip">
+                                                    <?php if ($contact_card_show_available) : ?>
+                                                        <div class="cmn-live-banner">Bookable<br><small><?php echo esc_html($contact_card_status_available_detail !== '' ? $contact_card_status_available_detail : 'Confirmed'); ?></small></div>
+                                                    <?php else : ?>
+                                                        <div class="cmn-live-banner is-pending">Not yet confirmed</div>
+                                                    <?php endif; ?>
+                                                    <div class="cmn-live-rate"><?php echo esc_html($dashboard_live_card_rate_text); ?> <span>distance</span></div>
+                                                </div>
+                                                <div class="cmn-live-skills">
+                                                    <?php foreach (array_slice((array) $contact_card_skill_preview, 0, 3) as $dashboard_skill_chip) : ?>
+                                                        <span class="cmn-live-skill"><?php echo esc_html((string) $dashboard_skill_chip); ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                                <div class="cmn-live-actions">
+                                                    <a class="cmn-ghost" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>">View profile</a>
+                                                    <a class="cmn-primary" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>">Open contact card</a>
+                                                </div>
+                                            </article>
                                         </section>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
                                             <h4>Refer a friend</h4>
