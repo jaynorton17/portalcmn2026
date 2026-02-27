@@ -9899,6 +9899,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardInitialSkills = [];
       var contactCardInitialShowAvailable = String(contactCardSkillPanel.getAttribute('data-contact-card-show-available') || '0') === '1';
       var contactCardButtonTimeLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-button-time') || '');
+      var contactCardPendingLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-pending-label') || 'VERIFICATION REQUIRED');
+      var contactCardAvailableLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-available-label') || 'BOOKABLE');
+      var contactCardPendingDetail = String(contactCardSkillPanel.getAttribute('data-contact-card-pending-detail') || 'Awaiting availability confirmation');
+      var contactCardAvailableDetail = String(contactCardSkillPanel.getAttribute('data-contact-card-available-detail') || '');
 
       try {
         var defaultRaw = String(contactCardSkillPanel.getAttribute('data-contact-card-default-options') || '[]');
@@ -9940,12 +9944,14 @@ document.addEventListener('DOMContentLoaded', function () {
         if (contactCardPreviewAvailability) {
           contactCardPreviewAvailability.classList.remove('is-available', 'is-pending');
           contactCardPreviewAvailability.classList.add(isAvailable ? 'is-available' : 'is-pending');
-          contactCardPreviewAvailability.textContent = isAvailable ? 'CONFIRMED AVAILABLE' : 'NOT YET CONFIRMED';
+          contactCardPreviewAvailability.textContent = isAvailable ? contactCardAvailableLabel : contactCardPendingLabel;
         }
         if (contactCardPreviewTime) {
-          var showTime = isAvailable && contactCardButtonTimeLabel !== '';
-          contactCardPreviewTime.hidden = !showTime;
-          contactCardPreviewTime.textContent = showTime ? contactCardButtonTimeLabel : '';
+          var statusDetail = isAvailable
+            ? (contactCardAvailableDetail || contactCardButtonTimeLabel || '')
+            : (contactCardPendingDetail || '');
+          contactCardPreviewTime.hidden = statusDetail === '';
+          contactCardPreviewTime.textContent = statusDetail;
         }
       };
 

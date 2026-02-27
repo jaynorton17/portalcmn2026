@@ -65514,10 +65514,37 @@ final class CMN_One_Plugin {
                                 }
                             }
                             $contact_card_availability_class = $contact_card_show_available ? 'is-available' : 'is-pending';
-                            $contact_card_availability_label = $contact_card_show_available ? 'CONFIRMED AVAILABLE' : 'NOT YET CONFIRMED';
+                            $contact_card_id_verified = ((string) ($doc_id['doc_status'] ?? '') === 'approved');
+                            $contact_card_dbs_verified = ((string) ($doc_dbs['doc_status'] ?? '') === 'approved');
+                            $contact_card_compliance_complete = empty($completion_missing_items);
+                            $contact_card_profile_completion_pct = max(0, min(100, (int) round((float) $completion_percent)));
+                            $contact_card_status_pending_label = $contact_card_compliance_complete ? 'NOT YET CONFIRMED' : 'VERIFICATION REQUIRED';
+                            $contact_card_status_available_label = 'BOOKABLE';
+                            $contact_card_status_pending_detail = 'Awaiting availability confirmation';
+                            if (!$contact_card_id_verified) {
+                                $contact_card_status_pending_detail = 'ID verification pending';
+                            } elseif (!$contact_card_dbs_verified) {
+                                $contact_card_status_pending_detail = 'DBS verification pending';
+                            } elseif (!$contact_card_compliance_complete) {
+                                $contact_card_status_pending_detail = 'Compliance updates required';
+                            }
+                            $contact_card_availability_label = $contact_card_show_available ? $contact_card_status_available_label : $contact_card_status_pending_label;
                             $contact_card_button_time_label = $already_marked
                                 ? ($availability_confirmed_time_label !== '' ? ('Button pressed: ' . $availability_confirmed_time_label) : 'Button pressed: confirmed')
                                 : '';
+                            $contact_card_status_available_detail = $contact_card_button_time_label !== ''
+                                ? ('Active Today - ' . $contact_card_button_time_label)
+                                : 'Active Today';
+                            $contact_card_status_detail = $contact_card_show_available ? $contact_card_status_available_detail : $contact_card_status_pending_detail;
+                            $contact_card_reliability_score = (int) round(($contact_card_profile_completion_pct * 0.5)
+                                + ($contact_card_id_verified ? 15 : 0)
+                                + ($contact_card_dbs_verified ? 15 : 0)
+                                + ($contact_card_compliance_complete ? 10 : 0)
+                                + ($contact_card_show_available ? 10 : 0));
+                            if ($feedback_has_reviews) {
+                                $contact_card_reliability_score += (int) round(max(0, min(10, $feedback_score_raw * 2)));
+                            }
+                            $contact_card_reliability_score = max(30, min(99, $contact_card_reliability_score));
                             $contact_card_other_checked = $saved_contact_card_custom_skill !== '';
                             ?>
                             <div class="cmn-contact-card-tab-grid" id="cmn-profile-contact-card" data-profile-contact-card<?php echo $profile_focus_tab === 'contact_card' ? '' : ' hidden'; ?>>
@@ -65532,42 +65559,52 @@ final class CMN_One_Plugin {
                                             </label>
                                         </div>
                                     </div>
-                                    <div class="cmn-contact-card-preview" data-contact-card-preview>
-                                        <div class="cmn-contact-card-preview-grid">
+                                    <div class="cmn-contact-card-preview cmn-command-card" data-contact-card-preview>
+                                        <div class="cmn-command-card-accent" aria-hidden="true"></div>
+                                        <div class="cmn-command-card-head">
+                                            <div class="cmn-command-brand">COVERMENow <span>ONE</span></div>
+                                            <span class="cmn-command-head-check" aria-hidden="true">&#10003;</span>
+                                        </div>
+                                        <div class="cmn-command-identity">
                                             <div class="cmn-contact-card-preview-photo">
                                                 <img src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name !== '' ? $profile_name : 'Candidate'); ?> profile photo" data-contact-card-preview-photo>
                                             </div>
-                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--1">
+                                            <div class="cmn-command-identity-main">
                                                 <strong data-contact-card-preview-name><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></strong>
-                                            </div>
-                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--2">
                                                 <div class="cmn-contact-card-preview-stars" aria-label="Feedback score">
                                                     <span class="cmn-contact-card-preview-stars-track">★★★★★</span>
                                                     <span class="cmn-contact-card-preview-stars-fill" style="width: <?php echo esc_attr(number_format($contact_card_feedback_percent, 2, '.', '')); ?>%;">★★★★★</span>
                                                 </div>
                                                 <span class="cmn-contact-card-preview-score" data-contact-card-preview-score><?php echo esc_html($contact_card_feedback_text); ?></span>
                                             </div>
-                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--3">
-                                                <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-role>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
-                                                <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-distance>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
-                                            </div>
-                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--4">
-                                                <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
-                                                <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo ($contact_card_show_available && $contact_card_button_time_label !== '') ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_button_time_label); ?></span>
-                                            </div>
-                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--5">
-                                                <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
-                                                    <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
-                                                        <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                            </div>
-                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--6">
-                                                <div class="cmn-contact-card-preview-actions">
-                                                    <button class="cmn-ghost cmn-btn-mini" type="button">View profile</button>
-                                                    <button class="cmn-primary cmn-btn-mini" type="button">Book now</button>
-                                                </div>
-                                            </div>
+                                        </div>
+                                        <div class="cmn-command-meta">
+                                            <span data-contact-card-preview-role>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
+                                            <span data-contact-card-preview-distance>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
+                                        </div>
+                                        <div class="cmn-command-status-wrap">
+                                            <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
+                                            <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
+                                        </div>
+                                        <div class="cmn-command-reliability">
+                                            <span>Reliability Score: <strong><?php echo esc_html((string) $contact_card_reliability_score); ?>%</strong></span>
+                                            <div class="cmn-command-reliability-bar" aria-hidden="true"><span style="width: <?php echo esc_attr((string) $contact_card_reliability_score); ?>%;"></span></div>
+                                        </div>
+                                        <ul class="cmn-command-trust-list">
+                                            <li class="<?php echo $contact_card_id_verified ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_id_verified ? 'ID Verified' : 'ID Verification Pending'; ?></li>
+                                            <li class="<?php echo $contact_card_dbs_verified ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_dbs_verified ? 'DBS Verified' : 'DBS Verification Pending'; ?></li>
+                                            <li class="<?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_compliance_complete ? 'Compliance Complete' : 'Compliance In Progress'; ?></li>
+                                            <li class="<?php echo $contact_card_profile_completion_pct >= 90 ? 'is-ok' : 'is-pending'; ?>">Profile <?php echo esc_html((string) $contact_card_profile_completion_pct); ?>% Complete</li>
+                                        </ul>
+                                        <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
+                                        <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
+                                            <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
+                                                <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <div class="cmn-contact-card-preview-actions">
+                                            <button class="cmn-ghost cmn-btn-mini" type="button">View profile</button>
+                                            <button class="cmn-primary cmn-btn-mini" type="button">Book now</button>
                                         </div>
                                     </div>
                                 </article>
@@ -65575,7 +65612,11 @@ final class CMN_One_Plugin {
                                          data-contact-card-selected="<?php echo esc_attr(wp_json_encode($saved_contact_card_skills)); ?>"
                                          data-contact-card-default-options="<?php echo esc_attr(wp_json_encode($contact_card_skill_options)); ?>"
                                          data-contact-card-show-available="<?php echo $contact_card_show_available ? '1' : '0'; ?>"
-                                         data-contact-card-button-time="<?php echo esc_attr($contact_card_button_time_label); ?>">
+                                         data-contact-card-button-time="<?php echo esc_attr($contact_card_button_time_label); ?>"
+                                         data-contact-card-pending-label="<?php echo esc_attr($contact_card_status_pending_label); ?>"
+                                         data-contact-card-available-label="<?php echo esc_attr($contact_card_status_available_label); ?>"
+                                         data-contact-card-pending-detail="<?php echo esc_attr($contact_card_status_pending_detail); ?>"
+                                         data-contact-card-available-detail="<?php echo esc_attr($contact_card_status_available_detail); ?>">
                                     <div class="cmn-card-header">
                                         <h3>Key Skills for Contact Card</h3>
                                         <span class="cmn-muted">Select exactly 3 skills</span>
