@@ -9750,7 +9750,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!focusTarget) {
         return;
       }
-      toggleProfileEditMode(true, true);
+      toggleProfileEditMode(false, true);
       var targetSelector = focusTarget === 'documents' ? '#cmn-profile-documents' : '#cmn-profile-personal';
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(function () {

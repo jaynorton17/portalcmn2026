@@ -13026,6 +13026,10 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-p
   padding: 18px 20px;
 }
 
+body.cmn-portal-page .cmn-candidate-main [hidden] {
+  display: none !important;
+}
+
 /* Profile-only: remove red glow/tint overlays from box surfaces */
 body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main--profile {
   background-image: none !important;
