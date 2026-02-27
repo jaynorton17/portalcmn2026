@@ -6707,17 +6707,30 @@ body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ladder-row 
 
 body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ranking {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 22px;
   display: grid;
-  gap: 8px;
+  gap: 12px;
   color: #e2e8f0;
 }
 
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--visibility {
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--visibility .cmn-candidate-clp-ranking li {
+  line-height: 1.55;
+}
+
 body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-highlight {
-  margin: 0;
+  margin: 2px 0 0;
   font-size: 14px;
   font-weight: 700;
   color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--visibility .cmn-muted {
+  margin-top: 4px;
+  line-height: 1.55;
 }
 
 body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-rating-head {

@@ -70482,7 +70482,7 @@ final class CMN_One_Plugin {
                     <p class="cmn-muted">After Elite: every additional 30 completed shifts continues the Elite milestone multiplier.</p>
                 </article>
 
-                <article class="cmn-dashboard-card cmn-candidate-clp-card">
+                <article class="cmn-dashboard-card cmn-candidate-clp-card cmn-candidate-clp-card--visibility">
                     <h3>How Schools See You</h3>
                     <ol class="cmn-candidate-clp-ranking">
                         <li><strong>Star Rating</strong> (highest first)</li>
