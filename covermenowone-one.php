@@ -65524,7 +65524,13 @@ final class CMN_One_Plugin {
                                 <article class="cmn-dashboard-card cmn-contact-card-tab-tile cmn-contact-card-tab-tile--preview">
                                     <div class="cmn-card-header">
                                         <h3>Contact Card Preview</h3>
-                                        <span class="cmn-muted">How schools will see you</span>
+                                        <div class="cmn-contact-card-preview-header-controls">
+                                            <label class="cmn-contact-card-availability-toggle" aria-label="Show candidate as available on card">
+                                                <input type="checkbox" data-contact-card-availability-toggle<?php checked($contact_card_show_available); ?>>
+                                                <span class="cmn-contact-card-availability-toggle-track" aria-hidden="true"></span>
+                                                <span class="cmn-contact-card-availability-toggle-text">Available</span>
+                                            </label>
+                                        </div>
                                     </div>
                                     <div class="cmn-contact-card-preview" data-contact-card-preview>
                                         <div class="cmn-contact-card-preview-grid">
@@ -65577,10 +65583,6 @@ final class CMN_One_Plugin {
                                     <div class="cmn-contact-card-skill-counter" data-contact-card-skill-counter>
                                         <?php echo esc_html(count($saved_contact_card_skills)); ?>/3 selected
                                     </div>
-                                    <label class="cmn-contact-card-availability-toggle">
-                                        <input type="checkbox" data-contact-card-availability-toggle<?php checked($contact_card_show_available); ?>>
-                                        <span>Show candidate as available on card</span>
-                                    </label>
                                     <div class="cmn-contact-card-skill-list">
                                         <?php foreach ($contact_card_skill_options as $skill_option) : ?>
                                             <?php $is_skill_checked = in_array($skill_option, $saved_contact_card_skills, true); ?>

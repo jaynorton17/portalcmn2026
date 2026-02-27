@@ -9890,7 +9890,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardMessage = contactCardSkillPanel.querySelector('[data-contact-card-skill-msg]');
       var contactCardSaveBtn = contactCardSkillPanel.querySelector('[data-contact-card-save]');
       var contactCardResetBtn = contactCardSkillPanel.querySelector('[data-contact-card-reset]');
-      var contactCardAvailabilityToggle = contactCardSkillPanel.querySelector('[data-contact-card-availability-toggle]');
+      var contactCardAvailabilityToggle = document.querySelector('[data-contact-card-availability-toggle]');
       var contactCardPreviewSkills = document.querySelector('[data-contact-card-preview-skills]');
       var contactCardPreviewAvailability = document.querySelector('[data-contact-card-preview-availability]');
       var contactCardPreviewTime = document.querySelector('[data-contact-card-preview-time]');
