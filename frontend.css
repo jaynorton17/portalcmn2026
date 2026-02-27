@@ -14721,6 +14721,191 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-value {
   line-height: 1.3;
 }
 
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-tab-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: #0c121a;
+  padding: 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-grid {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  grid-template-rows: repeat(5, minmax(40px, auto));
+  gap: 8px 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo {
+  grid-column: 1;
+  grid-row: 1 / span 5;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #080c12;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  object-fit: cover;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--1 {
+  color: rgba(226, 232, 240, 0.74);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--2 {
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--3 strong {
+  font-size: 24px;
+  line-height: 1.1;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--4 {
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stars {
+  position: relative;
+  display: inline-block;
+  letter-spacing: 1px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stars-track {
+  color: rgba(255, 255, 255, 0.24);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stars-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #f59e0b;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-score {
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(248, 250, 252, 0.9);
+  font-size: 12px;
+  line-height: 1;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-counter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-option input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-other-input-wrap {
+  grid-column: 1 / -1;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-other-input-wrap input {
+  width: 100%;
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0d1219;
+  color: #f8fafc;
+  padding: 0 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile [data-contact-card-skill-msg].is-error {
+  color: #fca5a5;
+}
+
 body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status {
   position: relative;
   display: inline-flex;
@@ -15170,6 +15355,15 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero .cmn-
   }
   body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-tab-grid {
+    grid-template-columns: 1fr;
+  }
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-grid {
+    grid-template-columns: 108px minmax(0, 1fr);
+  }
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-list {
+    grid-template-columns: 1fr;
   }
 }
 

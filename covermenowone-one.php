@@ -858,6 +858,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_candidate_update_profile', [$this, 'handle_candidate_update_profile']);
         add_action('wp_ajax_cmn_candidate_profile_photo_upload', [$this, 'handle_candidate_profile_photo_upload']);
         add_action('wp_ajax_cmn_candidate_profile_photo_remove', [$this, 'handle_candidate_profile_photo_remove']);
+        add_action('wp_ajax_cmn_candidate_contact_card_save', [$this, 'handle_candidate_contact_card_save']);
         add_action('wp_ajax_cmn_candidate_learning_opt_in', [$this, 'handle_candidate_learning_opt_in']);
         add_action('wp_ajax_cmn_candidate_learning_complete_course', [$this, 'handle_candidate_learning_complete_course']);
         add_action('wp_ajax_cmn_candidate_rewards_overview', [$this, 'handle_candidate_rewards_overview']);
@@ -64432,6 +64433,56 @@ final class CMN_One_Plugin {
             $this->maybe_notify_candidate_qts_required($candidate_id, $candidate_user_id);
         }
         $learning_opt_in = $candidate_user_id ? get_user_meta($candidate_user_id, 'cmn_learning_notify_opt_in', true) === '1' : false;
+        $contact_card_skill_options = [
+            'Communication',
+            'Building Rapport',
+            'Classroom Management',
+            'Lesson Planning',
+            'Behaviour Management',
+            'Punctuality',
+            'Safeguarding Awareness',
+            'Adaptability',
+            'Professionalism',
+            'Teamwork',
+        ];
+        $saved_contact_card_skills = [];
+        if ($candidate_user_id > 0) {
+            $saved_contact_card_skills = get_user_meta($candidate_user_id, 'cmn_contact_card_skills', true);
+        }
+        if (!$saved_contact_card_skills && $candidate_id > 0) {
+            $saved_contact_card_skills = get_post_meta($candidate_id, 'cmn_contact_card_skills', true);
+        }
+        if (is_string($saved_contact_card_skills) && $saved_contact_card_skills !== '') {
+            $decoded_contact_card_skills = json_decode($saved_contact_card_skills, true);
+            if (is_array($decoded_contact_card_skills)) {
+                $saved_contact_card_skills = $decoded_contact_card_skills;
+            } else {
+                $saved_contact_card_skills = array_map('trim', explode(',', $saved_contact_card_skills));
+            }
+        }
+        if (!is_array($saved_contact_card_skills)) {
+            $saved_contact_card_skills = [];
+        }
+        $saved_contact_card_skills = array_values(array_unique(array_filter(array_map(
+            static function ($item) {
+                return sanitize_text_field((string) $item);
+            },
+            $saved_contact_card_skills
+        ))));
+        if (count($saved_contact_card_skills) > 3) {
+            $saved_contact_card_skills = array_slice($saved_contact_card_skills, 0, 3);
+        }
+        $saved_contact_card_custom_skill = '';
+        foreach ($saved_contact_card_skills as $contact_skill) {
+            if (!in_array($contact_skill, $contact_card_skill_options, true)) {
+                $saved_contact_card_custom_skill = $contact_skill;
+                break;
+            }
+        }
+        $contact_card_skill_preview = $saved_contact_card_skills;
+        if (empty($contact_card_skill_preview)) {
+            $contact_card_skill_preview = ['Select 3 skills to complete your contact card'];
+        }
 
         $completion_percent = 0;
         $completion_missing_items = [];
@@ -64655,8 +64706,18 @@ final class CMN_One_Plugin {
             'candidate' => 'profile',
             'cmn_profile_focus' => 'documents',
         ], $portal_url) . '#cmn-profile-documents';
+        $candidate_profile_contact_card_url = add_query_arg([
+            'candidate' => 'profile',
+            'cmn_profile_focus' => 'contact_card',
+        ], $portal_url) . '#cmn-profile-contact-card';
         $profile_focus_tab_raw = strtolower(trim((string) (wp_unslash($_GET['cmn_profile_focus'] ?? 'personal'))));
-        $profile_focus_tab = in_array($profile_focus_tab_raw, ['documents', 'document', 'doc', 'docs'], true) ? 'documents' : 'personal';
+        if (in_array($profile_focus_tab_raw, ['documents', 'document', 'doc', 'docs'], true)) {
+            $profile_focus_tab = 'documents';
+        } elseif (in_array($profile_focus_tab_raw, ['contact_card', 'contact-card', 'contactcard', 'contact'], true)) {
+            $profile_focus_tab = 'contact_card';
+        } else {
+            $profile_focus_tab = 'personal';
+        }
         $hub_tabs = ['profile', 'candidate_finance', 'feedback_ratings', 'calendar', 'bookings'];
         $is_hub_tab = in_array($tab, $hub_tabs, true);
         $candidate_learning_url = add_query_arg(['candidate' => 'learning'], $portal_url);
@@ -64941,6 +65002,7 @@ final class CMN_One_Plugin {
                             <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
                                 <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'personal') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_personal_url); ?>">Personal Details</a>
                                 <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'documents') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_documents_url); ?>">Documents</a>
+                                <a class="cmn-tab<?php echo ($tab === 'profile' && $profile_focus_tab === 'contact_card') ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>">Contact Card</a>
                                 <a class="cmn-tab<?php echo $tab === 'candidate_finance' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
                                 <a class="cmn-tab<?php echo $tab === 'feedback_ratings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_feedback_url); ?>">Feedback &amp; Ratings</a>
                                 <a class="cmn-tab<?php echo $tab === 'calendar' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
@@ -64968,7 +65030,7 @@ final class CMN_One_Plugin {
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
                             <h2>My Hub</h2>
                         </header>
-                        <div class="cmn-profile-global-editbar" data-profile-global-actions hidden<?php echo $profile_focus_tab === 'documents' ? ' data-profile-doc-hidden="1"' : ''; ?>>
+                        <div class="cmn-profile-global-editbar" data-profile-global-actions hidden<?php echo $profile_focus_tab !== 'personal' ? ' data-profile-doc-hidden="1"' : ''; ?>>
                             <span class="cmn-muted" data-profile-global-msg></span>
                             <div class="cmn-profile-global-editbar-actions">
                                 <button class="cmn-primary" type="button" data-profile-global-save disabled>Save changes</button>
@@ -64976,7 +65038,7 @@ final class CMN_One_Plugin {
                             </div>
                         </div>
                         <div class="cmn-profile-grid cmn-profile-grid--candidate-profile" data-profile-root>
-                            <div class="cmn-profile-personal-shell" id="cmn-profile-personal" data-profile-personal-card<?php echo $profile_focus_tab === 'documents' ? ' hidden' : ''; ?>>
+                            <div class="cmn-profile-personal-shell" id="cmn-profile-personal" data-profile-personal-card<?php echo $profile_focus_tab === 'personal' ? '' : ' hidden'; ?>>
                                 <div data-profile-view="personal">
                                     <?php
                                     $profile_status_pill = static function ($label, $yes_text = 'Yes', $no_text = 'No', $unknown_text = 'Not set') {
@@ -65387,6 +65449,89 @@ final class CMN_One_Plugin {
                                     </div>
                                     <div class="cmn-muted" data-doc-message></div>
                                 </div>
+                            </div>
+                            <?php
+                            $contact_card_display_name = $first_name !== '' ? $first_name : $profile_name;
+                            $contact_card_feedback_percent = $feedback_has_reviews ? max(0.0, min(100.0, ($feedback_score_raw / 5) * 100)) : 0.0;
+                            $contact_card_feedback_text = $feedback_has_reviews
+                                ? number_format(round($feedback_score_raw, 1), 1) . ' (' . $feedback_count_total . ' reviews)'
+                                : 'No ratings yet';
+                            $contact_card_other_checked = $saved_contact_card_custom_skill !== '';
+                            ?>
+                            <div class="cmn-contact-card-tab-grid" id="cmn-profile-contact-card" data-profile-contact-card<?php echo $profile_focus_tab === 'contact_card' ? '' : ' hidden'; ?>>
+                                <article class="cmn-dashboard-card cmn-contact-card-tab-tile cmn-contact-card-tab-tile--preview">
+                                    <div class="cmn-card-header">
+                                        <h3>Contact Card Preview</h3>
+                                        <span class="cmn-muted">How schools will see you</span>
+                                    </div>
+                                    <div class="cmn-contact-card-preview" data-contact-card-preview>
+                                        <div class="cmn-contact-card-preview-grid">
+                                            <div class="cmn-contact-card-preview-photo">
+                                                <img src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name !== '' ? $profile_name : 'Candidate'); ?> profile photo" data-contact-card-preview-photo>
+                                            </div>
+                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--1">
+                                                <span class="cmn-contact-card-preview-kicker">CoverMeNow Contact Card</span>
+                                            </div>
+                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--2">
+                                                <span><?php echo esc_html($role_label !== '' ? $role_label : 'Cover Staff'); ?></span>
+                                            </div>
+                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--3">
+                                                <strong data-contact-card-preview-name><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></strong>
+                                            </div>
+                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--4">
+                                                <div class="cmn-contact-card-preview-stars" aria-label="Feedback score">
+                                                    <span class="cmn-contact-card-preview-stars-track">★★★★★</span>
+                                                    <span class="cmn-contact-card-preview-stars-fill" style="width: <?php echo esc_attr(number_format($contact_card_feedback_percent, 2, '.', '')); ?>%;">★★★★★</span>
+                                                </div>
+                                                <span class="cmn-contact-card-preview-score" data-contact-card-preview-score><?php echo esc_html($contact_card_feedback_text); ?></span>
+                                            </div>
+                                            <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--5">
+                                                <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
+                                                    <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
+                                                        <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </article>
+                                <article class="cmn-dashboard-card cmn-contact-card-tab-tile cmn-contact-card-tab-tile--skills" data-contact-card-skill-panel
+                                         data-contact-card-selected="<?php echo esc_attr(wp_json_encode($saved_contact_card_skills)); ?>"
+                                         data-contact-card-default-options="<?php echo esc_attr(wp_json_encode($contact_card_skill_options)); ?>">
+                                    <div class="cmn-card-header">
+                                        <h3>Key Skills for Contact Card</h3>
+                                        <span class="cmn-muted">Select exactly 3 skills</span>
+                                    </div>
+                                    <div class="cmn-contact-card-skill-counter" data-contact-card-skill-counter>
+                                        <?php echo esc_html(count($saved_contact_card_skills)); ?>/3 selected
+                                    </div>
+                                    <div class="cmn-contact-card-skill-list">
+                                        <?php foreach ($contact_card_skill_options as $skill_option) : ?>
+                                            <?php $is_skill_checked = in_array($skill_option, $saved_contact_card_skills, true); ?>
+                                            <label class="cmn-contact-card-skill-option">
+                                                <input type="checkbox" value="<?php echo esc_attr($skill_option); ?>" data-contact-card-skill-option<?php checked($is_skill_checked); ?>>
+                                                <span><?php echo esc_html($skill_option); ?></span>
+                                            </label>
+                                        <?php endforeach; ?>
+                                        <label class="cmn-contact-card-skill-option cmn-contact-card-skill-option--other">
+                                            <input type="checkbox" value="__other__" data-contact-card-skill-other-toggle<?php checked($contact_card_other_checked); ?>>
+                                            <span>Other</span>
+                                        </label>
+                                        <label class="cmn-contact-card-other-input-wrap"<?php echo $contact_card_other_checked ? '' : ' hidden'; ?>>
+                                            <input type="text"
+                                                   data-contact-card-skill-other-input
+                                                   maxlength="60"
+                                                   placeholder="Add your own skill"
+                                                   value="<?php echo esc_attr($saved_contact_card_custom_skill); ?>"
+                                                   <?php echo $contact_card_other_checked ? '' : 'disabled'; ?>>
+                                        </label>
+                                    </div>
+                                    <div class="cmn-contact-card-skill-actions">
+                                        <button class="cmn-primary" type="button" data-contact-card-save>Save 3 skills</button>
+                                        <button class="cmn-ghost" type="button" data-contact-card-reset>Reset</button>
+                                        <span class="cmn-muted" data-contact-card-skill-msg aria-live="polite"></span>
+                                    </div>
+                                </article>
                             </div>
                         </div>
                     <?php elseif ($tab === 'calendar') : ?>
@@ -85369,6 +85514,45 @@ p{margin:0;line-height:1.5}
             'completion' => $completion,
             'completion_missing' => (array) ($completion_state['missing'] ?? []),
             'message' => 'Profile updated.',
+        ]);
+    }
+
+    public function handle_candidate_contact_card_save() {
+        if (!check_ajax_referer('cmn_candidate_profile', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in() || !$this->is_candidate_user()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $user_id = (int) get_current_user_id();
+        $candidate_id = (int) $this->get_candidate_id_for_user($user_id);
+        if ($candidate_id < 1) {
+            wp_send_json_error(['message' => 'Candidate profile not found.'], 404);
+        }
+
+        $raw_skills = $_POST['skills'] ?? [];
+        if (!is_array($raw_skills)) {
+            $raw_skills = [];
+        }
+        $skills = array_values(array_unique(array_filter(array_map(
+            static function ($item) {
+                return sanitize_text_field((string) $item);
+            },
+            $raw_skills
+        ))));
+        if (count($skills) > 3) {
+            $skills = array_slice($skills, 0, 3);
+        }
+        if (count($skills) !== 3) {
+            wp_send_json_error(['message' => 'Select exactly 3 skills.'], 400);
+        }
+
+        update_user_meta($user_id, 'cmn_contact_card_skills', $skills);
+        update_post_meta($candidate_id, 'cmn_contact_card_skills', $skills);
+
+        wp_send_json_success([
+            'skills' => $skills,
+            'message' => 'Contact card skills saved.',
         ]);
     }
 

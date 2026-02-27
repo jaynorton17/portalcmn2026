@@ -9824,6 +9824,16 @@ document.addEventListener('DOMContentLoaded', function () {
         return 'documents';
       }
       if ([
+        'contact_card',
+        'contact-card',
+        'contactcard',
+        'contact',
+        'profile-contact-card',
+        'cmn-profile-contact-card'
+      ].indexOf(normalized) !== -1) {
+        return 'contact_card';
+      }
+      if ([
         'personal',
         'profile',
         'details',
@@ -9840,7 +9850,12 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       toggleProfileEditMode(false, true);
-      var targetSelector = focusTarget === 'documents' ? '#cmn-profile-documents' : '#cmn-profile-personal';
+      var targetSelector = '#cmn-profile-personal';
+      if (focusTarget === 'documents') {
+        targetSelector = '#cmn-profile-documents';
+      } else if (focusTarget === 'contact_card') {
+        targetSelector = '#cmn-profile-contact-card';
+      }
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(function () {
           var target = document.querySelector(targetSelector);
@@ -9856,6 +9871,237 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       });
     };
+
+    var contactCardSkillPanel = document.querySelector('[data-contact-card-skill-panel]');
+    if (contactCardSkillPanel) {
+      var contactCardSkillInputs = Array.prototype.slice.call(contactCardSkillPanel.querySelectorAll('[data-contact-card-skill-option]'));
+      var contactCardOtherToggle = contactCardSkillPanel.querySelector('[data-contact-card-skill-other-toggle]');
+      var contactCardOtherInputWrap = contactCardSkillPanel.querySelector('.cmn-contact-card-other-input-wrap');
+      var contactCardOtherInput = contactCardSkillPanel.querySelector('[data-contact-card-skill-other-input]');
+      var contactCardCounter = contactCardSkillPanel.querySelector('[data-contact-card-skill-counter]');
+      var contactCardMessage = contactCardSkillPanel.querySelector('[data-contact-card-skill-msg]');
+      var contactCardSaveBtn = contactCardSkillPanel.querySelector('[data-contact-card-save]');
+      var contactCardResetBtn = contactCardSkillPanel.querySelector('[data-contact-card-reset]');
+      var contactCardPreviewSkills = document.querySelector('[data-contact-card-preview-skills]');
+      var contactCardBusy = false;
+      var contactCardDefaultSkills = [];
+      var contactCardInitialSkills = [];
+
+      try {
+        var defaultRaw = String(contactCardSkillPanel.getAttribute('data-contact-card-default-options') || '[]');
+        var defaultParsed = JSON.parse(defaultRaw);
+        if (Array.isArray(defaultParsed)) {
+          contactCardDefaultSkills = defaultParsed.map(function (item) {
+            return String(item || '').trim();
+          }).filter(function (item) {
+            return !!item;
+          });
+        }
+      } catch (_error) {}
+
+      try {
+        var initialRaw = String(contactCardSkillPanel.getAttribute('data-contact-card-selected') || '[]');
+        var initialParsed = JSON.parse(initialRaw);
+        if (Array.isArray(initialParsed)) {
+          contactCardInitialSkills = initialParsed.map(function (item) {
+            return String(item || '').trim();
+          }).filter(function (item) {
+            return !!item;
+          });
+        }
+      } catch (_error) {}
+
+      var setContactCardMessage = function (text, isError) {
+        if (!contactCardMessage) {
+          return;
+        }
+        contactCardMessage.textContent = text || '';
+        contactCardMessage.classList.toggle('is-error', !!isError);
+      };
+
+      var renderContactCardPreviewSkills = function (skills) {
+        if (!contactCardPreviewSkills) {
+          return;
+        }
+        var selected = Array.isArray(skills) ? skills : [];
+        contactCardPreviewSkills.innerHTML = '';
+        if (!selected.length) {
+          var placeholderChip = document.createElement('span');
+          placeholderChip.className = 'cmn-contact-card-skill-chip';
+          placeholderChip.textContent = 'Select 3 skills to complete your contact card';
+          contactCardPreviewSkills.appendChild(placeholderChip);
+          return;
+        }
+        selected.forEach(function (skillText) {
+          var chip = document.createElement('span');
+          chip.className = 'cmn-contact-card-skill-chip';
+          chip.textContent = String(skillText);
+          contactCardPreviewSkills.appendChild(chip);
+        });
+      };
+
+      var getContactCardSelectedSkills = function () {
+        var selected = [];
+        contactCardSkillInputs.forEach(function (input) {
+          if (!input || input === contactCardOtherToggle || !input.checked) {
+            return;
+          }
+          var value = String(input.value || '').trim();
+          if (!value) {
+            return;
+          }
+          selected.push(value);
+        });
+        if (contactCardOtherToggle && contactCardOtherToggle.checked && contactCardOtherInput) {
+          var customSkill = String(contactCardOtherInput.value || '').trim();
+          if (customSkill) {
+            selected.push(customSkill);
+          }
+        }
+        return selected.filter(function (value, index, arr) {
+          return arr.indexOf(value) === index;
+        });
+      };
+
+      var refreshContactCardSkillUi = function () {
+        var selectedSkills = getContactCardSelectedSkills();
+        var selectedCount = selectedSkills.length;
+        var maxReached = selectedCount >= 3;
+
+        if (contactCardCounter) {
+          contactCardCounter.textContent = selectedCount + '/3 selected';
+        }
+
+        if (contactCardOtherInputWrap) {
+          contactCardOtherInputWrap.hidden = !(contactCardOtherToggle && contactCardOtherToggle.checked);
+        }
+        if (contactCardOtherInput) {
+          if (contactCardOtherToggle && contactCardOtherToggle.checked) {
+            contactCardOtherInput.disabled = false;
+          } else {
+            contactCardOtherInput.disabled = true;
+          }
+        }
+
+        contactCardSkillInputs.forEach(function (input) {
+          if (!input) {
+            return;
+          }
+          if (input.checked) {
+            input.disabled = false;
+            return;
+          }
+          input.disabled = maxReached;
+        });
+
+        if (contactCardSaveBtn) {
+          contactCardSaveBtn.disabled = contactCardBusy || selectedCount !== 3;
+        }
+
+        renderContactCardPreviewSkills(selectedSkills);
+      };
+
+      var applyContactCardSelectionState = function (skills) {
+        var selectedSkills = Array.isArray(skills) ? skills : [];
+        var customSkill = '';
+        contactCardSkillInputs.forEach(function (input) {
+          if (!input || input === contactCardOtherToggle) {
+            return;
+          }
+          var value = String(input.value || '').trim();
+          input.checked = value && selectedSkills.indexOf(value) !== -1;
+        });
+        selectedSkills.forEach(function (skill) {
+          if (contactCardDefaultSkills.indexOf(skill) === -1 && !customSkill) {
+            customSkill = skill;
+          }
+        });
+        if (contactCardOtherToggle) {
+          contactCardOtherToggle.checked = !!customSkill;
+        }
+        if (contactCardOtherInput) {
+          contactCardOtherInput.value = customSkill;
+        }
+        refreshContactCardSkillUi();
+      };
+
+      if (contactCardInitialSkills.length) {
+        applyContactCardSelectionState(contactCardInitialSkills.slice(0, 3));
+      } else {
+        refreshContactCardSkillUi();
+      }
+
+      contactCardSkillInputs.forEach(function (input) {
+        if (!input) {
+          return;
+        }
+        input.addEventListener('change', function () {
+          setContactCardMessage('', false);
+          refreshContactCardSkillUi();
+        });
+      });
+
+      if (contactCardOtherInput) {
+        contactCardOtherInput.addEventListener('input', function () {
+          setContactCardMessage('', false);
+          refreshContactCardSkillUi();
+        });
+      }
+
+      if (contactCardSaveBtn) {
+        contactCardSaveBtn.addEventListener('click', function () {
+          if (contactCardBusy) {
+            return;
+          }
+          var selectedSkills = getContactCardSelectedSkills();
+          if (selectedSkills.length !== 3) {
+            setContactCardMessage('Select exactly 3 skills before saving.', true);
+            refreshContactCardSkillUi();
+            return;
+          }
+
+          var fd = new FormData();
+          fd.append('action', 'cmn_candidate_contact_card_save');
+          fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+          selectedSkills.forEach(function (skill) {
+            fd.append('skills[]', skill);
+          });
+
+          contactCardBusy = true;
+          setContactCardMessage('Saving skills...', false);
+          refreshContactCardSkillUi();
+
+          fetch(window.cmnPortal.ajaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: fd
+          }).then(function (response) {
+            return response.json();
+          }).then(function (data) {
+            if (!data || !data.success) {
+              var errorMessage = data && data.data && data.data.message ? data.data.message : 'Unable to save skills.';
+              setContactCardMessage(errorMessage, true);
+              return;
+            }
+            var savedSkills = data && data.data && Array.isArray(data.data.skills) ? data.data.skills : selectedSkills;
+            applyContactCardSelectionState(savedSkills.slice(0, 3));
+            setContactCardMessage(data && data.data && data.data.message ? String(data.data.message) : 'Skills saved.', false);
+          }).catch(function () {
+            setContactCardMessage('Unable to save skills.', true);
+          }).finally(function () {
+            contactCardBusy = false;
+            refreshContactCardSkillUi();
+          });
+        });
+      }
+
+      if (contactCardResetBtn) {
+        contactCardResetBtn.addEventListener('click', function () {
+          setContactCardMessage('', false);
+          applyContactCardSelectionState([]);
+        });
+      }
+    }
 
     toggleProfileEditMode(false, true);
     var initialCompletionText = document.querySelector('[data-profile-completion-text]');
