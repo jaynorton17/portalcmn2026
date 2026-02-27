@@ -14790,13 +14790,13 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview {
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-grid {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr);
-  grid-template-rows: repeat(5, minmax(40px, auto));
+  grid-template-rows: repeat(6, minmax(34px, auto));
   gap: 8px 12px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo {
   grid-column: 1;
-  grid-row: 1 / span 5;
+  grid-row: 1 / span 6;
   width: 92px;
   height: 92px;
   border-radius: 50%;
@@ -14823,22 +14823,19 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row 
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--1 {
-  color: rgba(226, 232, 240, 0.74);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  align-items: flex-start;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--2 {
-  font-size: 13px;
-  color: rgba(226, 232, 240, 0.88);
-  flex-wrap: wrap;
-}
-
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--3 strong {
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--1 strong {
   font-size: 24px;
   line-height: 1.1;
   color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--3 {
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.88);
+  flex-wrap: wrap;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-meta-pill {
@@ -14873,7 +14870,8 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-meta
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--4 {
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stars {
@@ -14902,9 +14900,52 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-scor
   font-size: 12px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #0b1119;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state.is-pending {
+  background: #facc15;
+  border-color: #fde047;
+  color: #0b1119;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state.is-available {
+  background: #22c55e;
+  border-color: #4ade80;
+  color: #0b1119;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-time {
+  color: rgba(226, 232, 240, 0.74);
+  font-size: 12px;
+}
+
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-skills {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row--6 {
+  justify-content: flex-end;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
