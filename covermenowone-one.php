@@ -67615,17 +67615,7 @@ final class CMN_One_Plugin {
      */
     public function handle_save_candidate_bank_details() {
         $default_redirect = $this->get_candidate_finance_focus_url('bank-details');
-        $redirect_raw = isset($_POST['cmn_redirect']) ? (string) wp_unslash($_POST['cmn_redirect']) : '';
         $redirect = $default_redirect;
-        if ($redirect_raw !== '') {
-            $candidate_redirect = wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect);
-            if (
-                strpos($candidate_redirect, 'cmn_tab=candidate_finance') !== false
-                || strpos($candidate_redirect, 'candidate=candidate_finance') !== false
-            ) {
-                $redirect = $candidate_redirect;
-            }
-        }
 
         $build_redirect = static function ($target, $status, $message) {
             $target = (string) $target;
@@ -67839,17 +67829,7 @@ final class CMN_One_Plugin {
      */
     public function handle_candidate_accept_compliance_ack() {
         $default_redirect = $this->get_candidate_finance_focus_url('compliance-ack');
-        $redirect_raw = isset($_POST['cmn_redirect']) ? (string) wp_unslash($_POST['cmn_redirect']) : '';
         $redirect = $default_redirect;
-        if ($redirect_raw !== '') {
-            $candidate_redirect = wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect);
-            if (
-                strpos($candidate_redirect, 'cmn_tab=candidate_finance') !== false
-                || strpos($candidate_redirect, 'candidate=candidate_finance') !== false
-            ) {
-                $redirect = $candidate_redirect;
-            }
-        }
 
         $build_redirect = static function ($target, $status, $message) {
             $target = (string) $target;
