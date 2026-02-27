@@ -3661,6 +3661,37 @@ body.cmn-booking-feedback-lock {
   letter-spacing: -0.01em;
 }
 
+.cmn-calendar-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cmn-calendar-nav-label {
+  min-width: 120px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.cmn-calendar-nav-btn {
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.cmn-calendar-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 body.cmn-portal-page .cmn-candidate-main--dashboard [data-candidate-calendar] .cmn-calendar-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;

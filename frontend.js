@@ -8105,7 +8105,7 @@ document.addEventListener('DOMContentLoaded', function () {
       limitDate.setDate(limitDate.getDate() + 30);
     }
     var limitStr = isoDate(limitDate);
-    var rollingWindowMode = true;
+    var rollingWindowMode = false;
     var feedbackTimer = null;
 
     if (feedback && portalOverlayRoot) {
@@ -8146,6 +8146,10 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       return true;
     };
+
+    if (!currentMonth || !inRange(currentMonth)) {
+      currentMonth = minMonth || currentMonth;
+    }
 
     var setFeedback = function (text, timeout, tone) {
       if (!feedback) {
@@ -8299,6 +8303,12 @@ document.addEventListener('DOMContentLoaded', function () {
       var monthIndex = parseInt(parts[1], 10) - 1;
       if (label) {
         label.textContent = monthToLabel(currentMonth);
+      }
+      if (prevBtn) {
+        prevBtn.disabled = !inRange(shiftMonth(currentMonth, -1));
+      }
+      if (nextBtn) {
+        nextBtn.disabled = !inRange(shiftMonth(currentMonth, 1));
       }
       ['M', 'T', 'W', 'T', 'F'].forEach(function (day) {
         var cell = document.createElement('div');

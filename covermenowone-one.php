@@ -65737,6 +65737,11 @@ final class CMN_One_Plugin {
                                  data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
                                 <div class="cmn-card-header cmn-calendar-header">
                                     <h2 class="cmn-calendar-title">Availability Planner</h2>
+                                    <div class="cmn-calendar-nav" role="group" aria-label="Calendar month navigation">
+                                        <button class="cmn-ghost cmn-btn-mini cmn-calendar-nav-btn" type="button" data-calendar-prev aria-label="Previous month">‹</button>
+                                        <span class="cmn-calendar-nav-label" data-calendar-label><?php echo esc_html(date_i18n('F Y', strtotime($calendar_min_date))); ?></span>
+                                        <button class="cmn-ghost cmn-btn-mini cmn-calendar-nav-btn" type="button" data-calendar-next aria-label="Next month">›</button>
+                                    </div>
                                 </div>
                                 <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
                                 <div class="cmn-calendar-range-controls">
@@ -66960,6 +66965,11 @@ final class CMN_One_Plugin {
                                  data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
                                 <div class="cmn-card-header cmn-calendar-header">
                                     <h2 class="cmn-calendar-title">Availability Planner</h2>
+                                    <div class="cmn-calendar-nav" role="group" aria-label="Calendar month navigation">
+                                        <button class="cmn-ghost cmn-btn-mini cmn-calendar-nav-btn" type="button" data-calendar-prev aria-label="Previous month">‹</button>
+                                        <span class="cmn-calendar-nav-label" data-calendar-label><?php echo esc_html(date_i18n('F Y', strtotime($calendar_min_date))); ?></span>
+                                        <button class="cmn-ghost cmn-btn-mini cmn-calendar-nav-btn" type="button" data-calendar-next aria-label="Next month">›</button>
+                                    </div>
                                 </div>
                                 <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
                                 <div class="cmn-calendar-range-controls">
