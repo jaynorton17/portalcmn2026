@@ -76762,8 +76762,9 @@ final class CMN_One_Plugin {
                 . '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
                 . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div><div class="cmn-live-rating">' . esc_html($rating_label) . '</div></div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
                 . $presence_html
-                . '<div class="cmn-live-strip">' . $banner_html . '<div class="cmn-live-rate">£' . esc_html((string) $day_rate) . ' <span>per day</span></div></div>'
+                . '<div class="cmn-live-strip">' . $banner_html . '</div>'
                 . ($distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($distance_text) . '</div>' : '')
+                . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-skills"><span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span></div>'
                 . '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="' . $profile_url . '" target="_blank" rel="noopener">View Profile</a></div>'
                 . '<div class="cmn-live-offer" data-live-offer></div>'

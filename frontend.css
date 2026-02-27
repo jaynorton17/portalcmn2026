@@ -17312,13 +17312,16 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-pending-confirmation .cmn-live-presence.is-live{border-color:rgba(250,204,21,.55);background:linear-gradient(90deg,rgba(250,204,21,.25),rgba(250,204,21,.1));color:#111827}
 .cmn-live-card.is-pending-confirmation .cmn-live-presence.is-live .cmn-live-presence-dot{background:#facc15;box-shadow:0 0 12px rgba(250,204,21,.9)}
 .cmn-live-card.is-pending-confirmation .cmn-live-presence.is-live .cmn-live-presence-dot::after{border-color:rgba(250,204,21,.5)}
-.cmn-live-strip{display:grid;grid-template-columns:1fr auto;gap:8px}
+.cmn-live-strip{display:grid;grid-template-columns:1fr;gap:8px}
 .cmn-live-banner{background:#22c55e;border:1px solid #22c55e;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.2;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#06110a;font-weight:900;box-shadow:0 0 22px rgba(34,197,94,.55),0 0 34px rgba(34,197,94,.3)}
 .cmn-live-banner.is-pending{background:linear-gradient(180deg,#facc15,#eab308);border-color:#fbbf24;color:#000 !important;-webkit-text-fill-color:#000;font-weight:800;box-shadow:0 0 16px rgba(250,204,21,.36)}
 .cmn-live-banner small{display:block;margin-top:2px;font-size:11px;font-weight:800;color:inherit}
 .cmn-live-rate{background:rgba(20,16,36,.86);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:7px 10px;font-size:23px;font-weight:800;line-height:1}
 .cmn-live-rate span{display:block;font-size:11px;font-weight:500;margin-top:4px}
 .cmn-live-distance{font-size:12px;color:#f6d9de}
+.cmn-live-strengths-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cmn-live-strengths-title{font-size:12px;font-weight:800;color:#f8fafc}
+.cmn-live-charge-rate{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:rgba(14,20,34,.8);font-size:11px;font-weight:800;color:#f8fafc}
 .cmn-live-skills{display:flex;gap:6px;flex-wrap:wrap}
 .cmn-live-skill{background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:6px 10px;border-radius:999px;font-size:11px}
 .cmn-live-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:auto}
