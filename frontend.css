@@ -2983,6 +2983,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-candidate-weekly-earnings-grid {
   gap: 12px;
   align-self: center;
+  transform: translateY(-8px);
 }
 
 @media (max-width: 720px) {
