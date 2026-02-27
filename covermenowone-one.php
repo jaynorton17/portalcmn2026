@@ -71057,6 +71057,132 @@ final class CMN_One_Plugin {
                     ],
                 ],
             ],
+            'module_assessment_safeguarding_infrastructure' => [
+                'key' => 'module_assessment_safeguarding_infrastructure',
+                'module_key' => 'safeguarding_infrastructure',
+                'title' => 'Module Assessment: Safeguarding Infrastructure',
+                'description' => 'Final 10-question assessment covering all safeguarding infrastructure courses. 100% pass required. Unlimited retakes permitted.',
+                'pass_mark' => 100,
+                'version' => 'v1.0',
+                'slides' => [
+                    [
+                        'title' => 'Final Assessment Briefing',
+                        'body' => "This final assessment confirms module competency across safeguarding infrastructure, risk identification, response protocols, safer recruitment, and governance assurance.\n\nYou must score 100% to pass. Unlimited retakes are permitted.\n\nOn pass, your completion record is logged and certificate details are issued in your Learning Centre.",
+                    ],
+                ],
+                'exam' => [
+                    [
+                        'question' => 'Safeguarding infrastructure is best defined as:',
+                        'options' => [
+                            'A' => 'A policy kept for inspection',
+                            'B' => 'A structured and auditable operational system',
+                            'C' => 'A DSL-only responsibility',
+                            'D' => 'A parent communication plan',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Infrastructure means safeguarding is embedded into daily systems with consistent, auditable operation.',
+                    ],
+                    [
+                        'question' => 'Which guidance is part of the UK statutory safeguarding framework for schools?',
+                        'options' => [
+                            'A' => 'Keeping Children Safe in Education',
+                            'B' => 'Internal HR guidance only',
+                            'C' => 'Optional local circulars',
+                            'D' => 'Exam board instructions only',
+                        ],
+                        'answer' => 'A',
+                        'explanation' => 'KCSIE is core statutory guidance for safeguarding responsibilities in schools.',
+                    ],
+                    [
+                        'question' => 'When a concern is reported, who determines referral threshold and escalation route?',
+                        'options' => [
+                            'A' => 'Any teacher on duty',
+                            'B' => 'The reporting pupil',
+                            'C' => 'The DSL',
+                            'D' => 'Reception staff',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'The DSL conducts the formal threshold assessment and determines escalation actions.',
+                    ],
+                    [
+                        'question' => 'What must happen after a verbal safeguarding concern is raised?',
+                        'options' => [
+                            'A' => 'Wait for weekly meeting',
+                            'B' => 'Write a factual, time-stamped record',
+                            'C' => 'Ask colleagues for informal opinion',
+                            'D' => 'Contact all parents immediately',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Verbal reports must be followed by formal written records with factual accuracy and timing.',
+                    ],
+                    [
+                        'question' => 'During a disclosure, staff should:',
+                        'options' => [
+                            'A' => 'Investigate and cross-examine',
+                            'B' => 'Promise full confidentiality',
+                            'C' => 'Listen calmly without leading questions',
+                            'D' => 'Delay recording until later',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Staff receive and record disclosures; they do not investigate or promise secrecy.',
+                    ],
+                    [
+                        'question' => 'If a child is in immediate danger, first priority is to:',
+                        'options' => [
+                            'A' => 'Complete all internal forms',
+                            'B' => 'Contact emergency services',
+                            'C' => 'Wait for governor decision',
+                            'D' => 'Schedule a parent meeting',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Immediate safety takes precedence over procedural sequencing.',
+                    ],
+                    [
+                        'question' => 'The Single Central Record (SCR) is used to:',
+                        'options' => [
+                            'A' => 'Track pupil attendance',
+                            'B' => 'Store curriculum maps',
+                            'C' => 'Record safeguarding vetting checks for staff',
+                            'D' => 'Log classroom behaviour points',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'SCR entries evidence safer recruitment and pre-employment compliance.',
+                    ],
+                    [
+                        'question' => 'A safeguarding audit is designed to:',
+                        'options' => [
+                            'A' => 'Reduce pastoral workload',
+                            'B' => 'Measure compliance and identify risk gaps',
+                            'C' => 'Replace DSL activity',
+                            'D' => 'Avoid external scrutiny',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Audits provide measurable assurance and define corrective action where risks are identified.',
+                    ],
+                    [
+                        'question' => 'Trend analysis in safeguarding data is important because it:',
+                        'options' => [
+                            'A' => 'Removes need for referrals',
+                            'B' => 'Identifies emerging systemic risks',
+                            'C' => 'Eliminates documentation',
+                            'D' => 'Reduces inspection scope',
+                        ],
+                        'answer' => 'B',
+                        'explanation' => 'Trend monitoring supports early detection of recurring and systemic safeguarding issues.',
+                    ],
+                    [
+                        'question' => 'A resilient safeguarding system should:',
+                        'options' => [
+                            'A' => 'Depend on one key individual',
+                            'B' => 'Operate only during inspections',
+                            'C' => 'Continue during staffing or leadership disruption',
+                            'D' => 'Remain unchanged for years',
+                        ],
+                        'answer' => 'C',
+                        'explanation' => 'Resilience means safeguarding remains operational under disruption, change, or absence.',
+                    ],
+                ],
+            ],
         ];
     }
 
@@ -71078,6 +71204,7 @@ final class CMN_One_Plugin {
                     'safeguarding_response_case_management',
                     'safer_recruitment_staff_conduct_infrastructure',
                     'safeguarding_governance_audit_continuous_assurance',
+                    'module_assessment_safeguarding_infrastructure',
                 ],
             ],
         ];
