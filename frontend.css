@@ -6436,12 +6436,6 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   justify-self: start;
 }
 
-.cmn-candidate-clp-pill-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .cmn-candidate-clp-table-wrap {
   overflow-x: auto;
 }

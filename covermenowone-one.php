@@ -70310,11 +70310,6 @@ final class CMN_One_Plugin {
                         <strong><span class="cmn-status-chip <?php echo esc_attr($conduct_chip_class); ?>" data-cmn-rewards-conduct-badge><?php echo esc_html($conduct_label); ?></span></strong>
                     </div>
                 </div>
-                <div class="cmn-candidate-clp-pill-row">
-                    <span class="cmn-status-chip">Revenue-backed</span>
-                    <span class="cmn-status-chip">Not gamified</span>
-                    <span class="cmn-status-chip">Performance-led visibility</span>
-                </div>
             </article>
 
             <div class="cmn-candidate-rewards-card-grid">
