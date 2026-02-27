@@ -67961,10 +67961,8 @@ final class CMN_One_Plugin {
             ]);
         }
 
-        $message = ((int) $insert_result > 0)
-            ? 'Acknowledgement confirmed.'
-            : 'Acknowledgement already confirmed.';
-        wp_safe_redirect($build_redirect($redirect, 'success', $message));
+        // Keep acknowledged state clean in UI (no extra success banner text).
+        wp_safe_redirect($redirect);
         exit;
     }
 
