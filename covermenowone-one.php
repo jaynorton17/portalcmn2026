@@ -69194,7 +69194,11 @@ final class CMN_One_Plugin {
             $payroll_query_booking_map_json = '{}';
         }
         $candidate_finance_focus = str_replace('_', '-', sanitize_key((string) wp_unslash($_GET['cmn_candidate_focus'] ?? '')));
-        $bank_details_open = ($candidate_finance_focus === 'bank-details' || $finance_notice_message !== '');
+        $finance_notice_is_error = ($finance_notice_status === 'error');
+        $bank_details_open = (
+            ($candidate_finance_focus === 'bank-details' && (!$has_bank_details || $finance_notice_is_error))
+            || $finance_notice_is_error
+        );
 
         ob_start();
         ?>
@@ -69310,7 +69314,7 @@ final class CMN_One_Plugin {
                                 </label>
                             </div>
                             <div class="cmn-candidate-finance-actions">
-                                <button class="cmn-primary" type="submit"><?php echo esc_html($bank_action_label); ?></button>
+                                <button class="cmn-primary cmn-candidate-bank-submit-btn" type="submit"><?php echo esc_html($bank_action_label); ?></button>
                             </div>
                         </form>
                         <?php if ($has_bank_details && $bank_sort_code_display !== '' && $bank_account_number_display !== '') : ?>

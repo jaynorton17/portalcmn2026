@@ -3374,6 +3374,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   list-style: none;
   display: flex;
   width: max-content;
+  min-width: 172px;
   align-items: center;
   justify-content: center;
   min-height: 40px;
@@ -3463,6 +3464,11 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   gap: 6px;
   font-size: 13px;
   color: var(--cmn-muted);
+}
+
+.cmn-candidate-bank-submit-btn {
+  min-width: 168px;
+  justify-content: center;
 }
 
 .cmn-candidate-finance-bank-preview {
