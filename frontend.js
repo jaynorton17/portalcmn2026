@@ -140,6 +140,70 @@ document.addEventListener('DOMContentLoaded', function () {
   };
   bindSchoolContactSearch();
 
+  var initCandidateSection4Carousel = function () {
+    var roots = document.querySelectorAll('[data-candidate-section4-carousel]');
+    if (!roots.length) {
+      return;
+    }
+    roots.forEach(function (root) {
+      var track = root.querySelector('[data-candidate-section4-track]');
+      var slides = root.querySelectorAll('[data-candidate-section4-slide]');
+      var dots = root.querySelectorAll('[data-candidate-section4-dot]');
+      if (!track || !slides.length) {
+        return;
+      }
+
+      var currentIndex = 0;
+      var slideCount = slides.length;
+      var render = function () {
+        if (!slideCount) {
+          return;
+        }
+        currentIndex = ((currentIndex % slideCount) + slideCount) % slideCount;
+        track.style.transform = 'translateX(' + (-currentIndex * 100) + '%)';
+        slides.forEach(function (slide, index) {
+          slide.setAttribute('aria-hidden', index === currentIndex ? 'false' : 'true');
+        });
+        dots.forEach(function (dot, index) {
+          dot.classList.toggle('is-active', index === currentIndex);
+        });
+      };
+
+      root.addEventListener('click', function (event) {
+        var prev = event.target.closest('[data-candidate-section4-prev]');
+        if (prev) {
+          currentIndex -= 1;
+          render();
+          return;
+        }
+        var next = event.target.closest('[data-candidate-section4-next]');
+        if (next) {
+          currentIndex += 1;
+          render();
+          return;
+        }
+        var dot = event.target.closest('[data-candidate-section4-dot]');
+        if (dot) {
+          currentIndex = parseInt(dot.getAttribute('data-candidate-section4-dot') || '0', 10) || 0;
+          render();
+        }
+      });
+
+      root.addEventListener('keydown', function (event) {
+        if (event.key === 'ArrowLeft') {
+          currentIndex -= 1;
+          render();
+        } else if (event.key === 'ArrowRight') {
+          currentIndex += 1;
+          render();
+        }
+      });
+
+      render();
+    });
+  };
+  initCandidateSection4Carousel();
+
   var portal = document.querySelector('.cmn-portal-light');
   var themeButtons = document.querySelectorAll('[data-theme]');
   var cmnThemeClasses = ['cmn-theme-default', 'cmn-theme-contrast', 'cmn-theme-light', 'cmn-theme-teal'];

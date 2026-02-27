@@ -66029,12 +66029,44 @@ final class CMN_One_Plugin {
                                 </div>
                                 <div class="cmn-calendar-feedback" data-calendar-feedback></div>
                             </div>
-                            <article class="cmn-dashboard-card cmn-candidate-contact-card">
+                            <article class="cmn-dashboard-card cmn-candidate-section4-carousel" data-candidate-section4-carousel>
                                 <div class="cmn-card-header">
-                                    <h3>Contact Card</h3>
+                                    <h3>Section 4</h3>
                                 </div>
-                                <div class="cmn-candidate-contact-card-body">
-                                    <img class="cmn-candidate-contact-card-logo" src="https://covermenow.co.uk/wp-content/uploads/2026/02/cropped-73fa2b5c-e425-4854-a404-96824acab169.png" alt="CoverMeNow logo">
+                                <div class="cmn-candidate-section4-carousel-viewport">
+                                    <div class="cmn-candidate-section4-carousel-track" data-candidate-section4-track>
+                                        <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
+                                            <h4>Contact Card</h4>
+                                            <div class="cmn-candidate-contact-card-body">
+                                                <img class="cmn-candidate-contact-card-logo" src="https://covermenow.co.uk/wp-content/uploads/2026/02/cropped-73fa2b5c-e425-4854-a404-96824acab169.png" alt="CoverMeNow logo">
+                                            </div>
+                                        </section>
+                                        <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
+                                            <h4>Refer a friend</h4>
+                                            <strong class="cmn-candidate-section4-highlight">Get £20</strong>
+                                            <p>We will add the offer details here shortly.</p>
+                                        </section>
+                                        <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
+                                            <h4>Refer a Cover Manager</h4>
+                                            <strong class="cmn-candidate-section4-highlight">Get £100</strong>
+                                            <p>We will add the offer details here shortly.</p>
+                                        </section>
+                                        <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
+                                            <h4>Latest News</h4>
+                                            <strong class="cmn-candidate-section4-highlight">Portal updates</strong>
+                                            <p>Latest candidate updates and announcements will appear here.</p>
+                                        </section>
+                                    </div>
+                                </div>
+                                <div class="cmn-candidate-section4-controls">
+                                    <button type="button" class="cmn-ghost cmn-btn-mini" data-candidate-section4-prev aria-label="Previous card">‹</button>
+                                    <div class="cmn-candidate-section4-dots" data-candidate-section4-dots>
+                                        <button type="button" class="cmn-candidate-section4-dot is-active" data-candidate-section4-dot="0" aria-label="Show card 1"></button>
+                                        <button type="button" class="cmn-candidate-section4-dot" data-candidate-section4-dot="1" aria-label="Show card 2"></button>
+                                        <button type="button" class="cmn-candidate-section4-dot" data-candidate-section4-dot="2" aria-label="Show card 3"></button>
+                                        <button type="button" class="cmn-candidate-section4-dot" data-candidate-section4-dot="3" aria-label="Show card 4"></button>
+                                    </div>
+                                    <button type="button" class="cmn-ghost cmn-btn-mini" data-candidate-section4-next aria-label="Next card">›</button>
                                 </div>
                             </article>
                         </div>
