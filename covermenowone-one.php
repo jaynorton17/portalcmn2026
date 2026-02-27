@@ -58823,9 +58823,14 @@ final class CMN_One_Plugin {
     }
 
     private function get_calendar_limit_dates() {
-        $start = (new DateTime(current_time('Y-m-d'), wp_timezone()))->modify('+1 day');
-        $limit = (clone $start)->modify('+30 days')->format('Y-m-d');
-        return [$start->format('Y-m-d'), $limit];
+        $tz = wp_timezone();
+        $start = (new DateTime(current_time('Y-m-d'), $tz))->modify('+1 day');
+        $start_year = (int) $start->format('Y');
+        $end_of_july = new DateTime($start_year . '-07-31', $tz);
+        if ($start > $end_of_july) {
+            $end_of_july = new DateTime(($start_year + 1) . '-07-31', $tz);
+        }
+        return [$start->format('Y-m-d'), $end_of_july->format('Y-m-d')];
     }
 
     private function get_candidate_calendar_summary($candidate_id) {
@@ -64620,10 +64625,18 @@ final class CMN_One_Plugin {
             );
         }
 
-        $calendar_window_start = (clone $now)->modify('+1 day');
-        $calendar_window_end = (clone $calendar_window_start)->modify('+30 days');
-        $calendar_start = $calendar_window_start->format('Y-m-d');
-        $calendar_end = $calendar_window_end->format('Y-m-d');
+        [$calendar_start, $calendar_end] = $this->get_calendar_limit_dates();
+        $calendar_window_start = DateTime::createFromFormat('Y-m-d', $calendar_start, $tz);
+        $calendar_window_end = DateTime::createFromFormat('Y-m-d', $calendar_end, $tz);
+        if (!$calendar_window_start || !$calendar_window_end) {
+            $calendar_window_start = (clone $now)->modify('+1 day');
+            $calendar_window_end = new DateTime($calendar_window_start->format('Y') . '-07-31', $tz);
+            if ($calendar_window_start > $calendar_window_end) {
+                $calendar_window_end = new DateTime(((int) $calendar_window_start->format('Y') + 1) . '-07-31', $tz);
+            }
+            $calendar_start = $calendar_window_start->format('Y-m-d');
+            $calendar_end = $calendar_window_end->format('Y-m-d');
+        }
         $calendar_min_date = $calendar_start;
         $calendar_max_date = $calendar_end;
         $calendar_weekday_options = [];
@@ -65719,6 +65732,8 @@ final class CMN_One_Plugin {
                                  data-calendar-month="<?php echo esc_attr($calendar_min_month); ?>"
                                  data-calendar-min="<?php echo esc_attr($calendar_min_month); ?>"
                                  data-calendar-max="<?php echo esc_attr($calendar_max_month); ?>"
+                                 data-calendar-start="<?php echo esc_attr($calendar_min_date); ?>"
+                                 data-calendar-end="<?php echo esc_attr($calendar_max_date); ?>"
                                  data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
                                 <div class="cmn-card-header cmn-calendar-header">
                                     <h2 class="cmn-calendar-title">Availability Planner</h2>
@@ -66940,6 +66955,8 @@ final class CMN_One_Plugin {
                                  data-calendar-month="<?php echo esc_attr($calendar_min_month); ?>"
                                  data-calendar-min="<?php echo esc_attr($calendar_min_month); ?>"
                                  data-calendar-max="<?php echo esc_attr($calendar_max_month); ?>"
+                                 data-calendar-start="<?php echo esc_attr($calendar_min_date); ?>"
+                                 data-calendar-end="<?php echo esc_attr($calendar_max_date); ?>"
                                  data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
                                 <div class="cmn-card-header cmn-calendar-header">
                                     <h2 class="cmn-calendar-title">Availability Planner</h2>
@@ -85234,7 +85251,7 @@ p{margin:0;line-height:1.5}
         }
         [$today, $limit] = $this->get_calendar_limit_dates();
         if ($start < $today || $end > $limit) {
-            wp_send_json_error(['message' => 'Range must be within the next 30 days.'], 400);
+            wp_send_json_error(['message' => 'Range must be within the planner window (through end of July).'], 400);
         }
         $start_dt = DateTime::createFromFormat('Y-m-d', $start, wp_timezone());
         $end_dt = DateTime::createFromFormat('Y-m-d', $end, wp_timezone());
@@ -85306,7 +85323,7 @@ p{margin:0;line-height:1.5}
                 wp_send_json_error(['message' => 'Select a valid date range to clear.'], 400);
             }
             if ($end < $start || $start < $today || $end > $limit) {
-                wp_send_json_error(['message' => 'Range must be within the next 30 days.'], 400);
+                wp_send_json_error(['message' => 'Range must be within the planner window (through end of July).'], 400);
             }
         }
 

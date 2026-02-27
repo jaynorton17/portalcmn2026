@@ -8074,16 +8074,36 @@ document.addEventListener('DOMContentLoaded', function () {
     var currentMonth = planner.getAttribute('data-calendar-month') || '';
     var minMonth = planner.getAttribute('data-calendar-min') || currentMonth;
     var maxMonth = planner.getAttribute('data-calendar-max') || currentMonth;
+    var plannerStartAttr = String(planner.getAttribute('data-calendar-start') || '').trim();
+    var plannerEndAttr = String(planner.getAttribute('data-calendar-end') || '').trim();
     var now = new Date();
     var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     var isoDate = function (dateObj) {
       return dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
     };
-    var windowStartDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    windowStartDate.setDate(windowStartDate.getDate() + 1);
+    var parseIsoDateLocal = function (iso) {
+      var value = String(iso || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return null;
+      }
+      var parts = value.split('-');
+      var year = parseInt(parts[0], 10);
+      var month = parseInt(parts[1], 10) - 1;
+      var day = parseInt(parts[2], 10);
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        return null;
+      }
+      return new Date(year, month, day);
+    };
+    var defaultWindowStartDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    defaultWindowStartDate.setDate(defaultWindowStartDate.getDate() + 1);
+    var windowStartDate = parseIsoDateLocal(plannerStartAttr) || defaultWindowStartDate;
     var windowStartStr = isoDate(windowStartDate);
-    var limitDate = new Date(windowStartDate.getFullYear(), windowStartDate.getMonth(), windowStartDate.getDate());
-    limitDate.setDate(limitDate.getDate() + 30);
+    var limitDate = parseIsoDateLocal(plannerEndAttr);
+    if (!limitDate || limitDate < windowStartDate) {
+      limitDate = new Date(windowStartDate.getFullYear(), windowStartDate.getMonth(), windowStartDate.getDate());
+      limitDate.setDate(limitDate.getDate() + 30);
+    }
     var limitStr = isoDate(limitDate);
     var rollingWindowMode = true;
     var feedbackTimer = null;
@@ -8209,7 +8229,7 @@ document.addEventListener('DOMContentLoaded', function () {
       grid.innerHTML = '';
       if (rollingWindowMode) {
         if (label) {
-          label.textContent = 'Next 30 Days';
+          label.textContent = 'Through ' + limitDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
         }
         if (prevBtn) {
           prevBtn.disabled = true;
