@@ -66030,9 +66030,6 @@ final class CMN_One_Plugin {
                                 <div class="cmn-calendar-feedback" data-calendar-feedback></div>
                             </div>
                             <article class="cmn-dashboard-card cmn-candidate-section4-carousel" data-candidate-section4-carousel>
-                                <div class="cmn-card-header">
-                                    <h3>Highlights</h3>
-                                </div>
                                 <div class="cmn-candidate-section4-carousel-viewport">
                                     <div class="cmn-candidate-section4-carousel-track" data-candidate-section4-track>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
