@@ -66427,8 +66427,21 @@ final class CMN_One_Plugin {
         }
         $current_tier_multiplier = round((float) ($multiplier_map[$tier] ?? $this->get_candidate_rewards_multiplier_for_tier($tier)), 2);
         $next_tier_multiplier = round((float) ($multiplier_map[$next_tier_key] ?? $this->get_candidate_rewards_multiplier_for_tier($next_tier_key)), 2);
+        $candidate_id = (int) $this->get_candidate_id_for_user($candidate_user_id);
+        $admin_school_charge_rate = 0.0;
+        if ($candidate_id > 0) {
+            $role_labels = $this->get_candidate_role_labels($candidate_id);
+            $primary_role = isset($role_labels[0]) ? (string) $role_labels[0] : '';
+            $rate_entry = $this->get_candidate_role_rate_entry($candidate_id, $primary_role);
+            $admin_school_charge_rate = round((float) ($rate_entry['school_charge_rate'] ?? 0), 2);
+            if ($admin_school_charge_rate <= 0) {
+                $admin_school_charge_rate = round((float) get_post_meta($candidate_id, 'cmn_school_charge_rate', true), 2);
+            }
+        }
         $estimated_average_day_pay = 0.0;
-        if ($awards) {
+        if ($admin_school_charge_rate > 0) {
+            $estimated_average_day_pay = $admin_school_charge_rate;
+        } elseif ($awards) {
             $estimated_average_day_pay = round((float) ($awards[0]['average_day_pay'] ?? 0), 2);
         }
         if ($estimated_average_day_pay <= 0 && $last_bonus_amount > 0 && $current_tier_multiplier > 0) {
