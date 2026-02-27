@@ -15263,6 +15263,8 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
   color: rgba(203, 213, 225, 0.86);
   font-size: 13px;
   font-weight: 700;
+  width: 100%;
+  text-align: center;
 }
 
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-reliability {

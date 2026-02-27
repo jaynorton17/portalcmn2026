@@ -64579,7 +64579,7 @@ final class CMN_One_Plugin {
         if (is_array($availability_confirmed_entry) && !empty($availability_confirmed_entry['created_at'])) {
             try {
                 $confirmed_dt = new DateTime((string) $availability_confirmed_entry['created_at'], wp_timezone());
-                $availability_confirmed_time_label = $confirmed_dt->format('g:i A');
+                $availability_confirmed_time_label = $confirmed_dt->format('H:i');
             } catch (Exception $e) {
                 $availability_confirmed_time_label = '';
             }
@@ -65589,7 +65589,7 @@ final class CMN_One_Plugin {
                             $contact_card_status_pending_detail = '';
                             $contact_card_availability_label = $contact_card_show_available ? $contact_card_status_available_label : $contact_card_status_pending_label;
                             $contact_card_button_time_label = $already_marked && $availability_confirmed_time_label !== ''
-                                ? ('Confirmed at ' . strtoupper($availability_confirmed_time_label))
+                                ? ('Confirmed at ' . $availability_confirmed_time_label)
                                 : '';
                             $contact_card_status_available_detail = $contact_card_button_time_label !== ''
                                 ? $contact_card_button_time_label
