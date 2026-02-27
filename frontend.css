@@ -3829,17 +3829,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-main
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link {
-  display: flex;
-  align-items: stretch;
-  justify-content: flex-start;
-  padding-right: 18px;
+  display: block;
   height: 100%;
   text-decoration: none;
   color: inherit;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link .cmn-command-card--dashboard {
-  width: 100%;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link:focus-visible {
@@ -3873,10 +3866,6 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-dashboard-liv
 @media (max-width: 1024px) {
   body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-grid {
     grid-template-columns: 1fr;
-  }
-
-  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link {
-    padding-right: 0;
   }
 }
 
@@ -15353,98 +15342,6 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
   min-width: 148px;
   box-shadow: 0 10px 20px rgba(153, 27, 27, 0.5);
   transition: filter 0.2s ease, box-shadow 0.2s ease;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard {
-  height: 100%;
-  min-height: 0;
-  padding: 10px;
-  gap: 6px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-identity {
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 7px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-photo-wrap {
-  width: 44px;
-  height: 44px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-brand {
-  font-size: 14px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-head-check {
-  font-size: 12px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-identity-main strong {
-  font-size: 18px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-stars {
-  font-size: 14px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-score {
-  font-size: 10px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-state {
-  min-height: 28px;
-  font-size: 11px;
-  padding: 0 8px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-meta {
-  font-size: 10px;
-  gap: 3px;
-  padding: 6px 8px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list {
-  margin-top: 7px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li {
-  font-size: 10px;
-  padding: 6px 8px 6px 24px;
-  margin-bottom: 5px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li.cmn-command-live-row::before,
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li.cmn-command-live-row.is-live-state::after {
-  left: 7px;
-  width: 8px;
-  height: 8px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-strengths-title {
-  font-size: 11px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-skills {
-  gap: 5px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-skill-chip {
-  min-height: 22px;
-  padding: 0 7px;
-  font-size: 9px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-actions {
-  gap: 5px;
-}
-
-body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-actions :is(.cmn-ghost, .cmn-primary) {
-  min-height: 28px;
-  font-size: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card:hover .cmn-contact-card-preview-actions .cmn-primary {

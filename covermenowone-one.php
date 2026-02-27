@@ -66909,7 +66909,7 @@ final class CMN_One_Plugin {
                                 </div>
                             </div>
                             <a class="cmn-dashboard-section1-contact-link" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>" aria-label="Open My Hub Contact Card">
-                                <div class="cmn-contact-card-preview cmn-command-card cmn-command-card--dashboard <?php echo esc_attr($dashboard_contact_state_class); ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-dashboard-contact-card data-dashboard-contact-confirmed-at="<?php echo esc_attr($dashboard_contact_confirmed_at); ?>">
+                                <div class="cmn-contact-card-preview cmn-command-card <?php echo esc_attr($dashboard_contact_state_class); ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-dashboard-contact-card data-dashboard-contact-confirmed-at="<?php echo esc_attr($dashboard_contact_confirmed_at); ?>">
                                     <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                     <div class="cmn-command-card-head">
                                         <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
