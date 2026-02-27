@@ -66020,14 +66020,24 @@ final class CMN_One_Plugin {
                                                         'cmn_learning_course' => false,
                                                     ], $portal_url) . '#cmn-learning-modules';
                                                     ?>
-                                                    <button class="cmn-learning-module-open"
-                                                            type="button"
-                                                            data-learning-open-module="<?php echo esc_attr($module_key); ?>"
-                                                            data-learning-open-module-url="<?php echo esc_url($module_open_url); ?>"
-                                                            aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>"
-                                                            <?php echo $is_coming_soon ? 'disabled' : ''; ?>>
-                                                        <?php echo esc_html($is_coming_soon ? 'Coming soon' : 'Open modules'); ?>
-                                                    </button>
+                                                    <?php if ($is_coming_soon) : ?>
+                                                        <button class="cmn-learning-module-open"
+                                                                type="button"
+                                                                data-learning-open-module="<?php echo esc_attr($module_key); ?>"
+                                                                data-learning-open-module-url="<?php echo esc_url($module_open_url); ?>"
+                                                                aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>"
+                                                                disabled>
+                                                            <?php echo esc_html('Coming soon'); ?>
+                                                        </button>
+                                                    <?php else : ?>
+                                                        <a class="cmn-learning-module-open"
+                                                           href="<?php echo esc_url($module_open_url); ?>"
+                                                           data-learning-open-module="<?php echo esc_attr($module_key); ?>"
+                                                           data-learning-open-module-url="<?php echo esc_url($module_open_url); ?>"
+                                                           aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>">
+                                                            <?php echo esc_html('Open modules'); ?>
+                                                        </a>
+                                                    <?php endif; ?>
                                                 </div>
                                             </article>
                                             <?php $learning_module_order++; ?>
@@ -66086,6 +66096,12 @@ final class CMN_One_Plugin {
                                             $is_locked_course = !$is_completed && !empty($missing_required_titles);
                                             $lock_message = $is_locked_course ? ('Complete first: ' . implode(', ', $missing_required_titles)) : '';
                                             $open_label = $is_locked_course ? 'Locked' : ($is_completed ? 'Review module' : 'Start module');
+                                            $course_open_url = add_query_arg([
+                                                'candidate' => 'learning',
+                                                'cmn_learning_focus' => 'modules',
+                                                'cmn_learning_module' => $course_module_key,
+                                                'cmn_learning_course' => $course_key,
+                                            ], $portal_url) . '#cmn-learning-modules';
                                             $is_visible_for_module = $learning_is_module_screen && $learning_open_module_key !== '' && $course_module_key === $learning_open_module_key;
                                             if ($is_visible_for_module) {
                                                 $learning_visible_course_count++;
@@ -66115,7 +66131,14 @@ final class CMN_One_Plugin {
                                                     <small class="cmn-learning-course-lock"<?php echo $is_locked_course ? '' : ' hidden'; ?> data-learning-course-lock="<?php echo esc_attr($course_key); ?>">
                                                         <?php echo esc_html($lock_message); ?>
                                                     </small>
-                                                    <button class="cmn-learning-module-open" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>"<?php echo $is_locked_course ? ' disabled' : ''; ?>><?php echo esc_html($open_label); ?></button>
+                                                    <?php if ($is_locked_course) : ?>
+                                                        <button class="cmn-learning-module-open" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>" disabled><?php echo esc_html($open_label); ?></button>
+                                                    <?php else : ?>
+                                                        <a class="cmn-learning-module-open"
+                                                           href="<?php echo esc_url($course_open_url); ?>"
+                                                           data-learning-open-course="<?php echo esc_attr($course_key); ?>"
+                                                           data-learning-open-course-url="<?php echo esc_url($course_open_url); ?>"><?php echo esc_html($open_label); ?></a>
+                                                    <?php endif; ?>
                                                 </div>
                                                 <?php if ($is_completed && $completion_date !== '') : ?>
                                                     <small>Completed: <?php echo esc_html($completion_date); ?></small>

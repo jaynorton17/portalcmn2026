@@ -1419,6 +1419,9 @@ body.cmn-portal-page img[src*="fasthosts"] {
 }
 
 .cmn-learning-module-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 40px;
   border-radius: 12px;
   border: 1px solid rgba(193, 18, 31, 0.9);
@@ -1427,6 +1430,7 @@ body.cmn-portal-page img[src*="fasthosts"] {
   padding: 0 14px;
   font-weight: 700;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .cmn-learning-module-open:hover,

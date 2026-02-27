@@ -11507,12 +11507,14 @@ document.addEventListener('DOMContentLoaded', function () {
       };
 
       moduleButtons.forEach(function (button) {
-        button.addEventListener('click', function () {
+        button.addEventListener('click', function (event) {
           if (button.disabled) {
+            event.preventDefault();
             return;
           }
           var openUrl = String(button.getAttribute('data-learning-open-module-url') || '').trim();
           if (openUrl) {
+            event.preventDefault();
             window.location.assign(openUrl);
             return;
           }
@@ -11616,8 +11618,26 @@ document.addEventListener('DOMContentLoaded', function () {
         moduleSortSelect.addEventListener('change', applyModuleTools);
       }
       learningButtons.forEach(function (button) {
-        button.addEventListener('click', function () {
+        button.addEventListener('click', function (event) {
+          if (button.disabled) {
+            event.preventDefault();
+            return;
+          }
           var key = button.getAttribute('data-learning-open-course');
+          var openUrl = String(button.getAttribute('data-learning-open-course-url') || button.getAttribute('href') || '').trim();
+          if (key && learningCourses[key]) {
+            event.preventDefault();
+            openCourse(key, true);
+            if (openUrl && window.history && typeof window.history.replaceState === 'function') {
+              window.history.replaceState({}, document.title, openUrl);
+            }
+            return;
+          }
+          if (openUrl) {
+            event.preventDefault();
+            window.location.assign(openUrl);
+            return;
+          }
           openCourse(key, true);
         });
       });
