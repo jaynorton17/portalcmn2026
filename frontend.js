@@ -9400,8 +9400,8 @@ document.addEventListener('DOMContentLoaded', function () {
       var map = {
         'add bank details': { label: 'Add bank details', url: profileFinanceBankUrl || profilePersonalUrl },
         'accept self-employment notice': { label: 'Accept self-employment notice', url: profileFinanceAckUrl || profilePersonalUrl },
-        'upload cv': { label: 'CV', url: profileDocumentsUrl || profilePersonalUrl },
-        'upload dbs': { label: 'DBS', url: profileDocumentsUrl || profilePersonalUrl },
+        'upload cv': { label: 'Upload CV', url: profileDocumentsUrl || profilePersonalUrl },
+        'upload dbs': { label: 'Upload DBS', url: profileDocumentsUrl || profilePersonalUrl },
         'upload photo id': { label: 'Upload photo ID', url: profileDocumentsUrl || profilePersonalUrl }
       };
       if (map[key]) {
@@ -9417,19 +9417,14 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!profileAdminMissing) {
         return;
       }
-      profileAdminMissing.innerHTML = '';
       var links = (Array.isArray(missingItems) ? missingItems : [])
         .map(mapMissingItemToLink)
         .filter(function (item) { return !!item; });
       if (!links.length) {
-        var fallback = document.createElement('li');
-        var fallbackAnchor = document.createElement('a');
-        fallbackAnchor.href = profilePersonalUrl || window.location.href;
-        fallbackAnchor.textContent = 'Update profile details';
-        fallback.appendChild(fallbackAnchor);
-        profileAdminMissing.appendChild(fallback);
+        // Keep server-rendered explicit list if no mapped items were provided.
         return;
       }
+      profileAdminMissing.innerHTML = '';
       var seen = {};
       links.forEach(function (item) {
         var key = String(item.label || '') + '|' + String(item.url || '');
@@ -9794,7 +9789,12 @@ document.addEventListener('DOMContentLoaded', function () {
       initialPct = 100;
     }
     var initialMissingItems = [];
-    if (profileCompletionMissing) {
+    if (profileAdminMissing) {
+      initialMissingItems = Array.prototype.map.call(profileAdminMissing.querySelectorAll('li'), function (li) {
+        return String(li.textContent || '').trim();
+      }).filter(function (item) { return !!item; });
+    }
+    if (!initialMissingItems.length && profileCompletionMissing) {
       initialMissingItems = Array.prototype.map.call(profileCompletionMissing.querySelectorAll('li'), function (li) {
         return String(li.textContent || '').trim();
       }).filter(function (item) { return !!item; });
