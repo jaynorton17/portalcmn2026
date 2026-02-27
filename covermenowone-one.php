@@ -719,6 +719,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_save_staff_nav_state', [$this, 'handle_save_staff_nav_state']);
         add_action('wp_ajax_cmn_save_staff_nav_order', [$this, 'handle_save_staff_nav_order']);
         add_action('wp_ajax_cmn_touch_staff_presence', [$this, 'handle_touch_staff_presence']);
+        add_action('wp_ajax_cmn_touch_candidate_presence', [$this, 'handle_touch_candidate_presence']);
         add_action('wp_ajax_cmn_send_test_emails', [$this, 'handle_send_test_emails']);
         add_action('admin_post_cmn_update_candidate_request', [$this, 'handle_update_candidate_request']);
         add_action('admin_post_cmn_send_candidate_invite', [$this, 'handle_send_candidate_invite']);
@@ -64551,6 +64552,17 @@ final class CMN_One_Plugin {
         if ($saved_contact_card_show_available_raw !== '') {
             $contact_card_show_available = in_array(strtolower(trim($saved_contact_card_show_available_raw)), ['1', 'true', 'yes', 'on'], true);
         }
+        if ($candidate_user_id > 0) {
+            $this->touch_candidate_presence($candidate_user_id, false);
+        }
+        $candidate_presence_snapshot = $candidate_user_id > 0
+            ? $this->get_candidate_presence_snapshot($candidate_user_id)
+            : ['is_online' => false, 'last_online_label' => 'Last Online: Unknown'];
+        $contact_card_is_online_now = !empty($candidate_presence_snapshot['is_online']);
+        $contact_card_last_online_label = sanitize_text_field((string) ($candidate_presence_snapshot['last_online_label'] ?? 'Last Online: Unknown'));
+        if ($contact_card_last_online_label === '') {
+            $contact_card_last_online_label = 'Last Online: Unknown';
+        }
 
         $calendar_window_start = (clone $now)->modify('+1 day');
         $calendar_window_end = (clone $calendar_window_start)->modify('+30 days');
@@ -65551,7 +65563,7 @@ final class CMN_One_Plugin {
                                             </label>
                                         </div>
                                     </div>
-                                    <div class="cmn-contact-card-preview cmn-command-card<?php echo $contact_card_show_available ? ' is-live' : ''; ?>" data-contact-card-preview>
+                                    <div class="cmn-contact-card-preview cmn-command-card<?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-contact-card-preview data-contact-card-is-online="<?php echo $contact_card_is_online_now ? '1' : '0'; ?>">
                                         <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                         <div class="cmn-command-card-head">
                                             <div class="cmn-command-brand">COVERMENow <span>ONE</span></div>
@@ -65583,7 +65595,7 @@ final class CMN_One_Plugin {
                                         <ul class="cmn-command-trust-list">
                                             <li class="<?php echo $contact_card_verified_bundle ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_verified_bundle ? 'ID & DBS Verified' : 'ID / DBS Verification Pending'; ?></li>
                                             <li class="<?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_compliance_complete ? 'Fully Compliant' : 'Compliance In Progress'; ?></li>
-                                            <li class="cmn-command-live-row <?php echo $contact_card_show_available ? 'is-ok is-live-state' : 'is-pending'; ?>"><?php echo $contact_card_show_available ? 'Online Now' : 'Offline'; ?></li>
+                                            <li class="cmn-command-live-row <?php echo $contact_card_is_online_now ? 'is-ok is-live-state' : 'is-pending'; ?>" data-contact-card-live-row><?php echo esc_html($contact_card_is_online_now ? 'ONLINE NOW' : $contact_card_last_online_label); ?></li>
                                         </ul>
                                         <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
                                         <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
@@ -65601,6 +65613,8 @@ final class CMN_One_Plugin {
                                          data-contact-card-selected="<?php echo esc_attr(wp_json_encode($saved_contact_card_skills)); ?>"
                                          data-contact-card-default-options="<?php echo esc_attr(wp_json_encode($contact_card_skill_options)); ?>"
                                          data-contact-card-show-available="<?php echo $contact_card_show_available ? '1' : '0'; ?>"
+                                         data-contact-card-is-online="<?php echo $contact_card_is_online_now ? '1' : '0'; ?>"
+                                         data-contact-card-last-online="<?php echo esc_attr($contact_card_last_online_label); ?>"
                                          data-contact-card-button-time="<?php echo esc_attr($contact_card_button_time_label); ?>"
                                          data-contact-card-pending-label="<?php echo esc_attr($contact_card_status_pending_label); ?>"
                                          data-contact-card-available-label="<?php echo esc_attr($contact_card_status_available_label); ?>"
@@ -81627,6 +81641,60 @@ p{margin:0;line-height:1.5}
             'status_key' => (string) ($snapshot['status_key'] ?? 'offline'),
             'label' => (string) ($snapshot['label'] ?? 'Offline'),
             'detail' => (string) ($snapshot['detail'] ?? ''),
+        ]);
+    }
+
+    private function touch_candidate_presence($user_id = 0, $force = false) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id < 1 || !$this->is_candidate_user($user_id)) {
+            return;
+        }
+        $now = time();
+        $last_seen = (int) get_user_meta($user_id, 'cmn_last_seen', true);
+        if ($force || $last_seen < 1 || ($now - $last_seen) >= 20) {
+            update_user_meta($user_id, 'cmn_last_seen', $now);
+        }
+    }
+
+    private function get_candidate_presence_snapshot($user_id, $now_ts = 0) {
+        $user_id = (int) $user_id;
+        $now_ts = $now_ts > 0 ? (int) $now_ts : time();
+        $last_seen = (int) get_user_meta($user_id, 'cmn_last_seen', true);
+        if ($last_seen < 1) {
+            $last_seen = (int) get_user_meta($user_id, 'cmn_last_login', true);
+        }
+        $idle_seconds = $last_seen > 0 ? max(0, $now_ts - $last_seen) : PHP_INT_MAX;
+        $is_online = $last_seen > 0 && $idle_seconds <= 120;
+        $last_online_label = 'Last Online: Unknown';
+        if ($is_online) {
+            $last_online_label = 'ONLINE NOW';
+        } elseif ($last_seen > 0) {
+            $last_online_label = 'Last Online: ' . human_time_diff($last_seen, $now_ts) . ' ago';
+        }
+        return [
+            'is_online' => $is_online,
+            'last_seen' => $last_seen,
+            'last_online_label' => $last_online_label,
+        ];
+    }
+
+    public function handle_touch_candidate_presence() {
+        if (!check_ajax_referer('cmn_candidate_profile', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $user_id = (int) get_current_user_id();
+        if (!$this->is_candidate_user($user_id)) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $this->touch_candidate_presence($user_id, false);
+        $snapshot = $this->get_candidate_presence_snapshot($user_id);
+        wp_send_json_success([
+            'is_online' => !empty($snapshot['is_online']) ? 1 : 0,
+            'last_seen' => (int) ($snapshot['last_seen'] ?? 0),
+            'last_online_label' => (string) ($snapshot['last_online_label'] ?? 'Last Online: Unknown'),
         ]);
     }
 

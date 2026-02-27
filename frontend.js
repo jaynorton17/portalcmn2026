@@ -9895,10 +9895,13 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardPreviewAvailability = document.querySelector('[data-contact-card-preview-availability]');
       var contactCardPreviewTime = document.querySelector('[data-contact-card-preview-time]');
       var contactCardPreviewCard = document.querySelector('[data-contact-card-preview]');
+      var contactCardLiveRow = document.querySelector('[data-contact-card-live-row]');
       var contactCardBusy = false;
       var contactCardDefaultSkills = [];
       var contactCardInitialSkills = [];
       var contactCardInitialShowAvailable = String(contactCardSkillPanel.getAttribute('data-contact-card-show-available') || '0') === '1';
+      var contactCardInitialIsOnline = String(contactCardSkillPanel.getAttribute('data-contact-card-is-online') || '0') === '1';
+      var contactCardInitialLastOnline = String(contactCardSkillPanel.getAttribute('data-contact-card-last-online') || 'Last Online: Unknown');
       var contactCardButtonTimeLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-button-time') || '');
       var contactCardPendingLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-pending-label') || 'VERIFICATION REQUIRED');
       var contactCardAvailableLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-available-label') || 'BOOKABLE');
@@ -9947,9 +9950,6 @@ document.addEventListener('DOMContentLoaded', function () {
           contactCardPreviewAvailability.classList.add(isAvailable ? 'is-available' : 'is-pending');
           contactCardPreviewAvailability.textContent = isAvailable ? contactCardAvailableLabel : contactCardPendingLabel;
         }
-        if (contactCardPreviewCard) {
-          contactCardPreviewCard.classList.toggle('is-live', isAvailable);
-        }
         if (contactCardPreviewTime) {
           var statusDetail = isAvailable
             ? (contactCardAvailableDetail || contactCardButtonTimeLabel || '')
@@ -9957,6 +9957,24 @@ document.addEventListener('DOMContentLoaded', function () {
           contactCardPreviewTime.hidden = statusDetail === '';
           contactCardPreviewTime.textContent = statusDetail;
         }
+      };
+
+      var applyContactCardPresenceState = function (isOnline, lastOnlineLabel) {
+        var online = !!isOnline;
+        if (contactCardPreviewCard) {
+          contactCardPreviewCard.classList.toggle('is-live', online);
+        }
+        if (!contactCardLiveRow) {
+          return;
+        }
+        contactCardLiveRow.classList.remove('is-ok', 'is-pending', 'is-live-state');
+        if (online) {
+          contactCardLiveRow.classList.add('is-ok', 'is-live-state');
+          contactCardLiveRow.textContent = 'ONLINE NOW';
+          return;
+        }
+        contactCardLiveRow.classList.add('is-pending');
+        contactCardLiveRow.textContent = String(lastOnlineLabel || 'Last Online: Unknown');
       };
 
       var renderContactCardPreviewSkills = function (skills) {
@@ -10071,6 +10089,34 @@ document.addEventListener('DOMContentLoaded', function () {
         refreshContactCardSkillUi();
       }
       applyContactCardAvailabilityState(contactCardInitialShowAvailable);
+      applyContactCardPresenceState(contactCardInitialIsOnline, contactCardInitialLastOnline);
+
+      var touchCandidatePresence = function () {
+        if (!window.cmnPortal || !window.cmnPortal.ajaxUrl || !window.cmnPortal.candidateProfileNonce) {
+          return;
+        }
+        var fd = new FormData();
+        fd.append('action', 'cmn_touch_candidate_presence');
+        fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+        fetch(window.cmnPortal.ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (response) {
+          return response.json();
+        }).then(function (data) {
+          if (!data || !data.success || !data.data) {
+            return;
+          }
+          var online = String(data.data.is_online || '0') === '1';
+          var label = String(data.data.last_online_label || 'Last Online: Unknown');
+          applyContactCardPresenceState(online, label);
+        }).catch(function () {
+          // Ignore transient network failures.
+        });
+      };
+      touchCandidatePresence();
+      window.setInterval(touchCandidatePresence, 20000);
 
       contactCardSkillInputs.forEach(function (input) {
         if (!input) {
