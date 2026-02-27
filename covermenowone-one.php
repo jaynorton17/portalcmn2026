@@ -60486,6 +60486,18 @@ final class CMN_One_Plugin {
         return $count > 0;
     }
 
+    private function get_candidate_availability_days($candidate_id, $user_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        $days = (array) get_post_meta($candidate_id, 'cmn_availability_days', true);
+        if (!$days) {
+            $days_raw = (string) get_post_meta($candidate_id, 'cmn_availability_days', true);
+            if ($days_raw !== '') {
+                $days = array_map('trim', explode(',', $days_raw));
+            }
+        }
+        return array_values(array_filter(array_map('sanitize_text_field', (array) $days)));
+    }
+
     private function get_candidate_profile_completion_state($candidate_id, $user_id) {
         $candidate_id = (int) $candidate_id;
         $user_id = (int) $user_id;
