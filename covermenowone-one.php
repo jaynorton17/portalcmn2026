@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.18
+ * Version: 0.1.20
  * Author: CoverMeNow
  */
 
@@ -530,7 +530,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.19';
+    const VERSION = '0.1.20';
     const SCHEMA_BASE_VERSION = 38;
     const SCHEMA_VERSION = 73;
     const EMAIL_CANDIDATE_DECLINED = false;
@@ -66908,8 +66908,8 @@ final class CMN_One_Plugin {
                                     </div>
                                 </div>
                             </div>
-                            <a class="cmn-dashboard-section1-contact-link" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>" aria-label="Open My Hub Contact Card">
-                                <div class="cmn-contact-card-preview cmn-command-card <?php echo esc_attr($dashboard_contact_state_class); ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-dashboard-contact-card data-dashboard-contact-confirmed-at="<?php echo esc_attr($dashboard_contact_confirmed_at); ?>">
+                            <a class="cmn-dashboard-section1-contact-link cmn-dashboard-right-column" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>" aria-label="Open My Hub Contact Card">
+                                <div class="cmn-contact-card-preview cmn-command-card cmn-candidate-profile-card <?php echo esc_attr($dashboard_contact_state_class); ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-dashboard-contact-card data-dashboard-contact-confirmed-at="<?php echo esc_attr($dashboard_contact_confirmed_at); ?>">
                                     <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                     <div class="cmn-command-card-head">
                                         <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
