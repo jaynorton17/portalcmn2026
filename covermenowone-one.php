@@ -64540,6 +64540,17 @@ final class CMN_One_Plugin {
                 $availability_confirmed_time_label = '';
             }
         }
+        $saved_contact_card_show_available_raw = '';
+        if ($candidate_user_id > 0) {
+            $saved_contact_card_show_available_raw = (string) get_user_meta($candidate_user_id, 'cmn_contact_card_show_available', true);
+        }
+        if ($saved_contact_card_show_available_raw === '' && $candidate_id > 0) {
+            $saved_contact_card_show_available_raw = (string) get_post_meta($candidate_id, 'cmn_contact_card_show_available', true);
+        }
+        $contact_card_show_available = ($already_marked && !$calendar_blocked);
+        if ($saved_contact_card_show_available_raw !== '') {
+            $contact_card_show_available = in_array(strtolower(trim($saved_contact_card_show_available_raw)), ['1', 'true', 'yes', 'on'], true);
+        }
 
         $calendar_window_start = (clone $now)->modify('+1 day');
         $calendar_window_end = (clone $calendar_window_start)->modify('+30 days');
@@ -65502,15 +65513,11 @@ final class CMN_One_Plugin {
                                     }
                                 }
                             }
-                            $contact_card_availability_class = 'is-pending';
-                            $contact_card_availability_label = 'NOT YET CONFIRMED';
-                            if ($already_marked && !$calendar_blocked) {
-                                $contact_card_availability_class = 'is-available';
-                                $contact_card_availability_label = 'CONFIRMED AVAILABLE';
-                            }
+                            $contact_card_availability_class = $contact_card_show_available ? 'is-available' : 'is-pending';
+                            $contact_card_availability_label = $contact_card_show_available ? 'CONFIRMED AVAILABLE' : 'NOT YET CONFIRMED';
                             $contact_card_button_time_label = $already_marked
                                 ? ($availability_confirmed_time_label !== '' ? ('Button pressed: ' . $availability_confirmed_time_label) : 'Button pressed: confirmed')
-                                : 'Button not pressed yet';
+                                : '';
                             $contact_card_other_checked = $saved_contact_card_custom_skill !== '';
                             ?>
                             <div class="cmn-contact-card-tab-grid" id="cmn-profile-contact-card" data-profile-contact-card<?php echo $profile_focus_tab === 'contact_card' ? '' : ' hidden'; ?>>
@@ -65540,7 +65547,7 @@ final class CMN_One_Plugin {
                                             </div>
                                             <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--4">
                                                 <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
-                                                <span class="cmn-contact-card-preview-time" data-contact-card-preview-time><?php echo esc_html($contact_card_button_time_label); ?></span>
+                                                <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo ($contact_card_show_available && $contact_card_button_time_label !== '') ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_button_time_label); ?></span>
                                             </div>
                                             <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--5">
                                                 <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
@@ -65560,7 +65567,9 @@ final class CMN_One_Plugin {
                                 </article>
                                 <article class="cmn-dashboard-card cmn-contact-card-tab-tile cmn-contact-card-tab-tile--skills" data-contact-card-skill-panel
                                          data-contact-card-selected="<?php echo esc_attr(wp_json_encode($saved_contact_card_skills)); ?>"
-                                         data-contact-card-default-options="<?php echo esc_attr(wp_json_encode($contact_card_skill_options)); ?>">
+                                         data-contact-card-default-options="<?php echo esc_attr(wp_json_encode($contact_card_skill_options)); ?>"
+                                         data-contact-card-show-available="<?php echo $contact_card_show_available ? '1' : '0'; ?>"
+                                         data-contact-card-button-time="<?php echo esc_attr($contact_card_button_time_label); ?>">
                                     <div class="cmn-card-header">
                                         <h3>Key Skills for Contact Card</h3>
                                         <span class="cmn-muted">Select exactly 3 skills</span>
@@ -65568,6 +65577,10 @@ final class CMN_One_Plugin {
                                     <div class="cmn-contact-card-skill-counter" data-contact-card-skill-counter>
                                         <?php echo esc_html(count($saved_contact_card_skills)); ?>/3 selected
                                     </div>
+                                    <label class="cmn-contact-card-availability-toggle">
+                                        <input type="checkbox" data-contact-card-availability-toggle<?php checked($contact_card_show_available); ?>>
+                                        <span>Show candidate as available on card</span>
+                                    </label>
                                     <div class="cmn-contact-card-skill-list">
                                         <?php foreach ($contact_card_skill_options as $skill_option) : ?>
                                             <?php $is_skill_checked = in_array($skill_option, $saved_contact_card_skills, true); ?>
@@ -85656,13 +85669,18 @@ p{margin:0;line-height:1.5}
         if (count($skills) !== 3) {
             wp_send_json_error(['message' => 'Select exactly 3 skills.'], 400);
         }
+        $raw_show_available = sanitize_text_field((string) ($_POST['show_available'] ?? '0'));
+        $show_available = in_array(strtolower(trim($raw_show_available)), ['1', 'true', 'yes', 'on'], true) ? '1' : '0';
 
         update_user_meta($user_id, 'cmn_contact_card_skills', $skills);
         update_post_meta($candidate_id, 'cmn_contact_card_skills', $skills);
+        update_user_meta($user_id, 'cmn_contact_card_show_available', $show_available);
+        update_post_meta($candidate_id, 'cmn_contact_card_show_available', $show_available);
 
         wp_send_json_success([
             'skills' => $skills,
-            'message' => 'Contact card skills saved.',
+            'show_available' => $show_available,
+            'message' => 'Contact card settings saved.',
         ]);
     }
 

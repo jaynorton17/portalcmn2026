@@ -9890,10 +9890,15 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardMessage = contactCardSkillPanel.querySelector('[data-contact-card-skill-msg]');
       var contactCardSaveBtn = contactCardSkillPanel.querySelector('[data-contact-card-save]');
       var contactCardResetBtn = contactCardSkillPanel.querySelector('[data-contact-card-reset]');
+      var contactCardAvailabilityToggle = contactCardSkillPanel.querySelector('[data-contact-card-availability-toggle]');
       var contactCardPreviewSkills = document.querySelector('[data-contact-card-preview-skills]');
+      var contactCardPreviewAvailability = document.querySelector('[data-contact-card-preview-availability]');
+      var contactCardPreviewTime = document.querySelector('[data-contact-card-preview-time]');
       var contactCardBusy = false;
       var contactCardDefaultSkills = [];
       var contactCardInitialSkills = [];
+      var contactCardInitialShowAvailable = String(contactCardSkillPanel.getAttribute('data-contact-card-show-available') || '0') === '1';
+      var contactCardButtonTimeLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-button-time') || '');
 
       try {
         var defaultRaw = String(contactCardSkillPanel.getAttribute('data-contact-card-default-options') || '[]');
@@ -9925,6 +9930,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         contactCardMessage.textContent = text || '';
         contactCardMessage.classList.toggle('is-error', !!isError);
+      };
+
+      var applyContactCardAvailabilityState = function (showAvailable) {
+        var isAvailable = !!showAvailable;
+        if (contactCardAvailabilityToggle) {
+          contactCardAvailabilityToggle.checked = isAvailable;
+        }
+        if (contactCardPreviewAvailability) {
+          contactCardPreviewAvailability.classList.remove('is-available', 'is-pending');
+          contactCardPreviewAvailability.classList.add(isAvailable ? 'is-available' : 'is-pending');
+          contactCardPreviewAvailability.textContent = isAvailable ? 'CONFIRMED AVAILABLE' : 'NOT YET CONFIRMED';
+        }
+        if (contactCardPreviewTime) {
+          var showTime = isAvailable && contactCardButtonTimeLabel !== '';
+          contactCardPreviewTime.hidden = !showTime;
+          contactCardPreviewTime.textContent = showTime ? contactCardButtonTimeLabel : '';
+        }
       };
 
       var renderContactCardPreviewSkills = function (skills) {
@@ -10038,6 +10060,7 @@ document.addEventListener('DOMContentLoaded', function () {
       } else {
         refreshContactCardSkillUi();
       }
+      applyContactCardAvailabilityState(contactCardInitialShowAvailable);
 
       contactCardSkillInputs.forEach(function (input) {
         if (!input) {
@@ -10048,6 +10071,20 @@ document.addEventListener('DOMContentLoaded', function () {
           refreshContactCardSkillUi();
         });
       });
+
+      if (contactCardOtherToggle) {
+        contactCardOtherToggle.addEventListener('change', function () {
+          setContactCardMessage('', false);
+          refreshContactCardSkillUi();
+        });
+      }
+
+      if (contactCardAvailabilityToggle) {
+        contactCardAvailabilityToggle.addEventListener('change', function () {
+          setContactCardMessage('', false);
+          applyContactCardAvailabilityState(contactCardAvailabilityToggle.checked);
+        });
+      }
 
       if (contactCardOtherInput) {
         contactCardOtherInput.addEventListener('input', function () {
@@ -10074,6 +10111,7 @@ document.addEventListener('DOMContentLoaded', function () {
           selectedSkills.forEach(function (skill) {
             fd.append('skills[]', skill);
           });
+          fd.append('show_available', (contactCardAvailabilityToggle && contactCardAvailabilityToggle.checked) ? '1' : '0');
 
           contactCardBusy = true;
           setContactCardMessage('Saving skills...', false);
@@ -10093,6 +10131,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             var savedSkills = data && data.data && Array.isArray(data.data.skills) ? data.data.skills : selectedSkills;
             applyContactCardSelectionState(savedSkills.slice(0, 3));
+            var savedShowAvailable = data && data.data && String(data.data.show_available || '') === '1';
+            applyContactCardAvailabilityState(savedShowAvailable);
             setContactCardMessage(data && data.data && data.data.message ? String(data.data.message) : 'Skills saved.', false);
           }).catch(function () {
             setContactCardMessage('Unable to save skills.', true);
@@ -10107,6 +10147,7 @@ document.addEventListener('DOMContentLoaded', function () {
         contactCardResetBtn.addEventListener('click', function () {
           setContactCardMessage('', false);
           applyContactCardSelectionState([]);
+          applyContactCardAvailabilityState(contactCardInitialShowAvailable);
         });
       }
     }

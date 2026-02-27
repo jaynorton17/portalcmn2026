@@ -14976,6 +14976,25 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-counte
   color: rgba(226, 232, 240, 0.9);
 }
 
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
