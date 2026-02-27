@@ -65976,7 +65976,7 @@ final class CMN_One_Plugin {
                             $expected_pay_card_amount = 'GBP ' . number_format((float) $weekly_expected_payout, 2);
                             ?>
                             <a class="cmn-candidate-summary-card" href="<?php echo esc_url($expected_pay_card_url); ?>">
-                                <span class="cmn-candidate-summary-label">Expected pay (Friday)</span>
+                                <span class="cmn-candidate-summary-label">Expected pay</span>
                                 <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small">
                                     <?php echo esc_html($expected_pay_card_amount); ?>
                                 </strong>
