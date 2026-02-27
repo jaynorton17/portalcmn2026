@@ -66846,29 +66846,92 @@ final class CMN_One_Plugin {
                             $availability_state_text = 'I\'m available';
                         }
                         $availability_button_disabled = (!$availability_allowed);
+                        $dashboard_contact_name = $first_name !== '' ? $first_name : $profile_name;
+                        if ($dashboard_contact_name === '') {
+                            $dashboard_contact_name = 'Candidate';
+                        }
+                        $dashboard_contact_rating_text = number_format((float) $feedback_score_raw, 2) . ' out of 5 stars';
+                        $dashboard_contact_role = trim((string) $role_label) !== '' ? trim((string) $role_label) : 'Not set';
+                        $dashboard_contact_distance_raw = trim((string) $travel_distance);
+                        $dashboard_contact_distance_label = 'Not set';
+                        if ($dashboard_contact_distance_raw !== '') {
+                            if (preg_match('/^\d+(\.\d+)?$/', $dashboard_contact_distance_raw)) {
+                                $distance_num = (float) $dashboard_contact_distance_raw;
+                                $dashboard_contact_distance_label = rtrim(rtrim(number_format($distance_num, 1, '.', ''), '0'), '.') . ' miles';
+                            } else {
+                                $dashboard_contact_distance_label = $dashboard_contact_distance_raw;
+                                if (stripos($dashboard_contact_distance_label, 'mile') === false) {
+                                    $dashboard_contact_distance_label .= ' miles';
+                                }
+                            }
+                        }
+                        $dashboard_contact_state_class = $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation';
+                        $dashboard_contact_status_class = $contact_card_show_available ? 'available' : 'not_responded';
+                        $dashboard_contact_status_label = $contact_card_show_available ? 'AVAILABLE NOW' : 'NOT YET CONFIRMED';
+                        $dashboard_contact_presence_label = $contact_card_is_online_now ? 'ONLINE NOW' : $contact_card_last_online_label;
+                        $dashboard_contact_confirm_detail = $contact_card_show_available
+                            ? ($contact_card_button_time_label !== '' ? $contact_card_button_time_label : 'Confirmed')
+                            : 'Not yet confirmed';
+                        $dashboard_contact_skill_chips = array_slice((array) $contact_card_skill_preview, 0, 3);
                         ?>
-                        <div class="cmn-availability-hero <?php echo esc_attr($availability_state_class); ?>" data-availability-card data-tour-target="availability-button">
-                            <div class="cmn-availability-hero-content confirm-section">
-                                <h2><?php echo esc_html($availability_heading); ?></h2>
-                                <div class="cmn-availability-status <?php echo esc_attr($availability_state_class); ?>" data-availability-message><?php echo esc_html($availability_state_text); ?></div>
-                                                                <div class="cmn-availability-countdown" data-availability-countdown></div>
-                            </div>
-                            <div class="cmn-availability-hero-action confirm-actions">
-                                <button id="cmn-tomorrow-availability-btn" class="cmn-availability-btn btn-confirm<?php echo $already_marked ? ' is-confirmed' : ''; ?>" type="button" data-availability-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>"<?php echo $availability_button_disabled ? ' disabled' : ''; ?> data-availability-date="<?php echo esc_attr($target_date); ?>" data-availability-date-label="<?php echo esc_attr($target_label); ?>" data-available="<?php echo $already_marked ? '1' : '0'; ?>" data-calendar-blocked="<?php echo $calendar_blocked ? '1' : '0'; ?>" data-availability-period-label="<?php echo esc_attr($period_label); ?>"<?php echo $availability_next_press_label !== '' ? ' data-availability-next-open-label="' . esc_attr($availability_next_press_label) . '"' : ''; ?><?php echo !empty($availability_window['window_open_at']) ? ' data-availability-open-at="' . esc_attr((string) $availability_window['window_open_at']) . '"' : ''; ?><?php echo !empty($availability_window['window_close_at']) ? ' data-availability-close-at="' . esc_attr((string) $availability_window['window_close_at']) . '"' : ''; ?>>
-                                    <?php echo esc_html($already_marked ? 'Availability confirmed' : ('Click here to confirm availability for ' . $period_label)); ?>
-                                </button>
-                                <button id="cmn-unavailable-morning-btn" class="cmn-availability-btn-secondary" type="button" data-availability-unavailable-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>" data-availability-date="<?php echo esc_attr($target_date); ?>">I'm not available</button>
-                                <div class="cmn-availability-lower-band">
-                                    <div class="cmn-availability-bottom-row">
-                                        <div class="cmn-availability-status-dot-wrap">
-                                            <span class="cmn-availability-status-dot <?php echo esc_attr($availability_state_class); ?>" data-availability-dot></span>
-                                            <span class="cmn-availability-status-dot-label" data-availability-dot-label><?php echo esc_html($availability_state_text); ?></span>
-                                        </div>
+                        <div class="cmn-candidate-section1-grid">
+                            <div class="cmn-candidate-section1-main">
+                                <div class="cmn-availability-hero <?php echo esc_attr($availability_state_class); ?>" data-availability-card data-tour-target="availability-button">
+                                    <div class="cmn-availability-hero-content confirm-section">
+                                        <h2><?php echo esc_html($availability_heading); ?></h2>
+                                        <div class="cmn-availability-status <?php echo esc_attr($availability_state_class); ?>" data-availability-message><?php echo esc_html($availability_state_text); ?></div>
+                                                                        <div class="cmn-availability-countdown" data-availability-countdown></div>
                                     </div>
-                                    <div class="cmn-availability-impact" data-availability-impact><?php echo esc_html($already_marked ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.'); ?></div>
+                                    <div class="cmn-availability-hero-action confirm-actions">
+                                        <button id="cmn-tomorrow-availability-btn" class="cmn-availability-btn btn-confirm<?php echo $already_marked ? ' is-confirmed' : ''; ?>" type="button" data-availability-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>"<?php echo $availability_button_disabled ? ' disabled' : ''; ?> data-availability-date="<?php echo esc_attr($target_date); ?>" data-availability-date-label="<?php echo esc_attr($target_label); ?>" data-available="<?php echo $already_marked ? '1' : '0'; ?>" data-calendar-blocked="<?php echo $calendar_blocked ? '1' : '0'; ?>" data-availability-period-label="<?php echo esc_attr($period_label); ?>"<?php echo $availability_next_press_label !== '' ? ' data-availability-next-open-label="' . esc_attr($availability_next_press_label) . '"' : ''; ?><?php echo !empty($availability_window['window_open_at']) ? ' data-availability-open-at="' . esc_attr((string) $availability_window['window_open_at']) . '"' : ''; ?><?php echo !empty($availability_window['window_close_at']) ? ' data-availability-close-at="' . esc_attr((string) $availability_window['window_close_at']) . '"' : ''; ?>>
+                                            <?php echo esc_html($already_marked ? 'Availability confirmed' : ('Click here to confirm availability for ' . $period_label)); ?>
+                                        </button>
+                                        <button id="cmn-unavailable-morning-btn" class="cmn-availability-btn-secondary" type="button" data-availability-unavailable-button data-availability-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-availability-nonce="<?php echo esc_attr(wp_create_nonce('cmn_mark_available')); ?>" data-availability-date="<?php echo esc_attr($target_date); ?>">I'm not available</button>
+                                        <div class="cmn-availability-lower-band">
+                                            <div class="cmn-availability-bottom-row">
+                                                <div class="cmn-availability-status-dot-wrap">
+                                                    <span class="cmn-availability-status-dot <?php echo esc_attr($availability_state_class); ?>" data-availability-dot></span>
+                                                    <span class="cmn-availability-status-dot-label" data-availability-dot-label><?php echo esc_html($availability_state_text); ?></span>
+                                                </div>
+                                            </div>
+                                            <div class="cmn-availability-impact" data-availability-impact><?php echo esc_html($already_marked ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.'); ?></div>
+                                        </div>
+                                        <div class="cmn-availability-helper" data-availability-helper><?php echo esc_html($availability_button_helper); ?></div>
+                                    </div>
                                 </div>
-                                <div class="cmn-availability-helper" data-availability-helper><?php echo esc_html($availability_button_helper); ?></div>
                             </div>
+                            <a class="cmn-dashboard-section1-contact-link" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>" aria-label="Open My Hub Contact Card">
+                                <article class="cmn-live-card cmn-candidate-dashboard-live-card cmn-candidate-dashboard-live-card--section1 <?php echo esc_attr($dashboard_contact_state_class); ?>">
+                                    <div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>
+                                    <div class="cmn-live-card-row">
+                                        <div class="cmn-live-ident">
+                                            <img class="cmn-live-avatar" src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($dashboard_contact_name); ?>">
+                                            <div>
+                                                <div class="cmn-live-name"><?php echo esc_html($dashboard_contact_name); ?></div>
+                                                <div class="cmn-live-role"><?php echo esc_html($dashboard_contact_role); ?></div>
+                                                <div class="cmn-live-rating"><?php echo esc_html($dashboard_contact_rating_text); ?></div>
+                                            </div>
+                                        </div>
+                                        <div class="cmn-live-status <?php echo esc_attr($dashboard_contact_status_class); ?>"><?php echo esc_html($dashboard_contact_status_label); ?></div>
+                                    </div>
+                                    <div class="cmn-live-presence<?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>">
+                                        <span class="cmn-live-presence-dot" aria-hidden="true"></span><?php echo esc_html($dashboard_contact_presence_label); ?>
+                                    </div>
+                                    <div class="cmn-live-strip">
+                                        <?php if ($contact_card_show_available) : ?>
+                                            <div class="cmn-live-banner">Bookable<br><small><?php echo esc_html($dashboard_contact_confirm_detail); ?></small></div>
+                                        <?php else : ?>
+                                            <div class="cmn-live-banner is-pending">Not yet confirmed</div>
+                                        <?php endif; ?>
+                                        <div class="cmn-live-rate"><?php echo esc_html($dashboard_contact_distance_label); ?> <span>distance</span></div>
+                                    </div>
+                                    <div class="cmn-live-skills">
+                                        <?php foreach ($dashboard_contact_skill_chips as $dashboard_skill_chip) : ?>
+                                            <span class="cmn-live-skill"><?php echo esc_html((string) $dashboard_skill_chip); ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </article>
+                            </a>
                         </div>
                         <div class="cmn-candidate-summary-strip" data-candidate-summary-strip>
                             <a class="cmn-candidate-summary-card" href="<?php echo esc_url($candidate_feedback_url); ?>">
@@ -66959,51 +67022,6 @@ final class CMN_One_Plugin {
                                                 </a>
                                             </div>
                                         </section>
-                                        <section class="cmn-candidate-section4-slide cmn-candidate-section4-slide--contact-card" data-candidate-section4-slide>
-                                            <h4>Contact Card</h4>
-                                            <?php
-                                            $dashboard_live_card_state_class = $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation';
-                                            $dashboard_live_card_status_class = $contact_card_show_available ? 'available' : 'not_responded';
-                                            $dashboard_live_card_status_label = $contact_card_show_available ? 'AVAILABLE NOW' : 'NOT YET CONFIRMED';
-                                            $dashboard_live_card_presence_label = $contact_card_is_online_now ? 'ONLINE NOW' : $contact_card_last_online_label;
-                                            $dashboard_live_card_rate_text = $contact_card_distance_label !== 'Not set' ? $contact_card_distance_label : '--';
-                                            ?>
-                                            <article class="cmn-live-card cmn-candidate-dashboard-live-card <?php echo esc_attr($dashboard_live_card_state_class); ?>">
-                                                <div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>
-                                                <div class="cmn-live-card-row">
-                                                    <div class="cmn-live-ident">
-                                                        <img class="cmn-live-avatar" src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?>">
-                                                        <div>
-                                                            <div class="cmn-live-name"><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></div>
-                                                            <div class="cmn-live-role"><?php echo esc_html($contact_card_primary_role); ?></div>
-                                                            <div class="cmn-live-rating"><?php echo esc_html($contact_card_feedback_text); ?></div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="cmn-live-status <?php echo esc_attr($dashboard_live_card_status_class); ?>"><?php echo esc_html($dashboard_live_card_status_label); ?></div>
-                                                </div>
-                                                <div class="cmn-live-presence<?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>">
-                                                    <span class="cmn-live-presence-dot" aria-hidden="true"></span>
-                                                    <?php echo esc_html($dashboard_live_card_presence_label); ?>
-                                                </div>
-                                                <div class="cmn-live-strip">
-                                                    <?php if ($contact_card_show_available) : ?>
-                                                        <div class="cmn-live-banner">Bookable<br><small><?php echo esc_html($contact_card_status_available_detail !== '' ? $contact_card_status_available_detail : 'Confirmed'); ?></small></div>
-                                                    <?php else : ?>
-                                                        <div class="cmn-live-banner is-pending">Not yet confirmed</div>
-                                                    <?php endif; ?>
-                                                    <div class="cmn-live-rate"><?php echo esc_html($dashboard_live_card_rate_text); ?> <span>distance</span></div>
-                                                </div>
-                                                <div class="cmn-live-skills">
-                                                    <?php foreach (array_slice((array) $contact_card_skill_preview, 0, 3) as $dashboard_skill_chip) : ?>
-                                                        <span class="cmn-live-skill"><?php echo esc_html((string) $dashboard_skill_chip); ?></span>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                                <div class="cmn-live-actions">
-                                                    <a class="cmn-ghost" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>">View profile</a>
-                                                    <a class="cmn-primary" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>">Open contact card</a>
-                                                </div>
-                                            </article>
-                                        </section>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
                                             <h4>Refer a friend</h4>
                                             <strong class="cmn-candidate-section4-highlight">Get £20</strong>
@@ -67022,7 +67040,6 @@ final class CMN_One_Plugin {
                                         <button type="button" class="cmn-candidate-section4-dot is-active" data-candidate-section4-dot="0" aria-label="Show card 1"></button>
                                         <button type="button" class="cmn-candidate-section4-dot" data-candidate-section4-dot="1" aria-label="Show card 2"></button>
                                         <button type="button" class="cmn-candidate-section4-dot" data-candidate-section4-dot="2" aria-label="Show card 3"></button>
-                                        <button type="button" class="cmn-candidate-section4-dot" data-candidate-section4-dot="3" aria-label="Show card 4"></button>
                                     </div>
                                     <button type="button" class="cmn-ghost cmn-btn-mini" data-candidate-section4-next aria-label="Next card">›</button>
                                 </div>
