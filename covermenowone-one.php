@@ -65214,47 +65214,9 @@ final class CMN_One_Plugin {
                                     </section>
                                 </form>
                             </div>
-                            <div class="cmn-dashboard-card" data-profile-documents-only<?php echo $profile_focus_tab === 'documents' ? '' : ' hidden'; ?>>
-                                <div class="cmn-card-header">
-                                    <h3>Compliance Status</h3>
-                                    <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>" data-compliance-status><?php echo esc_html($doc_summary['badge_label']); ?></span>
-                                </div>
-                                <div class="cmn-compliance-progress" data-compliance-progress>
-                                    <div class="cmn-compliance-progress-head">
-                                        <span>Compliance Progress</span>
-                                        <strong data-compliance-score-text><?php echo esc_html((int) ($compliance_status_payload['score'] ?? 0)); ?>%</strong>
-                                    </div>
-                                    <div class="cmn-progress-bar cmn-compliance-progress-bar">
-                                        <span data-compliance-score-bar style="width: <?php echo esc_attr((int) ($compliance_status_payload['score'] ?? 0)); ?>%;"></span>
-                                    </div>
-                                </div>
-                                <p>
-                                    <span class="cmn-status-chip <?php echo esc_attr((string) ($compliance_status_payload['risk_badge_class'] ?? 'is-pending')); ?>" data-compliance-risk-badge>
-                                        Risk: <strong data-compliance-risk-text><?php echo esc_html((string) ($compliance_status_payload['risk_level'] ?? 'Medium')); ?></strong>
-                                    </span>
-                                </p>
-                                <ul class="cmn-status-list" data-compliance-missing>
-                                    <li class="<?php echo ($doc_dbs['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>" data-compliance-doc="dbs">DBS <?php echo esc_html($doc_dbs['status_label'] ?? 'Not Uploaded'); ?></li>
-                                    <li class="<?php echo ($doc_cv['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>" data-compliance-doc="cv">CV <?php echo esc_html($doc_cv['status_label'] ?? 'Not Uploaded'); ?></li>
-                                    <li class="<?php echo ($doc_id['doc_status'] ?? '') === 'approved' ? 'is-ok' : 'is-warn'; ?>" data-compliance-doc="id">ID <?php echo esc_html($doc_id['status_label'] ?? 'Not Uploaded'); ?></li>
-                                </ul>
-                                <details>
-                                    <summary>Why this score?</summary>
-                                    <ul class="cmn-status-list" data-compliance-breakdown>
-                                        <?php foreach ((array) ($compliance_status_payload['breakdown'] ?? []) as $score_item) : ?>
-                                            <li>
-                                                <?php echo esc_html((string) ($score_item['label'] ?? 'Item')); ?>:
-                                                <?php echo esc_html((string) ($score_item['value'] ?? '')); ?>
-                                                (<?php echo esc_html((string) ((int) ($score_item['points'] ?? 0))); ?>/<?php echo esc_html((string) ((int) ($score_item['max_points'] ?? 0))); ?>)
-                                            </li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </details>
-                            </div>
                             <div class="cmn-dashboard-card cmn-doc-upload-card" id="cmn-profile-documents" data-profile-documents-only<?php echo $profile_focus_tab === 'documents' ? '' : ' hidden'; ?>>
                                 <div class="cmn-card-header">
-                                    <h3>Documents Upload</h3>
-                                    <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>"><?php echo esc_html($doc_summary['badge_label']); ?></span>
+                                    <h3>Documents</h3>
                                 </div>
                                 <div class="cmn-doc-actions" data-candidate-docs>
                                     <div class="cmn-doc-card cmn-doc-tile" data-doc-row="id" data-doc-type="id">
@@ -65334,13 +65296,6 @@ final class CMN_One_Plugin {
                                     </div>
                                     <div class="cmn-muted" data-doc-message></div>
                                 </div>
-                            </div>
-                            <div class="cmn-dashboard-card cmn-dashboard-card-wide" data-profile-documents-only<?php echo $profile_focus_tab === 'documents' ? '' : ' hidden'; ?>>
-                                <div class="cmn-card-header">
-                                    <h3>Status</h3>
-                                    <span class="cmn-status-chip <?php echo esc_attr($doc_summary['badge_class']); ?>" data-admin-verification-status><?php echo esc_html($doc_summary['badge_label']); ?></span>
-                                </div>
-                                <p data-admin-verification-copy><?php echo esc_html($doc_summary['copy']); ?></p>
                             </div>
                         </div>
                     <?php elseif ($tab === 'calendar') : ?>
