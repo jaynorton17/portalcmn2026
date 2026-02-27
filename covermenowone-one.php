@@ -64844,6 +64844,25 @@ final class CMN_One_Plugin {
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
                             <h2>My Hub</h2>
                         </header>
+                        <div class="cmn-profile-progress" data-tour-target="profile-sections" data-profile-root>
+                            <div class="cmn-profile-progress-main">
+                                <span>Profile Completion</span>
+                                <div class="cmn-progress-bar"><span data-profile-completion-bar style="width: <?php echo esc_attr($completion_percent); ?>%;"></span></div>
+                            </div>
+                            <div class="cmn-profile-progress-actions">
+                                <strong data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>
+                            </div>
+                        </div>
+                        <div class="cmn-profile-completion-help<?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? ' is-complete' : ''; ?>" data-profile-completion-help>
+                            <strong data-profile-completion-helper-text>
+                                <?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? 'Profile complete. You are at 100%.' : 'To reach 100% complete:'; ?>
+                            </strong>
+                            <ul data-profile-completion-missing<?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? ' hidden' : ''; ?>>
+                                <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
+                                    <li><?php echo esc_html((string) $missing_item); ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
                         <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
                             <a class="cmn-tab is-active" href="<?php echo esc_url($candidate_profile_url); ?>">Personal Details</a>
                             <a class="cmn-tab" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
@@ -64867,25 +64886,6 @@ final class CMN_One_Plugin {
                                     <p class="cmn-muted cmn-profile-photo-message" data-profile-photo-message></p>
                                 </div>
                             </div>
-                        </div>
-                        <div class="cmn-profile-progress" data-tour-target="profile-sections" data-profile-root>
-                            <div class="cmn-profile-progress-main">
-                                <span>Profile Completion</span>
-                                <div class="cmn-progress-bar"><span data-profile-completion-bar style="width: <?php echo esc_attr($completion_percent); ?>%;"></span></div>
-                            </div>
-                            <div class="cmn-profile-progress-actions">
-                                <strong data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>
-                            </div>
-                        </div>
-                        <div class="cmn-profile-completion-help<?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? ' is-complete' : ''; ?>" data-profile-completion-help>
-                            <strong data-profile-completion-helper-text>
-                                <?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? 'Profile complete. You are at 100%.' : 'To reach 100% complete:'; ?>
-                            </strong>
-                            <ul data-profile-completion-missing<?php echo ($completion_percent >= 100 || empty($completion_missing_items)) ? ' hidden' : ''; ?>>
-                                <?php foreach ((array) $completion_missing_items as $missing_item) : ?>
-                                    <li><?php echo esc_html((string) $missing_item); ?></li>
-                                <?php endforeach; ?>
-                            </ul>
                         </div>
                         <div class="cmn-profile-global-editbar" data-profile-global-actions hidden>
                             <span class="cmn-muted" data-profile-global-msg></span>
