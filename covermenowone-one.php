@@ -12944,6 +12944,11 @@ final class CMN_One_Plugin {
             return;
         }
         if (is_admin()) {
+            global $pagenow;
+            if (is_string($pagenow) && $pagenow === 'admin-post.php') {
+                // Allow secured form handlers (nonce/capability checked in each handler).
+                return;
+            }
             $page = sanitize_key((string) ($_GET['page'] ?? ''));
             if ($page === 'cmn-automation' && $this->can_manage_automation(get_current_user_id())) {
                 return;
@@ -67632,7 +67637,10 @@ final class CMN_One_Plugin {
      */
     public function handle_save_candidate_bank_details() {
         $default_redirect = $this->get_candidate_finance_focus_url('bank-details');
-        $redirect = $default_redirect;
+        $redirect_raw = isset($_POST['cmn_redirect']) ? (string) wp_unslash($_POST['cmn_redirect']) : '';
+        $redirect = $redirect_raw !== ''
+            ? wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect)
+            : $default_redirect;
 
         $build_redirect = static function ($target, $status, $message) {
             $target = (string) $target;
@@ -67846,7 +67854,10 @@ final class CMN_One_Plugin {
      */
     public function handle_candidate_accept_compliance_ack() {
         $default_redirect = $this->get_candidate_finance_focus_url('compliance-ack');
-        $redirect = $default_redirect;
+        $redirect_raw = isset($_POST['cmn_redirect']) ? (string) wp_unslash($_POST['cmn_redirect']) : '';
+        $redirect = $redirect_raw !== ''
+            ? wp_validate_redirect(esc_url_raw($redirect_raw), $default_redirect)
+            : $default_redirect;
 
         $build_redirect = static function ($target, $status, $message) {
             $target = (string) $target;
