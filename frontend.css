@@ -3318,7 +3318,11 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
+}
+
+.cmn-candidate-finance-row > .cmn-dashboard-card {
+  height: 100%;
 }
 
 .cmn-candidate-finance-header-card h2 {
@@ -3359,6 +3363,8 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 .cmn-candidate-finance-payment-card {
   display: grid;
   gap: 12px;
+  align-content: start;
+  min-height: 100%;
 }
 
 .cmn-candidate-finance-bank-details {
