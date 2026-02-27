@@ -70108,6 +70108,10 @@ final class CMN_One_Plugin {
                 'created_at' => sanitize_text_field((string) ($formatted_row['created_at'] ?? '')),
             ];
         }
+        $overall_rating_value = round((float) ($rating_payload['avg_rating_raw'] ?? ($rating_payload['avg_rating'] ?? 0)), 1);
+        $overall_rating_value = max(0.0, min(5.0, $overall_rating_value));
+        $overall_rating_fill_percent = ($overall_rating_value / 5) * 100;
+        $overall_rating_display = number_format($overall_rating_value, 1);
 
         ob_start();
         ?>
@@ -70116,15 +70120,7 @@ final class CMN_One_Plugin {
                 <h2>Feedback & Ratings</h2>
                 <p>See every school review, module score, and comment for your completed bookings.</p>
             </header>
-            <div class="cmn-profile-grid">
-                <article class="cmn-dashboard-card">
-                    <div class="cmn-card-header">
-                        <h3>Overall Rating</h3>
-                        <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
-                    </div>
-                    <p class="cmn-muted">Based on <?php echo esc_html((string) ((int) ($rating_payload['feedback_count'] ?? 0))); ?> completed feedback submission(s).</p>
-                    <p><strong><?php echo esc_html(number_format((float) ($rating_payload['avg_rating_raw'] ?? 0), 2)); ?>/5</strong> average across all 7 modules.</p>
-                </article>
+            <div class="cmn-profile-grid cmn-candidate-feedback-summary-row">
                 <article class="cmn-dashboard-card">
                     <div class="cmn-card-header">
                         <h3>Module Breakdown</h3>
@@ -70141,6 +70137,21 @@ final class CMN_One_Plugin {
                             </li>
                         <?php endforeach; ?>
                     </ul>
+                </article>
+                <article class="cmn-dashboard-card cmn-candidate-feedback-overall-card">
+                    <div class="cmn-card-header">
+                        <h3>Overall Rating</h3>
+                        <span class="cmn-status-chip is-approved"><?php echo esc_html(number_format((float) ($rating_payload['avg_rating'] ?? 0), 1)); ?>/5</span>
+                    </div>
+                    <div class="cmn-candidate-feedback-overall-hero">
+                        <span class="cmn-candidate-feedback-stars-hero" role="img" aria-label="<?php echo esc_attr($overall_rating_display . ' out of 5 stars'); ?>">
+                            <span class="cmn-candidate-feedback-stars-hero-base">★★★★★</span>
+                            <span class="cmn-candidate-feedback-stars-hero-fill" style="width: <?php echo esc_attr(number_format((float) $overall_rating_fill_percent, 2, '.', '')); ?>%;">★★★★★</span>
+                        </span>
+                        <strong class="cmn-candidate-feedback-overall-value"><?php echo esc_html($overall_rating_display); ?> / 5</strong>
+                    </div>
+                    <p class="cmn-muted">Based on <?php echo esc_html((string) ((int) ($rating_payload['feedback_count'] ?? 0))); ?> completed feedback submission(s).</p>
+                    <p><strong><?php echo esc_html(number_format((float) ($rating_payload['avg_rating_raw'] ?? 0), 2)); ?>/5</strong> average across all 7 modules.</p>
                 </article>
             </div>
             <article class="cmn-dashboard-card cmn-dashboard-card-wide">

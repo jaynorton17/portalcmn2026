@@ -14970,6 +14970,52 @@ body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedba
   gap: 10px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-summary-row {
+  margin-bottom: 20px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-overall-card {
+  display: grid;
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-overall-hero {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-stars-hero {
+  position: relative;
+  display: inline-block;
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-stars-hero-base {
+  color: rgba(148, 163, 184, 0.42);
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-stars-hero-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #ef4444;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+}
+
+body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-overall-value {
+  font-size: 22px;
+  line-height: 1.1;
+  color: #f8fafc;
+}
+
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-form-grid {
   display: grid !important;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) !important;
