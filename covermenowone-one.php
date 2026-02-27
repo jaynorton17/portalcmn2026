@@ -687,6 +687,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_admin_delete_candidate_account', [$this, 'handle_admin_delete_candidate_account']);
         add_action('wp_ajax_cmn_request_candidate', [$this, 'handle_request_candidate']);
         add_action('wp_ajax_cmn_school_live_match_action', [$this, 'handle_school_live_match_action']);
+        add_action('wp_ajax_cmn_school_live_match_presence', [$this, 'handle_school_live_match_presence']);
         add_action('wp_ajax_cmn_mark_notifications_read', [$this, 'handle_mark_notifications_read']);
         add_action('wp_ajax_cmn_notifications_mark_all_read', [$this, 'handle_notifications_mark_all_read']);
         add_action('wp_ajax_cmn_notifications_clear_all', [$this, 'handle_notifications_clear_all']);
@@ -6359,6 +6360,7 @@ final class CMN_One_Plugin {
             'staffNavNonce' => wp_create_nonce('cmn_staff_nav'),
             'staffPresenceNonce' => wp_create_nonce('cmn_staff_presence'),
             'isStaffUser' => $this->is_staff_user() ? 1 : 0,
+            'isCandidateUser' => $this->is_candidate_user() ? 1 : 0,
             'systemHealthNonce' => wp_create_nonce('cmn_system_health'),
         ]);
     }
@@ -64536,7 +64538,7 @@ final class CMN_One_Plugin {
         if (is_array($availability_confirmed_entry) && !empty($availability_confirmed_entry['created_at'])) {
             try {
                 $confirmed_dt = new DateTime((string) $availability_confirmed_entry['created_at'], wp_timezone());
-                $availability_confirmed_time_label = $confirmed_dt->format('g:ia');
+                $availability_confirmed_time_label = $confirmed_dt->format('g:i A');
             } catch (Exception $e) {
                 $availability_confirmed_time_label = '';
             }
@@ -64557,11 +64559,11 @@ final class CMN_One_Plugin {
         }
         $candidate_presence_snapshot = $candidate_user_id > 0
             ? $this->get_candidate_presence_snapshot($candidate_user_id)
-            : ['is_online' => false, 'last_online_label' => 'Last Online: Unknown'];
+            : ['is_online' => false, 'last_online_label' => 'Last seen at --:--'];
         $contact_card_is_online_now = !empty($candidate_presence_snapshot['is_online']);
-        $contact_card_last_online_label = sanitize_text_field((string) ($candidate_presence_snapshot['last_online_label'] ?? 'Last Online: Unknown'));
+        $contact_card_last_online_label = sanitize_text_field((string) ($candidate_presence_snapshot['last_online_label'] ?? 'Last seen at --:--'));
         if ($contact_card_last_online_label === '') {
-            $contact_card_last_online_label = 'Last Online: Unknown';
+            $contact_card_last_online_label = 'Last seen at --:--';
         }
 
         $calendar_window_start = (clone $now)->modify('+1 day');
@@ -65508,9 +65510,7 @@ final class CMN_One_Plugin {
                             <?php
                             $contact_card_display_name = $first_name !== '' ? $first_name : $profile_name;
                             $contact_card_feedback_percent = $feedback_has_reviews ? max(0.0, min(100.0, ($feedback_score_raw / 5) * 100)) : 0.0;
-                            $contact_card_feedback_text = $feedback_has_reviews
-                                ? number_format(round($feedback_score_raw, 1), 1) . ' (' . $feedback_count_total . ' reviews)'
-                                : 'No ratings yet';
+                            $contact_card_feedback_text = number_format((float) $feedback_score_raw, 2) . ' out of 5 stars';
                             $contact_card_primary_role = trim((string) $role_label) !== '' ? trim((string) $role_label) : 'Not set';
                             $contact_card_distance_raw = trim((string) $travel_distance);
                             $contact_card_distance_label = 'Not set';
@@ -65530,23 +65530,16 @@ final class CMN_One_Plugin {
                             $contact_card_dbs_verified = ((string) ($doc_dbs['doc_status'] ?? '') === 'approved');
                             $contact_card_compliance_complete = empty($completion_missing_items);
                             $contact_card_profile_completion_pct = max(0, min(100, (int) round((float) $completion_percent)));
-                            $contact_card_status_pending_label = $contact_card_compliance_complete ? 'NOT YET CONFIRMED' : 'VERIFICATION REQUIRED';
+                            $contact_card_status_pending_label = 'NOT YET CONFIRMED';
                             $contact_card_status_available_label = 'BOOKABLE';
-                            $contact_card_status_pending_detail = 'Awaiting availability confirmation';
-                            if (!$contact_card_id_verified) {
-                                $contact_card_status_pending_detail = 'ID verification pending';
-                            } elseif (!$contact_card_dbs_verified) {
-                                $contact_card_status_pending_detail = 'DBS verification pending';
-                            } elseif (!$contact_card_compliance_complete) {
-                                $contact_card_status_pending_detail = 'Compliance updates required';
-                            }
+                            $contact_card_status_pending_detail = '';
                             $contact_card_availability_label = $contact_card_show_available ? $contact_card_status_available_label : $contact_card_status_pending_label;
-                            $contact_card_button_time_label = $already_marked
-                                ? ($availability_confirmed_time_label !== '' ? ('Button pressed: ' . $availability_confirmed_time_label) : 'Button pressed: confirmed')
+                            $contact_card_button_time_label = $already_marked && $availability_confirmed_time_label !== ''
+                                ? ('Confirmed at ' . strtoupper($availability_confirmed_time_label))
                                 : '';
                             $contact_card_status_available_detail = $contact_card_button_time_label !== ''
-                                ? ('Active Today - ' . $contact_card_button_time_label)
-                                : 'Active Today';
+                                ? $contact_card_button_time_label
+                                : 'Confirmed';
                             $contact_card_status_detail = $contact_card_show_available ? $contact_card_status_available_detail : $contact_card_status_pending_detail;
                             $contact_card_verified_bundle = $contact_card_id_verified && $contact_card_dbs_verified;
                             $contact_card_other_checked = $saved_contact_card_custom_skill !== '';
@@ -65566,7 +65559,7 @@ final class CMN_One_Plugin {
                                     <div class="cmn-contact-card-preview cmn-command-card<?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-contact-card-preview data-contact-card-is-online="<?php echo $contact_card_is_online_now ? '1' : '0'; ?>">
                                         <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                         <div class="cmn-command-card-head">
-                                            <div class="cmn-command-brand">COVERMENow <span>ONE</span></div>
+                                            <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
                                             <span class="cmn-command-head-check" aria-hidden="true">&#10003;</span>
                                         </div>
                                         <div class="cmn-command-identity">
@@ -75908,16 +75901,11 @@ final class CMN_One_Plugin {
             $first_name = $name_parts ? (string) $name_parts[0] : (string) $candidate->post_title;
             $is_confirmed = !empty($item['is_confirmed']);
             $status_key = $is_confirmed ? 'available' : 'not_responded';
-            $physically_online_raw = '';
-            if ($candidate_user_id > 0) {
-                $physically_online_raw = (string) get_user_meta($candidate_user_id, 'cmn_contact_card_show_available', true);
-            }
-            if ($physically_online_raw === '' && $candidate_id > 0) {
-                $physically_online_raw = (string) get_post_meta($candidate_id, 'cmn_contact_card_show_available', true);
-            }
-            $is_physically_online = ($physically_online_raw !== '')
-                ? in_array(strtolower(trim($physically_online_raw)), ['1', 'true', 'yes', 'on'], true)
-                : ($status_key === 'available');
+            $candidate_presence_snapshot = $candidate_user_id > 0
+                ? $this->get_candidate_presence_snapshot($candidate_user_id)
+                : ['is_online' => false, 'last_online_label' => 'Last seen at --:--'];
+            $is_physically_online = !empty($candidate_presence_snapshot['is_online']);
+            $presence_label = sanitize_text_field((string) ($candidate_presence_snapshot['last_online_label'] ?? 'Last seen at --:--'));
             if ($status_key === 'available') {
                 $available_now_count++;
             } else {
@@ -75940,15 +75928,17 @@ final class CMN_One_Plugin {
                 'profile_url' => $this->get_school_candidate_profile_url($candidate_id, get_current_user_id()),
                 'role_line' => trim($role_primary . ($role_secondary !== '' ? ' • ' . $role_secondary : '')),
                 'rating' => round((float) ($rating['avg_rating'] ?? 0), 1),
+                'rating_label' => number_format((float) ($rating['avg_rating'] ?? 0), 2) . ' out of 5 stars',
                 'reviews' => (int) ($rating['feedback_count'] ?? 0),
                 'status' => $status_key,
                 'status_label' => $status_key === 'available' ? 'AVAILABLE NOW' : 'NOT RESPONDED',
                 'distance' => (string) get_post_meta($candidate_id, 'cmn_travel_distance', true),
                 'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
-                'confirmed_at' => $status_key === 'available' ? date_i18n('H:i', strtotime((string) ($item['created_at'] ?? current_time('mysql')))) : '',
+                'confirmed_at' => $status_key === 'available' ? date_i18n('g:i A', strtotime((string) ($item['created_at'] ?? current_time('mysql')))) : '',
                 'day_rate' => round($day_rate, 0),
                 'is_shortlisted' => $is_shortlisted ? 1 : 0,
                 'is_physically_online' => $is_physically_online ? 1 : 0,
+                'presence_label' => $presence_label,
                 'target_date' => (string) ($item['availability_date'] ?? $target_date),
             ];
         }
@@ -75994,8 +75984,6 @@ final class CMN_One_Plugin {
             }
             $photo_url = esc_url((string) ($item['photo_url'] ?? ''));
             $role_line = sanitize_text_field((string) ($item['role_line'] ?? 'Candidate'));
-            $rating_value = number_format((float) ($item['rating'] ?? 0), 1);
-            $reviews = max(0, (int) ($item['reviews'] ?? 0));
             $status = sanitize_html_class((string) ($item['status'] ?? 'not_responded'));
             if (!in_array($status, ['available', 'not_responded', 'not_available'], true)) {
                 $status = 'not_responded';
@@ -76004,16 +75992,22 @@ final class CMN_One_Plugin {
             $day_rate = (int) round((float) ($item['day_rate'] ?? 160));
             $profile_url = esc_url((string) ($item['profile_url'] ?? '#'));
             $is_shortlisted = !empty($item['is_shortlisted']);
+            $is_physically_online = !empty($item['is_physically_online']);
+            $presence_label = sanitize_text_field((string) ($item['presence_label'] ?? 'Last seen at --:--'));
             $confirmed_at = sanitize_text_field((string) ($item['confirmed_at'] ?? ''));
             $distance_text = sanitize_text_field((string) ($item['distance'] ?? ''));
+            $rating_label = sanitize_text_field((string) ($item['rating_label'] ?? (number_format((float) ($item['rating'] ?? 0), 2) . ' out of 5 stars')));
             if ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
                 $distance_text .= ' miles';
             }
             $banner_html = $status === 'available'
-                ? '<div class="cmn-live-banner">Available This Morning<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
-                : '<div class="cmn-live-banner" style="background:rgba(68,54,12,.86)">Awaiting confirmation</div>';
+                ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
+                : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
+            $presence_html = '<div class="cmn-live-presence' . ($is_physically_online ? ' is-live' : '') . '"><span class="cmn-live-presence-dot" aria-hidden="true"></span>' . esc_html($is_physically_online ? 'ONLINE NOW' : $presence_label) . '</div>';
             return '<article class="cmn-live-card" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
-                . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div><div class="cmn-live-rating">★ ' . esc_html($rating_value) . ' (' . esc_html((string) $reviews) . ')</div></div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
+                . '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
+                . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div><div class="cmn-live-rating">' . esc_html($rating_label) . '</div></div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
+                . $presence_html
                 . '<div class="cmn-live-strip">' . $banner_html . '<div class="cmn-live-rate">£' . esc_html((string) $day_rate) . ' <span>per day</span></div></div>'
                 . ($distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($distance_text) . '</div>' : '')
                 . '<div class="cmn-live-skills"><span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span></div>'
@@ -81656,6 +81650,31 @@ p{margin:0;line-height:1.5}
         }
     }
 
+    private function format_candidate_last_seen_label($last_seen_ts, $now_ts = 0) {
+        $last_seen_ts = (int) $last_seen_ts;
+        $now_ts = $now_ts > 0 ? (int) $now_ts : time();
+        if ($last_seen_ts < 1) {
+            return 'Last seen at --:--';
+        }
+        try {
+            $tz = wp_timezone();
+            $now_dt = new DateTime('@' . $now_ts);
+            $now_dt->setTimezone($tz);
+            $last_seen_dt = new DateTime('@' . $last_seen_ts);
+            $last_seen_dt->setTimezone($tz);
+            $time_label = $last_seen_dt->format('H:i');
+            $suffix = 'on ' . $last_seen_dt->format('d/m');
+            if ($last_seen_dt->format('Y-m-d') === $now_dt->format('Y-m-d')) {
+                $suffix = 'today';
+            } elseif ($last_seen_dt->format('Y-m-d') === $now_dt->modify('-1 day')->format('Y-m-d')) {
+                $suffix = 'yesterday';
+            }
+            return 'Last seen at ' . $time_label . ' ' . $suffix;
+        } catch (Exception $e) {
+            return 'Last seen at --:--';
+        }
+    }
+
     private function get_candidate_presence_snapshot($user_id, $now_ts = 0) {
         $user_id = (int) $user_id;
         $now_ts = $now_ts > 0 ? (int) $now_ts : time();
@@ -81665,11 +81684,9 @@ p{margin:0;line-height:1.5}
         }
         $idle_seconds = $last_seen > 0 ? max(0, $now_ts - $last_seen) : PHP_INT_MAX;
         $is_online = $last_seen > 0 && $idle_seconds <= 120;
-        $last_online_label = 'Last Online: Unknown';
+        $last_online_label = $this->format_candidate_last_seen_label($last_seen, $now_ts);
         if ($is_online) {
             $last_online_label = 'ONLINE NOW';
-        } elseif ($last_seen > 0) {
-            $last_online_label = 'Last Online: ' . human_time_diff($last_seen, $now_ts) . ' ago';
         }
         return [
             'is_online' => $is_online,
@@ -81694,7 +81711,7 @@ p{margin:0;line-height:1.5}
         wp_send_json_success([
             'is_online' => !empty($snapshot['is_online']) ? 1 : 0,
             'last_seen' => (int) ($snapshot['last_seen'] ?? 0),
-            'last_online_label' => (string) ($snapshot['last_online_label'] ?? 'Last Online: Unknown'),
+            'last_online_label' => (string) ($snapshot['last_online_label'] ?? 'Last seen at --:--'),
         ]);
     }
 
@@ -87536,6 +87553,62 @@ p{margin:0;line-height:1.5}
         }
 
         wp_send_json_error(['message' => 'Unknown action.'], 400);
+    }
+
+    public function handle_school_live_match_presence() {
+        if (!check_ajax_referer('cmn_school_live_match_action', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in() || !$this->is_school_user()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $school_id = $this->resolve_school_id_for_user();
+        if (!$school_id) {
+            wp_send_json_error(['message' => 'School profile not found.'], 404);
+        }
+
+        $raw_candidate_ids = $_POST['candidate_ids'] ?? [];
+        if (!is_array($raw_candidate_ids)) {
+            $raw_candidate_ids = explode(',', (string) $raw_candidate_ids);
+        }
+        $candidate_ids = [];
+        foreach ((array) $raw_candidate_ids as $raw_id) {
+            $candidate_id = (int) $raw_id;
+            if ($candidate_id > 0) {
+                $candidate_ids[$candidate_id] = $candidate_id;
+            }
+            if (count($candidate_ids) >= 100) {
+                break;
+            }
+        }
+        if (!$candidate_ids) {
+            wp_send_json_success(['presence' => []]);
+        }
+
+        $presence = [];
+        foreach (array_values($candidate_ids) as $candidate_id) {
+            if (get_post_type($candidate_id) !== 'cmn_candidate') {
+                continue;
+            }
+            if ($this->is_candidate_hidden_for_school_live_matches((int) $school_id, (int) $candidate_id)) {
+                continue;
+            }
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            if ($candidate_user_id < 1) {
+                $presence[(string) $candidate_id] = [
+                    'is_online' => 0,
+                    'label' => 'Last seen at --:--',
+                ];
+                continue;
+            }
+            $snapshot = $this->get_candidate_presence_snapshot($candidate_user_id);
+            $presence[(string) $candidate_id] = [
+                'is_online' => !empty($snapshot['is_online']) ? 1 : 0,
+                'label' => sanitize_text_field((string) ($snapshot['last_online_label'] ?? 'Last seen at --:--')),
+            ];
+        }
+
+        wp_send_json_success(['presence' => $presence]);
     }
 
     public function handle_request_candidate() {

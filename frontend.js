@@ -1195,6 +1195,23 @@ document.addEventListener('DOMContentLoaded', function () {
     window.setInterval(touchStaffPresence, 120000);
   }
 
+  if (window.cmnPortal && Number(window.cmnPortal.isCandidateUser || 0) === 1 && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateProfileNonce) {
+    var touchCandidatePresenceGlobal = function () {
+      var fd = new FormData();
+      fd.append('action', 'cmn_touch_candidate_presence');
+      fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+      fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      }).catch(function () {
+        // Ignore transient network failures.
+      });
+    };
+    touchCandidatePresenceGlobal();
+    window.setInterval(touchCandidatePresenceGlobal, 60000);
+  }
+
   var actionMenus = document.querySelectorAll('[data-action-menu]');
   if (actionMenus.length) {
     var closeMenus = function () {
@@ -9901,12 +9918,14 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardInitialSkills = [];
       var contactCardInitialShowAvailable = String(contactCardSkillPanel.getAttribute('data-contact-card-show-available') || '0') === '1';
       var contactCardInitialIsOnline = String(contactCardSkillPanel.getAttribute('data-contact-card-is-online') || '0') === '1';
-      var contactCardInitialLastOnline = String(contactCardSkillPanel.getAttribute('data-contact-card-last-online') || 'Last Online: Unknown');
+      var contactCardInitialLastOnline = String(contactCardSkillPanel.getAttribute('data-contact-card-last-online') || 'Last seen at --:--');
       var contactCardButtonTimeLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-button-time') || '');
-      var contactCardPendingLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-pending-label') || 'VERIFICATION REQUIRED');
+      var contactCardPendingLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-pending-label') || 'NOT YET CONFIRMED');
       var contactCardAvailableLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-available-label') || 'BOOKABLE');
-      var contactCardPendingDetail = String(contactCardSkillPanel.getAttribute('data-contact-card-pending-detail') || 'Awaiting availability confirmation');
-      var contactCardAvailableDetail = String(contactCardSkillPanel.getAttribute('data-contact-card-available-detail') || '');
+      var contactCardPendingDetailAttr = contactCardSkillPanel.getAttribute('data-contact-card-pending-detail');
+      var contactCardAvailableDetailAttr = contactCardSkillPanel.getAttribute('data-contact-card-available-detail');
+      var contactCardPendingDetail = contactCardPendingDetailAttr === null ? 'Awaiting availability confirmation' : String(contactCardPendingDetailAttr);
+      var contactCardAvailableDetail = contactCardAvailableDetailAttr === null ? '' : String(contactCardAvailableDetailAttr);
 
       try {
         var defaultRaw = String(contactCardSkillPanel.getAttribute('data-contact-card-default-options') || '[]');
@@ -9974,7 +9993,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         contactCardLiveRow.classList.add('is-pending');
-        contactCardLiveRow.textContent = String(lastOnlineLabel || 'Last Online: Unknown');
+        contactCardLiveRow.textContent = String(lastOnlineLabel || 'Last seen at --:--');
       };
 
       var renderContactCardPreviewSkills = function (skills) {
@@ -10109,7 +10128,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           var online = String(data.data.is_online || '0') === '1';
-          var label = String(data.data.last_online_label || 'Last Online: Unknown');
+          var label = String(data.data.last_online_label || 'Last seen at --:--');
           applyContactCardPresenceState(online, label);
         }).catch(function () {
           // Ignore transient network failures.
@@ -12548,6 +12567,57 @@ document.addEventListener('DOMContentLoaded', function () {
       return fetch((window.cmnPortal && window.cmnPortal.ajaxUrl) || '', {method:'POST', credentials:'same-origin', body:form}).then(function(r){ return r.json(); });
     };
 
+    var pollPresence = function(){
+      if (!datasetAll.length || !window.cmnPortal || !window.cmnPortal.ajaxUrl || !window.cmnPortal.liveMatchNonce) {
+        return;
+      }
+      var ids = datasetAll.map(function(item){
+        return parseInt(String((item && item.candidate_id) || '0'), 10) || 0;
+      }).filter(function(id){ return id > 0; });
+      if (!ids.length) {
+        return;
+      }
+      var form = new FormData();
+      form.append('action', 'cmn_school_live_match_presence');
+      form.append('nonce', window.cmnPortal.liveMatchNonce);
+      ids.forEach(function(id){
+        form.append('candidate_ids[]', String(id));
+      });
+      fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: form
+      }).then(function(response){
+        return response.json();
+      }).then(function(data){
+        if (!data || !data.success || !data.data || typeof data.data.presence !== 'object') {
+          return;
+        }
+        var presence = data.data.presence || {};
+        var changed = false;
+        datasetAll = datasetAll.map(function(item){
+          var key = String((item && item.candidate_id) || '');
+          if (!key || !Object.prototype.hasOwnProperty.call(presence, key)) {
+            return item;
+          }
+          var row = presence[key] || {};
+          var isOnline = String(row.is_online || '0') === '1' ? 1 : 0;
+          var label = String(row.label || 'Last seen at --:--');
+          if ((item.is_physically_online || 0) !== isOnline || String(item.presence_label || '') !== label) {
+            changed = true;
+          }
+          item.is_physically_online = isOnline;
+          item.presence_label = label;
+          return item;
+        });
+        if (changed) {
+          render();
+        }
+      }).catch(function(){
+        // Ignore transient network failures.
+      });
+    };
+
     var resolveDistanceText = function(rawValue){
       var raw = String(rawValue || '').trim();
       if (!raw) {
@@ -12561,10 +12631,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var cardHtml = function(item){
       if (!item) return '<div></div>';
-      var banner = item.status === 'available' ? '<div class="cmn-live-banner">Available This Morning<br><small>Confirmed at '+(item.confirmed_at||'--:--')+'</small></div>' : '<div class="cmn-live-banner" style="background:rgba(68,54,12,.86)">Awaiting confirmation</div>';
+      var isOnlineNow = String(item.is_physically_online || '0') === '1' || item.is_physically_online === 1 || item.is_physically_online === true;
+      var presenceLabel = isOnlineNow ? 'ONLINE NOW' : String(item.presence_label || 'Last seen at --:--');
+      var ratingLabel = String(item.rating_label || (Number(item.rating || 0).toFixed(2) + ' out of 5 stars'));
+      var banner = item.status === 'available'
+        ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' + (item.confirmed_at || '--:--') + '</small></div>'
+        : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
       var distanceText = resolveDistanceText(item.distance);
       return '<article class="cmn-live-card" data-candidate-id="'+item.candidate_id+'">'
-        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-rating">★ '+Number(item.rating||0).toFixed(1)+' ('+(item.reviews||0)+')</div></div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
+        + '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
+        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-rating">'+ratingLabel+'</div></div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
+        + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'
         + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
         + (distanceText ? '<div class="cmn-live-distance">'+distanceText+'</div>' : '')
         + '<div class="cmn-live-skills"><span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span></div>'
@@ -12670,6 +12747,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }, {passive:true});
 
     render();
+    pollPresence();
+    window.setInterval(pollPresence, 20000);
   });
 })();
     if (themeSelect && themeSelect.options && themeSelect.options.length <= 1) {
