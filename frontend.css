@@ -15189,7 +15189,7 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   min-height: 42px;
   padding: 0 14px;
   border-radius: 12px;
@@ -15198,6 +15198,7 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  text-align: center;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
@@ -15216,8 +15217,8 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
 
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-available {
   width: auto;
-  justify-content: flex-start;
-  text-align: left;
+  justify-content: center;
+  text-align: center;
   background: linear-gradient(180deg, #15803d, #14532d);
   border-color: #22c55e;
   color: #f8fafc;
