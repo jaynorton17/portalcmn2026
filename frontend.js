@@ -9288,6 +9288,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var profileAdminMissing = document.querySelector('[data-profile-admin-missing]');
     var profilePersonalUrl = profileSummaryStrip ? String(profileSummaryStrip.getAttribute('data-profile-personal-url') || '') : '';
     var profileDocumentsUrl = profileSummaryStrip ? String(profileSummaryStrip.getAttribute('data-profile-documents-url') || '') : '';
+    var profileFinanceBankUrl = profileSummaryStrip ? String(profileSummaryStrip.getAttribute('data-profile-finance-bank-url') || '') : '';
+    var profileFinanceAckUrl = profileSummaryStrip ? String(profileSummaryStrip.getAttribute('data-profile-finance-ack-url') || '') : '';
 
     var toShortDay = function (dayLabel) {
       var source = String(dayLabel || '').trim();
@@ -9386,17 +9388,8 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       var key = item.toLowerCase();
       var map = {
-        'add first name': { label: 'First name', url: profilePersonalUrl },
-        'add last name': { label: 'Last name', url: profilePersonalUrl },
-        'add email address': { label: 'Email', url: profilePersonalUrl },
-        'add phone number': { label: 'Phone', url: profilePersonalUrl },
-        'add nationality': { label: 'Nationality', url: profilePersonalUrl },
-        'select role type': { label: 'Role type', url: profilePersonalUrl },
-        'set travel radius': { label: 'Travel radius', url: profilePersonalUrl },
-        'add location': { label: 'Location', url: profilePersonalUrl },
-        'answer driving licence': { label: 'Driving licence', url: profilePersonalUrl },
-        'answer own vehicle': { label: 'Own vehicle', url: profilePersonalUrl },
-        'set qts status': { label: 'QTS', url: profilePersonalUrl },
+        'add bank details': { label: 'Bank details', url: profileFinanceBankUrl || profilePersonalUrl },
+        'accept self-employment notice': { label: 'Self-employment notice', url: profileFinanceAckUrl || profilePersonalUrl },
         'upload cv': { label: 'CV', url: profileDocumentsUrl || profilePersonalUrl },
         'upload dbs': { label: 'DBS', url: profileDocumentsUrl || profilePersonalUrl },
         'upload photo id': { label: 'Photo ID', url: profileDocumentsUrl || profilePersonalUrl }

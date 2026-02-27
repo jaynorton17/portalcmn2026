@@ -60497,55 +60497,14 @@ final class CMN_One_Plugin {
                 'missing' => [],
             ];
         }
-        $candidate_post = get_post($candidate_id);
-        $profile_email = (string) get_post_meta($candidate_id, 'cmn_email', true);
-        $first_name = (string) get_user_meta($user_id, 'first_name', true);
-        $last_name = (string) get_user_meta($user_id, 'last_name', true);
-        $profile_phone = (string) get_user_meta($user_id, 'phone', true);
-        if ($profile_phone === '') {
-            $profile_phone = (string) get_post_meta($candidate_id, 'cmn_phone', true);
-        }
-        $nationality = (string) get_post_meta($candidate_id, 'cmn_nationality', true);
-        if ($nationality === '') {
-            $nationality = (string) get_user_meta($user_id, 'cmn_nationality', true);
-        }
-        $travel_distance = (string) get_user_meta($user_id, 'travel_radius', true);
-        if ($travel_distance === '') {
-            $travel_distance = (string) get_post_meta($candidate_id, 'cmn_travel_distance', true);
-        }
-        $role_label = (string) get_user_meta($user_id, 'role_type', true);
-        if ($role_label === '') {
-            $roles = (array) get_post_meta($candidate_id, 'cmn_roles', true);
-            $role_label = $roles ? (string) $roles[0] : '';
-        }
-        $location = (string) get_post_meta($candidate_id, 'cmn_location', true);
-        $driving_licence = sanitize_key((string) get_post_meta($candidate_id, 'cmn_driving_licence', true));
-        $car_owner = sanitize_key((string) get_post_meta($candidate_id, 'cmn_car_owner', true));
-        $qts_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_qts_status', true));
-        if ($first_name === '' && $candidate_post) {
-            $parts = preg_split('/\s+/', trim((string) $candidate_post->post_title));
-            $first_name = (string) ($parts[0] ?? '');
-            $last_name = count($parts) > 1 ? (string) end($parts) : $last_name;
-        }
-        $doc_dbs = $this->get_candidate_doc_status($candidate_id, $user_id, 'dbs');
-        $doc_id = $this->get_candidate_doc_status($candidate_id, $user_id, 'id');
-        $doc_cv = $this->get_candidate_doc_status($candidate_id, $user_id, 'cv');
+        // Soft-gate completion tracks admin/payment readiness only.
+        // Operational unlock/visibility is enforced separately (CV + DBS + Photo ID).
+        $bank_complete = $this->is_candidate_bank_complete_for_payroll($user_id);
+        $self_employed_ack_complete = $this->is_candidate_self_employed_ack_complete_for_payroll($user_id);
 
         $checks = [
-            ['value' => $first_name, 'missing' => 'Add first name'],
-            ['value' => $last_name, 'missing' => 'Add last name'],
-            ['value' => $profile_email, 'missing' => 'Add email address'],
-            ['value' => $profile_phone, 'missing' => 'Add phone number'],
-            ['value' => $nationality, 'missing' => 'Add nationality'],
-            ['value' => $role_label, 'missing' => 'Select role type'],
-            ['value' => $travel_distance, 'missing' => 'Set travel radius'],
-            ['value' => $location, 'missing' => 'Add location'],
-            ['value' => in_array($driving_licence, ['yes', 'no'], true) ? $driving_licence : '', 'missing' => 'Answer driving licence'],
-            ['value' => in_array($car_owner, ['yes', 'no'], true) ? $car_owner : '', 'missing' => 'Answer own vehicle'],
-            ['value' => in_array($qts_status, ['yes', 'no'], true) ? $qts_status : '', 'missing' => 'Set QTS status'],
-            ['value' => $doc_cv['uploaded'] ? '1' : '', 'missing' => 'Upload CV'],
-            ['value' => $doc_dbs['uploaded'] ? '1' : '', 'missing' => 'Upload DBS'],
-            ['value' => $doc_id['uploaded'] ? '1' : '', 'missing' => 'Upload Photo ID'],
+            ['value' => $bank_complete ? '1' : '', 'missing' => 'Add bank details'],
+            ['value' => $self_employed_ack_complete ? '1' : '', 'missing' => 'Accept self-employment notice'],
         ];
         $completed = 0;
         $missing = [];
@@ -60565,6 +60524,51 @@ final class CMN_One_Plugin {
             'total' => $total,
             'missing' => array_values(array_unique(array_filter(array_map('sanitize_text_field', $missing)))),
         ];
+    }
+
+    private function get_candidate_operational_gate_state($candidate_id, $user_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        $user_id = (int) $user_id;
+        if ($candidate_id < 1) {
+            return [
+                'unlocked' => false,
+                'missing' => ['Upload CV', 'Upload DBS', 'Upload Photo ID'],
+                'docs' => ['cv' => false, 'dbs' => false, 'id' => false],
+            ];
+        }
+        if ($user_id < 1) {
+            $user_id = (int) $this->get_candidate_user_id($candidate_id);
+        }
+        $doc_cv = $this->get_candidate_doc_status($candidate_id, $user_id, 'cv');
+        $doc_dbs = $this->get_candidate_doc_status($candidate_id, $user_id, 'dbs');
+        $doc_id = $this->get_candidate_doc_status($candidate_id, $user_id, 'id');
+        $has_cv = !empty($doc_cv['uploaded']);
+        $has_dbs = !empty($doc_dbs['uploaded']);
+        $has_id = !empty($doc_id['uploaded']);
+        $missing = [];
+        if (!$has_cv) {
+            $missing[] = 'Upload CV';
+        }
+        if (!$has_dbs) {
+            $missing[] = 'Upload DBS';
+        }
+        if (!$has_id) {
+            $missing[] = 'Upload Photo ID';
+        }
+        return [
+            'unlocked' => empty($missing),
+            'missing' => $missing,
+            'docs' => [
+                'cv' => $has_cv,
+                'dbs' => $has_dbs,
+                'id' => $has_id,
+            ],
+        ];
+    }
+
+    private function is_candidate_operationally_unlocked($candidate_id, $user_id = 0) {
+        $state = $this->get_candidate_operational_gate_state((int) $candidate_id, (int) $user_id);
+        return !empty($state['unlocked']);
     }
 
     private function update_candidate_profile_completion($candidate_id, $user_id) {
@@ -62331,6 +62335,7 @@ final class CMN_One_Plugin {
                             <label>Email *<input type="email" name="cmn_email" placeholder="Email" autocomplete="email" required></label>
                             <label>Phone *<input type="tel" name="cmn_phone" placeholder="Phone" autocomplete="tel" required></label>
                             <label>Location *<input type="text" name="cmn_location" placeholder="Town / City" autocomplete="address-level2" required></label>
+                            <label>Nationality *<input type="text" name="cmn_nationality" placeholder="e.g. British" autocomplete="country-name" required></label>
                         </div>
                         <div class="cmn-form-group">
                             <span class="cmn-form-label">Address</span>
@@ -62369,15 +62374,15 @@ final class CMN_One_Plugin {
                             <p class="cmn-muted cmn-muted-small cmn-dbs-note" hidden>DBS verification unlocks visibility to schools. If you don't have one yet, we can help.</p>
                         </div>
                         <div class="cmn-form-group">
-                            <span class="cmn-form-label">What sort of jobs are you looking for?</span>
+                            <span class="cmn-form-label">Primary role *</span>
                             <div class="cmn-check-grid">
-                                <label class="cmn-check-card"><input type="checkbox" name="cmn_roles[]" value="Teaching Assistant"> <span>Teaching Assistant</span></label>
-                                <label class="cmn-check-card"><input type="checkbox" name="cmn_roles[]" value="Teacher"> <span>Teacher</span></label>
-                                <label class="cmn-check-card"><input type="checkbox" name="cmn_roles[]" value="Cover Supervisor"> <span>Cover Supervisor</span></label>
-                                <label class="cmn-check-card"><input type="checkbox" name="cmn_roles[]" value="Learning Support Assistant"> <span>Learning Support Assistant</span></label>
-                                <label class="cmn-check-card cmn-check-other"><input type="checkbox" name="cmn_roles[]" value="Other" data-other-toggle> <span>Other</span></label>
+                                <label class="cmn-check-card"><input type="radio" name="cmn_primary_role" value="Teaching Assistant" required> <span>Teaching Assistant</span></label>
+                                <label class="cmn-check-card"><input type="radio" name="cmn_primary_role" value="Teacher" required> <span>Teacher</span></label>
+                                <label class="cmn-check-card"><input type="radio" name="cmn_primary_role" value="Cover Supervisor" required> <span>Cover Supervisor</span></label>
+                                <label class="cmn-check-card"><input type="radio" name="cmn_primary_role" value="Learning Support Assistant" required> <span>Learning Support Assistant</span></label>
+                                <label class="cmn-check-card cmn-check-other"><input type="radio" name="cmn_primary_role" value="Other" data-other-toggle required> <span>Other</span></label>
                             </div>
-                            <label class="cmn-other-field" hidden>Tell us what role
+                            <label class="cmn-other-field" hidden>Tell us your primary role
                                 <input type="text" name="cmn_roles_other" placeholder="e.g., SEN Teacher, HLTA, Exam Invigilator">
                             </label>
                         </div>
@@ -64581,23 +64586,12 @@ final class CMN_One_Plugin {
             'view' => false,
         ], $portal_url);
         $candidate_finance_bank_url = $candidate_finance_url . '#cmn-candidate-bank-details';
+        $candidate_finance_ack_url = $candidate_finance_url . '#cmn-candidate-compliance-ack';
         $weekly_expected_has_bank_hold = $weekly_expected_is_hold && stripos((string) $weekly_expected_display, 'bank details') !== false;
 
         $completion_missing_map = [
-            'add first name' => ['label' => 'First name', 'url' => $candidate_profile_personal_url],
-            'add last name' => ['label' => 'Last name', 'url' => $candidate_profile_personal_url],
-            'add email address' => ['label' => 'Email', 'url' => $candidate_profile_personal_url],
-            'add phone number' => ['label' => 'Phone', 'url' => $candidate_profile_personal_url],
-            'add nationality' => ['label' => 'Nationality', 'url' => $candidate_profile_personal_url],
-            'select role type' => ['label' => 'Role type', 'url' => $candidate_profile_personal_url],
-            'set travel radius' => ['label' => 'Travel radius', 'url' => $candidate_profile_personal_url],
-            'add location' => ['label' => 'Location', 'url' => $candidate_profile_personal_url],
-            'answer driving licence' => ['label' => 'Driving licence', 'url' => $candidate_profile_personal_url],
-            'answer own vehicle' => ['label' => 'Own vehicle', 'url' => $candidate_profile_personal_url],
-            'set qts status' => ['label' => 'QTS', 'url' => $candidate_profile_personal_url],
-            'upload cv' => ['label' => 'CV', 'url' => $candidate_profile_documents_url],
-            'upload dbs' => ['label' => 'DBS', 'url' => $candidate_profile_documents_url],
-            'upload photo id' => ['label' => 'Photo ID', 'url' => $candidate_profile_documents_url],
+            'add bank details' => ['label' => 'Bank details', 'url' => $candidate_finance_bank_url],
+            'accept self-employment notice' => ['label' => 'Self-employment notice', 'url' => $candidate_finance_ack_url],
         ];
         $completion_outstanding_links = [];
         $completion_seen = [];
@@ -64915,7 +64909,7 @@ final class CMN_One_Plugin {
                                     $availability_day_short = array_values(array_unique($availability_day_short));
                                     $is_admin_verified = $completion_percent >= 100 && empty($completion_outstanding_links);
                                     ?>
-                                    <div class="cmn-profile-summary-strip" data-profile-summary-strip data-profile-personal-url="<?php echo esc_url($candidate_profile_personal_url); ?>" data-profile-documents-url="<?php echo esc_url($candidate_profile_documents_url); ?>">
+                                    <div class="cmn-profile-summary-strip" data-profile-summary-strip data-profile-personal-url="<?php echo esc_url($candidate_profile_personal_url); ?>" data-profile-documents-url="<?php echo esc_url($candidate_profile_documents_url); ?>" data-profile-finance-bank-url="<?php echo esc_url($candidate_finance_bank_url); ?>" data-profile-finance-ack-url="<?php echo esc_url($candidate_finance_ack_url); ?>">
                                         <div class="cmn-profile-summary-meta">
                                             <div class="cmn-profile-summary-item">
                                                 <span class="cmn-profile-summary-label">Name</span>
@@ -69308,7 +69302,7 @@ final class CMN_One_Plugin {
                     <?php endif; ?>
                 </div>
             </article>
-            <article class="cmn-dashboard-card cmn-candidate-finance-self-employed-card">
+            <article class="cmn-dashboard-card cmn-candidate-finance-self-employed-card" id="cmn-candidate-compliance-ack">
                 <h3>Self-Employed Notice</h3>
                 <p>You are self-employed. CoverMeNow does not deduct tax/NIC.</p>
                 <p>You are responsible for reporting your income.</p>
@@ -70392,7 +70386,20 @@ final class CMN_One_Plugin {
                 ],
             ],
         ]);
-        return $posts;
+        if (!$posts) {
+            return [];
+        }
+        $visible = [];
+        foreach ($posts as $post) {
+            if (!($post instanceof WP_Post)) {
+                continue;
+            }
+            if (!$this->is_candidate_operationally_unlocked((int) $post->ID)) {
+                continue;
+            }
+            $visible[] = $post;
+        }
+        return $visible;
     }
 
 
@@ -70497,6 +70504,7 @@ final class CMN_One_Plugin {
         $tomorrow = $this->get_tomorrow_date();
         $visibility_reasons = [
             'not_approved' => 0,
+            'not_operationally_unlocked' => 0,
             'hidden_not_interested' => 0,
             'out_of_radius' => 0,
             'marked_unavailable' => 0,
@@ -70515,6 +70523,10 @@ final class CMN_One_Plugin {
             $candidate_status = sanitize_key((string) get_post_meta($visibility_candidate_id, 'cmn_status', true));
             if ($candidate_status !== '' && $candidate_status !== 'approved') {
                 $visibility_reasons['not_approved']++;
+                continue;
+            }
+            if (!$this->is_candidate_operationally_unlocked($visibility_candidate_id)) {
+                $visibility_reasons['not_operationally_unlocked']++;
                 continue;
             }
             if ($this->is_candidate_hidden_for_school_live_matches($school_id, $visibility_candidate_id)) {
@@ -70549,6 +70561,9 @@ final class CMN_One_Plugin {
                 }
                 $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
                 if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                    continue;
+                }
+                if (!$this->is_candidate_operationally_unlocked($candidate_id)) {
                     continue;
                 }
                 if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
@@ -70710,6 +70725,9 @@ final class CMN_One_Plugin {
         if ($visibility_reasons['not_approved'] > 0) {
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['not_approved']) . ' pending approval';
         }
+        if ($visibility_reasons['not_operationally_unlocked'] > 0) {
+            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['not_operationally_unlocked']) . ' missing required docs';
+        }
         $visibility_reason_text = $visibility_reason_parts ? ('If someone is missing: ' . implode(' | ', $visibility_reason_parts) . '.') : '';
         ob_start();
         ?>
@@ -70788,7 +70806,12 @@ final class CMN_One_Plugin {
         foreach ($today_rows as $item) {
             $post = $item['post'] ?? null;
             $candidate_id = ($post && isset($post->ID)) ? (int) $post->ID : 0;
-            if ($candidate_id < 1 || isset($seen[$candidate_id]) || $this->is_candidate_unavailable($candidate_id, $today)) {
+            if (
+                $candidate_id < 1
+                || isset($seen[$candidate_id])
+                || $this->is_candidate_unavailable($candidate_id, $today)
+                || !$this->is_candidate_operationally_unlocked($candidate_id)
+            ) {
                 continue;
             }
             $item['availability_label'] = 'Available This Morning';
@@ -70804,7 +70827,12 @@ final class CMN_One_Plugin {
         foreach ($tomorrow_rows as $item) {
             $post = $item['post'] ?? null;
             $candidate_id = ($post && isset($post->ID)) ? (int) $post->ID : 0;
-            if ($candidate_id < 1 || isset($seen[$candidate_id]) || $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
+            if (
+                $candidate_id < 1
+                || isset($seen[$candidate_id])
+                || $this->is_candidate_unavailable($candidate_id, $tomorrow)
+                || !$this->is_candidate_operationally_unlocked($candidate_id)
+            ) {
                 continue;
             }
             $item['availability_label'] = 'Available Tomorrow Morning';
@@ -70830,6 +70858,9 @@ final class CMN_One_Plugin {
         foreach ((array) $base_candidate_ids as $candidate_id_raw) {
             $candidate_id = (int) $candidate_id_raw;
             if ($candidate_id < 1 || isset($seen[$candidate_id])) {
+                continue;
+            }
+            if (!$this->is_candidate_operationally_unlocked($candidate_id)) {
                 continue;
             }
             if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
@@ -75768,8 +75799,21 @@ p{margin:0;line-height:1.5}
 
         $candidate_name = sanitize_text_field($_POST['cmn_candidate_name'] ?? '');
         $candidate_email = sanitize_email($_POST['cmn_email'] ?? '');
+        $candidate_nationality = sanitize_text_field((string) ($_POST['cmn_nationality'] ?? ''));
+        $primary_role_input = sanitize_text_field((string) ($_POST['cmn_primary_role'] ?? ''));
+        $role_other_input = sanitize_text_field((string) ($_POST['cmn_roles_other'] ?? ''));
+        if ($primary_role_input === '' && isset($_POST['cmn_roles']) && is_array($_POST['cmn_roles']) && !empty($_POST['cmn_roles'][0])) {
+            $primary_role_input = sanitize_text_field((string) $_POST['cmn_roles'][0]);
+        }
+        $primary_role = $primary_role_input === 'Other' ? $role_other_input : $primary_role_input;
         if ($candidate_name === '') {
             wp_die('Candidate name is required.');
+        }
+        if ($candidate_nationality === '') {
+            wp_die('Nationality is required.');
+        }
+        if ($primary_role === '') {
+            wp_die('Primary role is required.');
         }
 
         $post_id = wp_insert_post([
@@ -75782,6 +75826,7 @@ p{margin:0;line-height:1.5}
             update_post_meta($post_id, 'cmn_email', $candidate_email);
             update_post_meta($post_id, 'cmn_phone', sanitize_text_field($_POST['cmn_phone'] ?? ''));
             update_post_meta($post_id, 'cmn_location', sanitize_text_field($_POST['cmn_location'] ?? ''));
+            update_post_meta($post_id, 'cmn_nationality', $candidate_nationality);
             update_post_meta($post_id, 'cmn_status', 'approved');
             update_post_meta($post_id, 'cmn_notes', sanitize_textarea_field($_POST['cmn_notes'] ?? ''));
             update_post_meta($post_id, 'cmn_house_number', sanitize_text_field($_POST['cmn_house_number'] ?? ''));
@@ -75791,10 +75836,10 @@ p{margin:0;line-height:1.5}
             update_post_meta($post_id, 'cmn_town', sanitize_text_field($_POST['cmn_town'] ?? ''));
             update_post_meta($post_id, 'cmn_county', sanitize_text_field($_POST['cmn_county'] ?? ''));
             update_post_meta($post_id, 'cmn_postcode', sanitize_text_field($_POST['cmn_postcode'] ?? ''));
-            $roles = isset($_POST['cmn_roles']) && is_array($_POST['cmn_roles']) ? array_map('sanitize_text_field', $_POST['cmn_roles']) : [];
-            update_post_meta($post_id, 'cmn_roles', $roles);
+            update_post_meta($post_id, 'cmn_roles', [$primary_role]);
+            update_post_meta($post_id, 'cmn_role_type', $primary_role);
             update_post_meta($post_id, 'cmn_no_dbs', isset($_POST['cmn_no_dbs']) ? '1' : '0');
-            update_post_meta($post_id, 'cmn_roles_other', sanitize_text_field($_POST['cmn_roles_other'] ?? ''));
+            update_post_meta($post_id, 'cmn_roles_other', $role_other_input);
             update_post_meta($post_id, 'cmn_driving_licence', sanitize_text_field($_POST['cmn_driving_licence'] ?? ''));
             update_post_meta($post_id, 'cmn_car_owner', sanitize_text_field($_POST['cmn_car_owner'] ?? ''));
             update_post_meta($post_id, 'cmn_travel_distance', sanitize_text_field($_POST['cmn_travel_distance'] ?? ''));
@@ -75814,6 +75859,8 @@ p{margin:0;line-height:1.5}
             if ($user_id && !is_wp_error($user_id)) {
                 $candidate_user_id = (int) $user_id;
                 update_post_meta($post_id, 'cmn_user_id', $candidate_user_id);
+                update_user_meta($candidate_user_id, 'cmn_nationality', $candidate_nationality);
+                update_user_meta($candidate_user_id, 'role_type', $primary_role);
                 $this->send_candidate_verification_email((int) $user_id, $candidate_name, $candidate_email);
             }
             $referral_code_input = sanitize_text_field((string) ($_POST['cmn_referral_code'] ?? ''));
@@ -80105,6 +80152,12 @@ p{margin:0;line-height:1.5}
         if ($first_name === '' || $last_name === '') {
             wp_send_json_error(['message' => 'First name and last name are required.'], 400);
         }
+        if ((string) ($payload['nationality'] ?? '') === '') {
+            wp_send_json_error(['message' => 'Nationality is required.'], 400);
+        }
+        if ((string) ($payload['role_type'] ?? '') === '') {
+            wp_send_json_error(['message' => 'Primary role is required.'], 400);
+        }
         $existing_user = wp_get_current_user();
         if ($existing_user && strcasecmp((string) $existing_user->user_email, $profile_email) !== 0) {
             $existing_email_user_id = (int) email_exists($profile_email);
@@ -81984,6 +82037,9 @@ p{margin:0;line-height:1.5}
         $candidate_status = get_post_meta($candidate_id, 'cmn_status', true);
         if ($candidate_status && $candidate_status !== 'approved') {
             wp_send_json_error(['message' => 'Candidate is not available.'], 400);
+        }
+        if (!$this->is_candidate_operationally_unlocked($candidate_id)) {
+            wp_send_json_error(['message' => 'Candidate has not completed required operational documents.'], 400);
         }
 
         $today_date = current_time('Y-m-d');
