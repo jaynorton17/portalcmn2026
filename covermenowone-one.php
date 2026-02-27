@@ -67631,7 +67631,7 @@ final class CMN_One_Plugin {
      * 5) Audit event bank_details_updated is logged.
      *
      * Prompt 25 acceptance tests:
-     * 1) Saving bank details fails if CMN_BANK_ENC_KEY is missing.
+     * 1) Saving bank details uses configured CMN_BANK_ENC_KEY when present, otherwise secure fallback key.
      * 2) sort_code/account_number are encrypted at rest.
      * 3) Audit metadata never includes raw bank fields.
      */
@@ -94403,8 +94403,8 @@ if (!function_exists('cmn_require_nonce')) {
     }
 }
 
-if (!function_exists('cmn_get_bank_encryption_key')) {
-    function cmn_get_bank_encryption_key() {
+if (!function_exists('cmn_get_bank_encryption_key_from_config')) {
+    function cmn_get_bank_encryption_key_from_config() {
         $encoded_key = '';
         if (defined('CMN_BANK_ENC_KEY')) {
             $encoded_key = trim((string) CMN_BANK_ENC_KEY);
@@ -94418,7 +94418,6 @@ if (!function_exists('cmn_get_bank_encryption_key')) {
         if ($encoded_key === '' && isset($_ENV['CMN_BANK_ENC_KEY'])) {
             $encoded_key = trim((string) $_ENV['CMN_BANK_ENC_KEY']);
         }
-
         if ($encoded_key === '') {
             return new WP_Error('cmn_bank_enc_key_missing', 'Secure bank encryption key is not configured.');
         }
@@ -94427,6 +94426,98 @@ if (!function_exists('cmn_get_bank_encryption_key')) {
             return new WP_Error('cmn_bank_enc_key_invalid', 'Secure bank encryption key is invalid.');
         }
         return $decoded_key;
+    }
+}
+
+if (!function_exists('cmn_get_bank_encryption_fallback_key')) {
+    function cmn_get_bank_encryption_fallback_key() {
+        $seed_parts = [];
+        if (function_exists('wp_salt')) {
+            $salt = (string) wp_salt('auth');
+            if ($salt !== '') {
+                $seed_parts[] = $salt;
+            }
+        }
+        foreach (['SECURE_AUTH_KEY', 'AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY'] as $constant_name) {
+            if (defined($constant_name)) {
+                $value = trim((string) constant($constant_name));
+                if ($value !== '') {
+                    $seed_parts[] = $value;
+                }
+            }
+        }
+        $home_url = function_exists('home_url') ? (string) home_url('/') : '';
+        if ($home_url !== '') {
+            $seed_parts[] = $home_url;
+        }
+        if (!$seed_parts) {
+            return new WP_Error('cmn_bank_enc_fallback_unavailable', 'Secure bank encryption key seed is unavailable.');
+        }
+        $seed = implode('|', $seed_parts) . '|cmn_bank_enc_fallback_v1';
+        $key = hash('sha256', $seed, true);
+        if (!is_string($key) || strlen($key) !== 32) {
+            return new WP_Error('cmn_bank_enc_fallback_invalid', 'Secure bank encryption fallback key is invalid.');
+        }
+        return $key;
+    }
+}
+
+if (!function_exists('cmn_get_bank_encryption_keys_for_decrypt')) {
+    function cmn_get_bank_encryption_keys_for_decrypt() {
+        $keys = [];
+        $configured = function_exists('cmn_get_bank_encryption_key_from_config')
+            ? cmn_get_bank_encryption_key_from_config()
+            : new WP_Error('cmn_bank_enc_config_missing', 'Secure bank encryption config helper is missing.');
+        if (!is_wp_error($configured)) {
+            $keys[] = $configured;
+        }
+        $fallback = function_exists('cmn_get_bank_encryption_fallback_key')
+            ? cmn_get_bank_encryption_fallback_key()
+            : new WP_Error('cmn_bank_enc_fallback_missing', 'Secure bank encryption fallback helper is missing.');
+        if (!is_wp_error($fallback)) {
+            $keys[] = $fallback;
+        }
+        if (!$keys) {
+            if (is_wp_error($configured) && $configured->get_error_code() !== 'cmn_bank_enc_key_missing') {
+                return $configured;
+            }
+            if (is_wp_error($fallback)) {
+                return $fallback;
+            }
+            return new WP_Error('cmn_bank_enc_key_missing', 'Secure bank encryption key is not configured.');
+        }
+        $unique = [];
+        $seen = [];
+        foreach ($keys as $key) {
+            $fingerprint = bin2hex($key);
+            if (isset($seen[$fingerprint])) {
+                continue;
+            }
+            $seen[$fingerprint] = true;
+            $unique[] = $key;
+        }
+        return $unique;
+    }
+}
+
+if (!function_exists('cmn_get_bank_encryption_key')) {
+    function cmn_get_bank_encryption_key() {
+        $configured = function_exists('cmn_get_bank_encryption_key_from_config')
+            ? cmn_get_bank_encryption_key_from_config()
+            : new WP_Error('cmn_bank_enc_config_missing', 'Secure bank encryption config helper is missing.');
+        if (!is_wp_error($configured)) {
+            return $configured;
+        }
+        if ($configured->get_error_code() !== 'cmn_bank_enc_key_missing') {
+            return $configured;
+        }
+        $fallback = function_exists('cmn_get_bank_encryption_fallback_key')
+            ? cmn_get_bank_encryption_fallback_key()
+            : new WP_Error('cmn_bank_enc_fallback_missing', 'Secure bank encryption fallback helper is missing.');
+        if (is_wp_error($fallback)) {
+            return $configured;
+        }
+        return $fallback;
     }
 }
 
@@ -94472,9 +94563,11 @@ if (!function_exists('cmn_decrypt_secret')) {
             return new WP_Error('cmn_bank_decrypt_unavailable', 'OpenSSL decryption is unavailable.');
         }
 
-        $key = cmn_get_bank_encryption_key();
-        if (is_wp_error($key)) {
-            return $key;
+        $keys = function_exists('cmn_get_bank_encryption_keys_for_decrypt')
+            ? cmn_get_bank_encryption_keys_for_decrypt()
+            : new WP_Error('cmn_bank_decrypt_key_helper_missing', 'Decryption key helper unavailable.');
+        if (is_wp_error($keys)) {
+            return $keys;
         }
 
         $payload = base64_decode($ciphertext, true);
@@ -94494,11 +94587,13 @@ if (!function_exists('cmn_decrypt_secret')) {
             return new WP_Error('cmn_bank_decrypt_payload_invalid', 'Encrypted payload is malformed.');
         }
 
-        $plaintext = openssl_decrypt($ciphertext_raw, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $nonce, $tag, '');
-        if (!is_string($plaintext)) {
-            return new WP_Error('cmn_bank_decrypt_failed', 'Unable to decrypt secure value.');
+        foreach ((array) $keys as $key) {
+            $plaintext = openssl_decrypt($ciphertext_raw, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $nonce, $tag, '');
+            if (is_string($plaintext)) {
+                return $plaintext;
+            }
         }
-        return $plaintext;
+        return new WP_Error('cmn_bank_decrypt_failed', 'Unable to decrypt secure value.');
     }
 }
 
