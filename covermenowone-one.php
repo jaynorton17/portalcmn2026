@@ -65651,9 +65651,6 @@ final class CMN_One_Plugin {
                                             <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
                                             <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                         </div>
-                                        <ul class="cmn-command-trust-list">
-                                            <li class="cmn-command-live-row <?php echo $contact_card_is_online_now ? 'is-ok is-live-state' : 'is-pending'; ?>" data-contact-card-live-row><?php echo esc_html($contact_card_is_online_now ? 'ONLINE NOW' : $contact_card_last_online_label); ?></li>
-                                        </ul>
                                         <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
                                         <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
                                             <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
@@ -65774,7 +65771,6 @@ final class CMN_One_Plugin {
                                                         <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-design-availability><?php echo esc_html($contact_card_availability_label); ?></span>
                                                         <span class="cmn-contact-card-preview-time" data-contact-card-design-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                                     </div>
-                                                    <div class="cmn-contact-card-design-presence <?php echo $contact_card_is_online_now ? 'is-live' : 'is-offline'; ?>" data-contact-card-design-presence><?php echo esc_html($contact_card_presence_preview_label); ?></div>
                                                     <div class="cmn-contact-card-preview-skills">
                                                         <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
                                                             <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
