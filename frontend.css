@@ -3829,10 +3829,17 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-main
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link {
-  display: block;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding-right: 18px;
   height: 100%;
   text-decoration: none;
   color: inherit;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link .cmn-command-card--dashboard {
+  width: 100%;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link:focus-visible {
@@ -3866,6 +3873,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-dashboard-liv
 @media (max-width: 1024px) {
   body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section1-grid {
     grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link {
+    padding-right: 0;
   }
 }
 
@@ -15347,74 +15358,90 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard {
   height: 100%;
   min-height: 0;
-  padding: 12px;
-  gap: 7px;
+  padding: 10px;
+  gap: 6px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-identity {
-  grid-template-columns: 50px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 7px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-photo-wrap {
-  width: 50px;
-  height: 50px;
+  width: 44px;
+  height: 44px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-brand {
+  font-size: 14px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-head-check {
+  font-size: 12px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-identity-main strong {
-  font-size: 20px;
+  font-size: 18px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-stars {
+  font-size: 14px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-score {
+  font-size: 10px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-state {
-  min-height: 32px;
-  font-size: 12px;
-  padding: 0 10px;
+  min-height: 28px;
+  font-size: 11px;
+  padding: 0 8px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-meta {
-  font-size: 11px;
-  gap: 4px;
-  padding: 7px 9px;
+  font-size: 10px;
+  gap: 3px;
+  padding: 6px 8px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list {
-  margin-top: 8px;
+  margin-top: 7px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li {
-  font-size: 11px;
-  padding: 7px 9px 7px 28px;
-  margin-bottom: 6px;
+  font-size: 10px;
+  padding: 6px 8px 6px 24px;
+  margin-bottom: 5px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li.cmn-command-live-row::before,
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li.cmn-command-live-row.is-live-state::after {
-  left: 9px;
-  width: 9px;
-  height: 9px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-strengths-title {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-skills {
-  gap: 6px;
+  gap: 5px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-skill-chip {
-  min-height: 24px;
-  padding: 0 8px;
-  font-size: 10px;
+  min-height: 22px;
+  padding: 0 7px;
+  font-size: 9px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-actions {
-  gap: 6px;
+  gap: 5px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-actions :is(.cmn-ghost, .cmn-primary) {
-  min-height: 30px;
-  font-size: 11px;
+  min-height: 28px;
+  font-size: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
