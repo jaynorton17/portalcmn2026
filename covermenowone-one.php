@@ -66472,8 +66472,10 @@ final class CMN_One_Plugin {
                                     <div class="cmn-candidate-section4-carousel-track" data-candidate-section4-track>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
                                             <h4>Latest News</h4>
-                                            <strong class="cmn-candidate-section4-highlight">COVERMENOW Latest News</strong>
-                                            <p>Latest candidate updates and announcements will appear here.</p>
+                                            <strong class="cmn-candidate-section4-highlight">LEARNING CENTER IS NOW LIVE!</strong>
+                                            <div class="cmn-candidate-news-card-media">
+                                                <img class="cmn-candidate-news-card-image" src="<?php echo esc_url(plugin_dir_url(__FILE__) . 'assets/latest-news.png'); ?>" alt="Learning Center is now live">
+                                            </div>
                                         </section>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
                                             <h4>Contact Card</h4>
