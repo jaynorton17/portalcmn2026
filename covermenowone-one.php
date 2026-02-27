@@ -65536,15 +65536,7 @@ final class CMN_One_Plugin {
                                 ? ('Active Today - ' . $contact_card_button_time_label)
                                 : 'Active Today';
                             $contact_card_status_detail = $contact_card_show_available ? $contact_card_status_available_detail : $contact_card_status_pending_detail;
-                            $contact_card_reliability_score = (int) round(($contact_card_profile_completion_pct * 0.5)
-                                + ($contact_card_id_verified ? 15 : 0)
-                                + ($contact_card_dbs_verified ? 15 : 0)
-                                + ($contact_card_compliance_complete ? 10 : 0)
-                                + ($contact_card_show_available ? 10 : 0));
-                            if ($feedback_has_reviews) {
-                                $contact_card_reliability_score += (int) round(max(0, min(10, $feedback_score_raw * 2)));
-                            }
-                            $contact_card_reliability_score = max(30, min(99, $contact_card_reliability_score));
+                            $contact_card_verified_bundle = $contact_card_id_verified && $contact_card_dbs_verified;
                             $contact_card_other_checked = $saved_contact_card_custom_skill !== '';
                             ?>
                             <div class="cmn-contact-card-tab-grid" id="cmn-profile-contact-card" data-profile-contact-card<?php echo $profile_focus_tab === 'contact_card' ? '' : ' hidden'; ?>>
@@ -65585,19 +65577,13 @@ final class CMN_One_Plugin {
                                             <span data-contact-card-preview-distance>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
                                         </div>
                                         <div class="cmn-command-status-wrap">
-                                            <span class="cmn-command-live-indicator" data-contact-card-preview-live-indicator<?php echo $contact_card_show_available ? '' : ' hidden'; ?>><span class="cmn-command-live-dot" aria-hidden="true"></span>ONLINE NOW</span>
                                             <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
                                             <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                         </div>
-                                        <div class="cmn-command-reliability">
-                                            <span>Reliability Score: <strong><?php echo esc_html((string) $contact_card_reliability_score); ?>%</strong></span>
-                                            <div class="cmn-command-reliability-bar" aria-hidden="true"><span style="width: <?php echo esc_attr((string) $contact_card_reliability_score); ?>%;"></span></div>
-                                        </div>
                                         <ul class="cmn-command-trust-list">
-                                            <li class="<?php echo $contact_card_id_verified ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_id_verified ? 'ID Verified' : 'ID Verification Pending'; ?></li>
-                                            <li class="<?php echo $contact_card_dbs_verified ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_dbs_verified ? 'DBS Verified' : 'DBS Verification Pending'; ?></li>
-                                            <li class="<?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_compliance_complete ? 'Compliance Complete' : 'Compliance In Progress'; ?></li>
-                                            <li class="<?php echo $contact_card_profile_completion_pct >= 90 ? 'is-ok' : 'is-pending'; ?>">Profile <?php echo esc_html((string) $contact_card_profile_completion_pct); ?>% Complete</li>
+                                            <li class="<?php echo $contact_card_verified_bundle ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_verified_bundle ? 'ID & DBS Verified' : 'ID / DBS Verification Pending'; ?></li>
+                                            <li class="<?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>"><?php echo $contact_card_compliance_complete ? 'Fully Compliant' : 'Compliance In Progress'; ?></li>
+                                            <li class="cmn-command-live-row <?php echo $contact_card_show_available ? 'is-ok is-live-state' : 'is-pending'; ?>"><?php echo $contact_card_show_available ? 'Online Now' : 'Offline'; ?></li>
                                         </ul>
                                         <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
                                         <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>

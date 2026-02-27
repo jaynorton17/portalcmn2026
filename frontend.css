@@ -15017,32 +15017,6 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stat
   content: '\2713';
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-live-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(16, 185, 129, 0.42);
-  background: linear-gradient(90deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.08));
-  color: rgba(134, 239, 172, 0.98);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-live-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.88);
-  animation: cmnContactCardPulse 2s infinite;
-}
-
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-time {
   color: rgba(203, 213, 225, 0.86);
   font-size: 12px;
@@ -15103,6 +15077,26 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li::be
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.is-pending::before {
   content: '!';
   color: #facc15;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn-command-live-row {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn-command-live-row::before {
+  content: '';
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn-command-live-row.is-live-state::before {
+  animation: cmnContactCardPulse 2s infinite;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-strengths-title {

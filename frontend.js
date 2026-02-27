@@ -9895,7 +9895,6 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardPreviewAvailability = document.querySelector('[data-contact-card-preview-availability]');
       var contactCardPreviewTime = document.querySelector('[data-contact-card-preview-time]');
       var contactCardPreviewCard = document.querySelector('[data-contact-card-preview]');
-      var contactCardPreviewLiveIndicator = document.querySelector('[data-contact-card-preview-live-indicator]');
       var contactCardBusy = false;
       var contactCardDefaultSkills = [];
       var contactCardInitialSkills = [];
@@ -9950,9 +9949,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (contactCardPreviewCard) {
           contactCardPreviewCard.classList.toggle('is-live', isAvailable);
-        }
-        if (contactCardPreviewLiveIndicator) {
-          contactCardPreviewLiveIndicator.hidden = !isAvailable;
         }
         if (contactCardPreviewTime) {
           var statusDetail = isAvailable
