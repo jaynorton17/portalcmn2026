@@ -13581,6 +13581,11 @@ body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main 
   color: rgba(233, 238, 247, 0.74) !important;
 }
 
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main .cmn-candidate-weekly-earnings-range.cmn-muted {
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
 body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main :is(
   .cmn-primary,
   .cmn-btn-primary,
