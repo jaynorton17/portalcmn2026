@@ -2964,8 +2964,16 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 16px;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-card-header h3 {
+  margin: 0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 .cmn-candidate-weekly-earnings-card .cmn-candidate-weekly-earnings-notes {
+  margin-top: auto;
 }
 
 @media (max-width: 720px) {
