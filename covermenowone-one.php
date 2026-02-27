@@ -65452,7 +65452,11 @@ final class CMN_One_Plugin {
                         if (!is_array($learning_course_results)) {
                             $learning_course_results = [];
                         }
-                        $learning_study_icon_url = plugin_dir_url(__FILE__) . 'assets/courses.png';
+                        $learning_study_icon_file = plugin_dir_path(__FILE__) . 'assets/learning/safeguarding/module-icon.png';
+                        $learning_study_icon_url = plugin_dir_url(__FILE__) . 'assets/learning/safeguarding/module-icon.png';
+                        if (!file_exists($learning_study_icon_file)) {
+                            $learning_study_icon_url = plugin_dir_url(__FILE__) . 'assets/courses.png';
+                        }
                         ?>
                         <?php if ($learning_focus === 'landing') : ?>
                             <header class="cmn-candidate-header" data-tour-target="learning-centre">
@@ -65570,6 +65574,7 @@ final class CMN_One_Plugin {
                                             $module_description = sanitize_textarea_field((string) ($module_item['description'] ?? ''));
                                             $module_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($module_item['course_keys'] ?? []))));
                                             $module_hover_details = array_values(array_filter(array_map('sanitize_text_field', (array) ($module_item['hover_details'] ?? []))));
+                                            $module_icon_url = esc_url_raw((string) ($module_item['icon_url'] ?? $learning_study_icon_url));
                                             $is_coming_soon = !empty($module_item['coming_soon']);
                                             $is_selected_module = $learning_open_module_key !== '' && $learning_open_module_key === $module_key;
                                             ?>
@@ -65583,7 +65588,10 @@ final class CMN_One_Plugin {
                                                 <p><?php echo esc_html($module_description); ?></p>
                                                 <?php if ($module_hover_details) : ?>
                                                     <div class="cmn-learning-module-hover" aria-hidden="true">
-                                                        <strong>Includes:</strong>
+                                                        <div class="cmn-learning-module-hover-head">
+                                                            <img class="cmn-learning-module-hover-icon" src="<?php echo esc_url($module_icon_url); ?>" alt="Course module icon">
+                                                            <strong>Includes:</strong>
+                                                        </div>
                                                         <ul>
                                                             <?php foreach ($module_hover_details as $module_detail) : ?>
                                                                 <li><?php echo esc_html($module_detail); ?></li>

@@ -1319,6 +1319,21 @@ body.cmn-portal-page img[src*="fasthosts"] {
   color: #f8fafc;
 }
 
+.cmn-learning-module-hover-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cmn-learning-module-hover-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+}
+
 .cmn-learning-module-hover ul {
   margin: 0;
   padding-left: 16px;
