@@ -13207,9 +13207,9 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-strip {
   grid-template-columns: 1fr;
   gap: 16px;
   align-items: start;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
-  background: #0d1118;
+  background: #10151d;
   padding: 14px;
   margin-bottom: 16px;
 }
