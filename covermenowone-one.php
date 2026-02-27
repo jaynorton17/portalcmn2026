@@ -65668,6 +65668,23 @@ final class CMN_One_Plugin {
                                             </article>
                                             <?php $learning_module_order++; ?>
                                         <?php endforeach; ?>
+                                        <article class="cmn-learning-module-tile cmn-learning-module-recommend" data-learning-recommend-card>
+                                            <div class="cmn-learning-module-card-head">
+                                                <div class="cmn-learning-module-tile-icon-wrap">
+                                                    <img class="cmn-learning-module-tile-icon" src="<?php echo esc_url($learning_study_icon_url); ?>" alt="Recommend subject">
+                                                </div>
+                                                <h4 class="cmn-module-title">Recommend a subject</h4>
+                                                <p class="cmn-module-desc">Tell us which subject you want added next. We send it straight into support via live chat.</p>
+                                            </div>
+                                            <div class="cmn-learning-module-meta">
+                                                <span class="cmn-chip">Live chat request</span>
+                                                <span class="cmn-chip">Product feedback</span>
+                                            </div>
+                                            <div class="cmn-learning-module-footer">
+                                                <span class="cmn-learning-module-learn-link is-disabled">Helps shape future courses</span>
+                                                <button class="cmn-learning-module-open" type="button" data-learning-open-subject-modal>Recommend now</button>
+                                            </div>
+                                        </article>
                                     </div>
                                     <div class="cmn-learning-module-empty" data-learning-module-empty hidden>No courses match your search filters.</div>
                                 </article>
@@ -65824,6 +65841,29 @@ final class CMN_One_Plugin {
                                             <button class="cmn-learning-outcomes-modal__close" type="button" data-learning-outcomes-close aria-label="Close what you'll learn panel">Close</button>
                                         </div>
                                         <ul class="cmn-learning-outcomes-modal__list" data-learning-outcomes-list></ul>
+                                    </div>
+                                </div>
+                                <div class="cmn-learning-subject-modal" data-learning-subject-modal hidden>
+                                    <div class="cmn-learning-subject-modal__backdrop" data-learning-subject-close></div>
+                                    <div class="cmn-learning-subject-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="cmn-learning-subject-title">
+                                        <div class="cmn-learning-subject-modal__head">
+                                            <h4 id="cmn-learning-subject-title">Recommend a subject</h4>
+                                            <button class="cmn-learning-subject-modal__close" type="button" data-learning-subject-close aria-label="Close recommend subject form">Close</button>
+                                        </div>
+                                        <p class="cmn-muted">Share the subject you want next. We send this directly into support as a live chat ticket.</p>
+                                        <form class="cmn-learning-subject-form" data-learning-subject-form>
+                                            <label>Subject name
+                                                <input type="text" name="subject_name" maxlength="120" required placeholder="e.g. SEN classroom transitions">
+                                            </label>
+                                            <label>Why should we add it?
+                                                <textarea name="subject_reason" rows="5" maxlength="1200" required placeholder="Tell us the scenario, role, or school need this would solve."></textarea>
+                                            </label>
+                                            <div class="cmn-learning-subject-form__msg" data-learning-subject-msg aria-live="polite"></div>
+                                            <div class="cmn-learning-subject-form__actions">
+                                                <button class="cmn-primary" type="submit" data-learning-subject-submit>Submit recommendation</button>
+                                                <button class="cmn-ghost" type="button" data-learning-subject-close>Cancel</button>
+                                            </div>
+                                        </form>
                                     </div>
                                 </div>
                             </div>

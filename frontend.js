@@ -10335,6 +10335,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       var moduleList = learningRoot.querySelector('.cmn-learning-module-list');
       var moduleCards = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-module-card]'));
+      var recommendationCard = learningRoot.querySelector('[data-learning-recommend-card]');
       var moduleButtons = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-open-module]'));
       var learningButtons = learningRoot.querySelectorAll('[data-learning-open-course]');
       var courseCards = learningRoot.querySelectorAll('[data-learning-course-card]');
@@ -10347,6 +10348,12 @@ document.addEventListener('DOMContentLoaded', function () {
       var outcomesModalList = learningRoot.querySelector('[data-learning-outcomes-list]');
       var outcomesOpenTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-open-outcomes]'));
       var outcomesCloseTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-outcomes-close]'));
+      var subjectModal = learningRoot.querySelector('[data-learning-subject-modal]');
+      var subjectModalOpenBtn = learningRoot.querySelector('[data-learning-open-subject-modal]');
+      var subjectModalCloseTriggers = Array.prototype.slice.call(learningRoot.querySelectorAll('[data-learning-subject-close]'));
+      var subjectForm = learningRoot.querySelector('[data-learning-subject-form]');
+      var subjectFormMsg = learningRoot.querySelector('[data-learning-subject-msg]');
+      var subjectSubmitBtn = learningRoot.querySelector('[data-learning-subject-submit]');
       var coursesTitle = learningRoot.querySelector('[data-learning-courses-title]');
       var courseEmptyState = learningRoot.querySelector('[data-learning-course-empty]');
       var isCoursePassed = function (courseKey) {
@@ -10523,6 +10530,107 @@ document.addEventListener('DOMContentLoaded', function () {
         outcomesModal.hidden = true;
       };
 
+      var setSubjectFormMessage = function (message, level) {
+        if (!subjectFormMsg) {
+          return;
+        }
+        subjectFormMsg.classList.remove('is-success', 'is-error');
+        if (level === 'success') {
+          subjectFormMsg.classList.add('is-success');
+        } else if (level === 'error') {
+          subjectFormMsg.classList.add('is-error');
+        }
+        subjectFormMsg.textContent = String(message || '');
+      };
+
+      var closeSubjectModal = function () {
+        if (!subjectModal) {
+          return;
+        }
+        subjectModal.hidden = true;
+      };
+
+      var openSubjectModal = function () {
+        if (!subjectModal) {
+          return;
+        }
+        subjectModal.hidden = false;
+        setSubjectFormMessage('', '');
+        if (subjectForm) {
+          var input = subjectForm.querySelector('input[name="subject_name"]');
+          if (input) {
+            input.focus();
+          }
+        }
+      };
+
+      var submitLearningSubjectSuggestion = function (subjectName, subjectReason) {
+        var suggestionMessage = [
+          'Learning Center subject recommendation',
+          '',
+          'Requested subject: ' + subjectName,
+          'Reason: ' + subjectReason
+        ].join('\n');
+
+        if (window.cmnLiveChat && window.cmnLiveChat.ajaxUrl && window.cmnLiveChat.nonce) {
+          var livechatCtx = (window.cmnLiveChat.userContext && typeof window.cmnLiveChat.userContext === 'object')
+            ? window.cmnLiveChat.userContext
+            : {};
+          var livechatName = String(livechatCtx.name || candidateName || 'Candidate');
+          var livechatEmail = String(livechatCtx.email || '');
+          var livechatType = String(livechatCtx.userType || 'candidate');
+          var livechatForm = new FormData();
+          livechatForm.append('action', 'cmn_livechat_start');
+          livechatForm.append('nonce', window.cmnLiveChat.nonce);
+          livechatForm.append('user_type', livechatType);
+          livechatForm.append('name', livechatName);
+          livechatForm.append('email', livechatEmail);
+          livechatForm.append('message', suggestionMessage);
+          return fetch(window.cmnLiveChat.ajaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: livechatForm
+          }).then(function (response) {
+            return response.json();
+          }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              throw new Error(data && data.data && data.data.message ? data.data.message : 'Unable to submit recommendation.');
+            }
+            return {
+              channel: 'livechat',
+              ticketRef: String(data.data.ticket_ref || '')
+            };
+          });
+        }
+
+        if (window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.supportNonce) {
+          var supportForm = new FormData();
+          supportForm.append('action', 'cmn_support_create_ticket');
+          supportForm.append('nonce', window.cmnPortal.supportNonce);
+          supportForm.append('category', 'General Enquiry');
+          supportForm.append('subject', 'Learning subject recommendation: ' + subjectName);
+          supportForm.append('message', suggestionMessage);
+          return fetch(window.cmnPortal.ajaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: supportForm
+          }).then(function (response) {
+            return response.json();
+          }).then(function (data) {
+            if (!data || !data.success || !data.data) {
+              throw new Error(data && data.data && data.data.message ? data.data.message : 'Unable to submit recommendation.');
+            }
+            var ticket = (data.data.ticket && typeof data.data.ticket === 'object') ? data.data.ticket : {};
+            return {
+              channel: 'support',
+              ticketRef: String(ticket.ref || '')
+            };
+          });
+        }
+
+        return Promise.reject(new Error('Support submission is not available right now.'));
+      };
+
       var openOutcomesModal = function (moduleCard) {
         if (!outcomesModal || !moduleCard || !outcomesModalList) {
           return;
@@ -10597,6 +10705,9 @@ document.addEventListener('DOMContentLoaded', function () {
           visibleCards.forEach(function (card) {
             moduleList.appendChild(card);
           });
+          if (recommendationCard) {
+            moduleList.appendChild(recommendationCard);
+          }
         }
 
         if (moduleEmptyState) {
@@ -10912,11 +11023,69 @@ document.addEventListener('DOMContentLoaded', function () {
           closeOutcomesModal();
         });
       });
+      if (subjectModalOpenBtn) {
+        subjectModalOpenBtn.addEventListener('click', function (event) {
+          event.preventDefault();
+          openSubjectModal();
+        });
+      }
+      subjectModalCloseTriggers.forEach(function (trigger) {
+        trigger.addEventListener('click', function (event) {
+          event.preventDefault();
+          closeSubjectModal();
+        });
+      });
       document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') {
           closeOutcomesModal();
+          closeSubjectModal();
         }
       });
+      if (subjectForm) {
+        subjectForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var subjectNameField = subjectForm.querySelector('input[name="subject_name"]');
+          var subjectReasonField = subjectForm.querySelector('textarea[name="subject_reason"]');
+          var subjectName = subjectNameField ? String(subjectNameField.value || '').trim() : '';
+          var subjectReason = subjectReasonField ? String(subjectReasonField.value || '').trim() : '';
+
+          if (subjectName === '' || subjectReason === '') {
+            setSubjectFormMessage('Please enter a subject and reason.', 'error');
+            return;
+          }
+          if (subjectReason.length < 10) {
+            setSubjectFormMessage('Please provide a little more detail so support can action it.', 'error');
+            return;
+          }
+
+          if (subjectSubmitBtn) {
+            subjectSubmitBtn.disabled = true;
+          }
+          setSubjectFormMessage('Submitting recommendation...', '');
+
+          submitLearningSubjectSuggestion(subjectName, subjectReason)
+            .then(function (result) {
+              var ticketRef = result && result.ticketRef ? String(result.ticketRef) : '';
+              if (result && result.channel === 'livechat') {
+                setSubjectFormMessage('Recommendation sent via live chat' + (ticketRef ? (' (' + ticketRef + ')') : '') + '.', 'success');
+              } else {
+                setSubjectFormMessage('Recommendation sent to support' + (ticketRef ? (' (' + ticketRef + ')') : '') + '.', 'success');
+              }
+              subjectForm.reset();
+              window.setTimeout(function () {
+                closeSubjectModal();
+              }, 900);
+            })
+            .catch(function (error) {
+              setSubjectFormMessage(error && error.message ? error.message : 'Unable to submit recommendation right now.', 'error');
+            })
+            .finally(function () {
+              if (subjectSubmitBtn) {
+                subjectSubmitBtn.disabled = false;
+              }
+            });
+        });
+      }
       if (moduleSearchInput) {
         moduleSearchInput.addEventListener('input', applyModuleTools);
       }
