@@ -15203,8 +15203,8 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
 }
 
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state::before {
-  content: '!';
-  margin-right: 10px;
+  content: '';
+  margin-right: 0;
   font-size: 14px;
   line-height: 1;
 }
@@ -15212,7 +15212,7 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-pending {
   background: linear-gradient(180deg, #facc15, #eab308);
   border-color: #fbbf24;
-  color: #0b1119;
+  color: #000000;
 }
 
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-available {
@@ -15231,6 +15231,7 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
 
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-available::before {
   content: '\2713';
+  margin-right: 10px;
 }
 
 body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-time {
