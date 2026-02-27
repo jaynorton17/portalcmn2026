@@ -13036,11 +13036,27 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-p
   -webkit-backdrop-filter: none !important;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-profile > #cmn-profile-personal[data-profile-personal-card] {
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-profile > .cmn-profile-personal-shell {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;
   padding: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-profile > .cmn-profile-personal-shell::before,
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-profile > .cmn-profile-personal-shell::after {
+  content: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: none !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-toprow {

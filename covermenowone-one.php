@@ -64924,7 +64924,7 @@ final class CMN_One_Plugin {
                             </div>
                         </div>
                         <div class="cmn-profile-grid cmn-profile-grid--candidate-profile" data-profile-root>
-                            <div class="cmn-dashboard-card" id="cmn-profile-personal" data-profile-personal-card<?php echo $profile_focus_tab === 'documents' ? ' hidden' : ''; ?>>
+                            <div class="cmn-profile-personal-shell" id="cmn-profile-personal" data-profile-personal-card<?php echo $profile_focus_tab === 'documents' ? ' hidden' : ''; ?>>
                                 <div class="cmn-card-header">
                                     <h3>Profile Details</h3>
                                 </div>
