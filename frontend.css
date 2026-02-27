@@ -14830,8 +14830,8 @@ body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-row {
 }
 
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-row > .cmn-dashboard-card {
-  min-height: 0 !important;
-  height: auto !important;
+  min-height: 100% !important;
+  height: 100% !important;
   overflow: visible !important;
 }
 
