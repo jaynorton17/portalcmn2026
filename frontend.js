@@ -9964,6 +9964,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (contactCardAvailabilityToggle) {
           contactCardAvailabilityToggle.checked = isAvailable;
         }
+        if (contactCardPreviewCard) {
+          contactCardPreviewCard.classList.toggle('is-bookable', isAvailable);
+          contactCardPreviewCard.classList.toggle('is-pending-confirmation', !isAvailable);
+        }
         if (contactCardPreviewAvailability) {
           contactCardPreviewAvailability.classList.remove('is-available', 'is-pending');
           contactCardPreviewAvailability.classList.add(isAvailable ? 'is-available' : 'is-pending');
@@ -12634,11 +12638,13 @@ document.addEventListener('DOMContentLoaded', function () {
       var isOnlineNow = String(item.is_physically_online || '0') === '1' || item.is_physically_online === 1 || item.is_physically_online === true;
       var presenceLabel = isOnlineNow ? 'ONLINE NOW' : String(item.presence_label || 'Last seen at --:--');
       var ratingLabel = String(item.rating_label || (Number(item.rating || 0).toFixed(2) + ' out of 5 stars'));
+      var isBookable = item.status === 'available';
+      var cardStateClass = isBookable ? ' is-bookable' : ' is-pending-confirmation';
       var banner = item.status === 'available'
         ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' + (item.confirmed_at || '--:--') + '</small></div>'
         : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
       var distanceText = resolveDistanceText(item.distance);
-      return '<article class="cmn-live-card" data-candidate-id="'+item.candidate_id+'">'
+      return '<article class="cmn-live-card'+cardStateClass+'" data-candidate-id="'+item.candidate_id+'">'
         + '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
         + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-rating">'+ratingLabel+'</div></div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
         + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'

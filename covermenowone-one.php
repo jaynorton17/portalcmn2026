@@ -60949,6 +60949,47 @@ final class CMN_One_Plugin {
         update_user_meta($user_id, $meta_key, '1');
     }
 
+    private function maybe_send_post_login_availability_nudge($user_id, $candidate_id, $target_date, $target_label, $window_is_open, $already_marked, $calendar_blocked, $is_online_now) {
+        $user_id = (int) $user_id;
+        $candidate_id = (int) $candidate_id;
+        $target_date = sanitize_text_field((string) $target_date);
+        $target_label = sanitize_text_field((string) $target_label);
+        if (
+            $user_id < 1
+            || $candidate_id < 1
+            || !$this->is_candidate_user($user_id)
+            || $target_date === ''
+            || !$window_is_open
+            || $already_marked
+            || $calendar_blocked
+            || !$is_online_now
+        ) {
+            return;
+        }
+
+        $last_login = (int) get_user_meta($user_id, 'cmn_last_login', true);
+        if ($last_login < 1) {
+            return;
+        }
+
+        $nudge_meta_key = 'cmn_post_login_availability_nudge_login_ts';
+        $nudge_login_ts = (int) get_user_meta($user_id, $nudge_meta_key, true);
+        if ($nudge_login_ts === $last_login) {
+            return;
+        }
+
+        $dashboard_link = add_query_arg(['candidate' => 'dashboard'], $this->get_portal_base_url());
+        $message = 'You are online now. Confirm your availability for ' . $target_label . '.';
+        $this->add_notification(
+            $user_id,
+            'candidate_availability_nudge',
+            'Availability reminder',
+            $message,
+            $dashboard_link
+        );
+        update_user_meta($user_id, $nudge_meta_key, (string) $last_login);
+    }
+
     private function normalize_location_for_match($value) {
         $value = strtolower(trim((string) $value));
         $value = preg_replace('/[^a-z0-9,\s]/', ' ', $value);
@@ -64565,6 +64606,19 @@ final class CMN_One_Plugin {
         if ($contact_card_last_online_label === '') {
             $contact_card_last_online_label = 'Last seen at --:--';
         }
+        $availability_target_label = date_i18n('l, F jS', strtotime($target_date));
+        if (!$is_preview && $candidate_user_id > 0 && $candidate_id > 0) {
+            $this->maybe_send_post_login_availability_nudge(
+                $candidate_user_id,
+                $candidate_id,
+                $target_date,
+                $availability_target_label,
+                $availability_allowed,
+                $already_marked,
+                $calendar_blocked,
+                $contact_card_is_online_now
+            );
+        }
 
         $calendar_window_start = (clone $now)->modify('+1 day');
         $calendar_window_end = (clone $calendar_window_start)->modify('+30 days');
@@ -65556,7 +65610,7 @@ final class CMN_One_Plugin {
                                             </label>
                                         </div>
                                     </div>
-                                    <div class="cmn-contact-card-preview cmn-command-card<?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-contact-card-preview data-contact-card-is-online="<?php echo $contact_card_is_online_now ? '1' : '0'; ?>">
+                                    <div class="cmn-contact-card-preview cmn-command-card <?php echo $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation'; ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-contact-card-preview data-contact-card-is-online="<?php echo $contact_card_is_online_now ? '1' : '0'; ?>">
                                         <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                         <div class="cmn-command-card-head">
                                             <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
@@ -76004,7 +76058,8 @@ final class CMN_One_Plugin {
                 ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
                 : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
             $presence_html = '<div class="cmn-live-presence' . ($is_physically_online ? ' is-live' : '') . '"><span class="cmn-live-presence-dot" aria-hidden="true"></span>' . esc_html($is_physically_online ? 'ONLINE NOW' : $presence_label) . '</div>';
-            return '<article class="cmn-live-card" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
+            $card_state_class = $status === 'available' ? ' is-bookable' : ' is-pending-confirmation';
+            return '<article class="cmn-live-card' . esc_attr($card_state_class) . '" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
                 . '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
                 . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div><div class="cmn-live-rating">' . esc_html($rating_label) . '</div></div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
                 . $presence_html
