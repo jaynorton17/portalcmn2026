@@ -9278,6 +9278,189 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     };
 
+    var profileSummaryStrip = document.querySelector('[data-profile-summary-strip]');
+    var profileSummaryName = document.querySelector('[data-profile-summary-name]');
+    var profileSummaryRole = document.querySelector('[data-profile-summary-role]');
+    var profileSummaryLocation = document.querySelector('[data-profile-summary-location]');
+    var profileAdminStatus = document.querySelector('[data-profile-admin-status]');
+    var profileAdminStatusText = document.querySelector('[data-profile-admin-status-text]');
+    var profileAdminTooltip = document.querySelector('[data-profile-admin-tooltip]');
+    var profileAdminMissing = document.querySelector('[data-profile-admin-missing]');
+    var profilePersonalUrl = profileSummaryStrip ? String(profileSummaryStrip.getAttribute('data-profile-personal-url') || '') : '';
+    var profileDocumentsUrl = profileSummaryStrip ? String(profileSummaryStrip.getAttribute('data-profile-documents-url') || '') : '';
+
+    var toShortDay = function (dayLabel) {
+      var source = String(dayLabel || '').trim();
+      if (!source) {
+        return '';
+      }
+      return source.slice(0, 3);
+    };
+
+    var formatTravelRadius = function (radiusValue, locationValue) {
+      var radiusText = String(radiusValue || '').trim();
+      var locationText = String(locationValue || '').trim();
+      if (!radiusText) {
+        return 'Not set';
+      }
+      if (/^\d+(\.\d+)?$/.test(radiusText)) {
+        var numeric = parseFloat(radiusText);
+        var clean = Number.isFinite(numeric) ? String(numeric).replace(/\.0+$/, '') : radiusText;
+        return clean + ' mile radius' + (locationText ? (' around ' + locationText) : '');
+      }
+      if (radiusText.toLowerCase().indexOf('mile') === -1) {
+        return radiusText + ' mile radius';
+      }
+      return radiusText;
+    };
+
+    var resolveStatusClass = function (value) {
+      var normalized = String(value || '').trim().toLowerCase();
+      if (!normalized || normalized === 'not set') {
+        return 'is-unknown';
+      }
+      if (normalized === 'yes' || normalized === 'held') {
+        return 'is-yes';
+      }
+      if (normalized === 'no' || normalized === 'not held') {
+        return 'is-no';
+      }
+      return 'is-unknown';
+    };
+
+    var applyStatusPill = function (node, value, copy) {
+      if (!node) {
+        return;
+      }
+      var defaults = copy || {};
+      var normalized = String(value || '').trim().toLowerCase();
+      var text = defaults.unknownText || 'Not set';
+      if (normalized === 'yes') {
+        text = defaults.yesText || 'Yes';
+      } else if (normalized === 'no') {
+        text = defaults.noText || 'No';
+      } else if (normalized === 'held') {
+        text = defaults.yesText || 'Held';
+      } else if (normalized === 'not held') {
+        text = defaults.noText || 'Not Held';
+      } else if (normalized === 'not set' || normalized === '') {
+        text = defaults.unknownText || 'Not set';
+      }
+      node.classList.remove('is-yes', 'is-no', 'is-unknown');
+      node.classList.add(resolveStatusClass(text));
+      node.textContent = text;
+    };
+
+    var renderAvailabilityDays = function (node, days) {
+      if (!node) {
+        return;
+      }
+      var list = Array.isArray(days) ? days : [];
+      if (!list.length && typeof days === 'string' && days.trim()) {
+        list = days.split(',');
+      }
+      var shortDays = list
+        .map(function (item) { return toShortDay(item); })
+        .filter(function (item) { return !!item; })
+        .filter(function (item, index, arr) { return arr.indexOf(item) === index; });
+      node.innerHTML = '';
+      if (!shortDays.length) {
+        var emptyEl = document.createElement('span');
+        emptyEl.className = 'cmn-profile-day-empty';
+        emptyEl.textContent = 'Not set';
+        node.appendChild(emptyEl);
+        return;
+      }
+      shortDays.forEach(function (dayLabel) {
+        var badge = document.createElement('span');
+        badge.className = 'cmn-profile-day-badge';
+        badge.textContent = dayLabel;
+        node.appendChild(badge);
+      });
+    };
+
+    var mapMissingItemToLink = function (rawItem) {
+      var item = String(rawItem || '').trim();
+      if (!item) {
+        return null;
+      }
+      var key = item.toLowerCase();
+      var map = {
+        'add first name': { label: 'First name', url: profilePersonalUrl },
+        'add last name': { label: 'Last name', url: profilePersonalUrl },
+        'add email address': { label: 'Email', url: profilePersonalUrl },
+        'add phone number': { label: 'Phone', url: profilePersonalUrl },
+        'add nationality': { label: 'Nationality', url: profilePersonalUrl },
+        'select role type': { label: 'Role type', url: profilePersonalUrl },
+        'set travel radius': { label: 'Travel radius', url: profilePersonalUrl },
+        'add location': { label: 'Location', url: profilePersonalUrl },
+        'answer driving licence': { label: 'Driving licence', url: profilePersonalUrl },
+        'answer own vehicle': { label: 'Own vehicle', url: profilePersonalUrl },
+        'set qts status': { label: 'QTS', url: profilePersonalUrl },
+        'upload cv': { label: 'CV', url: profileDocumentsUrl || profilePersonalUrl },
+        'upload dbs': { label: 'DBS', url: profileDocumentsUrl || profilePersonalUrl },
+        'upload photo id': { label: 'Photo ID', url: profileDocumentsUrl || profilePersonalUrl }
+      };
+      if (map[key]) {
+        return map[key];
+      }
+      var words = item.replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).filter(function (word) { return !!word; });
+      var fallbackLabel = words.length ? words.slice(0, 2).join(' ') : 'Update details';
+      return {
+        label: fallbackLabel.charAt(0).toUpperCase() + fallbackLabel.slice(1).toLowerCase(),
+        url: profilePersonalUrl || window.location.href
+      };
+    };
+
+    var renderAdminMissingLinks = function (missingItems) {
+      if (!profileAdminMissing) {
+        return;
+      }
+      profileAdminMissing.innerHTML = '';
+      var links = (Array.isArray(missingItems) ? missingItems : [])
+        .map(mapMissingItemToLink)
+        .filter(function (item) { return !!item; });
+      if (!links.length) {
+        var fallback = document.createElement('li');
+        var fallbackAnchor = document.createElement('a');
+        fallbackAnchor.href = profilePersonalUrl || window.location.href;
+        fallbackAnchor.textContent = 'Update profile details';
+        fallback.appendChild(fallbackAnchor);
+        profileAdminMissing.appendChild(fallback);
+        return;
+      }
+      var seen = {};
+      links.forEach(function (item) {
+        var key = String(item.label || '') + '|' + String(item.url || '');
+        if (!item.label || !item.url || seen[key]) {
+          return;
+        }
+        seen[key] = true;
+        var li = document.createElement('li');
+        var anchor = document.createElement('a');
+        anchor.href = String(item.url);
+        anchor.textContent = String(item.label);
+        li.appendChild(anchor);
+        profileAdminMissing.appendChild(li);
+      });
+    };
+
+    var applyAdminStatus = function (pct, missingItems) {
+      if (!profileAdminStatus || !profileAdminStatusText || !profileAdminTooltip) {
+        return;
+      }
+      var percent = typeof pct === 'number' ? pct : 0;
+      var missing = Array.isArray(missingItems) ? missingItems.filter(function (item) { return !!item; }) : [];
+      var verified = percent >= 100 && missing.length === 0;
+      profileAdminStatus.classList.toggle('is-verified', verified);
+      profileAdminStatus.classList.toggle('is-pending', !verified);
+      profileAdminStatusText.textContent = verified ? 'Verified' : '<100%';
+      profileAdminTooltip.hidden = verified;
+      if (!verified) {
+        renderAdminMissingLinks(missing);
+      }
+    };
+
     var toggleProfileEditMode = function (editing, preserveValues) {
       profileIsEditing = !!editing;
       if (!profileIsEditing && !preserveValues) {
@@ -9373,8 +9556,6 @@ document.addEventListener('DOMContentLoaded', function () {
         var phoneEl = document.querySelector('[data-profile-phone]');
         var nationalityEl = document.querySelector('[data-profile-nationality]');
         var roleEl = document.querySelector('[data-profile-role]');
-        var rolesEl = document.querySelector('[data-profile-roles]');
-        var rolesOtherEl = document.querySelector('[data-profile-roles-other]');
         var travelEl = document.querySelector('[data-profile-travel]');
         var locationEl = document.querySelector('[data-profile-location]');
         var drivingEl = document.querySelector('[data-profile-driving]');
@@ -9412,36 +9593,22 @@ document.addEventListener('DOMContentLoaded', function () {
         if (roleEl) {
           roleEl.textContent = profile.role_type || 'Not set';
         }
-        if (rolesEl) {
-          rolesEl.textContent = profile.roles_label || 'Not set';
-        }
-        if (rolesOtherEl) {
-          rolesOtherEl.textContent = profile.roles_other || 'Not set';
-        }
         if (travelEl) {
-          travelEl.textContent = profile.travel_radius || 'Not set';
+          travelEl.textContent = formatTravelRadius(profile.travel_radius || '', profile.location || '');
         }
         if (locationEl) {
           locationEl.textContent = profile.location || 'Not set';
         }
-        if (drivingEl) {
-          drivingEl.textContent = profile.driving_licence_label || 'Not set';
-        }
-        if (carEl) {
-          carEl.textContent = profile.car_owner_label || 'Not set';
-        }
-        if (qtsEl) {
-          qtsEl.textContent = profile.qts_status_label || 'Not set';
-        }
-        if (hasDbsEl) {
-          hasDbsEl.textContent = profile.no_dbs_label || 'Not set';
-        }
-        if (dbsUpdateEl) {
-          dbsUpdateEl.textContent = profile.dbs_update_service_label || 'Not set';
-        }
-        if (daysEl) {
-          daysEl.textContent = profile.availability_days_label || 'Not set';
-        }
+        applyStatusPill(drivingEl, profile.driving_licence_label || '', { yesText: 'Yes', noText: 'No', unknownText: 'Not set' });
+        applyStatusPill(carEl, profile.car_owner_label || '', { yesText: 'Yes', noText: 'No', unknownText: 'Not set' });
+        applyStatusPill(qtsEl, profile.qts_status_label || '', { yesText: 'Yes', noText: 'No', unknownText: 'Not set' });
+        applyStatusPill(hasDbsEl, (profile.no_dbs_label || '') === 'Yes' ? 'Held' : ((profile.no_dbs_label || '') === 'No' ? 'Not Held' : 'Not set'), {
+          yesText: 'Held',
+          noText: 'Not Held',
+          unknownText: 'Not set'
+        });
+        applyStatusPill(dbsUpdateEl, profile.dbs_update_service_label || '', { yesText: 'Yes', noText: 'No', unknownText: 'Not set' });
+        renderAvailabilityDays(daysEl, profile.availability_days || []);
         if (addressEl) {
           addressEl.textContent = profile.address_display || 'Not set';
         }
@@ -9469,6 +9636,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (notesEl) {
           notesEl.textContent = profile.notes || 'Not set';
         }
+        if (profileSummaryName) {
+          profileSummaryName.textContent = fullName || 'Candidate';
+        }
+        if (profileSummaryRole) {
+          profileSummaryRole.textContent = profile.role_type || 'Not set';
+        }
+        if (profileSummaryLocation) {
+          profileSummaryLocation.textContent = profile.location ? ('📍 ' + profile.location) : '📍 Not set';
+        }
 
         var completionText = document.querySelector('[data-profile-completion-text]');
         var completionBar = document.querySelector('[data-profile-completion-bar]');
@@ -9487,6 +9663,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         }
         renderProfileCompletionMissing(missingItems, pct);
+        applyAdminStatus(pct, missingItems);
 
         profileForms.forEach(function (form) {
           commitProfileFormDefaults(form);
@@ -9592,6 +9769,21 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     toggleProfileEditMode(false, true);
+    var initialCompletionText = document.querySelector('[data-profile-completion-text]');
+    var initialPct = 0;
+    if (initialCompletionText) {
+      var pctMatch = String(initialCompletionText.textContent || '').match(/(\d+)\s*%/);
+      if (pctMatch && pctMatch[1]) {
+        initialPct = parseInt(pctMatch[1], 10) || 0;
+      }
+    }
+    var initialMissingItems = [];
+    if (profileCompletionMissing) {
+      initialMissingItems = Array.prototype.map.call(profileCompletionMissing.querySelectorAll('li'), function (li) {
+        return String(li.textContent || '').trim();
+      }).filter(function (item) { return !!item; });
+    }
+    applyAdminStatus(initialPct, initialMissingItems);
     applyProfileFocus();
   }
 
@@ -9624,6 +9816,9 @@ document.addEventListener('DOMContentLoaded', function () {
         completionBar.style.width = pct + '%';
       }
       renderProfileCompletionMissing(missingItems, pct);
+      if (typeof applyAdminStatus === 'function') {
+        applyAdminStatus(pct, missingItems);
+      }
     };
     var updateComplianceSummary = function () {
       var states = ['dbs', 'id', 'cv'].map(function (type) {

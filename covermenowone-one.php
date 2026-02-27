@@ -64901,70 +64901,177 @@ final class CMN_One_Plugin {
                                     <button class="cmn-ghost cmn-btn-mini cmn-profile-edit-trigger" type="button" data-profile-global-edit aria-label="Edit personal details">✎</button>
                                 </div>
                                 <div data-profile-view="personal">
-                                    <div class="cmn-profile-definition-grid">
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Full name</span>
-                                            <span class="cmn-profile-definition-value" data-profile-full-name><?php echo esc_html($profile_name); ?></span>
+                                    <?php
+                                    $profile_status_pill = static function ($label, $yes_text = 'Yes', $no_text = 'No', $unknown_text = 'Not set') {
+                                        $normalized = strtolower(trim((string) $label));
+                                        if ($normalized === 'yes') {
+                                            return ['class' => 'is-yes', 'text' => $yes_text];
+                                        }
+                                        if ($normalized === 'no') {
+                                            return ['class' => 'is-no', 'text' => $no_text];
+                                        }
+                                        return ['class' => 'is-unknown', 'text' => $unknown_text];
+                                    };
+                                    $travel_display = trim((string) $travel_distance);
+                                    if ($travel_display !== '') {
+                                        if (preg_match('/^\d+(\.\d+)?$/', $travel_display)) {
+                                            $travel_display = rtrim(rtrim(number_format((float) $travel_display, 1, '.', ''), '0'), '.')
+                                                . ' mile radius'
+                                                . ($profile_location !== '' ? (' around ' . $profile_location) : '');
+                                        } elseif (stripos($travel_display, 'mile') === false) {
+                                            $travel_display .= ' mile radius';
+                                        }
+                                    } else {
+                                        $travel_display = 'Not set';
+                                    }
+                                    $driving_pill = $profile_status_pill($driving_licence_label);
+                                    $car_pill = $profile_status_pill($car_owner_label);
+                                    $qts_pill = $profile_status_pill($qts_status_label);
+                                    $dbs_held_pill = $profile_status_pill($has_dbs_label, 'Held', 'Not Held', 'Not set');
+                                    $dbs_update_pill = $profile_status_pill($dbs_update_label);
+                                    $availability_day_short = [];
+                                    foreach ((array) $availability_days as $day_label) {
+                                        $day_label = trim((string) $day_label);
+                                        if ($day_label === '') {
+                                            continue;
+                                        }
+                                        $availability_day_short[] = substr($day_label, 0, 3);
+                                    }
+                                    $availability_day_short = array_values(array_unique($availability_day_short));
+                                    $is_admin_verified = $completion_percent >= 100 && empty($completion_outstanding_links);
+                                    ?>
+                                    <div class="cmn-profile-summary-strip" data-profile-summary-strip data-profile-personal-url="<?php echo esc_url($candidate_profile_personal_url); ?>" data-profile-documents-url="<?php echo esc_url($candidate_profile_documents_url); ?>">
+                                        <div class="cmn-profile-summary-meta">
+                                            <div class="cmn-profile-summary-item">
+                                                <span class="cmn-profile-summary-label">Name</span>
+                                                <strong class="cmn-profile-summary-value" data-profile-summary-name><?php echo esc_html($profile_name !== '' ? $profile_name : 'Candidate'); ?></strong>
+                                            </div>
+                                            <div class="cmn-profile-summary-item">
+                                                <span class="cmn-profile-summary-label">Role</span>
+                                                <strong class="cmn-profile-summary-value" data-profile-summary-role><?php echo esc_html($role_label !== '' ? $role_label : 'Not set'); ?></strong>
+                                            </div>
+                                            <div class="cmn-profile-summary-item">
+                                                <span class="cmn-profile-summary-label">Location</span>
+                                                <strong class="cmn-profile-summary-value" data-profile-summary-location><?php echo esc_html($profile_location !== '' ? ('📍 ' . $profile_location) : '📍 Not set'); ?></strong>
+                                            </div>
+                                            <div class="cmn-profile-summary-item">
+                                                <span class="cmn-profile-summary-label">Tier</span>
+                                                <strong class="cmn-profile-summary-value">⭐ <?php echo esc_html($tier_label); ?></strong>
+                                            </div>
                                         </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Email</span>
-                                            <span class="cmn-profile-definition-value" data-profile-email><?php echo esc_html($profile_email !== '' ? $profile_email : 'Not set'); ?></span>
+                                        <div class="cmn-profile-admin-status <?php echo $is_admin_verified ? 'is-verified' : 'is-pending'; ?>" data-profile-admin-status>
+                                            <span class="cmn-profile-admin-status-label">Admin status:</span>
+                                            <strong class="cmn-profile-admin-status-value" data-profile-admin-status-text><?php echo $is_admin_verified ? 'Verified' : '&lt;100%'; ?></strong>
+                                            <div class="cmn-profile-admin-status-tooltip" data-profile-admin-tooltip<?php echo $is_admin_verified ? ' hidden' : ''; ?>>
+                                                <p>Complete the following:</p>
+                                                <ul data-profile-admin-missing>
+                                                    <?php if (!$is_admin_verified && !empty($completion_outstanding_links)) : ?>
+                                                        <?php foreach ($completion_outstanding_links as $item) : ?>
+                                                            <li><a href="<?php echo esc_url((string) ($item['url'] ?? $candidate_profile_personal_url)); ?>"><?php echo esc_html((string) ($item['label'] ?? 'Update details')); ?></a></li>
+                                                        <?php endforeach; ?>
+                                                    <?php elseif (!$is_admin_verified) : ?>
+                                                        <li><a href="<?php echo esc_url($candidate_profile_personal_url); ?>">Update profile details</a></li>
+                                                    <?php endif; ?>
+                                                </ul>
+                                            </div>
                                         </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Phone</span>
-                                            <span class="cmn-profile-definition-value" data-profile-phone><?php echo esc_html($profile_phone !== '' ? $profile_phone : 'Not set'); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Nationality</span>
-                                            <span class="cmn-profile-definition-value cmn-profile-definition-value-with-action">
-                                                <span data-profile-nationality><?php echo esc_html($profile_nationality !== '' ? $profile_nationality : 'Not set'); ?></span>
-                                                <button class="cmn-ghost cmn-btn-mini cmn-profile-inline-action" type="button" data-profile-global-edit data-profile-nationality-action<?php echo $profile_nationality !== '' ? ' hidden' : ''; ?>>Set nationality</button>
-                                            </span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Primary role</span>
-                                            <span class="cmn-profile-definition-value" data-profile-role><?php echo esc_html($role_label); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Travel radius</span>
-                                            <span class="cmn-profile-definition-value" data-profile-travel><?php echo esc_html($travel_distance !== '' ? $travel_distance : 'Not set'); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Location</span>
-                                            <span class="cmn-profile-definition-value" data-profile-location><?php echo esc_html($profile_location !== '' ? $profile_location : 'Not set'); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Driving licence</span>
-                                            <span class="cmn-profile-definition-value" data-profile-driving><?php echo esc_html($driving_licence_label); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Own vehicle</span>
-                                            <span class="cmn-profile-definition-value" data-profile-car><?php echo esc_html($car_owner_label); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">QTS</span>
-                                            <span class="cmn-profile-definition-value" data-profile-qts><?php echo esc_html($qts_status_label); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">DBS held</span>
-                                            <span class="cmn-profile-definition-value" data-profile-has-dbs><?php echo esc_html($has_dbs_label); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">DBS update service</span>
-                                            <span class="cmn-profile-definition-value" data-profile-dbs-update><?php echo esc_html($dbs_update_label); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
-                                            <span class="cmn-profile-definition-label">Availability days</span>
-                                            <span class="cmn-profile-definition-value" data-profile-days><?php echo esc_html($availability_days_label); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
-                                            <span class="cmn-profile-definition-label">Address</span>
-                                            <span class="cmn-profile-definition-value" data-profile-address><?php echo esc_html($profile_address_display); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
-                                            <span class="cmn-profile-definition-label">Notes</span>
-                                            <span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes !== '' ? $profile_notes : 'Not set'); ?></span>
-                                        </div>
+                                    </div>
+
+                                    <div class="cmn-profile-sections">
+                                        <section class="cmn-profile-section" id="cmn-profile-section-personal">
+                                            <h4 class="cmn-profile-section-title">Personal Details</h4>
+                                            <div class="cmn-profile-definition-grid">
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Full name</span>
+                                                    <span class="cmn-profile-definition-value" data-profile-full-name><?php echo esc_html($profile_name); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Email</span>
+                                                    <span class="cmn-profile-definition-value" data-profile-email><?php echo esc_html($profile_email !== '' ? $profile_email : 'Not set'); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Phone</span>
+                                                    <span class="cmn-profile-definition-value" data-profile-phone><?php echo esc_html($profile_phone !== '' ? $profile_phone : 'Not set'); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Nationality</span>
+                                                    <span class="cmn-profile-definition-value cmn-profile-definition-value-with-action">
+                                                        <span data-profile-nationality><?php echo esc_html($profile_nationality !== '' ? $profile_nationality : 'Not set'); ?></span>
+                                                        <button class="cmn-ghost cmn-btn-mini cmn-profile-inline-action" type="button" data-profile-global-edit data-profile-nationality-action<?php echo $profile_nationality !== '' ? ' hidden' : ''; ?>>Set nationality</button>
+                                                    </span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                                    <span class="cmn-profile-definition-label">Address</span>
+                                                    <span class="cmn-profile-definition-value" data-profile-address><?php echo esc_html($profile_address_display); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                                    <span class="cmn-profile-definition-label">Notes</span>
+                                                    <span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes !== '' ? $profile_notes : 'Not set'); ?></span>
+                                                </div>
+                                            </div>
+                                        </section>
+
+                                        <section class="cmn-profile-section" id="cmn-profile-section-professional">
+                                            <h4 class="cmn-profile-section-title">Professional Profile</h4>
+                                            <div class="cmn-profile-definition-grid">
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Primary role</span>
+                                                    <span class="cmn-profile-definition-value" data-profile-role><?php echo esc_html($role_label); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Location</span>
+                                                    <span class="cmn-profile-definition-value" data-profile-location><?php echo esc_html($profile_location !== '' ? $profile_location : 'Not set'); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">QTS</span>
+                                                    <span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($qts_pill['class']); ?>" data-profile-qts><?php echo esc_html($qts_pill['text']); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Travel radius</span>
+                                                    <span class="cmn-profile-definition-value" data-profile-travel><?php echo esc_html($travel_display); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Driving licence</span>
+                                                    <span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($driving_pill['class']); ?>" data-profile-driving><?php echo esc_html($driving_pill['text']); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">Own vehicle</span>
+                                                    <span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($car_pill['class']); ?>" data-profile-car><?php echo esc_html($car_pill['text']); ?></span>
+                                                </div>
+                                            </div>
+                                        </section>
+
+                                        <section class="cmn-profile-section" id="cmn-profile-section-compliance">
+                                            <h4 class="cmn-profile-section-title">Compliance</h4>
+                                            <div class="cmn-profile-definition-grid">
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">DBS held</span>
+                                                    <span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($dbs_held_pill['class']); ?>" data-profile-has-dbs><?php echo esc_html($dbs_held_pill['text']); ?></span>
+                                                </div>
+                                                <div class="cmn-profile-definition-row">
+                                                    <span class="cmn-profile-definition-label">DBS update service</span>
+                                                    <span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($dbs_update_pill['class']); ?>" data-profile-dbs-update><?php echo esc_html($dbs_update_pill['text']); ?></span>
+                                                </div>
+                                            </div>
+                                        </section>
+
+                                        <section class="cmn-profile-section" id="cmn-profile-section-availability">
+                                            <h4 class="cmn-profile-section-title">Availability</h4>
+                                            <div class="cmn-profile-definition-grid">
+                                                <div class="cmn-profile-definition-row cmn-profile-definition-row--full">
+                                                    <span class="cmn-profile-definition-label">Availability days</span>
+                                                    <div class="cmn-profile-day-badges" data-profile-days>
+                                                        <?php if ($availability_day_short) : ?>
+                                                            <?php foreach ($availability_day_short as $day_short) : ?>
+                                                                <span class="cmn-profile-day-badge"><?php echo esc_html($day_short); ?></span>
+                                                            <?php endforeach; ?>
+                                                        <?php else : ?>
+                                                            <span class="cmn-profile-day-empty">Not set</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </section>
                                     </div>
                                 </div>
                                 <form class="cmn-form cmn-inline-edit-form" data-profile-form="personal" hidden>

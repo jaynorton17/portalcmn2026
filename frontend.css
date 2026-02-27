@@ -13107,19 +13107,153 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form textarea
   min-height: 96px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-strip {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: start;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: #0d1118;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-item {
+  display: grid;
+  gap: 5px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(203, 213, 225, 0.66);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.3;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 8px 12px;
+  color: #e2e8f0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #facc15;
+  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.18);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status.is-verified::before {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-label {
+  font-size: 12px;
+  color: rgba(203, 213, 225, 0.78);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-value {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: #f8fafc;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(320px, 80vw);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0d1118;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+  padding: 10px 12px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  z-index: 10;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tooltip p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: rgba(203, 213, 225, 0.84);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tooltip ul {
+  margin: 0;
+  padding: 0 0 0 16px;
+  display: grid;
+  gap: 6px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tooltip a {
+  color: #f8fafc;
+  text-decoration: underline;
+  text-decoration-color: rgba(239, 68, 68, 0.65);
+  text-underline-offset: 2px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status:not(.is-verified):hover .cmn-profile-admin-status-tooltip,
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status:not(.is-verified):focus-within .cmn-profile-admin-status-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-sections {
+  display: grid;
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-section {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: #0d1118;
+  padding: 14px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-section-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 14px;
+  gap: 10px 16px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-row {
   display: grid;
   gap: 4px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  padding: 0;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-row--full {
@@ -13127,16 +13261,17 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-row--f
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-label {
-  font-size: 12px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(203, 213, 225, 0.74);
+  letter-spacing: 0.04em;
+  color: rgba(203, 213, 225, 0.62);
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-value {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   color: #f8fafc;
-  line-height: 1.4;
+  line-height: 1.35;
   word-break: break-word;
 }
 
@@ -13151,6 +13286,63 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-inline-action {
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-status-pill::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #9ca3af;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-status-pill.is-yes::before {
+  background: #22c55e;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-status-pill.is-no::before {
+  background: #ef4444;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-status-pill.is-unknown::before {
+  background: #f59e0b;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-day-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-day-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-day-empty {
+  font-size: 13px;
+  color: rgba(203, 213, 225, 0.66);
 }
 
 /* Candidate dashboard availability CTA centering */
@@ -13217,6 +13409,12 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero .cmn-
   body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form,
   body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-definition-grid {
     grid-template-columns: 1fr;
+  }
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-strip {
+    grid-template-columns: 1fr;
+  }
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
