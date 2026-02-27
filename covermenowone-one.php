@@ -65960,15 +65960,14 @@ final class CMN_One_Plugin {
                                 <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small"><?php echo esc_html($learning_progress_text); ?></strong>
                                 <span class="cmn-candidate-summary-subtext"><?php echo esc_html($learning_progress_subtext); ?></span>
                             </a>
-                            <?php $expected_pay_card_url = $weekly_expected_has_bank_hold ? $candidate_finance_bank_url : $candidate_finance_url; ?>
+                            <?php
+                            $expected_pay_card_url = $weekly_expected_has_bank_hold ? $candidate_finance_bank_url : $candidate_finance_url;
+                            $expected_pay_card_amount = 'GBP ' . number_format((float) $weekly_expected_payout, 2);
+                            ?>
                             <a class="cmn-candidate-summary-card" href="<?php echo esc_url($expected_pay_card_url); ?>">
                                 <span class="cmn-candidate-summary-label">Expected pay (Friday)</span>
                                 <strong class="cmn-candidate-summary-value cmn-candidate-summary-value--small">
-                                    <?php if ($weekly_expected_has_bank_hold) : ?>
-                                        <span class="cmn-candidate-summary-value-link"><?php echo esc_html($weekly_expected_display); ?></span>
-                                    <?php else : ?>
-                                        <?php echo esc_html($weekly_expected_display); ?>
-                                    <?php endif; ?>
+                                    <?php echo esc_html($expected_pay_card_amount); ?>
                                 </strong>
                                 <span class="cmn-candidate-summary-subtext"><?php echo esc_html($weekly_expected_has_bank_hold ? 'On hold until bank details added.' : 'Estimate (pending lock).'); ?></span>
                             </a>
