@@ -66850,6 +66850,7 @@ final class CMN_One_Plugin {
                         if ($dashboard_contact_name === '') {
                             $dashboard_contact_name = 'Candidate';
                         }
+                        $dashboard_contact_rating_percent = $feedback_has_reviews ? max(0.0, min(100.0, ($feedback_score_raw / 5) * 100)) : 0.0;
                         $dashboard_contact_rating_text = number_format((float) $feedback_score_raw, 2) . ' out of 5 stars';
                         $dashboard_contact_role = trim((string) $role_label) !== '' ? trim((string) $role_label) : 'Not set';
                         $dashboard_contact_distance_raw = trim((string) $travel_distance);
@@ -66865,13 +66866,20 @@ final class CMN_One_Plugin {
                                 }
                             }
                         }
+                        $dashboard_contact_id_verified = ((string) ($doc_id['doc_status'] ?? '') === 'approved');
+                        $dashboard_contact_dbs_verified = ((string) ($doc_dbs['doc_status'] ?? '') === 'approved');
+                        $dashboard_contact_compliance_complete = empty($completion_missing_items);
+                        $dashboard_contact_verified_bundle = $dashboard_contact_id_verified && $dashboard_contact_dbs_verified;
                         $dashboard_contact_state_class = $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation';
-                        $dashboard_contact_status_class = $contact_card_show_available ? 'available' : 'not_responded';
-                        $dashboard_contact_status_label = $contact_card_show_available ? 'AVAILABLE NOW' : 'NOT YET CONFIRMED';
+                        $dashboard_contact_availability_class = $contact_card_show_available ? 'is-available' : 'is-pending';
+                        $dashboard_contact_status_label = $contact_card_show_available ? 'BOOKABLE' : 'NOT YET CONFIRMED';
                         $dashboard_contact_presence_label = $contact_card_is_online_now ? 'ONLINE NOW' : $contact_card_last_online_label;
+                        $dashboard_contact_confirmed_at = $availability_confirmed_time_label !== ''
+                            ? strtoupper($availability_confirmed_time_label)
+                            : '';
                         $dashboard_contact_confirm_detail = $contact_card_show_available
                             ? ($contact_card_button_time_label !== '' ? $contact_card_button_time_label : 'Confirmed')
-                            : 'Not yet confirmed';
+                            : '';
                         $dashboard_contact_skill_chips = array_slice((array) $contact_card_skill_preview, 0, 3);
                         ?>
                         <div class="cmn-candidate-section1-grid">
@@ -66901,36 +66909,51 @@ final class CMN_One_Plugin {
                                 </div>
                             </div>
                             <a class="cmn-dashboard-section1-contact-link" href="<?php echo esc_url($candidate_profile_contact_card_url); ?>" aria-label="Open My Hub Contact Card">
-                                <article class="cmn-live-card cmn-candidate-dashboard-live-card cmn-candidate-dashboard-live-card--section1 <?php echo esc_attr($dashboard_contact_state_class); ?>">
-                                    <div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>
-                                    <div class="cmn-live-card-row">
-                                        <div class="cmn-live-ident">
-                                            <img class="cmn-live-avatar" src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($dashboard_contact_name); ?>">
-                                            <div>
-                                                <div class="cmn-live-name"><?php echo esc_html($dashboard_contact_name); ?></div>
-                                                <div class="cmn-live-role"><?php echo esc_html($dashboard_contact_role); ?></div>
-                                                <div class="cmn-live-rating"><?php echo esc_html($dashboard_contact_rating_text); ?></div>
+                                <div class="cmn-contact-card-preview cmn-command-card cmn-command-card--dashboard <?php echo esc_attr($dashboard_contact_state_class); ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-dashboard-contact-card data-dashboard-contact-confirmed-at="<?php echo esc_attr($dashboard_contact_confirmed_at); ?>">
+                                    <div class="cmn-command-card-accent" aria-hidden="true"></div>
+                                    <div class="cmn-command-card-head">
+                                        <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
+                                        <span class="cmn-command-head-check" aria-hidden="true">&#10003;</span>
+                                    </div>
+                                    <div class="cmn-command-identity">
+                                        <div class="cmn-contact-card-preview-photo-wrap">
+                                            <div class="cmn-contact-card-preview-photo">
+                                                <img class="cmn-live-avatar" src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($dashboard_contact_name); ?>">
                                             </div>
                                         </div>
-                                        <div class="cmn-live-status <?php echo esc_attr($dashboard_contact_status_class); ?>"><?php echo esc_html($dashboard_contact_status_label); ?></div>
+                                        <div class="cmn-command-identity-main">
+                                            <strong><?php echo esc_html($dashboard_contact_name); ?></strong>
+                                            <div class="cmn-contact-card-preview-stars" aria-label="Feedback score">
+                                                <span class="cmn-contact-card-preview-stars-track">★★★★★</span>
+                                                <span class="cmn-contact-card-preview-stars-fill" style="width: <?php echo esc_attr(number_format($dashboard_contact_rating_percent, 2, '.', '')); ?>%;">★★★★★</span>
+                                            </div>
+                                            <span class="cmn-contact-card-preview-score"><?php echo esc_html($dashboard_contact_rating_text); ?></span>
+                                        </div>
                                     </div>
-                                    <div class="cmn-live-presence<?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>">
-                                        <span class="cmn-live-presence-dot" aria-hidden="true"></span><?php echo esc_html($dashboard_contact_presence_label); ?>
+                                    <div class="cmn-command-meta">
+                                        <span>Primary role: <?php echo esc_html($dashboard_contact_role); ?></span>
+                                        <span>Distance from school: <?php echo esc_html($dashboard_contact_distance_label); ?></span>
                                     </div>
-                                    <div class="cmn-live-strip">
-                                        <?php if ($contact_card_show_available) : ?>
-                                            <div class="cmn-live-banner">Bookable<br><small><?php echo esc_html($dashboard_contact_confirm_detail); ?></small></div>
-                                        <?php else : ?>
-                                            <div class="cmn-live-banner is-pending">Not yet confirmed</div>
-                                        <?php endif; ?>
-                                        <div class="cmn-live-rate"><?php echo esc_html($dashboard_contact_distance_label); ?> <span>distance</span></div>
+                                    <div class="cmn-command-status-wrap">
+                                        <span class="cmn-contact-card-preview-state <?php echo esc_attr($dashboard_contact_availability_class); ?>" data-dashboard-contact-availability><?php echo esc_html($dashboard_contact_status_label); ?></span>
+                                        <span class="cmn-contact-card-preview-time" data-dashboard-contact-time<?php echo $dashboard_contact_confirm_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($dashboard_contact_confirm_detail); ?></span>
                                     </div>
-                                    <div class="cmn-live-skills">
+                                    <ul class="cmn-command-trust-list">
+                                        <li class="<?php echo $dashboard_contact_verified_bundle ? 'is-ok' : 'is-pending'; ?>"><?php echo $dashboard_contact_verified_bundle ? 'ID & DBS Verified' : 'ID / DBS Verification Pending'; ?></li>
+                                        <li class="<?php echo $dashboard_contact_compliance_complete ? 'is-ok' : 'is-pending'; ?>"><?php echo $dashboard_contact_compliance_complete ? 'Fully Compliant' : 'Compliance In Progress'; ?></li>
+                                        <li class="cmn-command-live-row <?php echo $contact_card_is_online_now ? 'is-ok is-live-state' : 'is-pending'; ?>" data-dashboard-contact-live><?php echo esc_html($dashboard_contact_presence_label); ?></li>
+                                    </ul>
+                                    <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
+                                    <div class="cmn-contact-card-preview-skills">
                                         <?php foreach ($dashboard_contact_skill_chips as $dashboard_skill_chip) : ?>
-                                            <span class="cmn-live-skill"><?php echo esc_html((string) $dashboard_skill_chip); ?></span>
+                                            <span class="cmn-contact-card-skill-chip"><?php echo esc_html((string) $dashboard_skill_chip); ?></span>
                                         <?php endforeach; ?>
                                     </div>
-                                </article>
+                                    <div class="cmn-contact-card-preview-actions" aria-hidden="true">
+                                        <span class="cmn-ghost cmn-btn-mini">View profile</span>
+                                        <span class="cmn-primary cmn-btn-mini">Book now</span>
+                                    </div>
+                                </div>
                             </a>
                         </div>
                         <div class="cmn-candidate-summary-strip" data-candidate-summary-strip>
@@ -85060,12 +85083,23 @@ p{margin:0;line-height:1.5}
         global $wpdb;
         $table = $this->get_candidate_availability_table();
         if ($already_marked) {
+            $confirmed_at_label = '';
+            $existing_entry = $this->get_candidate_availability_entry($candidate_id, $target_date);
+            if (is_array($existing_entry) && !empty($existing_entry['created_at'])) {
+                try {
+                    $existing_confirmed_dt = new DateTime((string) $existing_entry['created_at'], wp_timezone());
+                    $confirmed_at_label = strtoupper($existing_confirmed_dt->format('g:i A'));
+                } catch (Exception $e) {
+                    $confirmed_at_label = '';
+                }
+            }
             wp_send_json_success([
                 'message' => 'Availability confirmed for ' . $period_label . '.',
                 'available' => true,
                 'button_enabled' => true,
                 'status_text' => 'I\'m available',
                 'button_text' => 'Availability confirmed',
+                'confirmed_at' => $confirmed_at_label,
             ]);
         }
 
@@ -85087,6 +85121,7 @@ p{margin:0;line-height:1.5}
             'button_enabled' => true,
             'status_text' => 'I\'m available',
             'button_text' => 'Availability confirmed',
+            'confirmed_at' => strtoupper(date_i18n('g:i A', current_time('timestamp'))),
         ]);
     }
 

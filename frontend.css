@@ -3838,7 +3838,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-cont
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-dashboard-section1-contact-link:focus-visible {
   outline: 2px solid rgba(239, 68, 68, 0.72);
   outline-offset: 3px;
-  border-radius: 14px;
+  border-radius: 20px;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-dashboard-live-card--section1 {
@@ -14824,28 +14824,28 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-value {
   line-height: 1.3;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-tab-grid {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-tab-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   align-items: stretch;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-tab-tile {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-tab-tile {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 100%;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview {
   border: 0;
   border-radius: 18px;
   background: transparent;
   padding: 0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card {
   position: relative;
   isolation: isolate;
   display: grid;
@@ -14863,7 +14863,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card:hover {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card:hover {
   transform: translateY(-2px);
   border-color: rgba(239, 68, 68, 0.5);
   box-shadow:
@@ -14871,7 +14871,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-
     0 0 26px rgba(239, 68, 68, 0.26);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card::before {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -14887,7 +14887,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-
   z-index: 2;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card::after {
   content: '';
   position: absolute;
   inset: -18px;
@@ -14901,25 +14901,25 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-
   z-index: 0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-bookable::before {
-  background: linear-gradient(90deg, rgba(16, 185, 129, 0.66), rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.66));
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-bookable::before {
+  background: linear-gradient(90deg, rgba(22, 163, 74, 0.72), rgba(22, 163, 74, 0.16), rgba(22, 163, 74, 0.72));
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-bookable::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-bookable::after {
   background:
-    radial-gradient(60% 40% at 50% 20%, rgba(16, 185, 129, 0.26), transparent 70%),
-    radial-gradient(60% 45% at 50% 100%, rgba(16, 185, 129, 0.16), transparent 75%);
-  opacity: 0.55;
+    radial-gradient(60% 40% at 50% 20%, rgba(22, 163, 74, 0.3), transparent 70%),
+    radial-gradient(60% 45% at 50% 100%, rgba(21, 128, 61, 0.18), transparent 75%);
+  opacity: 0.6;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-bookable:hover {
-  border-color: rgba(16, 185, 129, 0.56);
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-bookable:hover {
+  border-color: rgba(34, 197, 94, 0.7);
   box-shadow:
     0 20px 46px rgba(2, 6, 18, 0.72),
-    0 0 26px rgba(16, 185, 129, 0.28);
+    0 0 30px rgba(22, 163, 74, 0.4);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation {
   border-color: rgba(250, 204, 21, 0.48);
   background:
     radial-gradient(120% 120% at 0% 0%, rgba(245, 158, 11, 0.18), rgba(245, 158, 11, 0) 52%),
@@ -14929,30 +14929,30 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-
     0 0 20px rgba(250, 204, 21, 0.22);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation:hover {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation:hover {
   border-color: rgba(250, 204, 21, 0.64);
   box-shadow:
     0 18px 42px rgba(18, 12, 3, 0.66),
     0 0 28px rgba(250, 204, 21, 0.3);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation::before {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation::before {
   background: linear-gradient(90deg, rgba(250, 204, 21, 0.72), rgba(250, 204, 21, 0.12), rgba(250, 204, 21, 0.72));
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation::after {
   background:
     radial-gradient(60% 40% at 50% 20%, rgba(250, 204, 21, 0.28), transparent 70%),
     radial-gradient(60% 45% at 50% 100%, rgba(250, 204, 21, 0.18), transparent 75%);
   opacity: 0.62;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card > * {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card > * {
   position: relative;
   z-index: 1;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card-accent {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card-accent {
   position: absolute;
   top: 0;
   left: 18px;
@@ -14962,52 +14962,52 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card-accent {
   background: linear-gradient(90deg, rgba(239, 68, 68, 0), rgba(239, 68, 68, 0.95), rgba(239, 68, 68, 0));
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-bookable .cmn-command-card-accent {
-  background: linear-gradient(90deg, rgba(16, 185, 129, 0), rgba(16, 185, 129, 0.95), rgba(16, 185, 129, 0));
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-bookable .cmn-command-card-accent {
+  background: linear-gradient(90deg, rgba(22, 163, 74, 0), rgba(22, 163, 74, 0.96), rgba(22, 163, 74, 0));
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation .cmn-command-card-accent {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation .cmn-command-card-accent {
   background: linear-gradient(90deg, rgba(250, 204, 21, 0), rgba(250, 204, 21, 0.98), rgba(250, 204, 21, 0));
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card-head {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-brand {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-brand {
   font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.02em;
   color: rgba(241, 245, 249, 0.96);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-brand span {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-brand span {
   color: #ff1f43 !important;
   font-weight: 900;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-head-check {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-head-check {
   color: #f87171;
   font-size: 14px;
   line-height: 1;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-identity {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-identity {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
   gap: 12px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo-wrap {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-photo-wrap {
   position: relative;
   width: 72px;
   height: 72px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo-wrap::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-photo-wrap::after {
   content: '';
   position: absolute;
   left: 50%;
@@ -15021,15 +15021,15 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-phot
   transition: background 0.2s ease;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-bookable.is-live .cmn-contact-card-preview-photo-wrap::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-bookable.is-live .cmn-contact-card-preview-photo-wrap::after {
   background: radial-gradient(circle, rgba(16, 185, 129, 0.28), rgba(16, 185, 129, 0) 70%);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation.is-live .cmn-contact-card-preview-photo-wrap::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview.cmn-command-card.is-pending-confirmation.is-live .cmn-contact-card-preview-photo-wrap::after {
   background: radial-gradient(circle, rgba(250, 204, 21, 0.28), rgba(250, 204, 21, 0) 70%);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-photo {
   width: 100%;
   height: 100%;
   border-radius: 50%;
@@ -15038,26 +15038,26 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-phot
   background: #080c12;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo img {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-photo img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-identity-main {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-identity-main {
   display: grid;
   gap: 5px;
   min-width: 0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-identity-main strong {
-  font-size: 40px;
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-identity-main strong {
+  font-size: 34px;
   line-height: 1;
   color: #f8fafc;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stars {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-stars {
   position: relative;
   display: inline-block;
   letter-spacing: 1px;
@@ -15065,11 +15065,11 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-star
   line-height: 1;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stars-track {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-stars-track {
   color: rgba(255, 255, 255, 0.24);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stars-fill {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-stars-fill {
   position: absolute;
   left: 0;
   top: 0;
@@ -15078,12 +15078,12 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-star
   color: #f59e0b;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-score {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-score {
   color: rgba(226, 232, 240, 0.78);
   font-size: 12px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-meta {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-meta {
   display: grid;
   gap: 6px;
   border: 1px solid rgba(148, 163, 184, 0.22);
@@ -15094,7 +15094,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-meta {
   font-size: 14px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-status-wrap {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-status-wrap {
   display: grid;
   gap: 6px;
   margin-top: 14px;
@@ -15105,7 +15105,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-status-wrap {
   position: relative;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-status-wrap::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-status-wrap::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -15115,15 +15115,15 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-status-wrap::afte
   pointer-events: none;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card.is-bookable .cmn-command-status-wrap {
-  background: linear-gradient(90deg, rgba(34, 197, 94, 0.3), rgba(22, 163, 74, 0.2));
-  border: 1px solid rgba(34, 197, 94, 0.56);
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card.is-bookable .cmn-command-status-wrap {
+  background: linear-gradient(90deg, rgba(22, 163, 74, 0.48), rgba(21, 128, 61, 0.34));
+  border: 1px solid rgba(34, 197, 94, 0.72);
   box-shadow:
-    0 0 24px rgba(34, 197, 94, 0.28),
-    inset 0 0 12px rgba(34, 197, 94, 0.2);
+    0 0 26px rgba(22, 163, 74, 0.42),
+    inset 0 0 14px rgba(21, 128, 61, 0.24);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card.is-pending-confirmation .cmn-command-status-wrap {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card.is-pending-confirmation .cmn-command-status-wrap {
   background: linear-gradient(90deg, rgba(250, 204, 21, 0.18), rgba(250, 204, 21, 0.07));
   border: 1px solid rgba(250, 204, 21, 0.34);
   box-shadow:
@@ -15131,7 +15131,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card.is-pending-c
     inset 0 0 10px rgba(250, 204, 21, 0.12);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
@@ -15146,42 +15146,43 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-stat
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state::before {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state::before {
   content: '!';
   margin-right: 10px;
   font-size: 14px;
   line-height: 1;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state.is-pending {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-pending {
   background: linear-gradient(180deg, #facc15, #eab308);
   border-color: #fbbf24;
   color: #0b1119;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state.is-available {
-  width: 100%;
-  justify-content: center;
-  text-align: center;
-  background: #22c55e;
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-available {
+  width: auto;
+  justify-content: flex-start;
+  text-align: left;
+  background: linear-gradient(180deg, #16a34a, #166534);
   border-color: #22c55e;
-  color: #06110a;
+  color: #f8fafc;
   box-shadow:
-    0 0 24px rgba(34, 197, 94, 0.56),
-    0 0 42px rgba(34, 197, 94, 0.32),
+    0 0 20px rgba(22, 163, 74, 0.5),
+    0 0 36px rgba(22, 163, 74, 0.28),
     inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state.is-available::before {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state.is-available::before {
   content: '\2713';
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-time {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-time {
   color: rgba(203, 213, 225, 0.86);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-reliability {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-reliability {
   display: grid;
   gap: 7px;
   color: rgba(226, 232, 240, 0.95);
@@ -15189,31 +15190,31 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-reliability {
   font-weight: 700;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-reliability strong {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-reliability strong {
   color: #86efac;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-reliability-bar {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-reliability-bar {
   height: 8px;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.26);
   overflow: hidden;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-reliability-bar span {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-reliability-bar span {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #4ade80 0%, #86efac 80%, #d9f99d 100%);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-trust-list {
   list-style: none;
   padding: 0;
   margin: 14px 0 0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-trust-list li {
   position: relative;
   padding: 10px 12px 10px 34px;
   border-radius: 12px;
@@ -15223,7 +15224,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li {
   color: rgba(226, 232, 240, 0.92);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn-command-live-row {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-trust-list li.cmn-command-live-row {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(148, 163, 184, 0.28);
   box-shadow: inset 0 0 8px rgba(148, 163, 184, 0.08);
@@ -15232,7 +15233,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn
   color: rgba(226, 232, 240, 0.92);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn-command-live-row::before {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-trust-list li.cmn-command-live-row::before {
   content: '';
   position: absolute;
   left: 12px;
@@ -15245,7 +15246,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn
   box-shadow: 0 0 10px rgba(100, 116, 139, 0.55);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn-command-live-row.is-live-state {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-trust-list li.cmn-command-live-row.is-live-state {
   background: linear-gradient(90deg, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0.06));
   border: 1px solid rgba(16, 185, 129, 0.35);
   box-shadow:
@@ -15257,27 +15258,27 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn
   color: rgba(209, 250, 229, 0.98);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn-command-live-row.is-live-state::before {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-trust-list li.cmn-command-live-row.is-live-state::before {
   background: #22c55e;
   box-shadow: 0 0 14px rgba(34, 197, 94, 0.85);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card.is-pending-confirmation .cmn-command-trust-list li.cmn-command-live-row {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card.is-pending-confirmation .cmn-command-trust-list li.cmn-command-live-row {
   background: linear-gradient(90deg, rgba(250, 204, 21, 0.22), rgba(250, 204, 21, 0.08));
   border-color: rgba(250, 204, 21, 0.38);
   color: #111827;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card.is-pending-confirmation .cmn-command-trust-list li.cmn-command-live-row::before {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card.is-pending-confirmation .cmn-command-trust-list li.cmn-command-live-row::before {
   background: #facc15;
   box-shadow: 0 0 14px rgba(250, 204, 21, 0.72);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card.is-pending-confirmation .cmn-command-trust-list li.cmn-command-live-row.is-live-state::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card.is-pending-confirmation .cmn-command-trust-list li.cmn-command-live-row.is-live-state::after {
   border-color: rgba(250, 204, 21, 0.5);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn-command-live-row.is-live-state::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-trust-list li.cmn-command-live-row.is-live-state::after {
   content: '';
   position: absolute;
   left: 12px;
@@ -15290,26 +15291,26 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li.cmn
   animation: cmnContactCardPulseRing 1.6s ease-out infinite;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-strengths-title {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-strengths-title {
   font-size: 15px;
   font-weight: 700;
   color: rgba(226, 232, 240, 0.95);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-skills {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-skills {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-actions {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-chip {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-skill-chip {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
@@ -15323,32 +15324,108 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-chip {
   line-height: 1;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-chip::before {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-skill-chip::before {
   content: '\25D4';
   margin-right: 6px;
   color: #cbd5e1;
   font-size: 10px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-actions .cmn-ghost {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-actions .cmn-ghost {
   flex: 1;
   min-width: 110px;
   opacity: 0.82;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-actions .cmn-primary {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-actions .cmn-primary {
   flex: 1.35;
   min-width: 148px;
   box-shadow: 0 10px 20px rgba(153, 27, 27, 0.5);
   transition: filter 0.2s ease, box-shadow 0.2s ease;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card:hover .cmn-contact-card-preview-actions .cmn-primary {
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard {
+  height: 100%;
+  min-height: 0;
+  padding: 16px;
+  gap: 9px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-identity {
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-photo-wrap {
+  width: 56px;
+  height: 56px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-identity-main strong {
+  font-size: 24px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-state {
+  min-height: 36px;
+  font-size: 14px;
+  padding: 0 12px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-meta {
+  font-size: 12px;
+  gap: 4px;
+  padding: 8px 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list {
+  margin-top: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li {
+  font-size: 12px;
+  padding: 8px 10px 8px 30px;
+  margin-bottom: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li.cmn-command-live-row::before,
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-trust-list li.cmn-command-live-row.is-live-state::after {
+  left: 10px;
+  width: 10px;
+  height: 10px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-command-strengths-title {
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-skills {
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-skill-chip {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-actions {
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-command-card--dashboard .cmn-contact-card-preview-actions :is(.cmn-ghost, .cmn-primary) {
+  min-height: 34px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card:hover .cmn-contact-card-preview-actions .cmn-primary {
   filter: brightness(1.08);
   box-shadow: 0 12px 24px rgba(220, 38, 38, 0.56);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-counter {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-skill-counter {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -15362,13 +15439,13 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-counte
   color: rgba(226, 232, 240, 0.9);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-header-controls {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-header-controls {
   display: flex;
   align-items: center;
   justify-content: flex-end;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -15377,7 +15454,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability
   user-select: none;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle input[type="checkbox"] {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle input[type="checkbox"] {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -15389,7 +15466,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability
   border: 0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle-track {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle-track {
   position: relative;
   display: inline-block;
   width: 42px;
@@ -15400,7 +15477,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle-track::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle-track::after {
   content: '';
   position: absolute;
   left: 2px;
@@ -15413,20 +15490,20 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability
   transition: transform 0.2s ease;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle input[type="checkbox"]:checked + .cmn-contact-card-availability-toggle-track {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle input[type="checkbox"]:checked + .cmn-contact-card-availability-toggle-track {
   background: #22c55e;
   border-color: #4ade80;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle input[type="checkbox"]:checked + .cmn-contact-card-availability-toggle-track::after {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle input[type="checkbox"]:checked + .cmn-contact-card-availability-toggle-track::after {
   transform: translateX(18px);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle input[type="checkbox"]:focus-visible + .cmn-contact-card-availability-toggle-track {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle input[type="checkbox"]:focus-visible + .cmn-contact-card-availability-toggle-track {
   box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.24);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle-text {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle-text {
   color: rgba(226, 232, 240, 0.88);
   font-size: 12px;
   font-weight: 700;
@@ -15449,13 +15526,13 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability
   }
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-list {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-skill-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-option {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-skill-option {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -15468,17 +15545,17 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-option
   font-size: 13px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-option input[type="checkbox"] {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-skill-option input[type="checkbox"] {
   width: 14px;
   height: 14px;
   margin: 0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-other-input-wrap {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-other-input-wrap {
   grid-column: 1 / -1;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-other-input-wrap input {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-other-input-wrap input {
   width: 100%;
   min-height: 40px;
   border-radius: 10px;
@@ -15488,7 +15565,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-other-input-
   padding: 0 12px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-actions {
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-skill-actions {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -15950,13 +16027,13 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero .cmn-
   body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-tab-grid {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-tab-grid {
     grid-template-columns: 1fr;
   }
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-identity {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-identity {
     grid-template-columns: 72px minmax(0, 1fr);
   }
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-skill-list {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-skill-list {
     grid-template-columns: 1fr;
   }
 }
@@ -17667,50 +17744,50 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
     overflow-wrap: anywhere;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-card-head {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-card-head {
     align-items: center;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-brand {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-brand {
     font-size: 13px;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-availability-toggle-text {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-availability-toggle-text {
     display: none;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-identity {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-identity {
     grid-template-columns: 60px minmax(0, 1fr);
     gap: 10px;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo-wrap {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-photo-wrap {
     width: 60px;
     height: 60px;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-photo {
     width: 100%;
     height: 100%;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-identity-main strong {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-identity-main strong {
     font-size: 24px;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-state {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-state {
     font-size: 18px;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-command-trust-list li {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-command-trust-list li {
     font-size: 13px;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-actions {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-actions {
     justify-content: stretch;
   }
 
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-actions :is(.cmn-ghost, .cmn-primary) {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-preview-actions :is(.cmn-ghost, .cmn-primary) {
     flex: 1 1 100%;
   }
 

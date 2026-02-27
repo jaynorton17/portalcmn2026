@@ -2264,6 +2264,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var availabilityDotLabel = document.querySelector('[data-availability-dot-label]');
       var unavailableButton = document.querySelector('[data-availability-unavailable-button]');
       var availabilityImpact = document.querySelector('[data-availability-impact]');
+      var dashboardContactCard = document.querySelector('[data-dashboard-contact-card]');
+      var dashboardContactAvailability = document.querySelector('[data-dashboard-contact-availability]');
+      var dashboardContactTime = document.querySelector('[data-dashboard-contact-time]');
+      var dashboardContactInitialConfirmedAt = dashboardContactCard ? String(dashboardContactCard.getAttribute('data-dashboard-contact-confirmed-at') || '').trim() : '';
       var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
       var availabilityPeriodLabel = availabilityButton.getAttribute('data-availability-period-label') || 'tomorrow morning';
       var availabilityDateLabel = (availabilityButton.getAttribute('data-availability-date-label') || '').trim() || availabilityPeriodLabel;
@@ -2408,16 +2412,52 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       };
 
-      var setAvailabilityVisualState = function (isAvailable) {
+      var formatConfirmedAtLabel = function (rawLabel) {
+        var value = String(rawLabel || '').trim().toUpperCase();
+        if (value) {
+          return value;
+        }
+        try {
+          return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toUpperCase();
+        } catch (e) {
+          return '';
+        }
+      };
+
+      var setDashboardContactState = function (isAvailable, confirmedAtRaw) {
+        if (!dashboardContactCard || !dashboardContactAvailability) {
+          return;
+        }
+        var available = !!isAvailable;
+        var confirmedAtLabel = formatConfirmedAtLabel(confirmedAtRaw);
+        dashboardContactCard.classList.toggle('is-bookable', available);
+        dashboardContactCard.classList.toggle('is-pending-confirmation', !available);
+        dashboardContactAvailability.classList.toggle('is-available', available);
+        dashboardContactAvailability.classList.toggle('is-pending', !available);
+        dashboardContactAvailability.textContent = available ? 'BOOKABLE' : 'NOT YET CONFIRMED';
+        if (dashboardContactTime) {
+          if (available && confirmedAtLabel) {
+            dashboardContactTime.textContent = 'Confirmed at ' + confirmedAtLabel;
+            dashboardContactTime.hidden = false;
+          } else {
+            dashboardContactTime.textContent = '';
+            dashboardContactTime.hidden = true;
+          }
+        }
+      };
+
+      var setAvailabilityVisualState = function (isAvailable, confirmedAtRaw) {
         availabilityButton.setAttribute('data-available', isAvailable ? '1' : '0');
         availabilityButton.classList.toggle('is-confirmed', !!isAvailable);
         setAvailabilityButtonLabel(isAvailable ? 'Availability confirmed' : ('Click here to confirm availability for ' + availabilityPeriodLabel));
         setAvailabilityCardState(isAvailable ? 'confirmed' : 'neutral');
         setStatusDot(isAvailable ? 'is-confirmed' : 'is-neutral', isAvailable ? 'Confirmed' : 'Not confirmed yet');
+        setDashboardContactState(isAvailable, confirmedAtRaw);
         if (availabilityImpact) {
           availabilityImpact.textContent = isAvailable ? 'You appear at the top of manager searches.' : 'You will appear lower in manager searches.';
         }
       };
+      setDashboardContactState(availabilityButton.getAttribute('data-available') === '1', dashboardContactInitialConfirmedAt);
       if (unavailableButton) {
         unavailableButton.addEventListener('click', function () {
           unavailableButton.disabled = true;
@@ -2433,7 +2473,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (data) {
               unavailableButton.disabled = false;
               if (data && data.success) {
-                setAvailabilityVisualState(false);
+                setAvailabilityVisualState(false, '');
                 setAvailabilityCardState('blocked');
                 setStatusDot('is-blocked', "I'm not available");
                 if (availabilityImpact) { availabilityImpact.textContent = 'You are hidden from manager searches.'; }
@@ -2492,9 +2532,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 availabilityMessage.textContent = data.data.status_text;
               }
               if (data.data && typeof data.data.available !== 'undefined') {
-                setAvailabilityVisualState(!!data.data.available);
+                setAvailabilityVisualState(!!data.data.available, data.data.confirmed_at || '');
               } else {
-                setAvailabilityVisualState(true);
+                setAvailabilityVisualState(true, data.data && data.data.confirmed_at ? data.data.confirmed_at : '');
               }
               var isNowAvailable = data && data.data && typeof data.data.available !== 'undefined' ? !!data.data.available : true;
               if (data.data && typeof data.data.button_text === 'string') {
