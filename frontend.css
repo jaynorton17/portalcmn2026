@@ -13026,6 +13026,18 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-p
   padding: 18px 20px;
 }
 
+/* Profile-only: remove red glow/tint overlays from box surfaces */
+body.cmn-portal-page .cmn-candidate-portal.cmn-portal-light .cmn-candidate-main--profile {
+  background-image: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--profile .cmn-dashboard-card::before {
+  content: none !important;
+  background: none !important;
+  opacity: 0 !important;
+  filter: none !important;
+}
+
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-photo-card {
   margin-bottom: 12px;
 }

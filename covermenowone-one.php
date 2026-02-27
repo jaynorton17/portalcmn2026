@@ -64845,7 +64845,7 @@ final class CMN_One_Plugin {
                             <h2>My Hub</h2>
                         </header>
                         <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
-                            <a class="cmn-tab is-active" href="<?php echo esc_url($candidate_profile_url); ?>">My Hub</a>
+                            <a class="cmn-tab is-active" href="<?php echo esc_url($candidate_profile_url); ?>">Personal Details</a>
                             <a class="cmn-tab" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
                             <a class="cmn-tab" href="<?php echo esc_url($candidate_feedback_url); ?>">Feedback &amp; Ratings</a>
                             <a class="cmn-tab" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
