@@ -15314,7 +15314,7 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
   display: inline-flex;
   align-items: center;
   min-height: 32px;
-  padding: 0 12px;
+  padding: 0 6px;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.26);
   background: rgba(15, 23, 42, 0.74);
