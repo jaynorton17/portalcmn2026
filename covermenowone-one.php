@@ -69084,7 +69084,7 @@ final class CMN_One_Plugin {
         $ack_status_chip = $has_self_employed_ack ? 'is-approved' : 'is-warning';
         $ack_status_label = $has_self_employed_ack ? 'Accepted' : 'Required';
         $ack_accepted_at = $this->normalize_invoice_datetime((string) ($ack_record['accepted_at'] ?? ''));
-        $ack_accepted_display = $ack_accepted_at !== '' ? mysql2date('j M Y g:ia', $ack_accepted_at, false) : '';
+        $ack_accepted_date_display = $ack_accepted_at !== '' ? mysql2date('d/m/Y', $ack_accepted_at, false) : '';
         $finance_ack_notice_status = sanitize_key((string) wp_unslash($_GET['cmn_finance_ack_status'] ?? ''));
         $finance_ack_notice_message_raw = (string) wp_unslash((string) ($_GET['cmn_finance_ack_msg'] ?? ''));
         $finance_ack_notice_message = $finance_ack_notice_message_raw !== ''
@@ -69336,21 +69336,32 @@ final class CMN_One_Plugin {
                 <h3>Self-Employed Notice</h3>
                 <p>You are self-employed. CoverMeNow does not deduct tax/NIC.</p>
                 <p>You are responsible for reporting your income.</p>
-                <div class="cmn-candidate-finance-status-list">
-                    <div class="cmn-candidate-finance-status-row">
-                        <span>Acknowledgement</span>
-                        <strong><span class="cmn-status-chip <?php echo esc_attr($ack_status_chip); ?>"><?php echo esc_html($ack_status_label); ?></span></strong>
-                    </div>
-                </div>
-                <?php if ($finance_ack_notice_message !== '') : ?>
-                    <div class="<?php echo esc_attr($finance_ack_notice_class); ?> cmn-candidate-finance-ack-message"><?php echo esc_html($finance_ack_notice_message); ?></div>
-                <?php endif; ?>
                 <?php if ($has_self_employed_ack) : ?>
-                    <?php if ($ack_accepted_display !== '') : ?>
-                        <p class="cmn-muted">Accepted on <?php echo esc_html($ack_accepted_display); ?>.</p>
+                    <div class="cmn-candidate-finance-status-list">
+                        <div class="cmn-candidate-finance-status-row">
+                            <span>Acknowledgement</span>
+                            <strong>
+                                <?php if ($ack_accepted_date_display !== '') : ?>
+                                    <?php echo esc_html('Acknowledged ' . $ack_accepted_date_display); ?>
+                                <?php else : ?>
+                                    Acknowledged
+                                <?php endif; ?>
+                            </strong>
+                        </div>
+                    </div>
+                    <?php if ($finance_ack_notice_message !== '') : ?>
+                        <div class="<?php echo esc_attr($finance_ack_notice_class); ?> cmn-candidate-finance-ack-message"><?php echo esc_html($finance_ack_notice_message); ?></div>
                     <?php endif; ?>
-                    <div class="cmn-status-chip is-approved">Acknowledged</div>
                 <?php else : ?>
+                    <div class="cmn-candidate-finance-status-list">
+                        <div class="cmn-candidate-finance-status-row">
+                            <span>Acknowledgement</span>
+                            <strong><span class="cmn-status-chip <?php echo esc_attr($ack_status_chip); ?>"><?php echo esc_html($ack_status_label); ?></span></strong>
+                        </div>
+                    </div>
+                    <?php if ($finance_ack_notice_message !== '') : ?>
+                        <div class="<?php echo esc_attr($finance_ack_notice_class); ?> cmn-candidate-finance-ack-message"><?php echo esc_html($finance_ack_notice_message); ?></div>
+                    <?php endif; ?>
                     <div class="cmn-register-warning">Payout readiness is on hold until this acknowledgement is confirmed.</div>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-ack-form">
                         <?php wp_nonce_field('cmn_candidate_accept_compliance_ack', 'cmn_candidate_compliance_ack_nonce'); ?>

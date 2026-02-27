@@ -3496,10 +3496,19 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 
 .cmn-candidate-finance-self-employed-card {
   border-left: 3px solid var(--cmn-accent);
+  width: calc(50% - 8px);
+  max-width: calc(50% - 8px);
 }
 
 .cmn-candidate-finance-self-employed-card p {
   margin: 0 0 8px;
+}
+
+@media (max-width: 980px) {
+  .cmn-candidate-finance-self-employed-card {
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 .cmn-staff-payroll-page {
