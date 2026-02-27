@@ -14850,6 +14850,26 @@ body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-summary {
   max-width: 100%;
 }
 
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-actions [data-cmn-payroll-query-open].cmn-primary {
+  min-width: 172px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--cmn-text) !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-actions [data-cmn-payroll-query-open].cmn-primary:hover,
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-actions [data-cmn-payroll-query-open].cmn-primary:focus-visible {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-form-grid {
   display: grid !important;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) !important;
