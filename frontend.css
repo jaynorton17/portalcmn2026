@@ -15348,4 +15348,13 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
   font-size: 12px !important;
   font-weight: 700 !important;
   border-radius: 10px;
+  border-color: rgba(148, 163, 184, 0.34) !important;
+  background: rgba(30, 41, 59, 0.88) !important;
+  color: #f8fafc !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls .cmn-primary[data-calendar-bulk-submit]:hover,
+body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls .cmn-primary[data-calendar-bulk-submit]:focus-visible {
+  background: rgba(51, 65, 85, 0.95) !important;
+  border-color: rgba(148, 163, 184, 0.46) !important;
 }
