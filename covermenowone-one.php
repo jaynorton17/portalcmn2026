@@ -64893,7 +64893,7 @@ final class CMN_One_Plugin {
                                 <a class="cmn-tab<?php echo $tab === 'calendar' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
                                 <a class="cmn-tab<?php echo $tab === 'bookings' ? ' is-active' : ''; ?>" href="<?php echo esc_url($candidate_bookings_url); ?>">Bookings</a>
                             </nav>
-                            <div class="cmn-candidate-hub-status"<?php echo $tab === 'profile' ? '' : ' hidden'; ?>>
+                            <div class="cmn-candidate-hub-status">
                                 <div class="cmn-profile-admin-status <?php echo $is_completion_verified ? 'is-verified' : 'is-pending'; ?>" data-profile-admin-status>
                                     <span class="cmn-profile-admin-status-label">Status:</span>
                                     <strong class="cmn-profile-admin-status-value" data-profile-admin-status-text data-profile-completion-text><?php echo esc_html($completion_percent); ?>% Complete</strong>

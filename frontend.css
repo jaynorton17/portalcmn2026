@@ -13029,35 +13029,36 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-grid--candidate-p
   -webkit-backdrop-filter: none !important;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-hub-toprow {
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-toprow {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
   margin: 6px 0 14px;
+  flex-wrap: nowrap;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-profile-hub-tabs {
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-profile-hub-tabs {
   margin: 0;
   flex: 1 1 auto;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-hub-status {
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-status {
   flex: 0 0 min(380px, 42%);
   display: grid;
   gap: 8px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-hub-status .cmn-profile-completion-help {
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-status .cmn-profile-completion-help {
   margin: 0;
   padding: 8px 10px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-hub-status .cmn-profile-completion-help ul {
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-status .cmn-profile-completion-help ul {
   padding-left: 16px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-hub-status .cmn-profile-completion-help a {
+body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-status .cmn-profile-completion-help a {
   color: #f8fafc;
   text-decoration: underline;
   text-decoration-color: rgba(239, 68, 68, 0.65);
@@ -13078,6 +13079,28 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-dashboard-card::before {
   background: none !important;
   opacity: 0 !important;
   filter: none !important;
+}
+
+/* Finance tab: keep card surfaces neutral (no red tint) */
+body.cmn-portal-page .cmn-candidate-main--candidate_finance {
+  background-image: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-dashboard-card {
+  background: #0f1116 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.32) !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-dashboard-card::before {
+  content: none !important;
+  background: none !important;
+  opacity: 0 !important;
+  filter: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-self-employed-card {
+  border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-photo-card {
@@ -13186,7 +13209,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-summary-value {
   line-height: 1.3;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -13198,7 +13221,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status {
   color: #e2e8f0;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status::before {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status::before {
   content: '';
   width: 8px;
   height: 8px;
@@ -13207,23 +13230,23 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status::bef
   box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.18);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status.is-verified::before {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status.is-verified::before {
   background: #22c55e;
   box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-label {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status-label {
   font-size: 12px;
   color: rgba(203, 213, 225, 0.78);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-value {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status-value {
   font-size: 13px;
   letter-spacing: 0.01em;
   color: #f8fafc;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tooltip {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status-tooltip {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
@@ -13240,28 +13263,28 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tool
   z-index: 10;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tooltip p {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status-tooltip p {
   margin: 0 0 8px;
   font-size: 12px;
   color: rgba(203, 213, 225, 0.84);
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tooltip ul {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status-tooltip ul {
   margin: 0;
   padding: 0 0 0 16px;
   display: grid;
   gap: 6px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status-tooltip a {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status-tooltip a {
   color: #f8fafc;
   text-decoration: underline;
   text-decoration-color: rgba(239, 68, 68, 0.65);
   text-underline-offset: 2px;
 }
 
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status:not(.is-verified):hover .cmn-profile-admin-status-tooltip,
-body.cmn-portal-page .cmn-candidate-main--profile .cmn-profile-admin-status:not(.is-verified):focus-within .cmn-profile-admin-status-tooltip {
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status:not(.is-verified):hover .cmn-profile-admin-status-tooltip,
+body.cmn-portal-page .cmn-candidate-main .cmn-profile-admin-status:not(.is-verified):focus-within .cmn-profile-admin-status-tooltip {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -13581,10 +13604,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero .cmn-
 }
 
 @media (max-width: 980px) {
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-hub-toprow {
+  body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-toprow {
     flex-direction: column;
   }
-  body.cmn-portal-page .cmn-candidate-main--profile .cmn-candidate-hub-status {
+  body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-status {
     width: 100%;
     max-width: none;
   }
