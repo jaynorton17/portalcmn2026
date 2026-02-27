@@ -64926,14 +64926,6 @@ final class CMN_One_Plugin {
                                             <span class="cmn-profile-definition-value" data-profile-role><?php echo esc_html($role_label); ?></span>
                                         </div>
                                         <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Preferred roles</span>
-                                            <span class="cmn-profile-definition-value" data-profile-roles><?php echo esc_html($preferred_roles_label); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
-                                            <span class="cmn-profile-definition-label">Other role</span>
-                                            <span class="cmn-profile-definition-value" data-profile-roles-other><?php echo esc_html($roles_other !== '' ? $roles_other : 'Not set'); ?></span>
-                                        </div>
-                                        <div class="cmn-profile-definition-row">
                                             <span class="cmn-profile-definition-label">Travel radius</span>
                                             <span class="cmn-profile-definition-value" data-profile-travel><?php echo esc_html($travel_distance !== '' ? $travel_distance : 'Not set'); ?></span>
                                         </div>
@@ -64993,20 +64985,6 @@ final class CMN_One_Plugin {
                                     </label>
                                     <label>Role type
                                         <input type="text" name="role_type" value="<?php echo esc_attr($role_label); ?>" required>
-                                    </label>
-                                    <fieldset class="cmn-form-group">
-                                        <span class="cmn-form-label">Preferred roles</span>
-                                        <div class="cmn-inline-row">
-                                            <?php foreach (['Teaching Assistant', 'Teacher', 'Cover Supervisor', 'Learning Support Assistant', 'Other'] as $role_option) : ?>
-                                                <label class="cmn-inline-check">
-                                                    <input type="checkbox" name="roles[]" value="<?php echo esc_attr($role_option); ?>"<?php checked(in_array($role_option, $preferred_roles, true)); ?>>
-                                                    <?php echo esc_html($role_option); ?>
-                                                </label>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </fieldset>
-                                    <label>Other role
-                                        <input type="text" name="roles_other" value="<?php echo esc_attr($roles_other); ?>" placeholder="If Other, add details">
                                     </label>
                                     <label>Travel radius
                                         <input type="text" name="travel_radius" value="<?php echo esc_attr($travel_distance); ?>" required>
