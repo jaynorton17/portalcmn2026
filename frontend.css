@@ -14936,6 +14936,25 @@ body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finan
   border-color: rgba(148, 163, 184, 0.46) !important;
 }
 
+/* Hard override: Query pay button must not use the global red primary theme */
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-dashboard-card button.cmn-primary[data-cmn-payroll-query-open] {
+  background: rgba(30, 41, 59, 0.88) !important;
+  background-image: none !important;
+  background-color: rgba(30, 41, 59, 0.88) !important;
+  border: 1px solid rgba(148, 163, 184, 0.34) !important;
+  color: #f8fafc !important;
+  box-shadow: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-dashboard-card button.cmn-primary[data-cmn-payroll-query-open]:hover,
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-dashboard-card button.cmn-primary[data-cmn-payroll-query-open]:focus-visible {
+  background: rgba(51, 65, 85, 0.95) !important;
+  background-image: none !important;
+  background-color: rgba(51, 65, 85, 0.95) !important;
+  border-color: rgba(148, 163, 184, 0.46) !important;
+  box-shadow: none !important;
+}
+
 /* Feedback & Ratings: add visible spacing between feedback rows */
 body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-list {
   gap: 14px;
