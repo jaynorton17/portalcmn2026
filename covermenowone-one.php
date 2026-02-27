@@ -58639,6 +58639,25 @@ final class CMN_One_Plugin {
         return !empty($exists);
     }
 
+    private function get_candidate_availability_entry($candidate_id, $date) {
+        if (!$candidate_id || !$date) {
+            return null;
+        }
+        global $wpdb;
+        $table = $this->get_candidate_availability_table();
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, available_date, available_type, created_at
+             FROM {$table}
+             WHERE candidate_id = %d
+               AND available_date = %s
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1",
+            $candidate_id,
+            $date
+        ), ARRAY_A);
+        return is_array($row) && $row ? $row : null;
+    }
+
     private function is_candidate_unavailable($candidate_id, $date) {
         if (!$candidate_id || !$date) {
             return false;
@@ -64509,6 +64528,18 @@ final class CMN_One_Plugin {
         }
         $already_marked = $candidate_id ? $this->has_candidate_availability($candidate_id, $target_date) : false;
         $calendar_blocked = $candidate_id ? $this->is_candidate_unavailable($candidate_id, $target_date) : false;
+        $availability_confirmed_entry = ($candidate_id && $already_marked)
+            ? $this->get_candidate_availability_entry($candidate_id, $target_date)
+            : null;
+        $availability_confirmed_time_label = '';
+        if (is_array($availability_confirmed_entry) && !empty($availability_confirmed_entry['created_at'])) {
+            try {
+                $confirmed_dt = new DateTime((string) $availability_confirmed_entry['created_at'], wp_timezone());
+                $availability_confirmed_time_label = $confirmed_dt->format('g:ia');
+            } catch (Exception $e) {
+                $availability_confirmed_time_label = '';
+            }
+        }
 
         $calendar_window_start = (clone $now)->modify('+1 day');
         $calendar_window_end = (clone $calendar_window_start)->modify('+30 days');
@@ -65470,6 +65501,18 @@ final class CMN_One_Plugin {
                                     }
                                 }
                             }
+                            $contact_card_availability_class = 'is-pending';
+                            $contact_card_availability_label = 'Not confirmed yet';
+                            if ($calendar_blocked) {
+                                $contact_card_availability_class = 'is-unavailable';
+                                $contact_card_availability_label = "I'm not available";
+                            } elseif ($already_marked) {
+                                $contact_card_availability_class = 'is-available';
+                                $contact_card_availability_label = "I'm available";
+                            }
+                            $contact_card_button_time_label = $already_marked
+                                ? ($availability_confirmed_time_label !== '' ? ('Button pressed: ' . $availability_confirmed_time_label) : 'Button pressed: confirmed')
+                                : 'Button not pressed yet';
                             $contact_card_other_checked = $saved_contact_card_custom_skill !== '';
                             ?>
                             <div class="cmn-contact-card-tab-grid" id="cmn-profile-contact-card" data-profile-contact-card<?php echo $profile_focus_tab === 'contact_card' ? '' : ' hidden'; ?>>
@@ -65499,6 +65542,8 @@ final class CMN_One_Plugin {
                                                     <span class="cmn-contact-card-preview-stars-fill" style="width: <?php echo esc_attr(number_format($contact_card_feedback_percent, 2, '.', '')); ?>%;">★★★★★</span>
                                                 </div>
                                                 <span class="cmn-contact-card-preview-score" data-contact-card-preview-score><?php echo esc_html($contact_card_feedback_text); ?></span>
+                                                <span class="cmn-contact-card-preview-meta-pill <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
+                                                <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-time><?php echo esc_html($contact_card_button_time_label); ?></span>
                                             </div>
                                             <div class="cmn-contact-card-preview-row cmn-contact-card-preview-row--5">
                                                 <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
