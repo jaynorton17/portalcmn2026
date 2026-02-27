@@ -16987,3 +16987,136 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
   background: rgba(51, 65, 85, 0.95) !important;
   border-color: rgba(148, 163, 184, 0.46) !important;
 }
+
+/* Mobile phone audit hardening: reduce overflow + normalize dense layouts */
+@media (max-width: 900px) {
+  html.cmn-portal-page,
+  body.cmn-portal-page {
+    overflow-x: hidden !important;
+  }
+
+  body.cmn-portal-page :is(.cmn-candidate-main, .cmn-school-main, .cmn-staff-main) * {
+    min-width: 0;
+  }
+
+  body.cmn-portal-page :is(
+    .cmn-dashboard-grid,
+    .cmn-school-dashboard-grid,
+    .cmn-dashboard-row,
+    .cmn-candidate-section-row--sections-3-4,
+    .cmn-candidate-bookings-grid,
+    .cmn-candidate-feedback-summary-row,
+    .cmn-contact-card-tab-grid
+  ) {
+    grid-template-columns: 1fr !important;
+  }
+
+  body.cmn-portal-page :is(.cmn-learning-module-list, .cmn-learning-course-list, .cmn-learning-smart-grid) {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  body.cmn-portal-page .cmn-learning-module-tile {
+    min-height: 0;
+  }
+
+  body.cmn-portal-page .cmn-learning-module-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  body.cmn-portal-page :is(.cmn-learning-module-open, .cmn-learning-module-learn-link) {
+    width: 100%;
+    justify-content: center;
+  }
+
+  body.cmn-portal-page :is(
+    .cmn-table-wrap,
+    .cmn-staff-table-wrap,
+    .cmn-school-table-wrap,
+    .cmn-role-rate-table-wrap,
+    .cmn-booking-table-wrap,
+    .cmn-candidate-payroll-table-wrap
+  ) {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.cmn-portal-page :is(
+    .cmn-table,
+    .cmn-approval-table,
+    .cmn-booking-table,
+    .cmn-role-rate-table,
+    .cmn-schools-table
+  ) {
+    min-width: 680px !important;
+  }
+
+  body.cmn-portal-page :is(.cmn-bulk-actions, .cmn-panel-actions, .cmn-calendar-range-controls, .cmn-profile-progress-actions, .cmn-contact-card-skill-actions) {
+    flex-wrap: wrap;
+  }
+
+  body.cmn-portal-page :is(
+    .cmn-bulk-actions select,
+    .cmn-bulk-actions input[type="text"],
+    .cmn-panel-actions > *,
+    .cmn-calendar-range-controls > *,
+    .cmn-profile-progress-actions > *
+  ) {
+    min-width: 0 !important;
+    width: 100%;
+  }
+}
+
+@media (max-width: 680px) {
+  body.cmn-portal-page :is(.cmn-candidate-main, .cmn-school-main, .cmn-staff-main) {
+    padding: 14px !important;
+  }
+
+  body.cmn-portal-page :is(
+    .cmn-status-chip,
+    .cmn-pill,
+    .cmn-chip,
+    .cmn-contact-card-preview-meta-pill,
+    .cmn-live-status,
+    .cmn-candidate-summary-link
+  ) {
+    max-width: 100%;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo {
+    grid-row: auto;
+    min-height: 0;
+    max-height: 240px;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-photo img {
+    min-height: 0;
+    max-height: 240px;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--profile .cmn-contact-card-preview-row {
+    grid-column: 1;
+  }
+
+  body.cmn-portal-page .cmn-live-matches {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  body.cmn-portal-page .cmn-live-matches-head h2 {
+    font-size: clamp(24px, 7vw, 30px);
+  }
+
+  body.cmn-portal-page .cmn-live-matches-head p {
+    font-size: 15px;
+  }
+}

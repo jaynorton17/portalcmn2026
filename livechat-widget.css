@@ -391,6 +391,29 @@
   }
 }
 
+@media (max-width: 640px) {
+  body.cmn-portal-page .cmn-livechat-root {
+    left: auto;
+    right: 10px;
+    width: auto;
+    max-width: calc(100vw - 20px);
+  }
+
+  body.cmn-portal-page .cmn-livechat-toggle {
+    width: auto;
+    max-width: 100%;
+    margin-left: auto;
+    padding: 9px 12px;
+  }
+
+  body.cmn-portal-page .cmn-livechat-panel {
+    left: auto;
+    right: 0;
+    width: min(360px, calc(100vw - 20px));
+    max-height: min(74vh, 660px);
+  }
+}
+
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .cmn-livechat-panel {
     background: #0f141d;

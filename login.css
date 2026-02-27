@@ -166,3 +166,28 @@ body.login img[src*="fasthosts"] {
   height: 0 !important;
   overflow: hidden !important;
 }
+
+@media (max-width: 640px) {
+  body.login {
+    align-items: flex-start;
+    justify-content: flex-start;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 18px 12px;
+  }
+
+  body.login #login {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+
+  body.login form {
+    padding: 18px;
+  }
+
+  body.login .button-primary {
+    width: 100%;
+    min-height: 42px;
+  }
+}
