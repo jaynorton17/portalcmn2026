@@ -65595,6 +65595,7 @@ final class CMN_One_Plugin {
                                 ? $contact_card_button_time_label
                                 : 'Confirmed';
                             $contact_card_status_detail = $contact_card_show_available ? $contact_card_status_available_detail : $contact_card_status_pending_detail;
+                            $contact_card_presence_preview_label = $contact_card_is_online_now ? 'ONLINE NOW' : $contact_card_last_online_label;
                             $contact_card_verified_bundle = $contact_card_id_verified && $contact_card_dbs_verified;
                             $contact_card_other_checked = $saved_contact_card_custom_skill !== '';
                             ?>
@@ -65699,6 +65700,73 @@ final class CMN_One_Plugin {
                                         <button class="cmn-primary" type="button" data-contact-card-save>Save 3 skills</button>
                                         <button class="cmn-ghost" type="button" data-contact-card-reset>Reset</button>
                                         <span class="cmn-muted" data-contact-card-skill-msg aria-live="polite"></span>
+                                    </div>
+                                </article>
+                                <article class="cmn-dashboard-card cmn-contact-card-design-lab">
+                                    <div class="cmn-card-header">
+                                        <h3>Contact Card Design Concepts</h3>
+                                        <span class="cmn-muted">6 looks to compare (including dark neon)</span>
+                                    </div>
+                                    <?php
+                                    $contact_card_design_variants = [
+                                        ['slug' => 'dark-neon', 'name' => 'Dark Neon Command'],
+                                        ['slug' => 'emerald-ops', 'name' => 'Emerald Ops'],
+                                        ['slug' => 'amber-command', 'name' => 'Amber Command'],
+                                        ['slug' => 'blue-shift', 'name' => 'Blue Shift'],
+                                        ['slug' => 'carbon-matte', 'name' => 'Carbon Matte'],
+                                        ['slug' => 'signal-flare', 'name' => 'Signal Flare'],
+                                    ];
+                                    ?>
+                                    <div class="cmn-contact-card-design-grid">
+                                        <?php foreach ($contact_card_design_variants as $contact_card_variant) : ?>
+                                            <?php
+                                            $variant_slug = sanitize_key((string) ($contact_card_variant['slug'] ?? 'dark-neon'));
+                                            $variant_name = sanitize_text_field((string) ($contact_card_variant['name'] ?? 'Design'));
+                                            ?>
+                                            <section class="cmn-contact-card-design-item">
+                                                <h4><?php echo esc_html($variant_name); ?></h4>
+                                                <div class="cmn-contact-card-preview cmn-command-card cmn-contact-card-design-preview cmn-contact-card-design-preview--<?php echo esc_attr($variant_slug); ?> <?php echo $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation'; ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>">
+                                                    <div class="cmn-command-card-accent" aria-hidden="true"></div>
+                                                    <div class="cmn-command-card-head">
+                                                        <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
+                                                        <span class="cmn-command-head-check" aria-hidden="true">&#10003;</span>
+                                                    </div>
+                                                    <div class="cmn-command-identity">
+                                                        <div class="cmn-contact-card-preview-photo-wrap">
+                                                            <div class="cmn-contact-card-preview-photo">
+                                                                <img src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name !== '' ? $profile_name : 'Candidate'); ?> profile photo">
+                                                            </div>
+                                                        </div>
+                                                        <div class="cmn-command-identity-main">
+                                                            <strong><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></strong>
+                                                            <div class="cmn-contact-card-preview-stars" aria-label="Feedback score">
+                                                                <span class="cmn-contact-card-preview-stars-track">★★★★★</span>
+                                                                <span class="cmn-contact-card-preview-stars-fill" style="width: <?php echo esc_attr(number_format($contact_card_feedback_percent, 2, '.', '')); ?>%;">★★★★★</span>
+                                                            </div>
+                                                            <span class="cmn-contact-card-preview-score"><?php echo esc_html($contact_card_feedback_text); ?></span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="cmn-command-meta">
+                                                        <span>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
+                                                        <span>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
+                                                    </div>
+                                                    <div class="cmn-command-status-wrap">
+                                                        <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>"><?php echo esc_html($contact_card_availability_label); ?></span>
+                                                        <span class="cmn-contact-card-preview-time"<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
+                                                    </div>
+                                                    <div class="cmn-contact-card-design-presence <?php echo $contact_card_is_online_now ? 'is-live' : 'is-offline'; ?>"><?php echo esc_html($contact_card_presence_preview_label); ?></div>
+                                                    <div class="cmn-contact-card-preview-skills">
+                                                        <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
+                                                            <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div class="cmn-contact-card-preview-actions" aria-hidden="true">
+                                                        <span class="cmn-ghost cmn-btn-mini">View profile</span>
+                                                        <span class="cmn-primary cmn-btn-mini">Book now</span>
+                                                    </div>
+                                                </div>
+                                            </section>
+                                        <?php endforeach; ?>
                                     </div>
                                 </article>
                             </div>

@@ -15485,6 +15485,211 @@ body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dash
   margin-top: auto;
 }
 
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-lab {
+  grid-column: 1 / -1;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-item {
+  display: grid;
+  gap: 8px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-item h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card {
+  --cmn-design-r: 239, 68, 68;
+  padding: 14px;
+  gap: 8px;
+  border-radius: 16px;
+  overflow: hidden;
+  border-color: rgba(var(--cmn-design-r), 0.4);
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(var(--cmn-design-r), 0.18), rgba(var(--cmn-design-r), 0) 52%),
+    linear-gradient(165deg, rgba(17, 23, 34, 0.98), rgba(8, 12, 20, 0.98));
+  box-shadow:
+    0 10px 24px rgba(2, 6, 18, 0.52),
+    0 0 16px rgba(var(--cmn-design-r), 0.2);
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card.is-bookable,
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card.is-pending-confirmation {
+  border-color: rgba(var(--cmn-design-r), 0.4);
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(var(--cmn-design-r), 0.18), rgba(var(--cmn-design-r), 0) 52%),
+    linear-gradient(165deg, rgba(17, 23, 34, 0.98), rgba(8, 12, 20, 0.98));
+  box-shadow:
+    0 10px 24px rgba(2, 6, 18, 0.52),
+    0 0 16px rgba(var(--cmn-design-r), 0.2);
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card::before {
+  background: linear-gradient(90deg, rgba(var(--cmn-design-r), 0.72), rgba(var(--cmn-design-r), 0.1), rgba(var(--cmn-design-r), 0.72));
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card.is-bookable::before,
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card.is-pending-confirmation::before {
+  background: linear-gradient(90deg, rgba(var(--cmn-design-r), 0.72), rgba(var(--cmn-design-r), 0.1), rgba(var(--cmn-design-r), 0.72));
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card::after {
+  background:
+    radial-gradient(60% 40% at 50% 20%, rgba(var(--cmn-design-r), 0.22), transparent 70%),
+    radial-gradient(60% 45% at 50% 100%, rgba(var(--cmn-design-r), 0.12), transparent 75%);
+  opacity: 0.45;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card.is-bookable::after,
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card.is-pending-confirmation::after {
+  background:
+    radial-gradient(60% 40% at 50% 20%, rgba(var(--cmn-design-r), 0.22), transparent 70%),
+    radial-gradient(60% 45% at 50% 100%, rgba(var(--cmn-design-r), 0.12), transparent 75%);
+  opacity: 0.45;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-command-card-accent {
+  left: 12px;
+  right: 12px;
+  background: linear-gradient(90deg, rgba(var(--cmn-design-r), 0), rgba(var(--cmn-design-r), 0.96), rgba(var(--cmn-design-r), 0));
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card.is-bookable .cmn-command-card-accent,
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview.cmn-command-card.is-pending-confirmation .cmn-command-card-accent {
+  background: linear-gradient(90deg, rgba(var(--cmn-design-r), 0), rgba(var(--cmn-design-r), 0.96), rgba(var(--cmn-design-r), 0));
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-command-brand {
+  font-size: 13px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-command-identity {
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-preview-photo-wrap {
+  width: 52px;
+  height: 52px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-command-identity-main strong {
+  font-size: 20px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-preview-stars {
+  font-size: 13px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-preview-score {
+  font-size: 10px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-command-meta {
+  padding: 7px 9px;
+  gap: 4px;
+  font-size: 11px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-command-status-wrap {
+  margin-top: 8px;
+  padding: 9px;
+  gap: 4px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-preview-state {
+  min-height: 30px;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-preview-time {
+  font-size: 10px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-presence {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.52);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-presence.is-live {
+  border-color: rgba(34, 197, 94, 0.46);
+  color: rgba(220, 252, 231, 0.96);
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-preview-skills {
+  gap: 6px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-skill-chip {
+  min-height: 22px;
+  font-size: 10px;
+  padding: 0 7px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-preview-actions {
+  gap: 6px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview .cmn-contact-card-preview-actions :is(.cmn-ghost, .cmn-primary) {
+  min-height: 28px;
+  font-size: 10px;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview--dark-neon {
+  --cmn-design-r: 239, 68, 68;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview--emerald-ops {
+  --cmn-design-r: 34, 197, 94;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview--amber-command {
+  --cmn-design-r: 250, 204, 21;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview--blue-shift {
+  --cmn-design-r: 59, 130, 246;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview--carbon-matte {
+  --cmn-design-r: 148, 163, 184;
+}
+
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-preview--signal-flare {
+  --cmn-design-r: 249, 115, 22;
+}
+
+@media (max-width: 1280px) {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-design-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 body.cmn-portal-page .cmn-candidate-main--profile [data-contact-card-skill-msg].is-error {
   color: #fca5a5;
 }
