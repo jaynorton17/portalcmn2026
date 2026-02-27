@@ -13617,6 +13617,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-summary-link:
   color: #fff1f3;
 }
 
+body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-calendar-planner + .cmn-candidate-weekly-earnings-card {
+  margin-top: 12px;
+}
+
 /* Section 3 (Availability Planner): remove red card glow */
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-calendar-planner::before {
   content: none !important;
