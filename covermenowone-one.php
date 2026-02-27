@@ -64563,6 +64563,14 @@ final class CMN_One_Plugin {
         $candidate_learning_url = add_query_arg(['candidate' => 'learning'], $portal_url);
         $candidate_rewards_url = add_query_arg(['candidate' => 'rewards'], $portal_url);
         $candidate_feedback_url = add_query_arg(['candidate' => 'feedback_ratings'], $portal_url);
+        $candidate_calendar_url = add_query_arg([
+            'candidate' => 'calendar',
+            'cmn_tab' => false,
+        ], $portal_url);
+        $candidate_bookings_url = add_query_arg([
+            'candidate' => 'bookings',
+            'cmn_tab' => false,
+        ], $portal_url);
         $candidate_finance_url = add_query_arg([
             'cmn_tab' => 'candidate_finance',
             'candidate' => false,
@@ -64694,7 +64702,7 @@ final class CMN_One_Plugin {
             : 'NA - Feedback not yet received';
         $nav_items = [
             'dashboard' => 'Dashboard',
-            'profile' => 'Profile',
+            'profile' => 'My Hub',
             'rewards' => 'CMN Rewards',
             'candidate_finance' => 'Finance',
             'feedback_ratings' => 'Feedback & Ratings',
@@ -64834,8 +64842,15 @@ final class CMN_One_Plugin {
                     ?>
                     <?php if ($tab === 'profile') : ?>
                         <header class="cmn-candidate-header" data-tour-target="profile-tab">
-                            <h2>Candidate Profile</h2>
+                            <h2>My Hub</h2>
                         </header>
+                        <nav class="cmn-tabs cmn-candidate-profile-hub-tabs" aria-label="My Hub quick tabs">
+                            <a class="cmn-tab is-active" href="<?php echo esc_url($candidate_profile_url); ?>">My Hub</a>
+                            <a class="cmn-tab" href="<?php echo esc_url($candidate_finance_url); ?>">Finance</a>
+                            <a class="cmn-tab" href="<?php echo esc_url($candidate_feedback_url); ?>">Feedback &amp; Ratings</a>
+                            <a class="cmn-tab" href="<?php echo esc_url($candidate_calendar_url); ?>">Calendar</a>
+                            <a class="cmn-tab" href="<?php echo esc_url($candidate_bookings_url); ?>">Bookings</a>
+                        </nav>
                         <div class="cmn-dashboard-card cmn-profile-photo-card" data-profile-photo-root data-fallback-url="<?php echo esc_attr($profile_photo_fallback); ?>">
                             <div class="cmn-card-header">
                                 <h3>Profile photo</h3>
