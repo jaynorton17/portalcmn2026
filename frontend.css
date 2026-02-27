@@ -3496,8 +3496,6 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 
 .cmn-candidate-finance-self-employed-card {
   border-left: 3px solid var(--cmn-accent);
-  width: calc(50% - 8px);
-  max-width: calc(50% - 8px);
 }
 
 .cmn-candidate-finance-self-employed-card p {
@@ -3507,6 +3505,16 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 .cmn-candidate-finance-ytd-card {
   display: grid;
   gap: 10px;
+}
+
+.cmn-candidate-finance-row--secondary {
+  align-items: stretch;
+}
+
+.cmn-candidate-finance-row--secondary > .cmn-dashboard-card {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
 }
 
 .cmn-candidate-finance-ytd-list {
@@ -14888,19 +14896,34 @@ body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-actions [data-cm
   min-height: 40px;
   padding: 0 14px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: var(--cmn-text) !important;
+  border: 1px solid rgba(148, 163, 184, 0.34) !important;
+  background: rgba(30, 41, 59, 0.88) !important;
+  color: #f8fafc !important;
   box-shadow: none !important;
   font-weight: 600;
 }
 
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-actions [data-cmn-payroll-query-open].cmn-primary:hover,
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-actions [data-cmn-payroll-query-open].cmn-primary:focus-visible {
-  background: rgba(255, 255, 255, 0.09) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
+  background: rgba(51, 65, 85, 0.95) !important;
+  border-color: rgba(148, 163, 184, 0.46) !important;
   transform: none !important;
   box-shadow: none !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-actions .cmn-primary,
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-bank-summary {
+  border-color: rgba(148, 163, 184, 0.34) !important;
+  background: rgba(30, 41, 59, 0.88) !important;
+  color: #f8fafc !important;
+}
+
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-actions .cmn-primary:hover,
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-actions .cmn-primary:focus-visible,
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-bank-summary:hover,
+body.cmn-portal-page .cmn-candidate-main--candidate_finance .cmn-candidate-finance-bank-summary:focus-visible {
+  background: rgba(51, 65, 85, 0.95) !important;
+  border-color: rgba(148, 163, 184, 0.46) !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-bank-form-grid {

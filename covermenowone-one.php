@@ -69389,80 +69389,82 @@ final class CMN_One_Plugin {
                     </details>
                 </article>
             </div>
-            <article class="cmn-dashboard-card cmn-candidate-finance-ytd-card">
-                <div class="cmn-card-header">
-                    <h3>Year-to-Date Earnings (Confirmed)</h3>
-                    <span class="cmn-status-chip is-approved"><?php echo esc_html('GBP ' . number_format($ytd_total_confirmed, 2)); ?></span>
-                </div>
-                <p class="cmn-muted">
-                    <?php if ($ytd_academic_year_label !== '') : ?>
-                        <?php echo esc_html('Academic year ' . $ytd_academic_year_label . ' (Sep-Jul).'); ?>
+            <div class="cmn-candidate-finance-row cmn-candidate-finance-row--secondary">
+                <article class="cmn-dashboard-card cmn-candidate-finance-ytd-card">
+                    <div class="cmn-card-header">
+                        <h3>Year-to-Date Earnings (Confirmed)</h3>
+                        <span class="cmn-status-chip is-approved"><?php echo esc_html('GBP ' . number_format($ytd_total_confirmed, 2)); ?></span>
+                    </div>
+                    <p class="cmn-muted">
+                        <?php if ($ytd_academic_year_label !== '') : ?>
+                            <?php echo esc_html('Academic year ' . $ytd_academic_year_label . ' (Sep-Jul).'); ?>
+                        <?php else : ?>
+                            Sep-Jul confirmed totals.
+                        <?php endif; ?>
+                    </p>
+                    <ul class="cmn-candidate-finance-ytd-list">
+                        <?php foreach ($ytd_month_rows as $month_row) : ?>
+                            <?php
+                            $month_label = sanitize_text_field((string) ($month_row['month_label'] ?? ''));
+                            if ($month_label === '') {
+                                continue;
+                            }
+                            $is_na = !empty($month_row['is_na']);
+                            $month_amount = round((float) ($month_row['amount'] ?? 0), 2);
+                            ?>
+                            <li class="cmn-candidate-finance-ytd-item<?php echo $is_na ? ' is-na' : ''; ?>">
+                                <span><?php echo esc_html($month_label); ?></span>
+                                <strong><?php echo esc_html($is_na ? 'NA' : ('GBP ' . number_format($month_amount, 2))); ?></strong>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </article>
+                <article class="cmn-dashboard-card cmn-candidate-finance-self-employed-card" id="cmn-candidate-compliance-ack">
+                    <h3>Self-Employed Notice</h3>
+                    <p>You are self-employed. CoverMeNow does not deduct tax/NIC.</p>
+                    <p>You are responsible for reporting your income.</p>
+                    <?php if ($has_self_employed_ack) : ?>
+                        <div class="cmn-candidate-finance-status-list">
+                            <div class="cmn-candidate-finance-status-row">
+                                <span>Acknowledgement</span>
+                                <strong>
+                                    <?php if ($ack_accepted_date_display !== '') : ?>
+                                        <?php echo esc_html('Acknowledged ' . $ack_accepted_date_display); ?>
+                                    <?php else : ?>
+                                        Acknowledged
+                                    <?php endif; ?>
+                                </strong>
+                            </div>
+                        </div>
+                        <?php if ($finance_ack_notice_message !== '') : ?>
+                            <div class="<?php echo esc_attr($finance_ack_notice_class); ?> cmn-candidate-finance-ack-message"><?php echo esc_html($finance_ack_notice_message); ?></div>
+                        <?php endif; ?>
                     <?php else : ?>
-                        Sep-Jul confirmed totals.
-                    <?php endif; ?>
-                </p>
-                <ul class="cmn-candidate-finance-ytd-list">
-                    <?php foreach ($ytd_month_rows as $month_row) : ?>
-                        <?php
-                        $month_label = sanitize_text_field((string) ($month_row['month_label'] ?? ''));
-                        if ($month_label === '') {
-                            continue;
-                        }
-                        $is_na = !empty($month_row['is_na']);
-                        $month_amount = round((float) ($month_row['amount'] ?? 0), 2);
-                        ?>
-                        <li class="cmn-candidate-finance-ytd-item<?php echo $is_na ? ' is-na' : ''; ?>">
-                            <span><?php echo esc_html($month_label); ?></span>
-                            <strong><?php echo esc_html($is_na ? 'N/A' : ('GBP ' . number_format($month_amount, 2))); ?></strong>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-            </article>
-            <article class="cmn-dashboard-card cmn-candidate-finance-self-employed-card" id="cmn-candidate-compliance-ack">
-                <h3>Self-Employed Notice</h3>
-                <p>You are self-employed. CoverMeNow does not deduct tax/NIC.</p>
-                <p>You are responsible for reporting your income.</p>
-                <?php if ($has_self_employed_ack) : ?>
-                    <div class="cmn-candidate-finance-status-list">
-                        <div class="cmn-candidate-finance-status-row">
-                            <span>Acknowledgement</span>
-                            <strong>
-                                <?php if ($ack_accepted_date_display !== '') : ?>
-                                    <?php echo esc_html('Acknowledged ' . $ack_accepted_date_display); ?>
-                                <?php else : ?>
-                                    Acknowledged
-                                <?php endif; ?>
-                            </strong>
+                        <div class="cmn-candidate-finance-status-list">
+                            <div class="cmn-candidate-finance-status-row">
+                                <span>Acknowledgement</span>
+                                <strong><span class="cmn-status-chip <?php echo esc_attr($ack_status_chip); ?>"><?php echo esc_html($ack_status_label); ?></span></strong>
+                            </div>
                         </div>
-                    </div>
-                    <?php if ($finance_ack_notice_message !== '') : ?>
-                        <div class="<?php echo esc_attr($finance_ack_notice_class); ?> cmn-candidate-finance-ack-message"><?php echo esc_html($finance_ack_notice_message); ?></div>
+                        <?php if ($finance_ack_notice_message !== '') : ?>
+                            <div class="<?php echo esc_attr($finance_ack_notice_class); ?> cmn-candidate-finance-ack-message"><?php echo esc_html($finance_ack_notice_message); ?></div>
+                        <?php endif; ?>
+                        <div class="cmn-register-warning">Payout readiness is on hold until this acknowledgement is confirmed.</div>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-ack-form">
+                            <?php wp_nonce_field('cmn_candidate_accept_compliance_ack', 'cmn_candidate_compliance_ack_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_candidate_accept_compliance_ack">
+                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('compliance-ack')); ?>">
+                            <label class="cmn-inline-check">
+                                <input type="checkbox" name="cmn_self_employed_ack_confirm" value="1" required>
+                                I understand and accept
+                            </label>
+                            <div class="cmn-candidate-finance-actions">
+                                <button class="cmn-primary" type="submit">I understand and accept and confirm</button>
+                            </div>
+                        </form>
                     <?php endif; ?>
-                <?php else : ?>
-                    <div class="cmn-candidate-finance-status-list">
-                        <div class="cmn-candidate-finance-status-row">
-                            <span>Acknowledgement</span>
-                            <strong><span class="cmn-status-chip <?php echo esc_attr($ack_status_chip); ?>"><?php echo esc_html($ack_status_label); ?></span></strong>
-                        </div>
-                    </div>
-                    <?php if ($finance_ack_notice_message !== '') : ?>
-                        <div class="<?php echo esc_attr($finance_ack_notice_class); ?> cmn-candidate-finance-ack-message"><?php echo esc_html($finance_ack_notice_message); ?></div>
-                    <?php endif; ?>
-                    <div class="cmn-register-warning">Payout readiness is on hold until this acknowledgement is confirmed.</div>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-candidate-finance-ack-form">
-                        <?php wp_nonce_field('cmn_candidate_accept_compliance_ack', 'cmn_candidate_compliance_ack_nonce'); ?>
-                        <input type="hidden" name="action" value="cmn_candidate_accept_compliance_ack">
-                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($this->get_candidate_finance_focus_url('compliance-ack')); ?>">
-                        <label class="cmn-inline-check">
-                            <input type="checkbox" name="cmn_self_employed_ack_confirm" value="1" required>
-                            I understand and accept
-                        </label>
-                        <div class="cmn-candidate-finance-actions">
-                            <button class="cmn-primary" type="submit">I understand and accept and confirm</button>
-                        </div>
-                    </form>
-                <?php endif; ?>
-            </article>
+                </article>
+            </div>
         </section>
         <?php
         return ob_get_clean();
