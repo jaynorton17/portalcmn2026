@@ -1390,6 +1390,27 @@ body.cmn-portal-page img[src*="fasthosts"] {
   margin-top: 14px;
 }
 
+.cmn-learning-module-course-tile .cmn-learning-module-footer {
+  align-items: stretch;
+  justify-content: flex-start;
+  flex-direction: column;
+}
+
+.cmn-learning-module-course-tile .cmn-learning-module-open {
+  width: 100%;
+}
+
+.cmn-learning-module-course-tile .cmn-learning-course-lock {
+  margin: 0;
+  min-height: 16px;
+}
+
+.cmn-learning-module-course-tile > small {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 12px;
+}
+
 .cmn-learning-module-open {
   height: 40px;
   border-radius: 12px;

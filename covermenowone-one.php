@@ -64765,6 +64765,7 @@ final class CMN_One_Plugin {
         $learning_focus_raw = sanitize_key((string) wp_unslash($_GET['cmn_learning_focus'] ?? ''));
         $learning_focus = in_array($learning_focus_raw, ['modules', 'hub'], true) ? $learning_focus_raw : 'landing';
         $learning_open_course_key = sanitize_key((string) wp_unslash($_GET['cmn_learning_course'] ?? ''));
+        $learning_open_module_param = sanitize_key((string) wp_unslash($_GET['cmn_learning_module'] ?? ''));
         $candidate_finance_url = add_query_arg([
             'cmn_tab' => 'candidate_finance',
             'candidate' => false,
@@ -65751,22 +65752,53 @@ final class CMN_One_Plugin {
                                     'coming_soon' => true,
                                 ];
                             }
-                            $learning_open_module_key = '';
-                            if ($learning_open_course_key !== '' && isset($learning_course_catalog[$learning_open_course_key])) {
-                                $learning_open_module_key = sanitize_key((string) ($learning_course_catalog[$learning_open_course_key]['module_key'] ?? ''));
+                            $learning_module_lookup = [];
+                            foreach ($learning_module_tiles as $module_lookup_item) {
+                                $module_lookup_key = sanitize_key((string) ($module_lookup_item['key'] ?? ''));
+                                if ($module_lookup_key === '') {
+                                    continue;
+                                }
+                                $learning_module_lookup[$module_lookup_key] = $module_lookup_item;
                             }
-                            if ($learning_open_module_key === '') {
-                                foreach ($learning_module_tiles as $module_item_default) {
-                                    if (empty($module_item_default['coming_soon'])) {
-                                        $learning_open_module_key = sanitize_key((string) ($module_item_default['key'] ?? ''));
-                                        break;
-                                    }
+
+                            $learning_open_module_key = '';
+                            if (
+                                $learning_open_module_param !== ''
+                                && isset($learning_module_lookup[$learning_open_module_param])
+                                && empty($learning_module_lookup[$learning_open_module_param]['coming_soon'])
+                            ) {
+                                $learning_open_module_key = $learning_open_module_param;
+                            } elseif ($learning_open_course_key !== '' && isset($learning_course_catalog[$learning_open_course_key])) {
+                                $course_module_key = sanitize_key((string) ($learning_course_catalog[$learning_open_course_key]['module_key'] ?? ''));
+                                if (
+                                    $course_module_key !== ''
+                                    && isset($learning_module_lookup[$course_module_key])
+                                    && empty($learning_module_lookup[$course_module_key]['coming_soon'])
+                                ) {
+                                    $learning_open_module_key = $course_module_key;
+                                } else {
+                                    $learning_open_course_key = '';
                                 }
                             }
+
+                            $learning_is_module_screen = ($learning_open_module_key !== '');
+                            $learning_module_screen_title = 'Modules';
+                            if ($learning_is_module_screen && isset($learning_module_lookup[$learning_open_module_key])) {
+                                $module_title_raw = sanitize_text_field((string) ($learning_module_lookup[$learning_open_module_key]['title'] ?? 'Modules'));
+                                if ($module_title_raw !== '') {
+                                    $learning_module_screen_title = $module_title_raw . ' Modules';
+                                }
+                            }
+                            $learning_modules_screen_url = add_query_arg([
+                                'candidate' => 'learning',
+                                'cmn_learning_focus' => 'modules',
+                                'cmn_learning_module' => false,
+                                'cmn_learning_course' => false,
+                            ], $portal_url) . '#cmn-learning-modules';
                             $learning_visible_course_count = 0;
                             ?>
-                            <div class="cmn-learning-modules-shell" id="cmn-learning-modules" data-learning-root>
-                                <article class="cmn-dashboard-card cmn-learning-modules-panel">
+                            <div class="cmn-learning-modules-shell" id="cmn-learning-modules" data-learning-root data-learning-open-module="<?php echo esc_attr($learning_open_module_key); ?>" data-learning-screen="<?php echo esc_attr($learning_is_module_screen ? 'modules' : 'courses'); ?>">
+                                <article class="cmn-dashboard-card cmn-learning-modules-panel" data-learning-courses-screen<?php echo $learning_is_module_screen ? ' hidden' : ''; ?>>
                                     <div class="cmn-card-header">
                                         <h3>Courses</h3>
                                         <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'learning', 'cmn_learning_focus' => false], $portal_url)); ?>">Back</a>
@@ -65862,12 +65894,21 @@ final class CMN_One_Plugin {
                                                     <?php else : ?>
                                                         <span class="cmn-learning-module-learn-link is-disabled">What you'll learn</span>
                                                     <?php endif; ?>
+                                                    <?php
+                                                    $module_open_url = add_query_arg([
+                                                        'candidate' => 'learning',
+                                                        'cmn_learning_focus' => 'modules',
+                                                        'cmn_learning_module' => $module_key,
+                                                        'cmn_learning_course' => false,
+                                                    ], $portal_url) . '#cmn-learning-modules';
+                                                    ?>
                                                     <button class="cmn-learning-module-open"
                                                             type="button"
                                                             data-learning-open-module="<?php echo esc_attr($module_key); ?>"
+                                                            data-learning-open-module-url="<?php echo esc_url($module_open_url); ?>"
                                                             aria-pressed="<?php echo $is_selected_module ? 'true' : 'false'; ?>"
                                                             <?php echo $is_coming_soon ? 'disabled' : ''; ?>>
-                                                        <?php echo esc_html($is_coming_soon ? 'Coming soon' : 'Open module'); ?>
+                                                        <?php echo esc_html($is_coming_soon ? 'Coming soon' : 'Open modules'); ?>
                                                     </button>
                                                 </div>
                                             </article>
@@ -65893,10 +65934,13 @@ final class CMN_One_Plugin {
                                     </div>
                                     <div class="cmn-learning-module-empty" data-learning-module-empty hidden>No courses match your search filters.</div>
                                 </article>
-                                <article class="cmn-dashboard-card cmn-learning-courses-panel">
-                                    <h3 data-learning-courses-title>Modules</h3>
+                                <article class="cmn-dashboard-card cmn-learning-courses-panel" data-learning-modules-screen<?php echo $learning_is_module_screen ? '' : ' hidden'; ?>>
+                                    <div class="cmn-card-header">
+                                        <h3 data-learning-courses-title><?php echo esc_html($learning_module_screen_title); ?></h3>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($learning_modules_screen_url); ?>">Back to courses</a>
+                                    </div>
                                     <div class="cmn-learning-course-empty" data-learning-course-empty hidden>No modules available in this course yet.</div>
-                                    <div class="cmn-learning-course-list">
+                                    <div class="cmn-learning-course-list cmn-learning-module-list">
                                         <?php foreach ((array) $learning_course_catalog as $course_key => $course_item) : ?>
                                             <?php
                                             $course_key = sanitize_key((string) $course_key);
@@ -65923,40 +65967,42 @@ final class CMN_One_Plugin {
                                             }
                                             $is_locked_course = !$is_completed && !empty($missing_required_titles);
                                             $lock_message = $is_locked_course ? ('Complete first: ' . implode(', ', $missing_required_titles)) : '';
-                                            $open_label = $is_locked_course ? 'Locked' : ($is_completed ? 'Review course' : 'Start course');
-                                            $is_visible_for_module = $learning_open_module_key !== '' && $course_module_key === $learning_open_module_key;
+                                            $open_label = $is_locked_course ? 'Locked' : ($is_completed ? 'Review module' : 'Start module');
+                                            $is_visible_for_module = $learning_is_module_screen && $learning_open_module_key !== '' && $course_module_key === $learning_open_module_key;
                                             if ($is_visible_for_module) {
                                                 $learning_visible_course_count++;
                                             }
                                             ?>
-                                            <div class="cmn-learning-course-item<?php echo $is_completed ? ' is-completed' : ''; ?><?php echo $is_locked_course ? ' is-locked' : ''; ?>"
+                                            <article class="cmn-learning-module-tile cmn-learning-module-course-tile<?php echo $is_completed ? ' is-completed' : ''; ?><?php echo $is_locked_course ? ' is-locked' : ''; ?>"
                                                  data-learning-course-card="<?php echo esc_attr($course_key); ?>"
                                                  data-learning-course-module="<?php echo esc_attr($course_module_key); ?>"
                                                  data-learning-course-locked="<?php echo $is_locked_course ? '1' : '0'; ?>"
                                                  data-learning-course-requires="<?php echo esc_attr(wp_json_encode($required_course_keys)); ?>"
                                                  <?php echo $is_visible_for_module ? '' : 'hidden'; ?>>
-                                                <div class="cmn-learning-course-hero">
-                                                    <img class="cmn-learning-course-icon" src="<?php echo esc_url($course_icon_url); ?>" alt="Course icon">
+                                                <div class="cmn-learning-module-card-head">
+                                                    <div class="cmn-learning-module-tile-icon-wrap">
+                                                        <img class="cmn-learning-module-tile-icon" src="<?php echo esc_url($course_icon_url); ?>" alt="Course icon">
+                                                    </div>
+                                                    <h4 class="cmn-module-title"><?php echo esc_html($course_title); ?></h4>
+                                                    <p class="cmn-module-desc"><?php echo esc_html($course_description); ?></p>
                                                 </div>
-                                                <div class="cmn-learning-course-head">
-                                                    <h4><?php echo esc_html($course_title); ?></h4>
+                                                <div class="cmn-learning-module-meta">
                                                     <span class="cmn-status-chip<?php echo $is_completed ? ' is-approved' : ''; ?>" data-learning-course-status="<?php echo esc_attr($course_key); ?>">
                                                         <?php echo $is_completed ? 'Completed' : ($is_locked_course ? 'Locked' : 'Not started'); ?>
                                                     </span>
+                                                    <span class="cmn-chip"><?php echo esc_html((string) $slides_count); ?> slides</span>
+                                                    <span class="cmn-chip"><?php echo esc_html((string) $exam_count); ?> exam questions</span>
                                                 </div>
-                                                <p><?php echo esc_html($course_description); ?></p>
-                                                <div class="cmn-learning-course-meta">
-                                                    <span><?php echo esc_html((string) $slides_count); ?> slides</span>
-                                                    <span><?php echo esc_html((string) $exam_count); ?> exam questions</span>
+                                                <div class="cmn-learning-module-footer">
+                                                    <small class="cmn-learning-course-lock"<?php echo $is_locked_course ? '' : ' hidden'; ?> data-learning-course-lock="<?php echo esc_attr($course_key); ?>">
+                                                        <?php echo esc_html($lock_message); ?>
+                                                    </small>
+                                                    <button class="cmn-learning-module-open" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>"<?php echo $is_locked_course ? ' disabled' : ''; ?>><?php echo esc_html($open_label); ?></button>
                                                 </div>
-                                                <small class="cmn-learning-course-lock"<?php echo $is_locked_course ? '' : ' hidden'; ?> data-learning-course-lock="<?php echo esc_attr($course_key); ?>">
-                                                    <?php echo esc_html($lock_message); ?>
-                                                </small>
                                                 <?php if ($is_completed && $completion_date !== '') : ?>
                                                     <small>Completed: <?php echo esc_html($completion_date); ?></small>
                                                 <?php endif; ?>
-                                                <button class="cmn-primary" type="button" data-learning-open-course="<?php echo esc_attr($course_key); ?>"<?php echo $is_locked_course ? ' disabled' : ''; ?>><?php echo esc_html($open_label); ?></button>
-                                            </div>
+                                            </article>
                                         <?php endforeach; ?>
                                     </div>
                                 </article>
@@ -65965,7 +66011,7 @@ final class CMN_One_Plugin {
                                          data-learning-courses="<?php echo esc_attr(wp_json_encode($learning_course_catalog)); ?>"
                                          data-learning-results="<?php echo esc_attr(wp_json_encode($learning_course_results)); ?>"
                                          data-learning-open-key="<?php echo esc_attr($learning_open_course_key); ?>"
-                                         data-learning-candidate-name="<?php echo esc_attr((string) ($user ? $user->display_name : 'Candidate')); ?>">
+                                         data-learning-candidate-name="<?php echo esc_attr((string) ($user ? $user->display_name : 'Candidate')); ?>"<?php echo $learning_is_module_screen ? '' : ' hidden'; ?>>
                                     <div class="cmn-learning-player-empty" data-learning-player-empty>
                                         <h3>Select a Course</h3>
                                         <p>Choose a course above to read the summary, work through each slide, and complete the exam.</p>

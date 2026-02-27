@@ -10537,6 +10537,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var learningResults = learningParseJson(learningPlayer.getAttribute('data-learning-results'), {});
       var candidateName = String(learningPlayer.getAttribute('data-learning-candidate-name') || 'Candidate');
       var initialOpenKey = String(learningPlayer.getAttribute('data-learning-open-key') || '');
+      var initialOpenModuleKey = String(learningRoot.getAttribute('data-learning-open-module') || '');
 
       var panelEmpty = learningPlayer.querySelector('[data-learning-player-empty]');
       var panelSummary = learningPlayer.querySelector('[data-learning-player-summary]');
@@ -10681,7 +10682,7 @@ document.addEventListener('DOMContentLoaded', function () {
               openButton.textContent = 'Locked';
             } else {
               openButton.disabled = false;
-              openButton.textContent = completed ? 'Review course' : 'Open course';
+              openButton.textContent = completed ? 'Review module' : 'Open module';
             }
           }
         });
@@ -11250,6 +11251,11 @@ document.addEventListener('DOMContentLoaded', function () {
           if (button.disabled) {
             return;
           }
+          var openUrl = String(button.getAttribute('data-learning-open-module-url') || '').trim();
+          if (openUrl) {
+            window.location.assign(openUrl);
+            return;
+          }
           var key = button.getAttribute('data-learning-open-module');
           setActiveModule(key, false);
         });
@@ -11447,6 +11453,8 @@ document.addEventListener('DOMContentLoaded', function () {
           setActiveModule(initialModuleKey, true);
         }
         openCourse(initialOpenKey);
+      } else if (initialOpenModuleKey) {
+        setActiveModule(initialOpenModuleKey, false);
       } else if (moduleCards.length) {
         var defaultModuleKey = '';
         moduleCards.forEach(function (card) {
