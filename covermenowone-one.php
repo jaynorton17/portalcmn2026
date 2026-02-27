@@ -66031,10 +66031,15 @@ final class CMN_One_Plugin {
                             </div>
                             <article class="cmn-dashboard-card cmn-candidate-section4-carousel" data-candidate-section4-carousel>
                                 <div class="cmn-card-header">
-                                    <h3>Section 4</h3>
+                                    <h3>Highlights</h3>
                                 </div>
                                 <div class="cmn-candidate-section4-carousel-viewport">
                                     <div class="cmn-candidate-section4-carousel-track" data-candidate-section4-track>
+                                        <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
+                                            <h4>Latest News</h4>
+                                            <strong class="cmn-candidate-section4-highlight">Portal updates</strong>
+                                            <p>Latest candidate updates and announcements will appear here.</p>
+                                        </section>
                                         <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
                                             <h4>Contact Card</h4>
                                             <div class="cmn-candidate-contact-card-body">
@@ -66050,11 +66055,6 @@ final class CMN_One_Plugin {
                                             <h4>Refer a Cover Manager</h4>
                                             <strong class="cmn-candidate-section4-highlight">Get £100</strong>
                                             <p>We will add the offer details here shortly.</p>
-                                        </section>
-                                        <section class="cmn-candidate-section4-slide" data-candidate-section4-slide>
-                                            <h4>Latest News</h4>
-                                            <strong class="cmn-candidate-section4-highlight">Portal updates</strong>
-                                            <p>Latest candidate updates and announcements will appear here.</p>
                                         </section>
                                     </div>
                                 </div>

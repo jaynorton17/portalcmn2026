@@ -155,6 +155,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
       var currentIndex = 0;
       var slideCount = slides.length;
+      var autoRotateMs = 5000;
+      var autoTimer = null;
       var render = function () {
         if (!slideCount) {
           return;
@@ -168,24 +170,46 @@ document.addEventListener('DOMContentLoaded', function () {
           dot.classList.toggle('is-active', index === currentIndex);
         });
       };
+      var stopAutoRotate = function () {
+        if (autoTimer) {
+          window.clearInterval(autoTimer);
+          autoTimer = null;
+        }
+      };
+      var startAutoRotate = function () {
+        stopAutoRotate();
+        if (slideCount <= 1) {
+          return;
+        }
+        autoTimer = window.setInterval(function () {
+          currentIndex += 1;
+          render();
+        }, autoRotateMs);
+      };
+      var refreshAutoRotate = function () {
+        startAutoRotate();
+      };
 
       root.addEventListener('click', function (event) {
         var prev = event.target.closest('[data-candidate-section4-prev]');
         if (prev) {
           currentIndex -= 1;
           render();
+          refreshAutoRotate();
           return;
         }
         var next = event.target.closest('[data-candidate-section4-next]');
         if (next) {
           currentIndex += 1;
           render();
+          refreshAutoRotate();
           return;
         }
         var dot = event.target.closest('[data-candidate-section4-dot]');
         if (dot) {
           currentIndex = parseInt(dot.getAttribute('data-candidate-section4-dot') || '0', 10) || 0;
           render();
+          refreshAutoRotate();
         }
       });
 
@@ -193,13 +217,21 @@ document.addEventListener('DOMContentLoaded', function () {
         if (event.key === 'ArrowLeft') {
           currentIndex -= 1;
           render();
+          refreshAutoRotate();
         } else if (event.key === 'ArrowRight') {
           currentIndex += 1;
           render();
+          refreshAutoRotate();
         }
       });
 
+      root.addEventListener('mouseenter', stopAutoRotate);
+      root.addEventListener('mouseleave', startAutoRotate);
+      root.addEventListener('focusin', stopAutoRotate);
+      root.addEventListener('focusout', startAutoRotate);
+
       render();
+      startAutoRotate();
     });
   };
   initCandidateSection4Carousel();
