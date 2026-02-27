@@ -6715,10 +6715,20 @@ body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-ranking {
 
 body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--visibility {
   gap: 16px;
+  align-content: stretch;
+  grid-template-rows: auto 1fr auto auto;
 }
 
 body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--visibility .cmn-candidate-clp-ranking li {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
   line-height: 1.55;
+}
+
+body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--visibility .cmn-candidate-clp-ranking {
+  height: 100%;
+  align-content: space-around;
 }
 
 body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-highlight {
@@ -6814,6 +6824,16 @@ body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-conduct-bod
 
   body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-grid {
     grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--visibility {
+    grid-template-rows: none;
+    align-content: start;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--rewards .cmn-candidate-clp-card--visibility .cmn-candidate-clp-ranking {
+    height: auto;
+    align-content: start;
   }
 }
 
