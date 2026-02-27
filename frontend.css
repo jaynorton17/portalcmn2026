@@ -13670,6 +13670,7 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero {
   --cmn-availability-segment-gap: 10px;
   --cmn-availability-action-band-height: calc(58px + 39px + (var(--cmn-availability-segment-gap) * 2));
   --cmn-availability-divider-color: #facc15;
+  padding-bottom: 16px !important;
 }
 
 body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero.is-confirmed {
