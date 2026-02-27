@@ -65368,92 +65368,52 @@ final class CMN_One_Plugin {
                     <?php elseif ($tab === 'calendar') : ?>
                         <header class="cmn-candidate-header" data-tour-target="calendar-tab">
                             <h2>Manage Availability</h2>
-                            <p>Tap dates to mark yourself available (green) or unavailable (red).</p>
                         </header>
-                        <div class="cmn-availability-layout">
-                            <div class="cmn-availability-left">
-                                <div class="cmn-dashboard-card cmn-profile-summary">
-                                    <div class="cmn-profile-summary-header">
-                                        <div class="cmn-profile-avatar"><?php echo esc_html(strtoupper(substr($profile_name, 0, 1))); ?></div>
-                                        <div>
-                                            <strong><?php echo esc_html($profile_name); ?></strong>
-                                            <span><?php echo esc_html($role_label); ?></span>
-                                            <div class="cmn-profile-progress-line">
-                                                <span>Profile <?php echo esc_html($completion_percent); ?>% Complete</span>
-                                                <div class="cmn-progress-bar"><span style="width: <?php echo esc_attr($completion_percent); ?>%;"></span></div>
-                                            </div>
-                                            <p class="cmn-profile-alert"><?php echo $doc_dbs['uploaded'] ? 'DBS Verified' : 'Unverified DBS Check'; ?></p>
-                                        </div>
-                                    </div>
+                        <div class="cmn-candidate-section-row cmn-candidate-section-row--calendar-only">
+                            <div class="cmn-dashboard-card cmn-calendar-planner" data-candidate-calendar
+                                 data-calendar-month="<?php echo esc_attr($calendar_min_month); ?>"
+                                 data-calendar-min="<?php echo esc_attr($calendar_min_month); ?>"
+                                 data-calendar-max="<?php echo esc_attr($calendar_max_month); ?>"
+                                 data-calendar-data="<?php echo esc_attr(wp_json_encode($calendar_map)); ?>">
+                                <div class="cmn-card-header cmn-calendar-header">
+                                    <h2 class="cmn-calendar-title">Availability Planner</h2>
                                 </div>
-                                <div class="cmn-dashboard-card">
-                                    <div class="cmn-card-header">
-                                        <h3>Personal Details</h3>
-                                        <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile'], $portal_url)); ?>">Edit</a>
-                                    </div>
-                                    <p>Email: <?php echo esc_html($profile_email); ?></p>
-                                    <p>Mobile: <?php echo esc_html($profile_phone ?: 'Not set'); ?></p>
-                                    <p>Postcode: <?php echo esc_html($profile_postcode ?: 'Not set'); ?></p>
-                                    <p>Role Type: <?php echo esc_html($role_label); ?></p>
+                                <div class="cmn-calendar-grid cmn-calendar-interactive" data-calendar-grid></div>
+                                <div class="cmn-calendar-range-controls">
+                                    <label>Start date
+                                        <select data-calendar-range-start>
+                                            <?php foreach ($calendar_weekday_options as $calendar_option) : ?>
+                                                <option value="<?php echo esc_attr((string) ($calendar_option['value'] ?? '')); ?>"<?php selected((string) ($calendar_option['value'] ?? ''), $calendar_default_start_date); ?>>
+                                                    <?php echo esc_html((string) ($calendar_option['label'] ?? '')); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
+                                    <label>End date
+                                        <select data-calendar-range-end>
+                                            <?php foreach ($calendar_weekday_options as $calendar_option) : ?>
+                                                <option value="<?php echo esc_attr((string) ($calendar_option['value'] ?? '')); ?>"<?php selected((string) ($calendar_option['value'] ?? ''), $calendar_default_end_date); ?>>
+                                                    <?php echo esc_html((string) ($calendar_option['label'] ?? '')); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
+                                    <label>Action
+                                        <select data-calendar-bulk-action>
+                                            <option value="available">Mark as Available</option>
+                                            <option value="unavailable">Mark as Unavailable</option>
+                                            <option value="clear_range">Clear range</option>
+                                        </select>
+                                    </label>
+                                    <button class="cmn-primary" type="button" data-calendar-bulk-submit>Update Availability</button>
                                 </div>
-                                <div class="cmn-dashboard-card">
-                                    <div class="cmn-card-header">
-                                        <h3>Compliance Documents</h3>
-                                        <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'profile'], $portal_url)); ?>">Edit</a>
-                                    </div>
-                                    <ul class="cmn-status-list">
-                                        <li class="<?php echo $doc_cv['uploaded'] ? 'is-ok' : 'is-warn'; ?>">Upload CV <span><?php echo $doc_cv['uploaded'] ? 'Completed' : 'Required'; ?></span></li>
-                                        <li class="<?php echo $doc_dbs['uploaded'] ? 'is-ok' : 'is-warn'; ?>">Upload DBS <span><?php echo $doc_dbs['uploaded'] ? 'Completed' : 'Required'; ?></span></li>
-                                        <li class="<?php echo $doc_id['uploaded'] ? 'is-ok' : 'is-warn'; ?>">Upload Photo ID <span><?php echo $doc_id['uploaded'] ? 'Completed' : 'Required'; ?></span></li>
-                                    </ul>
-                                    <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['candidate' => 'support'], $portal_url)); ?>">Request DBS Verification</a>
+                                <div class="cmn-calendar-legend">
+                                    <span><span class="cmn-dot is-available"></span> Available</span>
+                                    <span><span class="cmn-dot is-unavailable"></span> Unavailable</span>
+                                    <span><span class="cmn-dot is-booked-confirmed"></span> Booking confirmed</span>
+                                    <span><span class="cmn-dot"></span> Neutral</span>
                                 </div>
-                            </div>
-                            <div class="cmn-availability-right">
-                                <div class="cmn-dashboard-card cmn-availability-card-wide">
-                                    <form class="cmn-calendar-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                                        <?php wp_nonce_field('cmn_save_calendar', 'cmn_save_calendar_nonce'); ?>
-                                        <input type="hidden" name="action" value="cmn_save_calendar">
-                                        <input type="hidden" name="cmn_calendar_month" value="<?php echo esc_attr($cal_month); ?>">
-                                        <input type="hidden" name="cmn_calendar_data" value="<?php echo esc_attr(wp_json_encode($calendar_data)); ?>">
-                                        <div class="cmn-calendar-grid">
-                                            <div class="cmn-calendar-day">S</div>
-                                            <div class="cmn-calendar-day">M</div>
-                                            <div class="cmn-calendar-day">T</div>
-                                            <div class="cmn-calendar-day">W</div>
-                                            <div class="cmn-calendar-day">T</div>
-                                            <div class="cmn-calendar-day">F</div>
-                                            <div class="cmn-calendar-day">S</div>
-                                            <?php for ($i = 1; $i < $start_weekday; $i++) : ?>
-                                                <div class="cmn-calendar-cell is-empty"></div>
-                                            <?php endfor; ?>
-                                            <?php for ($day = 1; $day <= $days_in_month; $day++) : ?>
-                                                <?php
-                                                $date = $cal_month . '-' . str_pad((string) $day, 2, '0', STR_PAD_LEFT);
-                                                $status = $calendar_data[$date] ?? '';
-                                                $classes = 'cmn-calendar-cell';
-                                                if ($status === 'available') {
-                                                    $classes .= ' is-available';
-                                                } elseif ($status === 'unavailable') {
-                                                    $classes .= ' is-unavailable';
-                                                }
-                                                ?>
-                                                <button type="button" class="<?php echo esc_attr($classes); ?>" data-date="<?php echo esc_attr($date); ?>">
-                                                    <span><?php echo esc_html($day); ?></span>
-                                                </button>
-                                            <?php endfor; ?>
-                                        </div>
-                                        <div class="cmn-availability-stats">
-                                            <div><span class="cmn-dot is-available"></span> Next Available Date: <strong><?php echo esc_html($next_available_label); ?></strong></div>
-                                            <div><span class="cmn-dot is-available"></span> <?php echo esc_html($available_count); ?> Available Days Marked</div>
-                                            <div><span class="cmn-dot is-unavailable"></span> <?php echo esc_html($unavailable_count); ?> Unavailable Days Marked</div>
-                                        </div>
-                                        <div class="cmn-availability-actions">
-                                            <button class="cmn-ghost" type="button" data-calendar-set="clear">Clear Availability</button>
-                                            <button class="cmn-primary" type="submit">Save Changes</button>
-                                        </div>
-                                    </form>
-                                </div>
+                                <div class="cmn-calendar-feedback" data-calendar-feedback></div>
                             </div>
                         </div>
                     <?php elseif ($tab === 'learning') : ?>
