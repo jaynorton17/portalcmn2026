@@ -15083,8 +15083,27 @@ body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedba
   gap: 10px;
 }
 
+body.cmn-portal-page .cmn-candidate-main--bookings .cmn-candidate-bookings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+body.cmn-portal-page .cmn-candidate-main--bookings .cmn-candidate-bookings-grid > :is(.cmn-candidate-bookings-requests, .cmn-candidate-bookings-history) {
+  height: 100%;
+}
+
+body.cmn-portal-page .cmn-candidate-main--bookings .cmn-candidate-bookings-grid > .cmn-candidate-bookings-chat {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 900px) {
   body.cmn-portal-page .cmn-candidate-main--feedback_ratings .cmn-candidate-feedback-summary-row {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-candidate-main--bookings .cmn-candidate-bookings-grid {
     grid-template-columns: 1fr;
   }
 }

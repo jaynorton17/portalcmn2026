@@ -65522,7 +65522,8 @@ final class CMN_One_Plugin {
                         <?php if ($booking_notice) : ?>
                             <div class="cmn-register-success"><?php echo esc_html($booking_notice); ?></div>
                         <?php endif; ?>
-                        <div class="cmn-dashboard-card">
+                        <div class="cmn-candidate-bookings-grid">
+                        <div class="cmn-dashboard-card cmn-candidate-bookings-requests">
                             <div class="cmn-card-header">
                                 <h3>Booking Requests</h3>
                                 <span class="cmn-muted">15-minute response window</span>
@@ -65659,7 +65660,7 @@ final class CMN_One_Plugin {
                                     $candidate_booking_ref = 'Booking #' . (int) $chat_booking_id;
                                 }
                         ?>
-                            <div class="cmn-dashboard-card">
+                            <div class="cmn-dashboard-card cmn-candidate-bookings-chat">
                                 <div class="cmn-card-header">
                                     <h3><?php echo esc_html($chat_thread_type === 'pay_negotiation' ? 'Pay Negotiation Chat' : ($chat_thread_type === 'school_coordination' ? 'School Coordination Chat' : ($chat_thread_type === 'candidate_coordination' ? 'Candidate Coordination Chat' : 'Booking Chat'))); ?></h3>
                                     <span class="cmn-muted"><?php echo esc_html($candidate_booking_ref); ?></span>
@@ -65797,7 +65798,7 @@ final class CMN_One_Plugin {
                         }
                         $booking_query = $booking_args ? new WP_Query($booking_args) : null;
                         ?>
-                        <div class="cmn-booking-table">
+                        <div class="cmn-booking-table cmn-candidate-bookings-history">
                             <div class="cmn-booking-table-head">
                                 <div class="cmn-booking-tabs">
                                     <a class="cmn-booking-tab<?php echo $booking_tab === 'upcoming' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'tab' => 'upcoming'], $portal_url)); ?>">Upcoming</a>
@@ -65866,6 +65867,7 @@ final class CMN_One_Plugin {
                                 );
                                 ?>
                             <?php endif; ?>
+                        </div>
                         </div>
                     <?php elseif ($tab === 'support') : ?>
                         <header class="cmn-candidate-header" data-tour-target="support-hub">
