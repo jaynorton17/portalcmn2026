@@ -14891,3 +14891,57 @@ body.cmn-portal-page .cmn-portal-light :is(
 ) p {
   color: #c6ceda !important;
 }
+
+/* Global tile flattening (no red tint backgrounds across portal views). */
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-card,
+  .cmn-cover-card,
+  .cmn-support-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-calendar-card,
+  .cmn-calendar-panel,
+  .cmn-calendar-detail,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-staff-add-card,
+  .cmn-request-row,
+  .cmn-admin-stats div,
+  .cmn-admin-table div,
+  .cmn-candidate-rewards-summary,
+  .cmn-candidate-rewards-card,
+  .cmn-rewards-hero,
+  .cmn-rewards-panel,
+  .cmn-partner-progress-card,
+  .cmn-partner-savings-card,
+  .cmn-finance-metric-card,
+  .cmn-dashboard-row .cmn-availability-card,
+  .cmn-candidate-grid .cmn-availability-card,
+  .cmn-candidate-main--dashboard .cmn-candidate-section-row--sections-3-4 > .cmn-dashboard-card
+):not(.cmn-availability-hero):not(.cmn-live-card):not(.cmn-live-matches) {
+  background: var(--cmn-unified-surface) !important;
+  background-image: none !important;
+  border-color: var(--cmn-unified-border) !important;
+  box-shadow: var(--cmn-unified-shadow) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light :is(
+  .cmn-profile-meta-item,
+  .cmn-kpi,
+  .cmn-task-item,
+  .cmn-mini-day,
+  .cmn-candidate-rewards-summary-grid > div,
+  .cmn-candidate-rewards-award-row,
+  .cmn-candidate-rewards-conduct-row,
+  .cmn-rewards-event-row,
+  .cmn-rewards-history-row,
+  .cmn-rewards-admin-form,
+  .cmn-partner-savings-grid > div,
+  .cmn-finance-tier-item
+) {
+  background: var(--cmn-unified-surface-alt) !important;
+  background-image: none !important;
+  border-color: var(--cmn-unified-border) !important;
+}
