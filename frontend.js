@@ -11542,14 +11542,32 @@ document.addEventListener('DOMContentLoaded', function () {
             event.preventDefault();
             return;
           }
-          var openUrl = String(button.getAttribute('data-learning-open-module-url') || '').trim();
+          var openUrl = String(
+            button.getAttribute('data-learning-open-module-url')
+            || button.getAttribute('href')
+            || ''
+          ).trim();
           if (openUrl) {
             event.preventDefault();
             window.location.assign(openUrl);
             return;
           }
-          var key = button.getAttribute('data-learning-open-module');
-          setActiveModule(key, false);
+          var key = String(button.getAttribute('data-learning-open-module') || '').trim();
+          if (!key) {
+            return;
+          }
+          event.preventDefault();
+          try {
+            var fallbackUrl = new URL(window.location.href);
+            fallbackUrl.searchParams.set('candidate', 'learning');
+            fallbackUrl.searchParams.set('cmn_learning_focus', 'modules');
+            fallbackUrl.searchParams.set('cmn_learning_module', key);
+            fallbackUrl.searchParams.delete('cmn_learning_course');
+            fallbackUrl.hash = 'cmn-learning-modules';
+            window.location.assign(fallbackUrl.toString());
+          } catch (error) {
+            setActiveModule(key, false);
+          }
         });
       });
       outcomesOpenTriggers.forEach(function (trigger) {
