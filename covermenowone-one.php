@@ -66279,7 +66279,7 @@ final class CMN_One_Plugin {
                             </div>
                             <script>
                             document.addEventListener('click', function(event) {
-                                var link = event.target.closest('a[data-learning-open-module], a[data-learning-open-course]');
+                                var link = event.target.closest('a[data-learning-open-module]');
                                 if (!link) {
                                     return;
                                 }
