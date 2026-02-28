@@ -64637,7 +64637,11 @@ final class CMN_One_Plugin {
                 $contact_card_distance_label = rtrim(rtrim(number_format($numeric_distance, 1, '.', ''), '0'), '.') . ' miles';
             } else {
                 $contact_card_distance_label = $contact_card_distance_raw;
-                if (stripos($contact_card_distance_label, 'mile') === false) {
+                $has_time_unit = preg_match('/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i', $contact_card_distance_label);
+                $has_distance_unit = preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $contact_card_distance_label);
+                if ($has_time_unit) {
+                    $contact_card_distance_label = trim((string) preg_replace('/\s*miles?\b/i', '', $contact_card_distance_label));
+                } elseif (!$has_distance_unit) {
                     $contact_card_distance_label .= ' miles';
                 }
             }
@@ -65217,7 +65221,7 @@ final class CMN_One_Plugin {
                                             $travel_display = rtrim(rtrim(number_format((float) $travel_display, 1, '.', ''), '0'), '.')
                                                 . ' mile radius'
                                                 . ($profile_location !== '' ? (' around ' . $profile_location) : '');
-                                        } elseif (stripos($travel_display, 'mile') === false) {
+                                        } elseif (!preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers|min|mins|minute|minutes|hour|hours|hr|hrs)\b/i', $travel_display)) {
                                             $travel_display .= ' mile radius';
                                         }
                                     } else {
@@ -77135,6 +77139,7 @@ final class CMN_One_Plugin {
         $not_responded_count = 0;
         $shortlisted_count = 0;
         $target_date = current_time('Y-m-d');
+        $school_live_coords = $school_id > 0 ? $this->ensure_school_geo_coordinates($school_id) : null;
         foreach ($candidates as $item) {
             $candidate = $item['post'] ?? null;
             if (!$candidate || empty($candidate->ID)) {
@@ -77173,6 +77178,38 @@ final class CMN_One_Plugin {
             if ($day_rate <= 0) {
                 $day_rate = 160.0;
             }
+            $distance_label = '';
+            if ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
+                $candidate_coords = $this->get_geo_coordinates_for_post($candidate_id);
+                if ($candidate_coords && isset($candidate_coords['lat'], $candidate_coords['lng'])) {
+                    $distance_miles = (float) $this->marketing_haversine_miles(
+                        (float) $candidate_coords['lat'],
+                        (float) $candidate_coords['lng'],
+                        (float) $school_live_coords['lat'],
+                        (float) $school_live_coords['lng']
+                    );
+                    if ($distance_miles > 0) {
+                        $distance_label = rtrim(rtrim(number_format($distance_miles, 1, '.', ''), '0'), '.') . ' miles';
+                    }
+                }
+            }
+            if ($distance_label === '') {
+                $distance_raw = trim((string) get_post_meta($candidate_id, 'cmn_travel_distance', true));
+                if ($distance_raw !== '') {
+                    if (preg_match('/^\d+(\.\d+)?$/', $distance_raw)) {
+                        $distance_label = rtrim(rtrim(number_format((float) $distance_raw, 1, '.', ''), '0'), '.') . ' miles';
+                    } else {
+                        $distance_label = $distance_raw;
+                        $has_time_unit = preg_match('/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i', $distance_label);
+                        $has_distance_unit = preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_label);
+                        if ($has_time_unit) {
+                            $distance_label = trim((string) preg_replace('/\s*miles?\b/i', '', $distance_label));
+                        } elseif (!$has_distance_unit) {
+                            $distance_label .= ' miles';
+                        }
+                    }
+                }
+            }
             $all[] = [
                 'candidate_id' => $candidate_id,
                 'first_name' => $first_name,
@@ -77184,7 +77221,7 @@ final class CMN_One_Plugin {
                 'reviews' => (int) ($rating['feedback_count'] ?? 0),
                 'status' => $status_key,
                 'status_label' => $status_key === 'available' ? 'AVAILABLE NOW' : 'NOT RESPONDED',
-                'distance' => (string) get_post_meta($candidate_id, 'cmn_travel_distance', true),
+                'distance' => $distance_label,
                 'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
                 'confirmed_at' => $status_key === 'available' ? date_i18n('g:i A', strtotime((string) ($item['created_at'] ?? current_time('mysql')))) : '',
                 'day_rate' => round($day_rate, 0),
@@ -77251,6 +77288,14 @@ final class CMN_One_Plugin {
             $rating_label = sanitize_text_field((string) ($item['rating_label'] ?? (number_format((float) ($item['rating'] ?? 0), 2) . ' out of 5 stars')));
             if ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
                 $distance_text .= ' miles';
+            } elseif ($distance_text !== '') {
+                $has_time_unit = preg_match('/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i', $distance_text);
+                $has_distance_unit = preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_text);
+                if ($has_time_unit) {
+                    $distance_text = trim((string) preg_replace('/\s*miles?\b/i', '', $distance_text));
+                } elseif (!$has_distance_unit) {
+                    $distance_text .= ' miles';
+                }
             }
             $banner_html = $status === 'available'
                 ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'

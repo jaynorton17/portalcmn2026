@@ -9495,7 +9495,10 @@ document.addEventListener('DOMContentLoaded', function () {
         var clean = Number.isFinite(numeric) ? String(numeric).replace(/\.0+$/, '') : radiusText;
         return clean + ' mile radius' + (locationText ? (' around ' + locationText) : '');
       }
-      if (radiusText.toLowerCase().indexOf('mile') === -1) {
+      if (/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i.test(radiusText)) {
+        return radiusText.replace(/\s*miles?\b/i, '').trim();
+      }
+      if (!/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i.test(radiusText)) {
         return radiusText + ' mile radius';
       }
       return radiusText;
@@ -12865,6 +12868,12 @@ document.addEventListener('DOMContentLoaded', function () {
         return '';
       }
       if (/^\d+(\.\d+)?$/.test(raw)) {
+        return raw + ' miles';
+      }
+      if (/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i.test(raw)) {
+        return raw.replace(/\s*miles?\b/i, '').trim();
+      }
+      if (!/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i.test(raw)) {
         return raw + ' miles';
       }
       return raw;
