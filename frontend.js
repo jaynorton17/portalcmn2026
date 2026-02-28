@@ -12867,7 +12867,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!raw) {
         return '';
       }
-      if (/\b(unavailable|unknown|n\/a)\b/i.test(raw)) {
+      if (/\b(unavailable|unknown|n\/a|pending)\b/i.test(raw)) {
         return raw;
       }
       if (/^\d+(\.\d+)?$/.test(raw)) {

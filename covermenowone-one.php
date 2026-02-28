@@ -77199,7 +77199,7 @@ final class CMN_One_Plugin {
             if ($day_rate <= 0) {
                 $day_rate = 160.0;
             }
-            $distance_label = 'Distance unavailable';
+            $distance_label = 'Distance pending';
             if ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
                 $candidate_coords = $this->get_geo_coordinates_for_post($candidate_id);
                 if ((!$candidate_coords || !isset($candidate_coords['lat'], $candidate_coords['lng'])) && $candidate_geo_lookup_budget > 0) {
@@ -77216,6 +77216,12 @@ final class CMN_One_Plugin {
                     if ($distance_miles >= 0) {
                         $distance_label = rtrim(rtrim(number_format(max(0.0, $distance_miles), 1, '.', ''), '0'), '.') . ' miles';
                     }
+                }
+            }
+            if ($distance_label === 'Distance pending') {
+                $fallback_travel_radius = (float) $this->get_candidate_travel_radius_miles($candidate_id);
+                if ($fallback_travel_radius > 0) {
+                    $distance_label = 'Up to ' . rtrim(rtrim(number_format($fallback_travel_radius, 1, '.', ''), '0'), '.') . ' miles';
                 }
             }
             $all[] = [
@@ -77313,7 +77319,7 @@ final class CMN_One_Plugin {
             foreach ($skills as $skill_text) {
                 $skills_html .= '<span class="cmn-live-skill">' . esc_html($skill_text) . '</span>';
             }
-            if ($distance_text !== '' && preg_match('/\b(unavailable|unknown|n\/a)\b/i', $distance_text)) {
+            if ($distance_text !== '' && preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_text)) {
                 // Keep informational labels as-is.
             } elseif ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
                 $distance_text .= ' miles';
@@ -77662,17 +77668,7 @@ final class CMN_One_Plugin {
     }
 
     private function extract_uk_postcode_outward_code($postcode) {
-        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
-        if ($normalized_postcode === '') {
-            $normalized_postcode = strtoupper(preg_replace('/[^A-Z0-9]/', '', trim((string) $postcode)));
-        }
-        if ($normalized_postcode === '') {
-            return '';
-        }
-        if (preg_match('/^([A-Z]{1,2}\d[A-Z\d]?)/', $normalized_postcode, $matches) !== 1) {
-            return '';
-        }
-        return (string) ($matches[1] ?? '');
+        return $this->normalize_uk_outward_code_for_lookup($postcode);
     }
 
     private function normalize_uk_postcode_for_lookup($postcode) {
@@ -77689,6 +77685,32 @@ final class CMN_One_Plugin {
         }
         $extracted = strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) ($matches[1] ?? '')));
         if (preg_match('/^(GIR0AA|[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2})$/', $extracted) !== 1) {
+            return '';
+        }
+        return $extracted;
+    }
+
+    private function normalize_uk_outward_code_for_lookup($postcode) {
+        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
+        if ($normalized_postcode !== '' && preg_match('/^([A-Z]{1,2}\d[A-Z\d]?)/', $normalized_postcode, $matches) === 1) {
+            return (string) ($matches[1] ?? '');
+        }
+
+        $postcode_raw = strtoupper(trim((string) $postcode));
+        if ($postcode_raw === '') {
+            return '';
+        }
+
+        $postcode_compact = preg_replace('/[^A-Z0-9]/', '', $postcode_raw);
+        if (preg_match('/^[A-Z]{1,2}\d[A-Z\d]?$/', $postcode_compact) === 1) {
+            return $postcode_compact;
+        }
+
+        if (preg_match('/\b([A-Z]{1,2}\d[A-Z\d]?)\b/i', $postcode_raw, $matches) !== 1) {
+            return '';
+        }
+        $extracted = strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) ($matches[1] ?? '')));
+        if (preg_match('/^[A-Z]{1,2}\d[A-Z\d]?$/', $extracted) !== 1) {
             return '';
         }
         return $extracted;
@@ -77792,26 +77814,31 @@ final class CMN_One_Plugin {
                 return $normalized;
             }
         }
-
+        foreach ($candidate_values as $candidate_value) {
+            $normalized_outward = $this->normalize_uk_outward_code_for_lookup($candidate_value);
+            if ($normalized_outward !== '') {
+                return $normalized_outward;
+            }
+        }
         return '';
     }
 
-    private function geocode_uk_postcode_coordinates($postcode) {
-        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
-        if ($normalized_postcode === '') {
+    private function geocode_uk_outward_code_coordinates($outward_code) {
+        $normalized_outward_code = $this->normalize_uk_outward_code_for_lookup($outward_code);
+        if ($normalized_outward_code === '') {
             return null;
         }
-        $cache_key = 'cmn_geo_postcode_' . md5($normalized_postcode);
+        $cache_key = 'cmn_geo_outcode_' . md5($normalized_outward_code);
         $cached = get_transient($cache_key);
         if (is_array($cached) && isset($cached['lat'], $cached['lng'])) {
             return [
                 'lat' => (float) $cached['lat'],
                 'lng' => (float) $cached['lng'],
-                'source' => 'postcodes_io_cache',
+                'source' => 'postcodes_io_outcode_cache',
             ];
         }
 
-        $response = wp_remote_get('https://api.postcodes.io/postcodes/' . rawurlencode($normalized_postcode), [
+        $response = wp_remote_get('https://api.postcodes.io/outcodes/' . rawurlencode($normalized_outward_code), [
             'timeout' => 4,
             'redirection' => 2,
             'user-agent' => 'CoverMeNow ONE',
@@ -77831,6 +77858,50 @@ final class CMN_One_Plugin {
         $lng = isset($body['result']['longitude']) ? (float) $body['result']['longitude'] : null;
         if ($lat === null || $lng === null || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
             return null;
+        }
+        set_transient($cache_key, ['lat' => $lat, 'lng' => $lng], DAY_IN_SECONDS * 7);
+        return [
+            'lat' => $lat,
+            'lng' => $lng,
+            'source' => 'postcodes_io_outcode',
+        ];
+    }
+
+    private function geocode_uk_postcode_coordinates($postcode) {
+        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
+        if ($normalized_postcode === '') {
+            return $this->geocode_uk_outward_code_coordinates($postcode);
+        }
+        $cache_key = 'cmn_geo_postcode_' . md5($normalized_postcode);
+        $cached = get_transient($cache_key);
+        if (is_array($cached) && isset($cached['lat'], $cached['lng'])) {
+            return [
+                'lat' => (float) $cached['lat'],
+                'lng' => (float) $cached['lng'],
+                'source' => 'postcodes_io_cache',
+            ];
+        }
+
+        $response = wp_remote_get('https://api.postcodes.io/postcodes/' . rawurlencode($normalized_postcode), [
+            'timeout' => 4,
+            'redirection' => 2,
+            'user-agent' => 'CoverMeNow ONE',
+        ]);
+        if (is_wp_error($response)) {
+            return $this->geocode_uk_outward_code_coordinates($normalized_postcode);
+        }
+        $status_code = (int) wp_remote_retrieve_response_code($response);
+        if ($status_code !== 200) {
+            return $this->geocode_uk_outward_code_coordinates($normalized_postcode);
+        }
+        $body = json_decode((string) wp_remote_retrieve_body($response), true);
+        if (!is_array($body) || (int) ($body['status'] ?? 0) !== 200 || !is_array($body['result'] ?? null)) {
+            return $this->geocode_uk_outward_code_coordinates($normalized_postcode);
+        }
+        $lat = isset($body['result']['latitude']) ? (float) $body['result']['latitude'] : null;
+        $lng = isset($body['result']['longitude']) ? (float) $body['result']['longitude'] : null;
+        if ($lat === null || $lng === null || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return $this->geocode_uk_outward_code_coordinates($normalized_postcode);
         }
         set_transient($cache_key, ['lat' => $lat, 'lng' => $lng], DAY_IN_SECONDS * 7);
         return [
