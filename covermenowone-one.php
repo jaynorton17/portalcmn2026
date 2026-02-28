@@ -65929,6 +65929,16 @@ final class CMN_One_Plugin {
                                 'cmn_learning_course' => false,
                             ], $portal_url) . '#cmn-learning-modules';
                             $learning_visible_course_count = 0;
+                            $learning_courses_json = wp_json_encode($learning_course_catalog);
+                            if (!is_string($learning_courses_json) || $learning_courses_json === '') {
+                                $learning_courses_json = '{}';
+                            }
+                            $learning_courses_json = str_replace('</', '<\/', $learning_courses_json);
+                            $learning_results_json = wp_json_encode($learning_course_results);
+                            if (!is_string($learning_results_json) || $learning_results_json === '') {
+                                $learning_results_json = '{}';
+                            }
+                            $learning_results_json = str_replace('</', '<\/', $learning_results_json);
                             ?>
                             <div class="cmn-learning-modules-shell" id="cmn-learning-modules" data-learning-root data-learning-open-module="<?php echo esc_attr($learning_open_module_key); ?>" data-learning-screen="<?php echo esc_attr($learning_is_module_screen ? 'modules' : 'courses'); ?>">
                                 <article class="cmn-dashboard-card cmn-learning-modules-panel" data-learning-courses-screen<?php echo $learning_is_module_screen ? ' hidden' : ''; ?>>
@@ -66243,6 +66253,8 @@ final class CMN_One_Plugin {
                                         </div>
                                     </div>
                                 </article>
+                                <script type="application/json" data-learning-courses-json><?php echo $learning_courses_json; ?></script>
+                                <script type="application/json" data-learning-results-json><?php echo $learning_results_json; ?></script>
                                 <div class="cmn-learning-outcomes-modal" data-learning-outcomes-modal hidden>
                                     <div class="cmn-learning-outcomes-modal__backdrop" data-learning-outcomes-close></div>
                                     <div class="cmn-learning-outcomes-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="cmn-learning-outcomes-title">

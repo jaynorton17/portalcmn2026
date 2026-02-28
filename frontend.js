@@ -10781,6 +10781,13 @@ document.addEventListener('DOMContentLoaded', function () {
           return fallback;
         }
       };
+      var learningParseJsonScript = function (selector, fallback) {
+        var node = learningRoot.querySelector(selector);
+        if (!node) {
+          return fallback;
+        }
+        return learningParseJson(String(node.textContent || '').trim(), fallback);
+      };
       var learningEscape = function (value) {
         return String(value == null ? '' : value)
           .replace(/&/g, '&amp;')
@@ -10790,7 +10797,16 @@ document.addEventListener('DOMContentLoaded', function () {
           .replace(/'/g, '&#39;');
       };
       var learningCourses = learningParseJson(learningPlayer.getAttribute('data-learning-courses'), {});
+      if (!learningCourses || typeof learningCourses !== 'object' || !Object.keys(learningCourses).length) {
+        learningCourses = learningParseJsonScript('[data-learning-courses-json]', {});
+      }
       var learningResults = learningParseJson(learningPlayer.getAttribute('data-learning-results'), {});
+      if (!learningResults || typeof learningResults !== 'object') {
+        learningResults = {};
+      }
+      if (!Object.keys(learningResults).length) {
+        learningResults = learningParseJsonScript('[data-learning-results-json]', {});
+      }
       var candidateName = String(learningPlayer.getAttribute('data-learning-candidate-name') || 'Candidate');
       var initialOpenKey = String(learningPlayer.getAttribute('data-learning-open-key') || '');
       var initialOpenModuleKey = String(learningRoot.getAttribute('data-learning-open-module') || '');
