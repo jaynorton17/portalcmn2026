@@ -77886,7 +77886,7 @@ final class CMN_One_Plugin {
 
         $attempted_postcode = strtoupper(trim((string) get_post_meta($school_id, 'cmn_geo_lookup_postcode', true)));
         $attempted_at = (string) get_post_meta($school_id, 'cmn_geo_lookup_attempted_at', true);
-        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < HOUR_IN_SECONDS * 2) {
+        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < MINUTE_IN_SECONDS * 10) {
             return null;
         }
 
@@ -77932,7 +77932,7 @@ final class CMN_One_Plugin {
 
         $attempted_postcode = strtoupper(trim((string) get_post_meta($candidate_id, 'cmn_geo_lookup_postcode', true)));
         $attempted_at = (string) get_post_meta($candidate_id, 'cmn_geo_lookup_attempted_at', true);
-        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < HOUR_IN_SECONDS * 2) {
+        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < MINUTE_IN_SECONDS * 10) {
             return null;
         }
 
