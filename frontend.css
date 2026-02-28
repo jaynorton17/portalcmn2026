@@ -1422,6 +1422,7 @@ body.cmn-portal-page img[src*="fasthosts"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
   height: 40px;
   border-radius: 12px;
   border: 1px solid rgba(193, 18, 31, 0.9);
