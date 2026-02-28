@@ -77036,9 +77036,7 @@ final class CMN_One_Plugin {
         $tomorrow = $this->get_tomorrow_date();
         $visibility_reasons = [
             'not_approved' => 0,
-            'not_operationally_unlocked' => 0,
             'hidden_not_interested' => 0,
-            'out_of_radius' => 0,
             'marked_unavailable' => 0,
         ];
         $visibility_candidate_ids = get_posts([
@@ -77057,16 +77055,8 @@ final class CMN_One_Plugin {
                 $visibility_reasons['not_approved']++;
                 continue;
             }
-            if (!$this->is_candidate_operationally_unlocked($visibility_candidate_id)) {
-                $visibility_reasons['not_operationally_unlocked']++;
-                continue;
-            }
             if ($this->is_candidate_hidden_for_school_live_matches($school_id, $visibility_candidate_id)) {
                 $visibility_reasons['hidden_not_interested']++;
-                continue;
-            }
-            if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($visibility_candidate_id, $school_id)) {
-                $visibility_reasons['out_of_radius']++;
                 continue;
             }
             if ($this->is_candidate_unavailable($visibility_candidate_id, $today) && $this->is_candidate_unavailable($visibility_candidate_id, $tomorrow)) {
@@ -77095,12 +77085,6 @@ final class CMN_One_Plugin {
                 if ($candidate_status !== '' && $candidate_status !== 'approved') {
                     continue;
                 }
-                if (!$this->is_candidate_operationally_unlocked($candidate_id)) {
-                    continue;
-                }
-                if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
-                    continue;
-                }
                 if ($this->is_candidate_unavailable($candidate_id, $today) && $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
                     continue;
                 }
@@ -77119,9 +77103,6 @@ final class CMN_One_Plugin {
             $empty_reason_parts = [];
             if ($visibility_reasons['marked_unavailable'] > 0) {
                 $empty_reason_parts[] = (string) ((int) $visibility_reasons['marked_unavailable']) . ' marked not available';
-            }
-            if ($visibility_reasons['out_of_radius'] > 0) {
-                $empty_reason_parts[] = (string) ((int) $visibility_reasons['out_of_radius']) . ' outside radius';
             }
             if ($visibility_reasons['hidden_not_interested'] > 0) {
                 $empty_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
@@ -77320,25 +77301,19 @@ final class CMN_One_Plugin {
         if ($visibility_reasons['marked_unavailable'] > 0) {
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['marked_unavailable']) . ' marked not available';
         }
-        if ($visibility_reasons['out_of_radius'] > 0) {
-            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['out_of_radius']) . ' outside radius';
-        }
         if ($visibility_reasons['hidden_not_interested'] > 0) {
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
         }
         if ($visibility_reasons['not_approved'] > 0) {
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['not_approved']) . ' pending approval';
         }
-        if ($visibility_reasons['not_operationally_unlocked'] > 0) {
-            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['not_operationally_unlocked']) . ' missing required docs';
-        }
         $visibility_reason_text = $visibility_reason_parts ? ('If someone is missing: ' . implode(' | ', $visibility_reason_parts) . '.') : '';
         ob_start();
         ?>
         <section class="cmn-live-matches" data-live-matches-root data-live-matches='<?php echo esc_attr(wp_json_encode($payload)); ?>'>
             <div class="cmn-live-matches-head">
-                <h2>Available Candidates Near You</h2>
-                <p><span class="cmn-dot-live"></span> <strong>Live</strong> Matches (30 mile radius)</p>
+                <h2>Available Candidates</h2>
+                <p><span class="cmn-dot-live"></span> <strong>Live</strong> Matches (approved candidates excluding unavailable)</p>
                 <button type="button" class="cmn-ghost cmn-live-filter-btn" data-live-filter-open>Filters</button>
             </div>
             <div class="cmn-live-tabs" role="tablist" aria-label="Live match tabs"></div>
@@ -77414,7 +77389,6 @@ final class CMN_One_Plugin {
                 $candidate_id < 1
                 || isset($seen[$candidate_id])
                 || $this->is_candidate_unavailable($candidate_id, $today)
-                || !$this->is_candidate_operationally_unlocked($candidate_id)
             ) {
                 continue;
             }
@@ -77435,7 +77409,6 @@ final class CMN_One_Plugin {
                 $candidate_id < 1
                 || isset($seen[$candidate_id])
                 || $this->is_candidate_unavailable($candidate_id, $tomorrow)
-                || !$this->is_candidate_operationally_unlocked($candidate_id)
             ) {
                 continue;
             }
@@ -77462,12 +77435,6 @@ final class CMN_One_Plugin {
         foreach ((array) $base_candidate_ids as $candidate_id_raw) {
             $candidate_id = (int) $candidate_id_raw;
             if ($candidate_id < 1 || isset($seen[$candidate_id])) {
-                continue;
-            }
-            if (!$this->is_candidate_operationally_unlocked($candidate_id)) {
-                continue;
-            }
-            if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
                 continue;
             }
             if ($this->is_candidate_unavailable($candidate_id, $today) && $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
@@ -77517,9 +77484,6 @@ final class CMN_One_Plugin {
         foreach ($rows as $row) {
             $candidate_id = (int) $row['candidate_id'];
             if (!isset($indexed[$candidate_id])) {
-                continue;
-            }
-            if ($school_id > 0 && !$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
                 continue;
             }
             $output[] = [
