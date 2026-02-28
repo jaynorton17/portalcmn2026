@@ -11677,8 +11677,14 @@ document.addEventListener('DOMContentLoaded', function () {
             event.preventDefault();
             return;
           }
+          var buttonTag = String(button.tagName || '').toLowerCase();
+          var hrefUrl = String(button.getAttribute('href') || '').trim();
+          // Let native anchor navigation handle course opens when href is present.
+          if (buttonTag === 'a' && hrefUrl && hrefUrl !== '#') {
+            return;
+          }
           var key = button.getAttribute('data-learning-open-course');
-          var openUrl = String(button.getAttribute('data-learning-open-course-url') || button.getAttribute('href') || '').trim();
+          var openUrl = String(button.getAttribute('data-learning-open-course-url') || hrefUrl || '').trim();
           if (key && learningCourses[key]) {
             event.preventDefault();
             openCourse(key, true);
