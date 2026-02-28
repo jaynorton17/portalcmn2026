@@ -77160,6 +77160,7 @@ final class CMN_One_Plugin {
         $shortlisted_count = 0;
         $target_date = current_time('Y-m-d');
         $school_live_coords = $school_id > 0 ? $this->ensure_school_geo_coordinates($school_id) : null;
+        $candidate_geo_lookup_budget = 8;
         foreach ($candidates as $item) {
             $candidate = $item['post'] ?? null;
             if (!$candidate || empty($candidate->ID)) {
@@ -77198,9 +77199,13 @@ final class CMN_One_Plugin {
             if ($day_rate <= 0) {
                 $day_rate = 160.0;
             }
-            $distance_label = '';
+            $distance_label = 'Distance unavailable';
             if ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
                 $candidate_coords = $this->get_geo_coordinates_for_post($candidate_id);
+                if ((!$candidate_coords || !isset($candidate_coords['lat'], $candidate_coords['lng'])) && $candidate_geo_lookup_budget > 0) {
+                    $candidate_geo_lookup_budget--;
+                    $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_id);
+                }
                 if ($candidate_coords && isset($candidate_coords['lat'], $candidate_coords['lng'])) {
                     $distance_miles = (float) $this->marketing_haversine_miles(
                         (float) $candidate_coords['lat'],
@@ -77208,25 +77213,8 @@ final class CMN_One_Plugin {
                         (float) $school_live_coords['lat'],
                         (float) $school_live_coords['lng']
                     );
-                    if ($distance_miles > 0) {
-                        $distance_label = rtrim(rtrim(number_format($distance_miles, 1, '.', ''), '0'), '.') . ' miles';
-                    }
-                }
-            }
-            if ($distance_label === '') {
-                $distance_raw = trim((string) get_post_meta($candidate_id, 'cmn_travel_distance', true));
-                if ($distance_raw !== '') {
-                    if (preg_match('/^\d+(\.\d+)?$/', $distance_raw)) {
-                        $distance_label = rtrim(rtrim(number_format((float) $distance_raw, 1, '.', ''), '0'), '.') . ' miles';
-                    } else {
-                        $distance_label = $distance_raw;
-                        $has_time_unit = preg_match('/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i', $distance_label);
-                        $has_distance_unit = preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_label);
-                        if ($has_time_unit) {
-                            $distance_label = trim((string) preg_replace('/\s*miles?\b/i', '', $distance_label));
-                        } elseif (!$has_distance_unit) {
-                            $distance_label .= ' miles';
-                        }
+                    if ($distance_miles >= 0) {
+                        $distance_label = rtrim(rtrim(number_format(max(0.0, $distance_miles), 1, '.', ''), '0'), '.') . ' miles';
                     }
                 }
             }
@@ -77325,7 +77313,9 @@ final class CMN_One_Plugin {
             foreach ($skills as $skill_text) {
                 $skills_html .= '<span class="cmn-live-skill">' . esc_html($skill_text) . '</span>';
             }
-            if ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
+            if ($distance_text !== '' && preg_match('/\b(unavailable|unknown|n\/a)\b/i', $distance_text)) {
+                // Keep informational labels as-is.
+            } elseif ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
                 $distance_text .= ' miles';
             } elseif ($distance_text !== '') {
                 $has_time_unit = preg_match('/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i', $distance_text);
@@ -77762,6 +77752,52 @@ final class CMN_One_Plugin {
         $this->persist_geo_coordinates_for_post($school_id, $lat, $lng, (string) ($geocoded['source'] ?? 'postcodes_io'));
         $this->log_school_debug('school_geo_lookup_success', [
             'school_post_id' => $school_id,
+            'postcode' => $normalized_postcode,
+            'lat' => $lat,
+            'lng' => $lng,
+            'source' => (string) ($geocoded['source'] ?? 'postcodes_io'),
+        ]);
+        return ['lat' => $lat, 'lng' => $lng];
+    }
+
+    private function ensure_candidate_geo_coordinates($candidate_id) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
+            return null;
+        }
+        $existing = $this->get_geo_coordinates_for_post($candidate_id);
+        if ($existing) {
+            return $existing;
+        }
+
+        $postcode = (string) get_post_meta($candidate_id, 'cmn_postcode', true);
+        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
+        if ($normalized_postcode === '') {
+            return null;
+        }
+
+        $attempted_postcode = strtoupper(trim((string) get_post_meta($candidate_id, 'cmn_geo_lookup_postcode', true)));
+        $attempted_at = (string) get_post_meta($candidate_id, 'cmn_geo_lookup_attempted_at', true);
+        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < HOUR_IN_SECONDS * 24) {
+            return null;
+        }
+
+        $geocoded = $this->geocode_uk_postcode_coordinates($normalized_postcode);
+        update_post_meta($candidate_id, 'cmn_geo_lookup_postcode', $normalized_postcode);
+        update_post_meta($candidate_id, 'cmn_geo_lookup_attempted_at', current_time('mysql'));
+        if (!is_array($geocoded) || !isset($geocoded['lat'], $geocoded['lng'])) {
+            $this->log_school_debug('candidate_geo_lookup_failed', [
+                'candidate_post_id' => $candidate_id,
+                'postcode' => $normalized_postcode,
+            ]);
+            return null;
+        }
+
+        $lat = (float) $geocoded['lat'];
+        $lng = (float) $geocoded['lng'];
+        $this->persist_geo_coordinates_for_post($candidate_id, $lat, $lng, (string) ($geocoded['source'] ?? 'postcodes_io'));
+        $this->log_school_debug('candidate_geo_lookup_success', [
+            'candidate_post_id' => $candidate_id,
             'postcode' => $normalized_postcode,
             'lat' => $lat,
             'lng' => $lng,
