@@ -77016,6 +77016,54 @@ final class CMN_One_Plugin {
         return (string) ($photo_state['url'] ?? $this->get_default_profile_photo_url());
     }
 
+    private function get_candidate_live_match_skills($candidate_id, $limit = 3) {
+        $candidate_id = (int) $candidate_id;
+        $limit = max(1, min(6, (int) $limit));
+        $fallback_skills = ['Classroom Management', 'Communication', 'First Aid'];
+        if ($candidate_id < 1) {
+            return array_slice($fallback_skills, 0, $limit);
+        }
+
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        $raw_skills = $candidate_user_id > 0
+            ? get_user_meta($candidate_user_id, 'cmn_contact_card_skills', true)
+            : [];
+        if (empty($raw_skills)) {
+            $raw_skills = get_post_meta($candidate_id, 'cmn_contact_card_skills', true);
+        }
+        if (is_string($raw_skills) && $raw_skills !== '') {
+            $decoded = json_decode($raw_skills, true);
+            if (is_array($decoded)) {
+                $raw_skills = $decoded;
+            } else {
+                $raw_skills = array_map('trim', explode(',', $raw_skills));
+            }
+        }
+        if (!is_array($raw_skills)) {
+            $raw_skills = [];
+        }
+        $skills = array_values(array_unique(array_filter(array_map(
+            static function ($item) {
+                return sanitize_text_field((string) $item);
+            },
+            $raw_skills
+        ), static function ($item) {
+            return $item !== '';
+        })));
+        if (count($skills) > $limit) {
+            $skills = array_slice($skills, 0, $limit);
+        }
+        foreach ($fallback_skills as $fallback_skill) {
+            if (count($skills) >= $limit) {
+                break;
+            }
+            if (!in_array($fallback_skill, $skills, true)) {
+                $skills[] = $fallback_skill;
+            }
+        }
+        return $skills;
+    }
+
     private function is_candidate_hidden_for_school_live_matches($school_id, $candidate_id) {
         $school_id = (int) $school_id;
         $candidate_id = (int) $candidate_id;
@@ -77197,6 +77245,7 @@ final class CMN_One_Plugin {
                 'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
                 'confirmed_at' => $status_key === 'available' ? date_i18n('g:i A', strtotime((string) ($item['created_at'] ?? current_time('mysql')))) : '',
                 'day_rate' => round($day_rate, 0),
+                'skills' => $this->get_candidate_live_match_skills($candidate_id, 3),
                 'is_shortlisted' => $is_shortlisted ? 1 : 0,
                 'is_physically_online' => $is_physically_online ? 1 : 0,
                 'presence_label' => $presence_label,
@@ -77258,6 +77307,24 @@ final class CMN_One_Plugin {
             $confirmed_at = sanitize_text_field((string) ($item['confirmed_at'] ?? ''));
             $distance_text = sanitize_text_field((string) ($item['distance'] ?? ''));
             $rating_label = sanitize_text_field((string) ($item['rating_label'] ?? (number_format((float) ($item['rating'] ?? 0), 2) . ' out of 5 stars')));
+            $skills = array_values(array_filter(array_map(
+                static function ($skill_item) {
+                    return sanitize_text_field((string) $skill_item);
+                },
+                (array) ($item['skills'] ?? [])
+            ), static function ($skill_item) {
+                return $skill_item !== '';
+            }));
+            if (count($skills) > 3) {
+                $skills = array_slice($skills, 0, 3);
+            }
+            if (!$skills) {
+                $skills = ['Classroom Management', 'Communication', 'First Aid'];
+            }
+            $skills_html = '';
+            foreach ($skills as $skill_text) {
+                $skills_html .= '<span class="cmn-live-skill">' . esc_html($skill_text) . '</span>';
+            }
             if ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
                 $distance_text .= ' miles';
             } elseif ($distance_text !== '') {
@@ -77281,7 +77348,7 @@ final class CMN_One_Plugin {
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
                 . ($distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($distance_text) . '</div>' : '')
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
-                . '<div class="cmn-live-skills"><span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span></div>'
+                . '<div class="cmn-live-skills">' . $skills_html . '</div>'
                 . '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="' . $profile_url . '" target="_blank" rel="noopener">View Profile</a></div>'
                 . '<div class="cmn-live-offer" data-live-offer></div>'
                 . '</article>';

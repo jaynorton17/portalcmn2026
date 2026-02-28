@@ -12879,6 +12879,15 @@ document.addEventListener('DOMContentLoaded', function () {
       return raw;
     };
 
+    var escapeHtml = function(value){
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
     var cardHtml = function(item){
       if (!item) return '<div></div>';
       var isOnlineNow = String(item.is_physically_online || '0') === '1' || item.is_physically_online === 1 || item.is_physically_online === true;
@@ -12890,13 +12899,25 @@ document.addEventListener('DOMContentLoaded', function () {
         ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' + (item.confirmed_at || '--:--') + '</small></div>'
         : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
       var distanceText = resolveDistanceText(item.distance);
+      var rawSkills = Array.isArray(item.skills) ? item.skills : [];
+      var skills = rawSkills.map(function(skillItem){
+        return String(skillItem || '').trim();
+      }).filter(function(skillItem){
+        return skillItem !== '';
+      }).slice(0, 3);
+      if (!skills.length) {
+        skills = ['Classroom Management', 'Communication', 'First Aid'];
+      }
+      var skillsHtml = skills.map(function(skillItem){
+        return '<span class="cmn-live-skill">' + escapeHtml(skillItem) + '</span>';
+      }).join('');
       return '<article class="cmn-live-card'+cardStateClass+'" data-candidate-id="'+item.candidate_id+'">'
         + '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
         + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-rating">'+ratingLabel+'</div></div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
         + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'
         + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
         + (distanceText ? '<div class="cmn-live-distance">'+distanceText+'</div>' : '')
-        + '<div class="cmn-live-skills"><span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span></div>'
+        + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
         + '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now">Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="'+(item.profile_url || '#')+'" target="_blank" rel="noopener">View Profile</a></div>'
         + '<div class="cmn-live-offer" data-live-offer></div>'
         + '</article>';
