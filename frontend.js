@@ -11542,9 +11542,15 @@ document.addEventListener('DOMContentLoaded', function () {
             event.preventDefault();
             return;
           }
+          var buttonTag = String(button.tagName || '').toLowerCase();
+          var hrefUrl = String(button.getAttribute('href') || '').trim();
+          // Let native anchor navigation handle module opens when href is present.
+          if (buttonTag === 'a' && hrefUrl && hrefUrl !== '#') {
+            return;
+          }
           var openUrl = String(
             button.getAttribute('data-learning-open-module-url')
-            || button.getAttribute('href')
+            || hrefUrl
             || ''
           ).trim();
           if (openUrl) {
