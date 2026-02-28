@@ -66355,14 +66355,17 @@ final class CMN_One_Plugin {
                                                 .replace(/'/g, '&#39;');
                                         };
 
-                                        var courses = parseJson(String(player.getAttribute('data-learning-courses') || ''), {});
+                                        var coursesScript = root.querySelector('[data-learning-courses-json]');
+                                        var courses = parseJson(coursesScript ? String(coursesScript.textContent || '').trim() : '', {});
                                         if (!courses || typeof courses !== 'object' || !Object.keys(courses).length) {
-                                            var coursesScript = root.querySelector('[data-learning-courses-json]');
-                                            courses = parseJson(coursesScript ? String(coursesScript.textContent || '').trim() : '', {});
+                                            courses = parseJson(String(player.getAttribute('data-learning-courses') || ''), {});
                                         }
                                         if (!courses || typeof courses !== 'object') {
                                             courses = {};
                                         }
+                                        var isValidCourseObject = function (course) {
+                                            return !!course && typeof course === 'object' && !Array.isArray(course);
+                                        };
 
                                         var panelEmpty = player.querySelector('[data-learning-player-empty]');
                                         var panelSummary = player.querySelector('[data-learning-player-summary]');
@@ -66534,7 +66537,7 @@ final class CMN_One_Plugin {
 
                                         var openCourse = function (courseKey, startSlides) {
                                             var key = String(courseKey || '').trim();
-                                            if (!key || !courses[key]) {
+                                            if (!key || !isValidCourseObject(courses[key])) {
                                                 return false;
                                             }
                                             state.courseKey = key;
@@ -66557,11 +66560,9 @@ final class CMN_One_Plugin {
                                                 }
                                                 var key = String(button.getAttribute('data-learning-open-course') || '').trim();
                                                 var href = String(button.getAttribute('href') || button.getAttribute('data-learning-open-course-url') || '').trim();
-                                                if (key && courses[key]) {
+                                                if (key && isValidCourseObject(courses[key])) {
                                                     event.preventDefault();
-                                                    if (openCourse(key, true) && href && window.history && typeof window.history.replaceState === 'function') {
-                                                        window.history.replaceState({}, document.title, href);
-                                                    }
+                                                    openCourse(key, true);
                                                     return;
                                                 }
                                                 if (href && href !== '#') {
@@ -66656,7 +66657,7 @@ final class CMN_One_Plugin {
                                         }
 
                                         var initialKey = String(player.getAttribute('data-learning-open-key') || '').trim();
-                                        if (initialKey && courses[initialKey]) {
+                                        if (initialKey && isValidCourseObject(courses[initialKey])) {
                                             openCourse(initialKey, true);
                                         } else {
                                             showPanel(panelEmpty);

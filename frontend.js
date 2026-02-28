@@ -10797,16 +10797,16 @@ document.addEventListener('DOMContentLoaded', function () {
           .replace(/"/g, '&quot;')
           .replace(/'/g, '&#39;');
       };
-      var learningCourses = learningParseJson(learningPlayer.getAttribute('data-learning-courses'), {});
+      var learningCourses = learningParseJsonScript('[data-learning-courses-json]', {});
       if (!learningCourses || typeof learningCourses !== 'object' || !Object.keys(learningCourses).length) {
-        learningCourses = learningParseJsonScript('[data-learning-courses-json]', {});
+        learningCourses = learningParseJson(learningPlayer.getAttribute('data-learning-courses'), {});
       }
-      var learningResults = learningParseJson(learningPlayer.getAttribute('data-learning-results'), {});
+      var learningResults = learningParseJsonScript('[data-learning-results-json]', {});
+      if (!learningResults || typeof learningResults !== 'object' || !Object.keys(learningResults).length) {
+        learningResults = learningParseJson(learningPlayer.getAttribute('data-learning-results'), {});
+      }
       if (!learningResults || typeof learningResults !== 'object') {
         learningResults = {};
-      }
-      if (!Object.keys(learningResults).length) {
-        learningResults = learningParseJsonScript('[data-learning-results-json]', {});
       }
       var candidateName = String(learningPlayer.getAttribute('data-learning-candidate-name') || 'Candidate');
       var initialOpenKey = String(learningPlayer.getAttribute('data-learning-open-key') || '');
@@ -10909,6 +10909,9 @@ document.addEventListener('DOMContentLoaded', function () {
         return required.filter(function (requiredKey) {
           return !isCoursePassed(requiredKey);
         });
+      };
+      var isValidCourseObject = function (course) {
+        return !!course && typeof course === 'object' && !Array.isArray(course);
       };
       var getCourseLockMessage = function (course) {
         var missingRequired = getMissingRequiredKeys(course);
@@ -11501,8 +11504,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
       var openCourse = function (courseKey, startSlides) {
         var key = String(courseKey || '');
-        if (!key || !learningCourses[key]) {
-          return;
+        if (!key || !isValidCourseObject(learningCourses[key])) {
+          return false;
         }
         var selectedCourse = learningCourses[key];
         var selectedModuleKey = String(selectedCourse.module_key || selectedCourse.moduleKey || '');
@@ -11522,9 +11525,13 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (shouldStartSlides) {
           renderSlide();
-          return;
+          if (learningPlayer && typeof learningPlayer.scrollIntoView === 'function') {
+            learningPlayer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+          return true;
         }
         renderSummary();
+        return true;
       };
 
       var openFirstVisibleCourse = function (startSlides) {
@@ -11696,12 +11703,9 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           var key = button.getAttribute('data-learning-open-course');
           var openUrl = String(button.getAttribute('data-learning-open-course-url') || button.getAttribute('href') || '').trim();
-          if (key && learningCourses[key]) {
+          if (key && isValidCourseObject(learningCourses[key])) {
             event.preventDefault();
             openCourse(key, true);
-            if (openUrl && window.history && typeof window.history.replaceState === 'function') {
-              window.history.replaceState({}, document.title, openUrl);
-            }
             return;
           }
           if (openUrl) {
@@ -11797,7 +11801,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
-      if (initialOpenKey && learningCourses[initialOpenKey]) {
+      if (initialOpenKey && isValidCourseObject(learningCourses[initialOpenKey])) {
         var initialCourse = learningCourses[initialOpenKey];
         var initialModuleKey = String(initialCourse.module_key || initialCourse.moduleKey || '');
         if (initialModuleKey) {
@@ -13021,9 +13025,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var coursesScript = root.querySelector('[data-learning-courses-json]');
     var courses = parseJson(coursesScript ? String(coursesScript.textContent || '') : '', {});
+    if (!courses || typeof courses !== 'object' || !Object.keys(courses).length) {
+      courses = parseJson(String(player.getAttribute('data-learning-courses') || ''), {});
+    }
     if (!courses || typeof courses !== 'object') {
       courses = {};
     }
+    var isValidFallbackCourse = function (course) {
+      return !!course && typeof course === 'object' && !Array.isArray(course);
+    };
 
     var panelEmpty = player.querySelector('[data-learning-player-empty]');
     var panelSlides = player.querySelector('[data-learning-player-slides]');
@@ -13166,7 +13176,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var openCourse = function (courseKey) {
       var key = String(courseKey || '').trim();
-      if (!key || !courses[key]) {
+      if (!key || !isValidFallbackCourse(courses[key])) {
         return;
       }
       state.courseKey = key;
@@ -13183,11 +13193,19 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         var key = String(button.getAttribute('data-learning-open-course') || '').trim();
-        if (!key || !courses[key]) {
+        if (key && isValidFallbackCourse(courses[key])) {
+          event.preventDefault();
+          openCourse(key);
+          if (player && typeof player.scrollIntoView === 'function') {
+            player.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
           return;
         }
-        event.preventDefault();
-        openCourse(key);
+        var href = String(button.getAttribute('href') || button.getAttribute('data-learning-open-course-url') || '').trim();
+        if (href && href !== '#') {
+          event.preventDefault();
+          window.location.assign(href);
+        }
       });
     });
 
@@ -13275,7 +13293,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     var initialKey = String(player.getAttribute('data-learning-open-key') || '').trim();
-    if (initialKey && courses[initialKey]) {
+    if (initialKey && isValidFallbackCourse(courses[initialKey])) {
       openCourse(initialKey);
       return;
     }
