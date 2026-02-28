@@ -10770,6 +10770,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (learningRoot) {
     var learningPlayer = learningRoot.querySelector('[data-learning-player]');
     if (learningPlayer) {
+      window.__cmnLearningMainInitStarted = true;
       var learningParseJson = function (raw, fallback) {
         if (!raw) {
           return fallback;
@@ -11826,6 +11827,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       applyModuleTools();
       refreshCourseLocks();
+      window.__cmnLearningMainReady = true;
     }
   }
 
@@ -12988,7 +12990,295 @@ document.addEventListener('DOMContentLoaded', function () {
     window.setInterval(pollPresence, 20000);
   });
 })();
-    if (themeSelect && themeSelect.options && themeSelect.options.length <= 1) {
-      themeSelect.disabled = true;
-      themeSelect.setAttribute('aria-disabled', 'true');
+if (typeof themeSelect !== 'undefined' && themeSelect && themeSelect.options && themeSelect.options.length <= 1) {
+  themeSelect.disabled = true;
+  themeSelect.setAttribute('aria-disabled', 'true');
+}
+
+// Learning center hard fallback: runs even if the main initializer failed earlier.
+document.addEventListener('DOMContentLoaded', function () {
+  window.setTimeout(function () {
+    if (window.__cmnLearningMainReady) {
+      return;
     }
+    var root = document.querySelector('[data-learning-root]');
+    var player = root ? root.querySelector('[data-learning-player]') : null;
+    if (!root || !player) {
+      return;
+    }
+
+    var parseJson = function (raw, fallback) {
+      if (!raw) {
+        return fallback;
+      }
+      try {
+        var parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : fallback;
+      } catch (error) {
+        return fallback;
+      }
+    };
+
+    var coursesScript = root.querySelector('[data-learning-courses-json]');
+    var courses = parseJson(coursesScript ? String(coursesScript.textContent || '') : '', {});
+    if (!courses || typeof courses !== 'object') {
+      courses = {};
+    }
+
+    var panelEmpty = player.querySelector('[data-learning-player-empty]');
+    var panelSlides = player.querySelector('[data-learning-player-slides]');
+    var panelExam = player.querySelector('[data-learning-player-exam]');
+    var panelResult = player.querySelector('[data-learning-player-result]');
+    var panelSummary = player.querySelector('[data-learning-player-summary]');
+    var slideCount = player.querySelector('[data-learning-slide-count]');
+    var slideTitle = player.querySelector('[data-learning-slide-title]');
+    var slideBody = player.querySelector('[data-learning-slide-body]');
+    var slideImageWrap = player.querySelector('[data-learning-slide-image-wrap]');
+    var slideImage = player.querySelector('[data-learning-slide-image]');
+    var slideImageCaption = player.querySelector('[data-learning-slide-image-caption]');
+    var prevBtn = player.querySelector('[data-learning-prev-slide]');
+    var nextBtn = player.querySelector('[data-learning-next-slide]');
+    var examPassMark = player.querySelector('[data-learning-exam-pass-mark]');
+    var examForm = player.querySelector('[data-learning-exam-form]');
+    var examQuestions = player.querySelector('[data-learning-exam-questions]');
+    var backToSlides = player.querySelector('[data-learning-back-to-slides]');
+    var backToSummary = player.querySelector('[data-learning-back-to-summary]');
+    var retakeExam = player.querySelector('[data-learning-retake-exam]');
+    var resultTitle = player.querySelector('[data-learning-result-title]');
+    var resultScore = player.querySelector('[data-learning-result-score]');
+    var resultFeedback = player.querySelector('[data-learning-result-feedback]');
+    var startCourseBtn = player.querySelector('[data-learning-start-course]');
+
+    var state = { courseKey: '', course: null, slideIndex: 0 };
+
+    var showPanel = function (panel) {
+      [panelEmpty, panelSummary, panelSlides, panelExam, panelResult].forEach(function (node) {
+        if (!node) {
+          return;
+        }
+        node.hidden = node !== panel;
+      });
+    };
+
+    var escapeHtml = function (value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    var renderSlide = function () {
+      if (!state.course || !Array.isArray(state.course.slides) || !state.course.slides.length) {
+        showPanel(panelEmpty);
+        return;
+      }
+      var slides = state.course.slides;
+      if (state.slideIndex < 0) {
+        state.slideIndex = 0;
+      }
+      if (state.slideIndex > slides.length - 1) {
+        state.slideIndex = slides.length - 1;
+      }
+      var slide = slides[state.slideIndex] || {};
+      if (slideCount) {
+        slideCount.textContent = 'Slide ' + String(state.slideIndex + 1) + ' of ' + String(slides.length);
+      }
+      if (slideTitle) {
+        slideTitle.textContent = String(slide.title || 'Slide');
+      }
+      if (slideBody) {
+        slideBody.textContent = String(slide.body || '');
+      }
+      var imageUrl = String(slide.image_url || slide.imageUrl || slide.image || '');
+      var imageAlt = String(slide.image_alt || slide.imageAlt || slide.title || 'Course slide image');
+      var imageCaption = String(slide.image_caption || slide.imageCaption || '');
+      if (slideImageWrap) {
+        var hasImage = imageUrl !== '';
+        slideImageWrap.hidden = !hasImage;
+        if (hasImage) {
+          if (slideImage) {
+            slideImage.src = imageUrl;
+            slideImage.alt = imageAlt;
+          }
+          if (slideImageCaption) {
+            slideImageCaption.textContent = imageCaption;
+            slideImageCaption.hidden = imageCaption === '';
+          }
+        }
+      }
+      if (prevBtn) {
+        prevBtn.disabled = state.slideIndex === 0;
+      }
+      if (nextBtn) {
+        nextBtn.textContent = state.slideIndex === (slides.length - 1) ? 'Go to exam' : 'Next';
+      }
+      showPanel(panelSlides);
+    };
+
+    var renderExam = function () {
+      if (!state.course || !Array.isArray(state.course.exam) || !state.course.exam.length) {
+        renderSlide();
+        return;
+      }
+      var passMark = parseInt(state.course.pass_mark || '100', 10);
+      if (!isFinite(passMark) || passMark < 1) {
+        passMark = 100;
+      }
+      if (examPassMark) {
+        examPassMark.textContent = String(passMark) + '%';
+      }
+      if (examQuestions) {
+        examQuestions.innerHTML = state.course.exam.map(function (question, index) {
+          var options = (question && typeof question.options === 'object') ? question.options : {};
+          var optionRows = Object.keys(options).map(function (optionKey) {
+            var optionLabel = String(options[optionKey] || '');
+            return ''
+              + '<label class="cmn-learning-exam-option">'
+              + '<input type="radio" name="q' + String(index) + '" value="' + escapeHtml(optionKey) + '" required>'
+              + '<span><strong>' + escapeHtml(optionKey) + '.</strong> ' + escapeHtml(optionLabel) + '</span>'
+              + '</label>';
+          }).join('');
+          return ''
+            + '<fieldset class="cmn-learning-exam-question">'
+            + '<legend>Question ' + String(index + 1) + ': ' + escapeHtml(String(question.question || '')) + '</legend>'
+            + optionRows
+            + '</fieldset>';
+        }).join('');
+      }
+      showPanel(panelExam);
+    };
+
+    var renderResult = function (passed, score, feedbackRows) {
+      if (resultTitle) {
+        resultTitle.textContent = passed ? 'Exam passed' : 'Exam not passed';
+      }
+      if (resultScore) {
+        var passMark = parseInt(state.course && state.course.pass_mark ? state.course.pass_mark : '100', 10);
+        resultScore.textContent = 'Score: ' + String(score) + '% (Pass mark: ' + String(passMark) + '%)';
+      }
+      if (resultFeedback) {
+        resultFeedback.innerHTML = feedbackRows.join('');
+      }
+      showPanel(panelResult);
+    };
+
+    var openCourse = function (courseKey) {
+      var key = String(courseKey || '').trim();
+      if (!key || !courses[key]) {
+        return;
+      }
+      state.courseKey = key;
+      state.course = courses[key];
+      state.slideIndex = 0;
+      renderSlide();
+    };
+
+    var courseButtons = Array.prototype.slice.call(root.querySelectorAll('[data-learning-open-course]'));
+    courseButtons.forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        if (button.disabled) {
+          event.preventDefault();
+          return;
+        }
+        var key = String(button.getAttribute('data-learning-open-course') || '').trim();
+        if (!key || !courses[key]) {
+          return;
+        }
+        event.preventDefault();
+        openCourse(key);
+      });
+    });
+
+    if (startCourseBtn) {
+      startCourseBtn.addEventListener('click', function () {
+        if (state.course) {
+          state.slideIndex = 0;
+          renderSlide();
+        }
+      });
+    }
+    if (prevBtn) {
+      prevBtn.addEventListener('click', function () {
+        state.slideIndex -= 1;
+        renderSlide();
+      });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', function () {
+        if (!state.course || !Array.isArray(state.course.slides)) {
+          return;
+        }
+        if (state.slideIndex >= state.course.slides.length - 1) {
+          renderExam();
+          return;
+        }
+        state.slideIndex += 1;
+        renderSlide();
+      });
+    }
+    if (backToSlides) {
+      backToSlides.addEventListener('click', function () {
+        renderSlide();
+      });
+    }
+    if (backToSummary) {
+      backToSummary.addEventListener('click', function () {
+        showPanel(panelSummary || panelEmpty);
+      });
+    }
+    if (retakeExam) {
+      retakeExam.addEventListener('click', function () {
+        renderExam();
+      });
+    }
+    if (examForm) {
+      examForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!state.course || !Array.isArray(state.course.exam) || !state.course.exam.length) {
+          return;
+        }
+        var allAnswered = true;
+        var correctCount = 0;
+        var feedbackRows = [];
+        state.course.exam.forEach(function (question, index) {
+          var selected = examForm.querySelector('input[name="q' + String(index) + '"]:checked');
+          var selectedValue = selected ? String(selected.value || '') : '';
+          if (!selectedValue) {
+            allAnswered = false;
+          }
+          var answer = String(question && question.answer ? question.answer : '');
+          var isCorrect = selectedValue !== '' && selectedValue === answer;
+          if (isCorrect) {
+            correctCount += 1;
+          }
+          feedbackRows.push(
+            '<div class="cmn-learning-exam-feedback-row ' + (isCorrect ? 'is-correct' : 'is-incorrect') + '">'
+              + '<strong>Question ' + String(index + 1) + ': ' + (isCorrect ? 'Correct' : 'Incorrect') + '</strong>'
+              + '<span>Your answer: ' + escapeHtml(selectedValue || 'Not answered') + ' | Correct answer: ' + escapeHtml(answer) + '</span>'
+              + '<p>' + escapeHtml(String(question && question.explanation ? question.explanation : '')) + '</p>'
+            + '</div>'
+          );
+        });
+        if (!allAnswered) {
+          renderResult(false, 0, ['<div class="cmn-learning-exam-feedback-row is-incorrect"><strong>Complete all questions before submitting.</strong></div>']);
+          return;
+        }
+        var score = Math.round((correctCount / state.course.exam.length) * 100);
+        var passMark = parseInt(state.course.pass_mark || '100', 10);
+        if (!isFinite(passMark) || passMark < 1) {
+          passMark = 100;
+        }
+        renderResult(score >= passMark, score, feedbackRows);
+      });
+    }
+
+    var initialKey = String(player.getAttribute('data-learning-open-key') || '').trim();
+    if (initialKey && courses[initialKey]) {
+      openCourse(initialKey);
+      return;
+    }
+    showPanel(panelEmpty);
+  }, 140);
+});
