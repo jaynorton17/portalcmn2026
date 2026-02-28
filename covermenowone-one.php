@@ -71574,7 +71574,8 @@ final class CMN_One_Plugin {
         $slide_image_dir = plugin_dir_path(__FILE__) . 'assets/learning/safeguarding/';
         $slide_image_url_base = plugin_dir_url(__FILE__) . 'assets/learning/safeguarding/';
         if (is_dir($slide_image_dir)) {
-            $pool = glob($slide_image_dir . '*.{png,jpg,jpeg,webp}', GLOB_BRACE);
+            // Use only the curated Learning Center slide set.
+            $pool = glob($slide_image_dir . 'custom-slide-*.{png,jpg,jpeg,webp}', GLOB_BRACE);
             if (is_array($pool)) {
                 foreach ($pool as $slide_file) {
                     $basename = basename((string) $slide_file);
