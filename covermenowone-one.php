@@ -66290,18 +66290,388 @@ final class CMN_One_Plugin {
                                 </div>
                             </div>
                             <script>
-                            document.addEventListener('click', function(event) {
-                                var link = event.target.closest('a[data-learning-open-module]');
-                                if (!link) {
+                            (function () {
+                                if (window.__cmnLearningInlineFallbackInit) {
                                     return;
                                 }
-                                var href = String(link.getAttribute('href') || '').trim();
-                                if (!href || href === '#') {
-                                    return;
+                                window.__cmnLearningInlineFallbackInit = true;
+
+                                var initLearningFallback = function () {
+                                    var root = document.querySelector('[data-learning-root]');
+                                    if (!root) {
+                                        return;
+                                    }
+
+                                    // Always hard-navigate module buttons. This keeps "Open modules" working even if main JS fails.
+                                    document.addEventListener('click', function (event) {
+                                        var moduleLink = event.target.closest('[data-learning-open-module]');
+                                        if (!moduleLink) {
+                                            return;
+                                        }
+                                        if (moduleLink.disabled || moduleLink.getAttribute('aria-disabled') === 'true') {
+                                            event.preventDefault();
+                                            return;
+                                        }
+                                        var moduleHref = String(
+                                            moduleLink.getAttribute('href')
+                                            || moduleLink.getAttribute('data-learning-open-module-url')
+                                            || ''
+                                        ).trim();
+                                        if (!moduleHref || moduleHref === '#') {
+                                            return;
+                                        }
+                                        event.preventDefault();
+                                        window.location.assign(moduleHref);
+                                    }, true);
+
+                                    // Fallback player boot: only if the main learning initializer did not complete.
+                                    window.setTimeout(function () {
+                                        if (window.__cmnLearningMainReady) {
+                                            return;
+                                        }
+
+                                        var player = root.querySelector('[data-learning-player]');
+                                        if (!player) {
+                                            return;
+                                        }
+
+                                        var parseJson = function (raw, fallback) {
+                                            if (!raw) {
+                                                return fallback;
+                                            }
+                                            try {
+                                                var parsed = JSON.parse(raw);
+                                                return parsed && typeof parsed === 'object' ? parsed : fallback;
+                                            } catch (error) {
+                                                return fallback;
+                                            }
+                                        };
+                                        var escapeHtml = function (value) {
+                                            return String(value == null ? '' : value)
+                                                .replace(/&/g, '&amp;')
+                                                .replace(/</g, '&lt;')
+                                                .replace(/>/g, '&gt;')
+                                                .replace(/"/g, '&quot;')
+                                                .replace(/'/g, '&#39;');
+                                        };
+
+                                        var courses = parseJson(String(player.getAttribute('data-learning-courses') || ''), {});
+                                        if (!courses || typeof courses !== 'object' || !Object.keys(courses).length) {
+                                            var coursesScript = root.querySelector('[data-learning-courses-json]');
+                                            courses = parseJson(coursesScript ? String(coursesScript.textContent || '').trim() : '', {});
+                                        }
+                                        if (!courses || typeof courses !== 'object') {
+                                            courses = {};
+                                        }
+
+                                        var panelEmpty = player.querySelector('[data-learning-player-empty]');
+                                        var panelSummary = player.querySelector('[data-learning-player-summary]');
+                                        var panelSlides = player.querySelector('[data-learning-player-slides]');
+                                        var panelExam = player.querySelector('[data-learning-player-exam]');
+                                        var panelResult = player.querySelector('[data-learning-player-result]');
+                                        var summaryTitle = player.querySelector('[data-learning-summary-title]');
+                                        var summaryDescription = player.querySelector('[data-learning-summary-description]');
+                                        var summaryPass = player.querySelector('[data-learning-summary-pass]');
+                                        var summarySlides = player.querySelector('[data-learning-summary-slides]');
+                                        var summaryExamCount = player.querySelector('[data-learning-summary-exam-count]');
+                                        var startCourseBtn = player.querySelector('[data-learning-start-course]');
+                                        var slideCount = player.querySelector('[data-learning-slide-count]');
+                                        var slideTitle = player.querySelector('[data-learning-slide-title]');
+                                        var slideBody = player.querySelector('[data-learning-slide-body]');
+                                        var slideImageWrap = player.querySelector('[data-learning-slide-image-wrap]');
+                                        var slideImage = player.querySelector('[data-learning-slide-image]');
+                                        var slideImageCaption = player.querySelector('[data-learning-slide-image-caption]');
+                                        var prevBtn = player.querySelector('[data-learning-prev-slide]');
+                                        var nextBtn = player.querySelector('[data-learning-next-slide]');
+                                        var examPassMark = player.querySelector('[data-learning-exam-pass-mark]');
+                                        var examForm = player.querySelector('[data-learning-exam-form]');
+                                        var examQuestions = player.querySelector('[data-learning-exam-questions]');
+                                        var backToSlides = player.querySelector('[data-learning-back-to-slides]');
+                                        var backToSummary = player.querySelector('[data-learning-back-to-summary]');
+                                        var retakeExam = player.querySelector('[data-learning-retake-exam]');
+                                        var resultTitle = player.querySelector('[data-learning-result-title]');
+                                        var resultScore = player.querySelector('[data-learning-result-score]');
+                                        var resultFeedback = player.querySelector('[data-learning-result-feedback]');
+
+                                        var state = {
+                                            courseKey: '',
+                                            course: null,
+                                            slideIndex: 0
+                                        };
+
+                                        var showPanel = function (panel) {
+                                            [panelEmpty, panelSummary, panelSlides, panelExam, panelResult].forEach(function (node) {
+                                                if (!node) {
+                                                    return;
+                                                }
+                                                node.hidden = node !== panel;
+                                            });
+                                        };
+
+                                        var renderSummary = function () {
+                                            if (!state.course) {
+                                                showPanel(panelEmpty);
+                                                return;
+                                            }
+                                            var slides = Array.isArray(state.course.slides) ? state.course.slides : [];
+                                            var exam = Array.isArray(state.course.exam) ? state.course.exam : [];
+                                            var passMark = parseInt(state.course.pass_mark || '100', 10);
+                                            if (!isFinite(passMark) || passMark < 1) {
+                                                passMark = 100;
+                                            }
+                                            if (summaryTitle) {
+                                                summaryTitle.textContent = String(state.course.title || 'Course');
+                                            }
+                                            if (summaryDescription) {
+                                                summaryDescription.textContent = String(state.course.description || '');
+                                            }
+                                            if (summaryPass) {
+                                                summaryPass.textContent = String(passMark) + '%';
+                                            }
+                                            if (summarySlides) {
+                                                summarySlides.textContent = String(slides.length);
+                                            }
+                                            if (summaryExamCount) {
+                                                summaryExamCount.textContent = String(exam.length);
+                                            }
+                                            showPanel(panelSummary || panelEmpty);
+                                        };
+
+                                        var renderSlide = function () {
+                                            if (!state.course || !Array.isArray(state.course.slides) || !state.course.slides.length) {
+                                                showPanel(panelEmpty);
+                                                return;
+                                            }
+                                            var slides = state.course.slides;
+                                            if (state.slideIndex < 0) {
+                                                state.slideIndex = 0;
+                                            }
+                                            if (state.slideIndex > slides.length - 1) {
+                                                state.slideIndex = slides.length - 1;
+                                            }
+                                            var slide = slides[state.slideIndex] || {};
+                                            if (slideCount) {
+                                                slideCount.textContent = 'Slide ' + String(state.slideIndex + 1) + ' of ' + String(slides.length);
+                                            }
+                                            if (slideTitle) {
+                                                slideTitle.textContent = String(slide.title || 'Slide');
+                                            }
+                                            if (slideBody) {
+                                                slideBody.textContent = String(slide.body || '');
+                                            }
+                                            var imageUrl = String(slide.image_url || slide.imageUrl || slide.image || '');
+                                            var imageAlt = String(slide.image_alt || slide.imageAlt || slide.title || 'Course slide image');
+                                            var imageCaption = String(slide.image_caption || slide.imageCaption || '');
+                                            if (slideImageWrap) {
+                                                var hasImage = imageUrl !== '';
+                                                slideImageWrap.hidden = !hasImage;
+                                                if (hasImage) {
+                                                    if (slideImage) {
+                                                        slideImage.src = imageUrl;
+                                                        slideImage.alt = imageAlt;
+                                                    }
+                                                    if (slideImageCaption) {
+                                                        slideImageCaption.textContent = imageCaption;
+                                                        slideImageCaption.hidden = imageCaption === '';
+                                                    }
+                                                }
+                                            }
+                                            if (prevBtn) {
+                                                prevBtn.disabled = state.slideIndex === 0;
+                                            }
+                                            if (nextBtn) {
+                                                nextBtn.textContent = state.slideIndex === (slides.length - 1) ? 'Go to exam' : 'Next';
+                                            }
+                                            showPanel(panelSlides);
+                                        };
+
+                                        var renderExam = function () {
+                                            if (!state.course || !Array.isArray(state.course.exam) || !state.course.exam.length) {
+                                                renderSlide();
+                                                return;
+                                            }
+                                            var passMark = parseInt(state.course.pass_mark || '100', 10);
+                                            if (!isFinite(passMark) || passMark < 1) {
+                                                passMark = 100;
+                                            }
+                                            if (examPassMark) {
+                                                examPassMark.textContent = String(passMark) + '%';
+                                            }
+                                            if (examQuestions) {
+                                                examQuestions.innerHTML = state.course.exam.map(function (question, index) {
+                                                    var options = (question && typeof question.options === 'object') ? question.options : {};
+                                                    var optionRows = Object.keys(options).map(function (optionKey) {
+                                                        var optionLabel = String(options[optionKey] || '');
+                                                        return ''
+                                                            + '<label class="cmn-learning-exam-option">'
+                                                            + '<input type="radio" name="q' + String(index) + '" value="' + escapeHtml(optionKey) + '" required>'
+                                                            + '<span><strong>' + escapeHtml(optionKey) + '.</strong> ' + escapeHtml(optionLabel) + '</span>'
+                                                            + '</label>';
+                                                    }).join('');
+                                                    return ''
+                                                        + '<fieldset class="cmn-learning-exam-question">'
+                                                        + '<legend>Question ' + String(index + 1) + ': ' + escapeHtml(String(question.question || '')) + '</legend>'
+                                                        + optionRows
+                                                        + '</fieldset>';
+                                                }).join('');
+                                            }
+                                            showPanel(panelExam);
+                                        };
+
+                                        var renderResult = function (passed, score, feedbackRows) {
+                                            if (resultTitle) {
+                                                resultTitle.textContent = passed ? 'Exam passed' : 'Exam not passed';
+                                            }
+                                            if (resultScore) {
+                                                var passMark = parseInt(state.course && state.course.pass_mark ? state.course.pass_mark : '100', 10);
+                                                resultScore.textContent = 'Score: ' + String(score) + '% (Pass mark: ' + String((isFinite(passMark) && passMark > 0) ? passMark : 100) + '%)';
+                                            }
+                                            if (resultFeedback) {
+                                                resultFeedback.innerHTML = feedbackRows.join('');
+                                            }
+                                            showPanel(panelResult);
+                                        };
+
+                                        var openCourse = function (courseKey, startSlides) {
+                                            var key = String(courseKey || '').trim();
+                                            if (!key || !courses[key]) {
+                                                return false;
+                                            }
+                                            state.courseKey = key;
+                                            state.course = courses[key];
+                                            state.slideIndex = 0;
+                                            if (startSlides) {
+                                                renderSlide();
+                                            } else {
+                                                renderSummary();
+                                            }
+                                            return true;
+                                        };
+
+                                        var courseButtons = Array.prototype.slice.call(root.querySelectorAll('[data-learning-open-course]'));
+                                        courseButtons.forEach(function (button) {
+                                            button.addEventListener('click', function (event) {
+                                                if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+                                                    event.preventDefault();
+                                                    return;
+                                                }
+                                                var key = String(button.getAttribute('data-learning-open-course') || '').trim();
+                                                var href = String(button.getAttribute('href') || button.getAttribute('data-learning-open-course-url') || '').trim();
+                                                if (key && courses[key]) {
+                                                    event.preventDefault();
+                                                    if (openCourse(key, true) && href && window.history && typeof window.history.replaceState === 'function') {
+                                                        window.history.replaceState({}, document.title, href);
+                                                    }
+                                                    return;
+                                                }
+                                                if (href && href !== '#') {
+                                                    event.preventDefault();
+                                                    window.location.assign(href);
+                                                }
+                                            });
+                                        });
+
+                                        if (startCourseBtn) {
+                                            startCourseBtn.addEventListener('click', function () {
+                                                if (!state.course) {
+                                                    return;
+                                                }
+                                                state.slideIndex = 0;
+                                                renderSlide();
+                                            });
+                                        }
+                                        if (prevBtn) {
+                                            prevBtn.addEventListener('click', function () {
+                                                state.slideIndex -= 1;
+                                                renderSlide();
+                                            });
+                                        }
+                                        if (nextBtn) {
+                                            nextBtn.addEventListener('click', function () {
+                                                if (!state.course || !Array.isArray(state.course.slides)) {
+                                                    return;
+                                                }
+                                                if (state.slideIndex >= state.course.slides.length - 1) {
+                                                    renderExam();
+                                                    return;
+                                                }
+                                                state.slideIndex += 1;
+                                                renderSlide();
+                                            });
+                                        }
+                                        if (backToSlides) {
+                                            backToSlides.addEventListener('click', function () {
+                                                renderSlide();
+                                            });
+                                        }
+                                        if (backToSummary) {
+                                            backToSummary.addEventListener('click', function () {
+                                                renderSummary();
+                                            });
+                                        }
+                                        if (retakeExam) {
+                                            retakeExam.addEventListener('click', function () {
+                                                renderExam();
+                                            });
+                                        }
+                                        if (examForm) {
+                                            examForm.addEventListener('submit', function (event) {
+                                                event.preventDefault();
+                                                if (!state.course || !Array.isArray(state.course.exam) || !state.course.exam.length) {
+                                                    return;
+                                                }
+                                                var allAnswered = true;
+                                                var correctCount = 0;
+                                                var feedbackRows = [];
+                                                state.course.exam.forEach(function (question, index) {
+                                                    var selected = examForm.querySelector('input[name="q' + String(index) + '"]:checked');
+                                                    var selectedValue = selected ? String(selected.value || '') : '';
+                                                    if (!selectedValue) {
+                                                        allAnswered = false;
+                                                    }
+                                                    var answer = String(question && question.answer ? question.answer : '');
+                                                    var isCorrect = selectedValue !== '' && selectedValue === answer;
+                                                    if (isCorrect) {
+                                                        correctCount += 1;
+                                                    }
+                                                    feedbackRows.push(
+                                                        '<div class="cmn-learning-exam-feedback-row ' + (isCorrect ? 'is-correct' : 'is-incorrect') + '">'
+                                                            + '<strong>Question ' + String(index + 1) + ': ' + (isCorrect ? 'Correct' : 'Incorrect') + '</strong>'
+                                                            + '<span>Your answer: ' + escapeHtml(selectedValue || 'Not answered') + ' | Correct answer: ' + escapeHtml(answer) + '</span>'
+                                                            + '<p>' + escapeHtml(String(question && question.explanation ? question.explanation : '')) + '</p>'
+                                                        + '</div>'
+                                                    );
+                                                });
+                                                if (!allAnswered) {
+                                                    renderResult(false, 0, ['<div class="cmn-learning-exam-feedback-row is-incorrect"><strong>Complete all questions before submitting.</strong></div>']);
+                                                    return;
+                                                }
+                                                var score = Math.round((correctCount / state.course.exam.length) * 100);
+                                                var passMark = parseInt(state.course.pass_mark || '100', 10);
+                                                if (!isFinite(passMark) || passMark < 1) {
+                                                    passMark = 100;
+                                                }
+                                                renderResult(score >= passMark, score, feedbackRows);
+                                            });
+                                        }
+
+                                        var initialKey = String(player.getAttribute('data-learning-open-key') || '').trim();
+                                        if (initialKey && courses[initialKey]) {
+                                            openCourse(initialKey, true);
+                                        } else {
+                                            showPanel(panelEmpty);
+                                        }
+
+                                        window.__cmnLearningMainReady = true;
+                                    }, 220);
+                                };
+
+                                if (document.readyState === 'loading') {
+                                    document.addEventListener('DOMContentLoaded', initLearningFallback);
+                                } else {
+                                    initLearningFallback();
                                 }
-                                event.preventDefault();
-                                window.location.assign(href);
-                            }, true);
+                            })();
                             </script>
                         <?php endif; ?>
                     <?php elseif ($tab === 'rewards') : ?>
