@@ -77035,7 +77035,6 @@ final class CMN_One_Plugin {
         $today = current_time('Y-m-d');
         $tomorrow = $this->get_tomorrow_date();
         $visibility_reasons = [
-            'not_approved' => 0,
             'hidden_not_interested' => 0,
             'marked_unavailable' => 0,
         ];
@@ -77048,11 +77047,6 @@ final class CMN_One_Plugin {
         foreach ((array) $visibility_candidate_ids as $visibility_candidate_id_raw) {
             $visibility_candidate_id = (int) $visibility_candidate_id_raw;
             if ($visibility_candidate_id < 1) {
-                continue;
-            }
-            $candidate_status = sanitize_key((string) get_post_meta($visibility_candidate_id, 'cmn_status', true));
-            if ($candidate_status !== '' && $candidate_status !== 'approved') {
-                $visibility_reasons['not_approved']++;
                 continue;
             }
             if ($this->is_candidate_hidden_for_school_live_matches($school_id, $visibility_candidate_id)) {
@@ -77082,7 +77076,7 @@ final class CMN_One_Plugin {
                     continue;
                 }
                 $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
-                if ($candidate_status !== '' && $candidate_status !== 'approved') {
+                if ($candidate_status === 'rejected') {
                     continue;
                 }
                 if ($this->is_candidate_unavailable($candidate_id, $today) && $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
@@ -77106,9 +77100,6 @@ final class CMN_One_Plugin {
             }
             if ($visibility_reasons['hidden_not_interested'] > 0) {
                 $empty_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
-            }
-            if ($visibility_reasons['not_approved'] > 0) {
-                $empty_reason_parts[] = (string) ((int) $visibility_reasons['not_approved']) . ' pending approval';
             }
             if ($empty_reason_parts) {
                 $availability_empty_reason .= ' Current exclusions: ' . implode(' | ', $empty_reason_parts) . '.';
@@ -77304,16 +77295,13 @@ final class CMN_One_Plugin {
         if ($visibility_reasons['hidden_not_interested'] > 0) {
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
         }
-        if ($visibility_reasons['not_approved'] > 0) {
-            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['not_approved']) . ' pending approval';
-        }
         $visibility_reason_text = $visibility_reason_parts ? ('If someone is missing: ' . implode(' | ', $visibility_reason_parts) . '.') : '';
         ob_start();
         ?>
         <section class="cmn-live-matches" data-live-matches-root data-live-matches='<?php echo esc_attr(wp_json_encode($payload)); ?>'>
             <div class="cmn-live-matches-head">
                 <h2>Available Candidates</h2>
-                <p><span class="cmn-dot-live"></span> <strong>Live</strong> Matches (approved candidates excluding unavailable)</p>
+                <p><span class="cmn-dot-live"></span> <strong>Live</strong> Matches (excluding unavailable)</p>
                 <button type="button" class="cmn-ghost cmn-live-filter-btn" data-live-filter-open>Filters</button>
             </div>
             <div class="cmn-live-tabs" role="tablist" aria-label="Live match tabs"></div>
@@ -77427,14 +77415,14 @@ final class CMN_One_Plugin {
             'post_status' => ['publish', 'private', 'draft'],
             'posts_per_page' => -1,
             'fields' => 'ids',
-            'meta_query' => [[
-                'key' => 'cmn_status',
-                'value' => 'approved',
-            ]],
         ]);
         foreach ((array) $base_candidate_ids as $candidate_id_raw) {
             $candidate_id = (int) $candidate_id_raw;
             if ($candidate_id < 1 || isset($seen[$candidate_id])) {
+                continue;
+            }
+            $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+            if ($candidate_status === 'rejected') {
                 continue;
             }
             if ($this->is_candidate_unavailable($candidate_id, $today) && $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
