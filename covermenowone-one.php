@@ -77563,13 +77563,44 @@ final class CMN_One_Plugin {
                 break;
             }
         }
-        if ($lat === null || $lng === null) {
-            return null;
+        if ($lat !== null && $lng !== null) {
+            if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+                return null;
+            }
+            return ['lat' => (float) $lat, 'lng' => (float) $lng];
         }
-        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
-            return null;
+
+        $fallback_user_ids = [];
+        $post_type = (string) get_post_type($post_id);
+        if ($post_type === 'cmn_candidate') {
+            $candidate_user_id = (int) $this->get_candidate_user_id($post_id);
+            if ($candidate_user_id > 0) {
+                $fallback_user_ids[] = $candidate_user_id;
+            }
+        } elseif ($post_type === 'cmn_school') {
+            $school_user_ids = $this->get_school_user_ids_for_school_request($post_id);
+            foreach ((array) $school_user_ids as $school_user_id) {
+                $school_user_id = (int) $school_user_id;
+                if ($school_user_id > 0) {
+                    $fallback_user_ids[] = $school_user_id;
+                }
+            }
+            $current_user_id = (int) get_current_user_id();
+            if ($current_user_id > 0 && (int) $this->resolve_school_id_for_user($current_user_id) === $post_id) {
+                $fallback_user_ids[] = $current_user_id;
+            }
         }
-        return ['lat' => (float) $lat, 'lng' => (float) $lng];
+
+        foreach (array_values(array_unique(array_map('intval', (array) $fallback_user_ids))) as $user_id) {
+            if ($user_id < 1) {
+                continue;
+            }
+            $coords = $this->get_geo_coordinates_for_user($user_id);
+            if (is_array($coords) && isset($coords['lat'], $coords['lng'])) {
+                return $coords;
+            }
+        }
+        return null;
     }
 
     private function parse_distance_miles($value) {
@@ -77631,25 +77662,138 @@ final class CMN_One_Plugin {
     }
 
     private function extract_uk_postcode_outward_code($postcode) {
-        $postcode = strtoupper(preg_replace('/\s+/', '', trim((string) $postcode)));
-        if ($postcode === '') {
+        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
+        if ($normalized_postcode === '') {
+            $normalized_postcode = strtoupper(preg_replace('/[^A-Z0-9]/', '', trim((string) $postcode)));
+        }
+        if ($normalized_postcode === '') {
             return '';
         }
-        if (preg_match('/^([A-Z]{1,2}\d[A-Z\d]?)/', $postcode, $matches) !== 1) {
+        if (preg_match('/^([A-Z]{1,2}\d[A-Z\d]?)/', $normalized_postcode, $matches) !== 1) {
             return '';
         }
         return (string) ($matches[1] ?? '');
     }
 
     private function normalize_uk_postcode_for_lookup($postcode) {
-        $postcode = strtoupper(preg_replace('/\s+/', '', trim((string) $postcode)));
-        if ($postcode === '') {
+        $postcode_raw = strtoupper(trim((string) $postcode));
+        if ($postcode_raw === '') {
             return '';
         }
-        if (!preg_match('/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/', $postcode)) {
+        $postcode_compact = preg_replace('/[^A-Z0-9]/', '', $postcode_raw);
+        if (preg_match('/^(GIR0AA|[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2})$/', $postcode_compact) === 1) {
+            return $postcode_compact;
+        }
+        if (preg_match('/\b(GIR\s*0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i', $postcode_raw, $matches) !== 1) {
             return '';
         }
-        return $postcode;
+        $extracted = strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) ($matches[1] ?? '')));
+        if (preg_match('/^(GIR0AA|[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2})$/', $extracted) !== 1) {
+            return '';
+        }
+        return $extracted;
+    }
+
+    private function get_geo_coordinates_for_user($user_id) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            return null;
+        }
+        $lat_keys = ['cmn_lat', 'cmn_latitude', 'cmn_location_lat', 'cmn_geo_lat', 'lat', 'latitude'];
+        $lng_keys = ['cmn_lng', 'cmn_long', 'cmn_longitude', 'cmn_location_lng', 'cmn_geo_lng', 'lng', 'longitude'];
+        $lat = null;
+        $lng = null;
+        foreach ($lat_keys as $key) {
+            $parsed = $this->parse_marketing_coordinate_value(get_user_meta($user_id, $key, true));
+            if ($parsed !== null) {
+                $lat = $parsed;
+                break;
+            }
+        }
+        foreach ($lng_keys as $key) {
+            $parsed = $this->parse_marketing_coordinate_value(get_user_meta($user_id, $key, true));
+            if ($parsed !== null) {
+                $lng = $parsed;
+                break;
+            }
+        }
+        if ($lat === null || $lng === null) {
+            return null;
+        }
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return null;
+        }
+        return [
+            'lat' => (float) $lat,
+            'lng' => (float) $lng,
+        ];
+    }
+
+    private function get_geo_lookup_postcode_for_post($post_id, $fallback_user_id = 0) {
+        $post_id = (int) $post_id;
+        if ($post_id < 1) {
+            return '';
+        }
+
+        $candidate_values = [];
+        $post_meta_keys = [
+            'cmn_postcode',
+            'postcode',
+            'postal_code',
+            'postalcode',
+            'post_code',
+            'zip',
+            'zip_code',
+            'billing_postcode',
+            'shipping_postcode',
+            'cmn_address_line1',
+            'cmn_address_line2',
+            'cmn_address_line3',
+            'cmn_location',
+            'cmn_town',
+            'cmn_county',
+        ];
+        foreach ($post_meta_keys as $meta_key) {
+            $value = trim((string) get_post_meta($post_id, $meta_key, true));
+            if ($value !== '') {
+                $candidate_values[] = $value;
+            }
+        }
+
+        $fallback_user_id = (int) $fallback_user_id;
+        if ($fallback_user_id < 1 && get_post_type($post_id) === 'cmn_candidate') {
+            $fallback_user_id = (int) $this->get_candidate_user_id($post_id);
+        }
+        if ($fallback_user_id > 0) {
+            $user_meta_keys = [
+                'cmn_postcode',
+                'postcode',
+                'postal_code',
+                'postalcode',
+                'post_code',
+                'zip',
+                'zip_code',
+                'billing_postcode',
+                'shipping_postcode',
+                'address',
+                'cmn_location',
+            ];
+            foreach ($user_meta_keys as $meta_key) {
+                $value = trim((string) get_user_meta($fallback_user_id, $meta_key, true));
+                if ($value !== '') {
+                    $candidate_values[] = $value;
+                }
+            }
+        }
+
+        foreach ($candidate_values as $candidate_value) {
+            $normalized = $this->normalize_uk_postcode_for_lookup($candidate_value);
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return '';
     }
 
     private function geocode_uk_postcode_coordinates($postcode) {
@@ -77724,15 +77868,25 @@ final class CMN_One_Plugin {
             return $existing;
         }
 
-        $postcode = (string) get_post_meta($school_id, 'cmn_postcode', true);
-        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
+        $fallback_school_user_id = 0;
+        $school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
+        if (!empty($school_user_ids[0])) {
+            $fallback_school_user_id = (int) $school_user_ids[0];
+        }
+        if ($fallback_school_user_id < 1) {
+            $current_user_id = (int) get_current_user_id();
+            if ($current_user_id > 0 && (int) $this->resolve_school_id_for_user($current_user_id) === $school_id) {
+                $fallback_school_user_id = $current_user_id;
+            }
+        }
+        $normalized_postcode = $this->get_geo_lookup_postcode_for_post($school_id, $fallback_school_user_id);
         if ($normalized_postcode === '') {
             return null;
         }
 
         $attempted_postcode = strtoupper(trim((string) get_post_meta($school_id, 'cmn_geo_lookup_postcode', true)));
         $attempted_at = (string) get_post_meta($school_id, 'cmn_geo_lookup_attempted_at', true);
-        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < HOUR_IN_SECONDS * 24) {
+        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < HOUR_IN_SECONDS * 2) {
             return null;
         }
 
@@ -77770,15 +77924,15 @@ final class CMN_One_Plugin {
             return $existing;
         }
 
-        $postcode = (string) get_post_meta($candidate_id, 'cmn_postcode', true);
-        $normalized_postcode = $this->normalize_uk_postcode_for_lookup($postcode);
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        $normalized_postcode = $this->get_geo_lookup_postcode_for_post($candidate_id, $candidate_user_id);
         if ($normalized_postcode === '') {
             return null;
         }
 
         $attempted_postcode = strtoupper(trim((string) get_post_meta($candidate_id, 'cmn_geo_lookup_postcode', true)));
         $attempted_at = (string) get_post_meta($candidate_id, 'cmn_geo_lookup_attempted_at', true);
-        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < HOUR_IN_SECONDS * 24) {
+        if ($attempted_postcode === $normalized_postcode && $attempted_at !== '' && (time() - strtotime($attempted_at)) < HOUR_IN_SECONDS * 2) {
             return null;
         }
 
