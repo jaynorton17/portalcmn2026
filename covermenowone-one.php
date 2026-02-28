@@ -77160,6 +77160,9 @@ final class CMN_One_Plugin {
         $shortlisted_count = 0;
         $target_date = current_time('Y-m-d');
         $school_live_coords = $school_id > 0 ? $this->ensure_school_geo_coordinates($school_id) : null;
+        $distance_debug_school_postcode = $school_id > 0
+            ? $this->get_geo_lookup_postcode_for_post($school_id, get_current_user_id())
+            : '';
         $candidate_geo_lookup_budget = 8;
         foreach ($candidates as $item) {
             $candidate = $item['post'] ?? null;
@@ -77223,6 +77226,20 @@ final class CMN_One_Plugin {
                 if ($fallback_travel_radius > 0) {
                     $distance_label = 'Up to ' . rtrim(rtrim(number_format($fallback_travel_radius, 1, '.', ''), '0'), '.') . ' miles';
                 }
+            }
+            $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_id, $candidate_user_id);
+            $distance_debug_key = 'cmn_distance_debug_' . md5((string) $school_id . '|' . (string) $candidate_id . '|' . $distance_label);
+            if (get_transient($distance_debug_key) === false) {
+                set_transient($distance_debug_key, 1, HOUR_IN_SECONDS);
+                error_log('[CMN_DISTANCE_DEBUG] ' . wp_json_encode([
+                    'school_id' => (int) $school_id,
+                    'candidate_id' => (int) $candidate_id,
+                    'distance' => (string) $distance_label,
+                    'school_postcode' => (string) $distance_debug_school_postcode,
+                    'candidate_postcode' => (string) $distance_debug_candidate_postcode,
+                    'school_coords' => is_array($school_live_coords) ? $school_live_coords : null,
+                    'candidate_coords' => isset($candidate_coords) && is_array($candidate_coords) ? $candidate_coords : null,
+                ]));
             }
             $all[] = [
                 'candidate_id' => $candidate_id,
