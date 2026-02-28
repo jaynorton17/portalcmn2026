@@ -66277,6 +66277,20 @@ final class CMN_One_Plugin {
                                     </div>
                                 </div>
                             </div>
+                            <script>
+                            document.addEventListener('click', function(event) {
+                                var link = event.target.closest('a[data-learning-open-module], a[data-learning-open-course]');
+                                if (!link) {
+                                    return;
+                                }
+                                var href = String(link.getAttribute('href') || '').trim();
+                                if (!href || href === '#') {
+                                    return;
+                                }
+                                event.preventDefault();
+                                window.location.assign(href);
+                            }, true);
+                            </script>
                         <?php endif; ?>
                     <?php elseif ($tab === 'rewards') : ?>
                         <?php echo $this->render_candidate_rewards_tab($candidate_id, $portal_url); ?>
