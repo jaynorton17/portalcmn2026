@@ -1766,6 +1766,34 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var schoolProfileForms = document.querySelectorAll('[data-school-profile-form]');
+  if (schoolProfileForms.length) {
+    var normalizeSchoolRoleValue = function (value) {
+      return String(value || '').toLowerCase().replace(/[^a-z]/g, '');
+    };
+    schoolProfileForms.forEach(function (form) {
+      var mainContactRoleInput = form.querySelector('[data-school-main-contact-role]');
+      var coverManagerFields = Array.prototype.slice.call(form.querySelectorAll('[data-school-cover-manager-field]'));
+      if (!mainContactRoleInput || !coverManagerFields.length) {
+        return;
+      }
+      var syncCoverManagerFields = function () {
+        var normalizedRole = normalizeSchoolRoleValue(mainContactRoleInput.value);
+        var hideCoverManagerFields = normalizedRole.indexOf('covermanager') !== -1;
+        coverManagerFields.forEach(function (field) {
+          field.hidden = hideCoverManagerFields;
+          var controls = field.querySelectorAll('input, select, textarea');
+          Array.prototype.forEach.call(controls, function (control) {
+            control.disabled = hideCoverManagerFields;
+          });
+        });
+      };
+      mainContactRoleInput.addEventListener('input', syncCoverManagerFields);
+      mainContactRoleInput.addEventListener('change', syncCoverManagerFields);
+      syncCoverManagerFields();
+    });
+  }
+
   var confirmForms = document.querySelectorAll('form[data-confirm]');
   if (confirmForms.length) {
     confirmForms.forEach(function (form) {

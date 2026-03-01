@@ -64017,6 +64017,8 @@ final class CMN_One_Plugin {
                         <?php endif; ?>
                         <?php
                         $school_email_value = (string) get_post_meta($user_school_id, 'cmn_email', true);
+                        $main_contact_role_value = (string) get_post_meta($user_school_id, 'cmn_contact_role', true);
+                        $main_contact_is_cover_manager = $this->is_cover_manager_role($main_contact_role_value);
                         $school_type_options = ['Primary', 'Secondary', 'All-through', 'SEN / Alternative Provision', 'Academy (single school)', 'Multi-Academy Trust', 'Other'];
                         $pupil_count_options = ['Under 200', '200-500', '500-1,000', 'Over 1,000'];
                         $supply_frequency_options = ['Daily', 'Several times a week', 'Weekly', 'Monthly', 'Only in emergencies', 'Rarely / never'];
@@ -64024,7 +64026,7 @@ final class CMN_One_Plugin {
                         $agency_count_options = ['1', '2-3', '4-5', 'More than 5', 'Not sure'];
                         ?>
                         <div class="cmn-profile-grid">
-                            <form class="cmn-dashboard-card cmn-doc-upload-card cmn-dashboard-card-wide cmn-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                            <form class="cmn-dashboard-card cmn-doc-upload-card cmn-dashboard-card-wide cmn-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-school-profile-form>
                                 <?php wp_nonce_field('cmn_school_profile_update', 'cmn_school_profile_nonce'); ?>
                                 <input type="hidden" name="action" value="cmn_school_update_profile">
                                 <div class="cmn-school-profile-tile-grid">
@@ -64044,7 +64046,7 @@ final class CMN_One_Plugin {
                                                 <input type="text" name="cmn_contact1" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1', true)); ?>">
                                             </label>
                                             <label>Main Contact Role
-                                                <input type="text" name="cmn_contact_role" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact_role', true)); ?>">
+                                                <input type="text" name="cmn_contact_role" value="<?php echo esc_attr($main_contact_role_value); ?>" data-school-main-contact-role>
                                             </label>
                                             <label>Main Contact Email
                                                 <input type="email" name="cmn_contact1_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1_email', true)); ?>">
@@ -64052,13 +64054,13 @@ final class CMN_One_Plugin {
                                             <label>Main Contact Number
                                                 <input type="text" name="cmn_primary_contact_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_primary_contact_phone', true)); ?>">
                                             </label>
-                                            <label>Cover Manager Name
+                                            <label data-school-cover-manager-field<?php echo $main_contact_is_cover_manager ? ' hidden' : ''; ?>>Cover Manager Name
                                                 <input type="text" name="cmn_cover_manager" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager', true)); ?>">
                                             </label>
-                                            <label>Cover Manager Email
+                                            <label data-school-cover-manager-field<?php echo $main_contact_is_cover_manager ? ' hidden' : ''; ?>>Cover Manager Email
                                                 <input type="email" name="cmn_cover_manager_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager_email', true)); ?>">
                                             </label>
-                                            <label>Cover Manager Number
+                                            <label data-school-cover-manager-field<?php echo $main_contact_is_cover_manager ? ' hidden' : ''; ?>>Cover Manager Number
                                                 <input type="text" name="cmn_cover_manager_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager_phone', true)); ?>">
                                             </label>
                                             <label>Email Greeting Name
@@ -85457,6 +85459,12 @@ p{margin:0;line-height:1.5}
         return $access_request_status === 'approved';
     }
 
+    private function is_cover_manager_role($role_label) {
+        $normalized_role = strtolower((string) $role_label);
+        $normalized_role = preg_replace('/[^a-z]/', '', $normalized_role);
+        return $normalized_role !== '' && strpos($normalized_role, 'covermanager') !== false;
+    }
+
     private function get_school_profile_missing_fields($school_id) {
         $school_id = (int) $school_id;
         if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
@@ -93399,20 +93407,38 @@ p{margin:0;line-height:1.5}
         if ($primary_contact_phone === '') {
             $primary_contact_phone = (string) ($values['phone'] ?? '');
         }
+        $main_contact_role = (string) ($values['contact_role'] ?? '');
+        $main_contact_is_cover_manager = $this->is_cover_manager_role($main_contact_role);
+        $cover_manager_name = (string) ($values['cover_manager'] ?? '');
+        $cover_manager_email = (string) ($values['cover_manager_email'] ?? '');
         $cover_manager_phone = sanitize_text_field(wp_unslash((string) ($_POST['cmn_cover_manager_phone'] ?? '')));
+        if ($main_contact_is_cover_manager) {
+            $cover_manager_name = (string) ($values['contact1'] ?? '');
+            $cover_manager_email = $primary_contact_email;
+            $cover_manager_phone = $primary_contact_phone;
+        }
 
         update_post_meta($school_id, 'cmn_primary_contact_name', (string) ($values['contact1'] ?? ''));
-        update_post_meta($school_id, 'cmn_primary_contact_role', (string) ($values['contact_role'] ?? ''));
+        update_post_meta($school_id, 'cmn_primary_contact_role', $main_contact_role);
         update_post_meta($school_id, 'cmn_primary_contact_email', $primary_contact_email);
         update_post_meta($school_id, 'cmn_primary_contact_phone', $primary_contact_phone);
         update_post_meta($school_id, 'cmn_contact1_email', $primary_contact_email);
+        if ($cover_manager_name === '') {
+            delete_post_meta($school_id, 'cmn_cover_manager');
+        } else {
+            update_post_meta($school_id, 'cmn_cover_manager', $cover_manager_name);
+        }
+        if ($cover_manager_email === '') {
+            delete_post_meta($school_id, 'cmn_cover_manager_email');
+        } else {
+            update_post_meta($school_id, 'cmn_cover_manager_email', $cover_manager_email);
+        }
         if ($cover_manager_phone === '') {
             delete_post_meta($school_id, 'cmn_cover_manager_phone');
         } else {
             update_post_meta($school_id, 'cmn_cover_manager_phone', $cover_manager_phone);
         }
 
-        $cover_manager_name = (string) ($values['cover_manager'] ?? '');
         if ($cover_manager_name !== '') {
             $this->store_cover_manager_split($school_id, $cover_manager_name);
         } else {
