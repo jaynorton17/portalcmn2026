@@ -912,6 +912,8 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_support_submit_feedback', [$this, 'handle_support_submit_feedback']);
         add_action('wp_ajax_cmn_support_save_transcript', [$this, 'handle_support_save_transcript']);
         add_action('wp_ajax_cmn_support_email_transcript', [$this, 'handle_support_email_transcript']);
+        add_action('wp_ajax_cmn_school_open_account_manager_chat', [$this, 'handle_school_open_account_manager_chat']);
+        add_action('wp_ajax_cmn_school_account_manager_chat_status', [$this, 'handle_school_account_manager_chat_status']);
         add_action('wp_ajax_cmn_candidate_submit_payroll_query', [$this, 'handle_candidate_submit_payroll_query']);
         add_action('wp_ajax_cmn_livechat_start', [$this, 'handle_livechat_start']);
         add_action('wp_ajax_nopriv_cmn_livechat_start', [$this, 'handle_livechat_start']);
@@ -8081,8 +8083,10 @@ final class CMN_One_Plugin {
         $school_id = (int) $school_id;
         if ($school_id < 1) {
             return [
+                'user_id' => 0,
                 'name' => '',
                 'email' => '',
+                'phone' => '',
             ];
         }
         $manager_user_id = (int) get_post_meta($school_id, 'cmn_account_manager_user', true);
@@ -8092,9 +8096,15 @@ final class CMN_One_Plugin {
         if ($manager_user_id > 0) {
             $manager_user = get_user_by('id', $manager_user_id);
             if ($manager_user) {
+                $phone = trim((string) get_user_meta($manager_user_id, 'phone', true));
+                if ($phone === '') {
+                    $phone = trim((string) get_user_meta($manager_user_id, 'cmn_phone', true));
+                }
                 return [
+                    'user_id' => $manager_user_id,
                     'name' => trim((string) $manager_user->display_name),
                     'email' => sanitize_email((string) $manager_user->user_email),
+                    'phone' => $phone,
                 ];
             }
         }
@@ -8103,9 +8113,12 @@ final class CMN_One_Plugin {
             $name = trim((string) get_post_meta($school_id, 'cmn_account_manager_name', true));
         }
         $email = sanitize_email((string) get_post_meta($school_id, 'cmn_account_manager_email', true));
+        $phone = trim((string) get_post_meta($school_id, 'cmn_account_manager_phone', true));
         return [
+            'user_id' => 0,
             'name' => $name,
             'email' => $email,
+            'phone' => $phone,
         ];
     }
 
@@ -15075,6 +15088,254 @@ final class CMN_One_Plugin {
             return 'school';
         }
         return 'staff';
+    }
+
+    private function get_account_manager_direct_support_queue_key() {
+        return 'account_manager_direct';
+    }
+
+    private function is_account_manager_direct_support_ticket($ticket) {
+        if (!is_array($ticket) || !$ticket) {
+            return false;
+        }
+        $queue_key = sanitize_key((string) ($ticket['queue_key'] ?? ''));
+        if ($queue_key !== '') {
+            return $queue_key === $this->get_account_manager_direct_support_queue_key();
+        }
+        $subject = strtolower(trim((string) ($ticket['subject'] ?? '')));
+        return $subject === strtolower('Account Manager Live Chat');
+    }
+
+    private function get_support_last_read_message_meta_key($ticket_id) {
+        $ticket_id = (int) $ticket_id;
+        if ($ticket_id < 1) {
+            return '';
+        }
+        return 'cmn_support_last_read_' . $ticket_id;
+    }
+
+    private function get_support_last_read_message_id_for_user($ticket_id, $user_id = 0) {
+        $ticket_id = (int) $ticket_id;
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($ticket_id < 1 || $user_id < 1) {
+            return 0;
+        }
+        $meta_key = $this->get_support_last_read_message_meta_key($ticket_id);
+        if ($meta_key === '') {
+            return 0;
+        }
+        return max(0, (int) get_user_meta($user_id, $meta_key, true));
+    }
+
+    private function set_support_last_read_message_id_for_user($ticket_id, $message_id, $user_id = 0) {
+        $ticket_id = (int) $ticket_id;
+        $message_id = max(0, (int) $message_id);
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($ticket_id < 1 || $message_id < 1 || $user_id < 1) {
+            return;
+        }
+        $meta_key = $this->get_support_last_read_message_meta_key($ticket_id);
+        if ($meta_key === '') {
+            return;
+        }
+        $existing = max(0, (int) get_user_meta($user_id, $meta_key, true));
+        if ($message_id > $existing) {
+            update_user_meta($user_id, $meta_key, $message_id);
+        }
+    }
+
+    private function mark_support_ticket_read_for_user($ticket_id, $user_id = 0, $messages = null) {
+        $ticket_id = (int) $ticket_id;
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($ticket_id < 1 || $user_id < 1) {
+            return;
+        }
+        $latest_message_id = 0;
+        if (is_array($messages) && $messages) {
+            foreach ($messages as $msg) {
+                $msg_id = max(0, (int) ($msg['id'] ?? 0));
+                if ($msg_id > $latest_message_id) {
+                    $latest_message_id = $msg_id;
+                }
+            }
+        }
+        if ($latest_message_id < 1) {
+            global $wpdb;
+            $message_table = $this->get_support_message_table();
+            $latest_message_id = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT MAX(id) FROM {$message_table} WHERE ticket_id = %d",
+                $ticket_id
+            ));
+        }
+        if ($latest_message_id > 0) {
+            $this->set_support_last_read_message_id_for_user($ticket_id, $latest_message_id, $user_id);
+        }
+    }
+
+    private function get_support_unread_count_for_user($ticket_id, $user_id = 0, $sender_type_filter = '') {
+        $ticket_id = (int) $ticket_id;
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($ticket_id < 1 || $user_id < 1) {
+            return 0;
+        }
+        $sender_type_filter = sanitize_key((string) $sender_type_filter);
+        $last_read_message_id = $this->get_support_last_read_message_id_for_user($ticket_id, $user_id);
+        global $wpdb;
+        $message_table = $this->get_support_message_table();
+        if ($sender_type_filter !== '') {
+            return max(0, (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(1)
+                 FROM {$message_table}
+                 WHERE ticket_id = %d
+                   AND id > %d
+                   AND sender_type = %s
+                   AND (sender_user_id IS NULL OR sender_user_id <> %d)",
+                $ticket_id,
+                $last_read_message_id,
+                $sender_type_filter,
+                $user_id
+            )));
+        }
+        return max(0, (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(1)
+             FROM {$message_table}
+             WHERE ticket_id = %d
+               AND id > %d
+               AND (sender_user_id IS NULL OR sender_user_id <> %d)",
+            $ticket_id,
+            $last_read_message_id,
+            $user_id
+        )));
+    }
+
+    private function get_school_account_manager_chat_support_url($ticket_id = 0) {
+        $args = [
+            'school' => 'support',
+            'cmn_support_focus' => 'account_manager_chat',
+        ];
+        $ticket_id = (int) $ticket_id;
+        if ($ticket_id > 0) {
+            $args['ticket_id'] = $ticket_id;
+        }
+        return add_query_arg($args, $this->get_portal_base_url());
+    }
+
+    private function get_school_account_manager_chat_ticket_for_user($school_user_id, $open_only = false) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1) {
+            return null;
+        }
+        global $wpdb;
+        $table = $this->get_support_ticket_table();
+        $where = ['created_by_user_id = %d'];
+        $params = [$school_user_id];
+        if ($this->support_ticket_has_column('queue_key')) {
+            $where[] = 'LOWER(COALESCE(queue_key, \'\')) = %s';
+            $params[] = $this->get_account_manager_direct_support_queue_key();
+        } else {
+            $where[] = 'LOWER(COALESCE(subject, \'\')) = %s';
+            $params[] = strtolower('Account Manager Live Chat');
+        }
+        if ($open_only) {
+            $where[] = 'LOWER(COALESCE(status, \'\')) <> \'closed\'';
+        }
+        $sql = "SELECT * FROM {$table} WHERE " . implode(' AND ', $where) . " ORDER BY updated_at DESC, id DESC LIMIT 1";
+        $prepared = $wpdb->prepare($sql, $params);
+        $row = $wpdb->get_row($prepared, ARRAY_A);
+        return is_array($row) && $row ? $row : null;
+    }
+
+    private function ensure_school_account_manager_chat_ticket($school_user_id, $manager_user_id = 0) {
+        $school_user_id = (int) $school_user_id;
+        $manager_user_id = max(0, (int) $manager_user_id);
+        if ($school_user_id < 1) {
+            return null;
+        }
+
+        global $wpdb;
+        $table = $this->get_support_ticket_table();
+        $ticket = $this->get_school_account_manager_chat_ticket_for_user($school_user_id, false);
+        $now = current_time('mysql');
+        if (is_array($ticket) && !empty($ticket['id'])) {
+            $ticket_id = (int) $ticket['id'];
+            $current_status = $this->normalize_support_status((string) ($ticket['status'] ?? 'open'));
+            $update = [];
+            $update_format = [];
+            if ($current_status === 'closed') {
+                $update['status'] = 'open';
+                $update_format[] = '%s';
+                $update['closed_at'] = null;
+                $update_format[] = '%s';
+            }
+            $update['updated_at'] = $now;
+            $update_format[] = '%s';
+            $update['is_new_for_admin'] = 1;
+            $update_format[] = '%d';
+            if ($manager_user_id > 0 && $this->support_ticket_has_column('assigned_to_user_id')) {
+                $update['assigned_to_user_id'] = $manager_user_id;
+                $update_format[] = '%d';
+            }
+            if ($update) {
+                $wpdb->update($table, $update, ['id' => $ticket_id], $update_format, ['%d']);
+            }
+            return $this->get_support_ticket($ticket_id);
+        }
+
+        $ticket_ref = $this->generate_support_ticket_ref();
+        $ticket_data = [
+            'ticket_ref' => $ticket_ref,
+            'created_by_user_id' => $school_user_id,
+            'user_role_type' => 'school',
+            'subject' => 'Account Manager Live Chat',
+            'category' => 'Account Management',
+            'status' => 'open',
+            'is_new_for_admin' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+            'closed_at' => null,
+        ];
+        $ticket_format = ['%s', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s'];
+        if ($this->support_ticket_has_column('queue_key')) {
+            $ticket_data['queue_key'] = $this->get_account_manager_direct_support_queue_key();
+            $ticket_format[] = '%s';
+        }
+        if ($this->support_ticket_has_column('assigned_to_user_id')) {
+            $ticket_data['assigned_to_user_id'] = $manager_user_id > 0 ? $manager_user_id : null;
+            $ticket_format[] = '%d';
+        }
+        if ($this->support_ticket_has_column('priority')) {
+            $ticket_data['priority'] = 'normal';
+            $ticket_format[] = '%s';
+        }
+        $inserted = $wpdb->insert($table, $ticket_data, $ticket_format);
+        if (!$inserted) {
+            return null;
+        }
+        $ticket_id = (int) $wpdb->insert_id;
+        return $ticket_id > 0 ? $this->get_support_ticket($ticket_id) : null;
+    }
+
+    private function notify_account_manager_for_direct_support_ticket($ticket, $latest_message = '', $actor_user_id = 0, $is_new_chat = false) {
+        if (!$this->is_account_manager_direct_support_ticket($ticket)) {
+            return;
+        }
+        $manager_user_id = max(0, (int) ($ticket['assigned_to_user_id'] ?? 0));
+        if ($manager_user_id < 1) {
+            return;
+        }
+        $actor_user_id = (int) $actor_user_id;
+        if ($actor_user_id > 0 && $actor_user_id === $manager_user_id) {
+            return;
+        }
+        $ticket_id = max(0, (int) ($ticket['id'] ?? 0));
+        $ticket_ref = sanitize_text_field((string) ($ticket['ticket_ref'] ?? ('TICKET-' . $ticket_id)));
+        $portal_link = $this->get_support_link_for_user($manager_user_id, $ticket_id, $ticket_ref);
+        $preview = $this->build_payroll_ticket_message_preview($latest_message, 180);
+        $title = $is_new_chat ? 'Account manager live chat' : 'Account manager chat reply';
+        $body = $is_new_chat
+            ? ($ticket_ref . ' has started in school portal.')
+            : ($ticket_ref . ' has a new message: ' . $preview);
+        $this->add_notification($manager_user_id, 'support_reply', $title, $body, $portal_link);
     }
 
     private function can_access_support_ticket($ticket, $user_id = 0) {
@@ -64044,17 +64305,69 @@ final class CMN_One_Plugin {
                             <?php endif; ?>
                         </div>
                     <?php elseif ($tab === 'team') : ?>
+                        <?php
+                        $team_manager_summary = (array) $this->get_school_account_manager_summary($user_school_id);
+                        $team_manager_name = trim((string) ($team_manager_summary['name'] ?? ''));
+                        if ($team_manager_name === '') {
+                            $team_manager_name = 'CoverMeNow ONE';
+                        }
+                        $team_manager_email = sanitize_email((string) ($team_manager_summary['email'] ?? ''));
+                        $team_manager_phone = trim((string) ($team_manager_summary['phone'] ?? ''));
+                        $team_call_href = '';
+                        if ($team_manager_phone !== '') {
+                            $team_call_href = 'tel:' . preg_replace('/[^0-9\+]/', '', $team_manager_phone);
+                        }
+                        $team_chat_fallback_url = $this->get_school_account_manager_chat_support_url(0);
+                        $team_cover_manager_name = trim((string) get_post_meta($user_school_id, 'cmn_cover_manager', true));
+                        if ($team_cover_manager_name === '') {
+                            $team_cover_manager_name = 'Not set';
+                        }
+                        ?>
                         <header class="cmn-school-header">
                             <h2>My Team</h2>
                         </header>
-                        <div class="cmn-dashboard-card">
-                            <h3>Account Manager</h3>
-                            <p><?php echo esc_html(get_post_meta($user_school_id, 'cmn_account_manager_name', true) ?: 'CoverMeNow ONE'); ?></p>
-                            <p><?php echo esc_html(get_post_meta($user_school_id, 'cmn_account_manager_email', true) ?: ''); ?></p>
-                        </div>
-                        <div class="cmn-dashboard-card">
-                            <h3>Cover Manager</h3>
-                            <p><?php echo esc_html(get_post_meta($user_school_id, 'cmn_cover_manager', true) ?: ''); ?></p>
+                        <div class="cmn-school-team-grid">
+                            <article class="cmn-dashboard-card cmn-account-manager-card">
+                                <h3>Account Manager</h3>
+                                <div class="cmn-account-manager-square">
+                                    <div class="cmn-account-manager-head">
+                                        <strong><?php echo esc_html($team_manager_name); ?></strong>
+                                        <?php if ($team_manager_email !== '') : ?>
+                                            <span><?php echo esc_html($team_manager_email); ?></span>
+                                        <?php else : ?>
+                                            <span class="cmn-muted">Email not set</span>
+                                        <?php endif; ?>
+                                        <?php if ($team_manager_phone !== '') : ?>
+                                            <span><?php echo esc_html($team_manager_phone); ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="cmn-account-manager-actions">
+                                        <?php if ($team_manager_email !== '') : ?>
+                                            <a class="cmn-ghost" href="mailto:<?php echo esc_attr($team_manager_email); ?>">Email account manager</a>
+                                        <?php else : ?>
+                                            <button class="cmn-ghost" type="button" disabled>Email unavailable</button>
+                                        <?php endif; ?>
+                                        <?php if ($team_call_href !== '') : ?>
+                                            <a class="cmn-ghost" href="<?php echo esc_attr($team_call_href); ?>">Call account manager</a>
+                                        <?php else : ?>
+                                            <button class="cmn-ghost" type="button" disabled>Call unavailable</button>
+                                        <?php endif; ?>
+                                        <a
+                                            class="cmn-primary cmn-account-manager-chat-btn"
+                                            href="<?php echo esc_url($team_chat_fallback_url); ?>"
+                                            data-account-manager-chat-launch
+                                            data-chat-support-url="<?php echo esc_url($team_chat_fallback_url); ?>">
+                                            Live Chat to Account Manager
+                                            <span class="cmn-account-manager-chat-badge" data-account-manager-chat-badge hidden>0</span>
+                                        </a>
+                                    </div>
+                                    <p class="cmn-muted">Live chat opens in Support and routes directly to your account manager.</p>
+                                </div>
+                            </article>
+                            <article class="cmn-dashboard-card">
+                                <h3>Cover Manager</h3>
+                                <p><?php echo esc_html($team_cover_manager_name); ?></p>
+                            </article>
                         </div>
                     <?php elseif ($tab === 'profile') : ?>
                         <header class="cmn-school-header">
@@ -96005,6 +96318,78 @@ p{margin:0;line-height:1.5}
         ]);
     }
 
+    public function handle_school_open_account_manager_chat() {
+        if (!check_ajax_referer('cmn_support', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $school_user_id = (int) get_current_user_id();
+        if (!$this->is_school_user($school_user_id)) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $school_id = (int) $this->resolve_school_id_for_user($school_user_id);
+        if ($school_id < 1) {
+            wp_send_json_error(['message' => 'School account not linked.'], 400);
+        }
+
+        $manager_summary = (array) $this->get_school_account_manager_summary($school_id);
+        $manager_user_id = max(0, (int) ($manager_summary['user_id'] ?? 0));
+        if ($manager_user_id < 1) {
+            $manager_user_id = max(0, (int) $this->get_request_account_manager_user_id($school_id));
+        }
+        if ($manager_user_id < 1 || !$this->is_staff_user_id($manager_user_id)) {
+            wp_send_json_error(['message' => 'No account manager is currently assigned to your school.'], 400);
+        }
+
+        $ticket_before = $this->get_school_account_manager_chat_ticket_for_user($school_user_id, false);
+        $created_new_chat = !$ticket_before;
+        $ticket = $this->ensure_school_account_manager_chat_ticket($school_user_id, $manager_user_id);
+        if (!$ticket) {
+            wp_send_json_error(['message' => 'Unable to open account manager chat right now.'], 500);
+        }
+        if ($created_new_chat) {
+            $this->notify_account_manager_for_direct_support_ticket($ticket, '', $school_user_id, true);
+        }
+
+        $ticket_id = max(0, (int) ($ticket['id'] ?? 0));
+        $unread_count = $this->get_support_unread_count_for_user($ticket_id, $school_user_id, 'admin');
+        wp_send_json_success([
+            'ticket_id' => $ticket_id,
+            'ticket_ref' => sanitize_text_field((string) ($ticket['ticket_ref'] ?? '')),
+            'support_url' => $this->get_school_account_manager_chat_support_url($ticket_id),
+            'unread_count' => $unread_count,
+            'manager' => [
+                'name' => sanitize_text_field((string) ($manager_summary['name'] ?? '')),
+                'email' => sanitize_email((string) ($manager_summary['email'] ?? '')),
+                'phone' => sanitize_text_field((string) ($manager_summary['phone'] ?? '')),
+            ],
+        ]);
+    }
+
+    public function handle_school_account_manager_chat_status() {
+        if (!check_ajax_referer('cmn_support', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid request.'], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $school_user_id = (int) get_current_user_id();
+        if (!$this->is_school_user($school_user_id)) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        $ticket = $this->get_school_account_manager_chat_ticket_for_user($school_user_id, false);
+        $ticket_id = max(0, (int) ($ticket['id'] ?? 0));
+        $unread_count = $ticket_id > 0 ? $this->get_support_unread_count_for_user($ticket_id, $school_user_id, 'admin') : 0;
+        wp_send_json_success([
+            'ticket_id' => $ticket_id,
+            'unread_count' => $unread_count,
+            'has_unread' => $unread_count > 0 ? 1 : 0,
+            'support_url' => $this->get_school_account_manager_chat_support_url($ticket_id),
+        ]);
+    }
+
     public function handle_support_create_ticket() {
         if (!check_ajax_referer('cmn_support', 'nonce', false)) {
             wp_send_json_error(['message' => 'Invalid request.'], 403);
@@ -96493,6 +96878,7 @@ p{margin:0;line-height:1.5}
         if (!is_user_logged_in()) {
             wp_send_json_error(['message' => 'Unauthorized.'], 403);
         }
+        $current_user_id = (int) get_current_user_id();
         $this->maybe_expire_support_feedback_requests();
         $ticket_id = intval($_POST['ticket_id'] ?? 0);
         $ticket_ref = sanitize_text_field($_POST['ticket_ref'] ?? '');
@@ -96506,7 +96892,7 @@ p{margin:0;line-height:1.5}
             wp_send_json_error(['message' => 'Ticket not found.'], 404);
         }
         $ticket_id = (int) $ticket['id'];
-        if (!$this->can_access_support_ticket($ticket)) {
+        if (!$this->can_access_support_ticket($ticket, $current_user_id)) {
             wp_send_json_error(['message' => 'Unauthorized.'], 403);
         }
         if ($this->is_staff_user()) {
@@ -96574,9 +96960,14 @@ p{margin:0;line-height:1.5}
             $ticket['livechat_guest_email'] = sanitize_email((string) ($livechat_meta['guest_email'] ?? ''));
             $ticket['livechat_guest_type'] = sanitize_key((string) ($livechat_meta['guest_type'] ?? 'other'));
         }
+        if ($this->is_account_manager_direct_support_ticket($ticket)) {
+            $ticket['channel_key'] = $this->get_account_manager_direct_support_queue_key();
+            $ticket['channel_label'] = 'Account Manager Live Chat';
+        }
         if ($this->is_staff_user()) {
             $payroll_context = $this->build_staff_payroll_ticket_context($ticket, $payroll_query_meta);
         }
+        $this->mark_support_ticket_read_for_user($ticket_id, $current_user_id, $messages);
         wp_send_json_success([
             'ticket' => $ticket,
             'messages' => $formatted,
@@ -96684,7 +97075,11 @@ p{margin:0;line-height:1.5}
                 }
             }
         } else {
-            $this->notify_admins_support_reply($ticket_id, $ticket['ticket_ref'], $message, $user_id);
+            if ($this->is_account_manager_direct_support_ticket($ticket)) {
+                $this->notify_account_manager_for_direct_support_ticket($ticket, $message, $user_id, false);
+            } else {
+                $this->notify_admins_support_reply($ticket_id, $ticket['ticket_ref'], $message, $user_id);
+            }
         }
 
         wp_send_json_success([

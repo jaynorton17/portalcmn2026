@@ -5448,7 +5448,11 @@ document.addEventListener('DOMContentLoaded', function () {
               meta.textContent = msg.sender_name || 'Visitor';
             }
           } else {
-            meta.textContent = msg.sender_type === 'admin' ? 'Support' : 'You';
+            if (msg.sender_type === 'admin' && String(ticket && ticket.channel_key ? ticket.channel_key : '') === 'account_manager_direct') {
+              meta.textContent = msg.sender_name || 'Account Manager';
+            } else {
+              meta.textContent = msg.sender_type === 'admin' ? 'Support' : 'You';
+            }
           }
           var text = document.createElement('div');
           text.className = 'cmn-support-text';
@@ -5506,6 +5510,9 @@ document.addEventListener('DOMContentLoaded', function () {
               details += ' (' + supportEsc(guestEmail) + ')';
             }
             channelEl.innerHTML = details;
+            channelEl.hidden = false;
+          } else if (ticket && String(ticket.channel_key || '') === 'account_manager_direct') {
+            channelEl.textContent = String(ticket.channel_label || 'Account Manager Live Chat');
             channelEl.hidden = false;
           } else {
             channelEl.textContent = '';
@@ -6237,6 +6244,105 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   var staffLoungeRoots = document.querySelectorAll('[data-staff-lounge]');
+  var accountManagerChatLaunchers = document.querySelectorAll('[data-account-manager-chat-launch]');
+  if (accountManagerChatLaunchers.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.supportNonce) {
+    var accountManagerChatFetch = function (action, payload) {
+      var formData = new FormData();
+      formData.append('action', action);
+      formData.append('nonce', window.cmnPortal.supportNonce);
+      Object.keys(payload || {}).forEach(function (key) {
+        formData.append(key, payload[key]);
+      });
+      return fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData,
+      }).then(function (response) {
+        return response.json();
+      });
+    };
+
+    accountManagerChatLaunchers.forEach(function (launcher, launcherIndex) {
+      var badge = launcher.querySelector('[data-account-manager-chat-badge]');
+      var fallbackUrl = launcher.getAttribute('data-chat-support-url') || '';
+      var launchInFlight = false;
+
+      var setBadgeCount = function (count) {
+        if (!badge) {
+          return;
+        }
+        var safeCount = Math.max(0, parseInt(count || '0', 10) || 0);
+        if (safeCount < 1) {
+          badge.hidden = true;
+          badge.textContent = '0';
+          return;
+        }
+        badge.hidden = false;
+        badge.textContent = safeCount > 99 ? '99+' : String(safeCount);
+      };
+
+      var pollStatus = function () {
+        return accountManagerChatFetch('cmn_school_account_manager_chat_status', {}).then(function (data) {
+          if (!data || !data.success || !data.data) {
+            return;
+          }
+          if (data.data.support_url) {
+            fallbackUrl = data.data.support_url;
+          }
+          setBadgeCount(data.data.unread_count || 0);
+        }).catch(function () {
+          return null;
+        });
+      };
+
+      launcher.addEventListener('click', function (event) {
+        event.preventDefault();
+        if (launchInFlight) {
+          return;
+        }
+        launchInFlight = true;
+        launcher.classList.add('is-loading');
+        accountManagerChatFetch('cmn_school_open_account_manager_chat', {}).then(function (data) {
+          if (data && data.success && data.data && data.data.support_url) {
+            window.location.href = data.data.support_url;
+            return;
+          }
+          if (fallbackUrl) {
+            window.location.href = fallbackUrl;
+          }
+        }).catch(function () {
+          if (fallbackUrl) {
+            window.location.href = fallbackUrl;
+          }
+        }).finally(function () {
+          launchInFlight = false;
+          launcher.classList.remove('is-loading');
+        });
+      });
+
+      if (cmnPollManager) {
+        cmnPollManager.register({
+          key: 'cmn-school-account-manager-chat-' + String(launcherIndex || 0),
+          intervalMs: 12000,
+          maxIntervalMs: 45000,
+          callback: function () {
+            return pollStatus();
+          },
+          visibleOnly: true,
+          triggerOnFocus: true,
+          triggerOnVisibility: true,
+          backoffOnError: true,
+          immediate: true,
+        });
+      } else {
+        pollStatus();
+        window.setInterval(function () {
+          pollStatus();
+        }, 15000);
+      }
+    });
+  }
+
   if (staffLoungeRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.staffLoungeNonce) {
     staffLoungeRoots.forEach(function (root, loungeIndex) {
       var threadType = root.getAttribute('data-thread-type') || 'staff_lounge';
