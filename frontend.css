@@ -6351,13 +6351,15 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 .cmn-account-manager-square {
   border: 1px solid rgba(255, 255, 255, 0.38);
   border-radius: 12px;
-  min-height: 280px;
+  width: min(100%, 320px);
+  min-height: 0;
   aspect-ratio: 1 / 1;
-  padding: 16px;
+  padding: 12px;
   background: rgba(255, 255, 255, 0.03);
   display: grid;
   align-content: space-between;
-  gap: 14px;
+  gap: 10px;
+  justify-self: start;
 }
 
 .cmn-account-manager-head {
@@ -6375,6 +6377,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   color: rgba(237, 242, 248, 0.92);
 }
 
+.cmn-account-manager-phone {
+  text-align: center;
+}
+
 .cmn-account-manager-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6384,6 +6390,12 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 .cmn-account-manager-actions .cmn-primary {
   grid-column: 1 / -1;
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 .cmn-account-manager-actions .cmn-ghost[disabled] {

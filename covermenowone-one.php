@@ -64338,7 +64338,7 @@ final class CMN_One_Plugin {
                                             <span class="cmn-muted">Email not set</span>
                                         <?php endif; ?>
                                         <?php if ($team_manager_phone !== '') : ?>
-                                            <span><?php echo esc_html($team_manager_phone); ?></span>
+                                            <span class="cmn-account-manager-phone"><?php echo esc_html($team_manager_phone); ?></span>
                                         <?php endif; ?>
                                     </div>
                                     <div class="cmn-account-manager-actions">
