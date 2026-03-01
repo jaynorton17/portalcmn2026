@@ -17562,6 +17562,38 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
     0 0 86px rgba(22,163,74,.32),
     inset 0 0 0 1px rgba(187,247,208,.24);
 }
+.cmn-live-card.is-bookable,
+.cmn-live-card.is-bookable .cmn-live-brand,
+.cmn-live-card.is-bookable .cmn-live-brand span,
+.cmn-live-card.is-bookable .cmn-live-name,
+.cmn-live-card.is-bookable .cmn-live-role,
+.cmn-live-card.is-bookable .cmn-live-rating,
+.cmn-live-card.is-bookable .cmn-live-distance,
+.cmn-live-card.is-bookable .cmn-live-strengths-title,
+.cmn-live-card.is-bookable .cmn-live-status.available,
+.cmn-live-card.is-bookable .cmn-live-banner,
+.cmn-live-card.is-bookable .cmn-live-banner small,
+.cmn-live-card.is-bookable .cmn-live-rate,
+.cmn-live-card.is-bookable .cmn-live-rate span,
+.cmn-live-card.is-bookable .cmn-live-charge-rate,
+.cmn-live-card.is-bookable .cmn-live-skill,
+.cmn-live-card.is-bookable .cmn-live-presence,
+.cmn-live-card.is-bookable .cmn-live-presence.is-live,
+.cmn-live-card.is-bookable .cmn-live-actions .cmn-primary,
+.cmn-live-card.is-bookable .cmn-live-actions .cmn-ghost,
+.cmn-live-card.is-bookable .cmn-live-not-interest,
+.cmn-live-card.is-bookable .cmn-live-offer{
+  color:#000 !important;
+  -webkit-text-fill-color:#000;
+}
+.cmn-live-card.is-bookable .cmn-live-rate,
+.cmn-live-card.is-bookable .cmn-live-charge-rate,
+.cmn-live-card.is-bookable .cmn-live-skill,
+.cmn-live-card.is-bookable .cmn-live-presence,
+.cmn-live-card.is-bookable .cmn-live-presence.is-live{
+  background:rgba(255,255,255,.72);
+  border-color:rgba(0,0,0,.22);
+}
 .cmn-live-card.is-pending-confirmation{background:linear-gradient(180deg,rgba(98,71,9,.92),rgba(54,38,7,.96));border-color:rgba(181,136,18,.34);box-shadow:0 10px 24px rgba(24,18,4,.28),0 0 8px rgba(181,136,18,.12)}
 .cmn-live-brand{font-size:13px;font-weight:800;letter-spacing:.02em;color:#f3f4f6}
 .cmn-live-brand span{color:#ff1f43 !important;font-weight:900}
