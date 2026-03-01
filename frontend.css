@@ -17568,6 +17568,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-bookable .cmn-live-name,
 .cmn-live-card.is-bookable .cmn-live-role,
 .cmn-live-card.is-bookable .cmn-live-rating,
+.cmn-live-card.is-bookable .cmn-live-rating-copy,
 .cmn-live-card.is-bookable .cmn-live-distance,
 .cmn-live-card.is-bookable .cmn-live-strengths-title,
 .cmn-live-card.is-bookable .cmn-live-status.available,
@@ -17586,11 +17587,23 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
   color:#000 !important;
   -webkit-text-fill-color:#000;
 }
+.cmn-live-card.is-bookable .cmn-live-rating-stars-base{
+  color:rgba(0,0,0,.32) !important;
+  -webkit-text-fill-color:rgba(0,0,0,.32);
+}
+.cmn-live-card.is-bookable .cmn-live-rating-stars-fill{
+  color:#000 !important;
+  -webkit-text-fill-color:#000;
+}
 .cmn-live-card.is-bookable .cmn-live-rate,
 .cmn-live-card.is-bookable .cmn-live-charge-rate,
 .cmn-live-card.is-bookable .cmn-live-skill,
 .cmn-live-card.is-bookable .cmn-live-presence,
 .cmn-live-card.is-bookable .cmn-live-presence.is-live{
+  background:rgba(255,255,255,.72);
+  border-color:rgba(0,0,0,.22);
+}
+.cmn-live-card.is-bookable .cmn-live-role{
   background:rgba(255,255,255,.72);
   border-color:rgba(0,0,0,.22);
 }
@@ -17601,8 +17614,12 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-ident{display:flex;align-items:center;gap:10px;min-width:0}
 .cmn-live-avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.22);background:#20182f}
 .cmn-live-name{font-size:18px;font-weight:800;line-height:1.1}
-.cmn-live-role{font-size:12px;color:#ffe6eb}
-.cmn-live-rating{margin-top:3px;font-size:12px;color:#f8fafc}
+.cmn-live-role{display:inline-flex;align-items:center;min-height:22px;margin-top:3px;padding:2px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.14);font-size:12px;font-weight:800;letter-spacing:.02em;color:#fff4f6}
+.cmn-live-rating{margin-top:5px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#f8fafc;line-height:1.2}
+.cmn-live-rating-stars{position:relative;display:inline-block;font-size:13px;line-height:1;letter-spacing:1px;white-space:nowrap;vertical-align:middle}
+.cmn-live-rating-stars-base{color:rgba(255,255,255,.3)}
+.cmn-live-rating-stars-fill{position:absolute;left:0;top:0;overflow:hidden;color:#facc15}
+.cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit}
 .cmn-live-status{padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap}
 .cmn-live-status.available{
   background:linear-gradient(180deg,#66ff30,#22c55e);

@@ -13043,11 +13043,55 @@ document.addEventListener('DOMContentLoaded', function () {
         .replace(/'/g, '&#39;');
     };
 
+    var clampRating = function(value){
+      var numeric = Number(value);
+      if (!isFinite(numeric)) {
+        return 0;
+      }
+      if (numeric < 0) {
+        return 0;
+      }
+      if (numeric > 5) {
+        return 5;
+      }
+      return numeric;
+    };
+
+    var resolveRatingValue = function(item){
+      var numeric = clampRating(item && item.rating);
+      if (numeric > 0) {
+        return numeric;
+      }
+      var label = String((item && item.rating_label) || '');
+      var match = label.match(/(\d+(?:\.\d+)?)/);
+      if (!match) {
+        return 0;
+      }
+      return clampRating(match[1]);
+    };
+
+    var resolveRatingMarkup = function(item){
+      var ratingValue = resolveRatingValue(item);
+      var ratingFillPercent = Math.max(0, Math.min(100, (ratingValue / 5) * 100));
+      var reviewsCount = Math.max(0, parseInt(String((item && item.reviews) || '0'), 10) || 0);
+      var ratingDisplay = ratingValue.toFixed(1);
+      var ratingCopy = reviewsCount > 0
+        ? ratingDisplay + ' (' + reviewsCount + ' review' + (reviewsCount === 1 ? '' : 's') + ')'
+        : 'No feedback yet';
+      var ratingAria = reviewsCount > 0
+        ? ratingDisplay + ' out of 5 stars from ' + reviewsCount + ' review' + (reviewsCount === 1 ? '' : 's')
+        : 'No feedback yet';
+      return '<div class="cmn-live-rating">'
+        + '<span class="cmn-live-rating-stars" role="img" aria-label="' + escapeHtml(ratingAria) + '"><span class="cmn-live-rating-stars-base">★★★★★</span><span class="cmn-live-rating-stars-fill" style="width:' + ratingFillPercent.toFixed(2) + '%;">★★★★★</span></span>'
+        + '<span class="cmn-live-rating-copy">' + escapeHtml(ratingCopy) + '</span>'
+        + '</div>';
+    };
+
     var cardHtml = function(item){
       if (!item) return '<div></div>';
       var isOnlineNow = String(item.is_physically_online || '0') === '1' || item.is_physically_online === 1 || item.is_physically_online === true;
       var presenceLabel = isOnlineNow ? 'ONLINE NOW' : String(item.presence_label || 'Last seen at --:--');
-      var ratingLabel = String(item.rating_label || (Number(item.rating || 0).toFixed(2) + ' out of 5 stars'));
+      var ratingMarkup = resolveRatingMarkup(item);
       var isBookable = item.status === 'available';
       var cardStateClass = isBookable ? ' is-bookable' : ' is-pending-confirmation';
       var banner = item.status === 'available'
@@ -13068,7 +13112,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }).join('');
       return '<article class="cmn-live-card'+cardStateClass+'" data-candidate-id="'+item.candidate_id+'">'
         + '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
-        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div><div class="cmn-live-rating">'+ratingLabel+'</div></div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
+        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div>'+ratingMarkup+'</div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
         + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'
         + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
         + (locationDistanceText ? '<div class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</div>' : '')

@@ -78537,6 +78537,25 @@ final class CMN_One_Plugin {
             $distance_text = sanitize_text_field((string) ($item['distance'] ?? ''));
             $town_city_text = sanitize_text_field((string) ($item['town_city'] ?? ''));
             $rating_label = sanitize_text_field((string) ($item['rating_label'] ?? (number_format((float) ($item['rating'] ?? 0), 2) . ' out of 5 stars')));
+            $rating_value = (float) ($item['rating'] ?? 0);
+            if ($rating_value <= 0 && $rating_label !== '' && preg_match('/(\d+(?:\.\d+)?)/', $rating_label, $rating_match)) {
+                $rating_value = (float) ($rating_match[1] ?? 0);
+            }
+            if ($rating_value < 0) {
+                $rating_value = 0.0;
+            } elseif ($rating_value > 5) {
+                $rating_value = 5.0;
+            }
+            $reviews_count = max(0, (int) ($item['reviews'] ?? 0));
+            $rating_fill_percent = max(0.0, min(100.0, ($rating_value / 5) * 100));
+            $rating_value_display = number_format($rating_value, 1);
+            $rating_copy = $reviews_count > 0
+                ? ($rating_value_display . ' (' . $reviews_count . ' review' . ($reviews_count === 1 ? '' : 's') . ')')
+                : 'No feedback yet';
+            $rating_aria_label = $reviews_count > 0
+                ? ($rating_value_display . ' out of 5 stars from ' . $reviews_count . ' review' . ($reviews_count === 1 ? '' : 's'))
+                : 'No feedback yet';
+            $rating_html = '<div class="cmn-live-rating"><span class="cmn-live-rating-stars" role="img" aria-label="' . esc_attr($rating_aria_label) . '"><span class="cmn-live-rating-stars-base">★★★★★</span><span class="cmn-live-rating-stars-fill" style="width:' . esc_attr(number_format((float) $rating_fill_percent, 2, '.', '')) . '%;">★★★★★</span></span><span class="cmn-live-rating-copy">' . esc_html($rating_copy) . '</span></div>';
             $skills = array_values(array_filter(array_map(
                 static function ($skill_item) {
                     return sanitize_text_field((string) $skill_item);
@@ -78592,7 +78611,7 @@ final class CMN_One_Plugin {
             $card_state_class = $status === 'available' ? ' is-bookable' : ' is-pending-confirmation';
             return '<article class="cmn-live-card' . esc_attr($card_state_class) . '" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
                 . '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
-                . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div><div class="cmn-live-rating">' . esc_html($rating_label) . '</div></div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
+                . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div>' . $rating_html . '</div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
                 . $presence_html
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
                 . ($location_distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($location_distance_text) . '</div>' : '')
