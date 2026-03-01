@@ -77340,11 +77340,21 @@ final class CMN_One_Plugin {
         $shortlisted_count = 0;
         $target_date = current_time('Y-m-d');
         $school_live_coords = $school_id > 0 ? $this->ensure_school_geo_coordinates($school_id) : null;
+        $distance_debug_school_user_id = 0;
+        if ($school_id > 0) {
+            $distance_debug_school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
+            if (!empty($distance_debug_school_user_ids[0])) {
+                $distance_debug_school_user_id = (int) $distance_debug_school_user_ids[0];
+            }
+        }
+        if ($distance_debug_school_user_id < 1) {
+            $distance_debug_school_user_id = (int) get_current_user_id();
+        }
         $distance_debug_school_postcode = $school_id > 0
-            ? $this->get_geo_lookup_postcode_for_post($school_id, get_current_user_id())
+            ? $this->get_geo_lookup_postcode_for_post($school_id, $distance_debug_school_user_id)
             : '';
         $distance_debug_school_exact_postcodes = $school_id > 0
-            ? $this->get_geo_exact_postcodes_for_post($school_id, get_current_user_id())
+            ? $this->get_geo_exact_postcodes_for_post($school_id, $distance_debug_school_user_id)
             : [];
         $distance_debug_school_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_school_postcode);
         $candidate_geo_lookup_budget = 40;
