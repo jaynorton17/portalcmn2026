@@ -65471,7 +65471,9 @@ final class CMN_One_Plugin {
             $saved_contact_card_show_available_raw = (string) get_post_meta($candidate_id, 'cmn_contact_card_show_available', true);
         }
         $contact_card_show_available = ($already_marked && !$calendar_blocked);
-        if ($saved_contact_card_show_available_raw !== '') {
+        // If the candidate has confirmed availability, force contact card to bookable.
+        // Saved toggle state only applies while not confirmed for the target window.
+        if (!$contact_card_show_available && $saved_contact_card_show_available_raw !== '') {
             $contact_card_show_available = in_array(strtolower(trim($saved_contact_card_show_available_raw)), ['1', 'true', 'yes', 'on'], true);
         }
         if ($candidate_user_id > 0) {
@@ -68196,7 +68198,7 @@ final class CMN_One_Plugin {
                                 </div>
                             </div>
                             <article class="cmn-dashboard-card cmn-contact-card-tab-tile cmn-contact-card-tab-tile--preview cmn-candidate-section1-contact">
-                                <div class="cmn-contact-card-preview cmn-command-card <?php echo $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation'; ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>">
+                                <div class="cmn-contact-card-preview cmn-command-card <?php echo $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation'; ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-dashboard-contact-card data-dashboard-contact-confirmed-at="<?php echo esc_attr((string) $availability_confirmed_time_label); ?>">
                                     <div class="cmn-command-card-accent" aria-hidden="true"></div>
                                     <div class="cmn-command-card-head">
                                         <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
@@ -68233,8 +68235,8 @@ final class CMN_One_Plugin {
                                         <span class="cmn-contact-card-preview-meta-pill">Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
                                     </div>
                                     <div class="cmn-command-status-wrap">
-                                        <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>"><?php echo esc_html($contact_card_availability_label); ?></span>
-                                        <span class="cmn-contact-card-preview-time"<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
+                                        <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-dashboard-contact-availability><?php echo esc_html($contact_card_availability_label); ?></span>
+                                        <span class="cmn-contact-card-preview-time" data-dashboard-contact-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                     </div>
                                     <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
                                     <div class="cmn-contact-card-preview-skills">
@@ -87180,6 +87182,11 @@ p{margin:0;line-height:1.5}
         global $wpdb;
         $table = $this->get_candidate_availability_table();
         if ($already_marked) {
+            $current_user_id = (int) get_current_user_id();
+            if ($current_user_id > 0) {
+                update_user_meta($current_user_id, 'cmn_contact_card_show_available', '1');
+            }
+            update_post_meta($candidate_id, 'cmn_contact_card_show_available', '1');
             $confirmed_at_label = '';
             $existing_entry = $this->get_candidate_availability_entry($candidate_id, $target_date);
             if (is_array($existing_entry) && !empty($existing_entry['created_at'])) {
@@ -87210,6 +87217,12 @@ p{margin:0;line-height:1.5}
         if (!$inserted) {
             wp_send_json_error(['message' => 'Unable to save availability.'], 500);
         }
+
+        $current_user_id = (int) get_current_user_id();
+        if ($current_user_id > 0) {
+            update_user_meta($current_user_id, 'cmn_contact_card_show_available', '1');
+        }
+        update_post_meta($candidate_id, 'cmn_contact_card_show_available', '1');
 
         wp_send_json_success([
             'message' => 'Availability confirmed for ' . $period_label . '.',
@@ -87249,6 +87262,12 @@ p{margin:0;line-height:1.5}
             'candidate_id' => $candidate_id,
             'available_date' => $target_date,
         ], ['%d', '%s']);
+
+        $current_user_id = (int) get_current_user_id();
+        if ($current_user_id > 0) {
+            update_user_meta($current_user_id, 'cmn_contact_card_show_available', '0');
+        }
+        update_post_meta($candidate_id, 'cmn_contact_card_show_available', '0');
 
         wp_send_json_success([
             'message' => 'You are marked unavailable for ' . $this->get_availability_period_label($target_date, $now) . '.',

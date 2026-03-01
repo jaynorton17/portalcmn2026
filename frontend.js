@@ -2292,9 +2292,9 @@ document.addEventListener('DOMContentLoaded', function () {
       var availabilityDotLabel = document.querySelector('[data-availability-dot-label]');
       var unavailableButton = document.querySelector('[data-availability-unavailable-button]');
       var availabilityImpact = document.querySelector('[data-availability-impact]');
-      var dashboardContactCard = document.querySelector('[data-dashboard-contact-card]');
-      var dashboardContactAvailability = document.querySelector('[data-dashboard-contact-availability]');
-      var dashboardContactTime = document.querySelector('[data-dashboard-contact-time]');
+      var dashboardContactCard = document.querySelector('[data-dashboard-contact-card]') || document.querySelector('.cmn-candidate-section1-contact .cmn-contact-card-preview.cmn-command-card');
+      var dashboardContactAvailability = document.querySelector('[data-dashboard-contact-availability]') || (dashboardContactCard ? dashboardContactCard.querySelector('.cmn-contact-card-preview-state') : null);
+      var dashboardContactTime = document.querySelector('[data-dashboard-contact-time]') || (dashboardContactCard ? dashboardContactCard.querySelector('.cmn-contact-card-preview-time') : null);
       var dashboardContactInitialConfirmedAt = dashboardContactCard ? String(dashboardContactCard.getAttribute('data-dashboard-contact-confirmed-at') || '').trim() : '';
       var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
       var availabilityPeriodLabel = availabilityButton.getAttribute('data-availability-period-label') || 'tomorrow morning';
