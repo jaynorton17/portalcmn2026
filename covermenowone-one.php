@@ -77343,6 +77343,9 @@ final class CMN_One_Plugin {
         $distance_debug_school_postcode = $school_id > 0
             ? $this->get_geo_lookup_postcode_for_post($school_id, get_current_user_id())
             : '';
+        $distance_debug_school_exact_postcodes = $school_id > 0
+            ? $this->get_geo_exact_postcodes_for_post($school_id, get_current_user_id())
+            : [];
         $distance_debug_school_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_school_postcode);
         $candidate_geo_lookup_budget = 40;
         $rendered_identity_keys = [];
@@ -77364,6 +77367,7 @@ final class CMN_One_Plugin {
             $role_secondary = isset($role_labels[1]) ? (string) $role_labels[1] : '';
             $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
             $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_id, $candidate_user_id);
+            $distance_debug_candidate_exact_postcodes = $this->get_geo_exact_postcodes_for_post($candidate_id, $candidate_user_id);
             $distance_debug_candidate_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_candidate_postcode);
             $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
             $name_parts = preg_split('/\s+/', trim((string) $candidate->post_title));
@@ -77391,11 +77395,21 @@ final class CMN_One_Plugin {
                 $day_rate = 160.0;
             }
             $distance_label = 'Distance pending';
+            $exact_postcode_overlap = array_values(array_intersect(
+                (array) $distance_debug_school_exact_postcodes,
+                (array) $distance_debug_candidate_exact_postcodes
+            ));
+            $has_exact_postcode_match = !empty($exact_postcode_overlap);
             if (
+                !$has_exact_postcode_match
+                &&
                 $distance_debug_school_exact_postcode !== ''
                 && $distance_debug_candidate_exact_postcode !== ''
                 && $distance_debug_school_exact_postcode === $distance_debug_candidate_exact_postcode
             ) {
+                $has_exact_postcode_match = true;
+            }
+            if ($has_exact_postcode_match) {
                 $distance_label = '0 miles';
             } elseif ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
                 $candidate_coords = null;
@@ -77432,7 +77446,9 @@ final class CMN_One_Plugin {
                     'candidate_id' => (int) $candidate_id,
                     'distance' => (string) $distance_label,
                     'school_postcode' => (string) $distance_debug_school_postcode,
+                    'school_exact_postcodes' => array_values((array) $distance_debug_school_exact_postcodes),
                     'candidate_postcode' => (string) $distance_debug_candidate_postcode,
+                    'candidate_exact_postcodes' => array_values((array) $distance_debug_candidate_exact_postcodes),
                     'school_coords' => is_array($school_live_coords) ? $school_live_coords : null,
                     'candidate_coords' => isset($candidate_coords) && is_array($candidate_coords) ? $candidate_coords : null,
                 ]));
@@ -77990,6 +78006,43 @@ final class CMN_One_Plugin {
         if ($post_id < 1) {
             return '';
         }
+        $candidate_values = $this->get_geo_lookup_values_for_post($post_id, $fallback_user_id);
+
+        foreach ($candidate_values as $candidate_value) {
+            $normalized = $this->normalize_uk_postcode_for_lookup($candidate_value);
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+        foreach ($candidate_values as $candidate_value) {
+            $normalized_outward = $this->normalize_uk_outward_code_for_lookup($candidate_value);
+            if ($normalized_outward !== '') {
+                return $normalized_outward;
+            }
+        }
+        return '';
+    }
+
+    private function get_geo_exact_postcodes_for_post($post_id, $fallback_user_id = 0) {
+        $candidate_values = $this->get_geo_lookup_values_for_post($post_id, $fallback_user_id);
+        if (!$candidate_values) {
+            return [];
+        }
+        $exact_postcodes = [];
+        foreach ($candidate_values as $candidate_value) {
+            $normalized = $this->normalize_uk_postcode_for_lookup($candidate_value);
+            if ($normalized !== '' && !in_array($normalized, $exact_postcodes, true)) {
+                $exact_postcodes[] = $normalized;
+            }
+        }
+        return $exact_postcodes;
+    }
+
+    private function get_geo_lookup_values_for_post($post_id, $fallback_user_id = 0) {
+        $post_id = (int) $post_id;
+        if ($post_id < 1) {
+            return [];
+        }
 
         $candidate_values = [];
         $post_meta_keys = [
@@ -78010,9 +78063,9 @@ final class CMN_One_Plugin {
             'cmn_county',
         ];
         foreach ($post_meta_keys as $meta_key) {
-            $value = trim((string) get_post_meta($post_id, $meta_key, true));
-            if ($value !== '') {
-                $candidate_values[] = $value;
+            $meta_values = get_post_meta($post_id, $meta_key, false);
+            foreach ((array) $meta_values as $meta_value) {
+                $this->append_geo_lookup_values($candidate_values, $meta_value);
             }
         }
 
@@ -78035,26 +78088,31 @@ final class CMN_One_Plugin {
                 'cmn_location',
             ];
             foreach ($user_meta_keys as $meta_key) {
-                $value = trim((string) get_user_meta($fallback_user_id, $meta_key, true));
-                if ($value !== '') {
-                    $candidate_values[] = $value;
+                $meta_values = get_user_meta($fallback_user_id, $meta_key, false);
+                foreach ((array) $meta_values as $meta_value) {
+                    $this->append_geo_lookup_values($candidate_values, $meta_value);
                 }
             }
         }
 
-        foreach ($candidate_values as $candidate_value) {
-            $normalized = $this->normalize_uk_postcode_for_lookup($candidate_value);
-            if ($normalized !== '') {
-                return $normalized;
+        return $candidate_values;
+    }
+
+    private function append_geo_lookup_values(&$candidate_values, $raw_value) {
+        if (is_array($raw_value)) {
+            foreach ($raw_value as $nested_value) {
+                $this->append_geo_lookup_values($candidate_values, $nested_value);
             }
+            return;
         }
-        foreach ($candidate_values as $candidate_value) {
-            $normalized_outward = $this->normalize_uk_outward_code_for_lookup($candidate_value);
-            if ($normalized_outward !== '') {
-                return $normalized_outward;
-            }
+        if (is_object($raw_value)) {
+            return;
         }
-        return '';
+        $value = trim((string) $raw_value);
+        if ($value === '' || in_array($value, $candidate_values, true)) {
+            return;
+        }
+        $candidate_values[] = $value;
     }
 
     private function geocode_uk_outward_code_coordinates($outward_code) {
