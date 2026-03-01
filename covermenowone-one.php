@@ -667,6 +667,7 @@ final class CMN_One_Plugin {
     private $current_school_view_req_id = '';
 
     public function __construct() {
+        add_filter('deprecated_function_trigger_error', [$this, 'filter_deprecated_function_trigger_error'], 10, 4);
         add_action('init', [$this, 'register_post_types']);
         add_action('init', [$this, 'register_roles']);
         add_action('init', [$this, 'register_shortcodes']);
@@ -6316,6 +6317,14 @@ final class CMN_One_Plugin {
                 update_user_meta((int) $user->ID, 'cmn_on_annual_leave', '0');
             }
         }
+    }
+
+    public function filter_deprecated_function_trigger_error($trigger, $function, $replacement, $version) {
+        $function = (string) $function;
+        if ($function === 'get_page_by_title') {
+            return false;
+        }
+        return $trigger;
     }
 
     public function register_post_types() {
