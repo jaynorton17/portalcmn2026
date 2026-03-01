@@ -63103,17 +63103,65 @@ final class CMN_One_Plugin {
                         $calendar_timezone = wp_timezone();
                         $calendar_month_start = new DateTimeImmutable('first day of this month', $calendar_timezone);
                         $calendar_month_end = $calendar_month_start->modify('last day of this month');
+                        $calendar_month_start_key = $calendar_month_start->format('Y-m-d');
+                        $calendar_month_end_key = $calendar_month_end->format('Y-m-d');
+                        $calendar_confirmed_dates = [];
+                        if ((int) $user_school_id > 0) {
+                            $calendar_booking_ids = get_posts([
+                                'post_type' => 'cmn_booking',
+                                'post_status' => ['publish', 'pending', 'draft', 'private'],
+                                'fields' => 'ids',
+                                'posts_per_page' => -1,
+                                'no_found_rows' => true,
+                                'update_post_meta_cache' => false,
+                                'update_post_term_cache' => false,
+                                'meta_query' => [
+                                    [
+                                        'key' => 'cmn_school_id',
+                                        'value' => (int) $user_school_id,
+                                    ],
+                                    [
+                                        'key' => 'cmn_status',
+                                        'value' => ['approved', 'accepted', 'confirmed', 'tentative'],
+                                        'compare' => 'IN',
+                                    ],
+                                    [
+                                        'relation' => 'OR',
+                                        [
+                                            'key' => 'cmn_date',
+                                            'value' => [$calendar_month_start_key, $calendar_month_end_key],
+                                            'compare' => 'BETWEEN',
+                                            'type' => 'DATE',
+                                        ],
+                                        [
+                                            'key' => 'cmn_start_date',
+                                            'value' => [$calendar_month_start_key, $calendar_month_end_key],
+                                            'compare' => 'BETWEEN',
+                                            'type' => 'DATE',
+                                        ],
+                                    ],
+                                ],
+                            ]);
+                            foreach ((array) $calendar_booking_ids as $calendar_booking_id) {
+                                $calendar_booking_date = (string) get_post_meta((int) $calendar_booking_id, 'cmn_date', true);
+                                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $calendar_booking_date)) {
+                                    $calendar_booking_date = (string) get_post_meta((int) $calendar_booking_id, 'cmn_start_date', true);
+                                }
+                                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $calendar_booking_date)) {
+                                    $calendar_confirmed_dates[$calendar_booking_date] = true;
+                                }
+                            }
+                        }
                         $calendar_weekday_cells = [];
                         for ($calendar_cursor = $calendar_month_start; $calendar_cursor <= $calendar_month_end; $calendar_cursor = $calendar_cursor->modify('+1 day')) {
                             $calendar_day_of_week = (int) $calendar_cursor->format('N');
                             if ($calendar_day_of_week >= 6) {
                                 continue;
                             }
+                            $calendar_date_key = $calendar_cursor->format('Y-m-d');
                             $calendar_day_number = (int) $calendar_cursor->format('j');
                             $calendar_cell_class = 'cmn-calendar-cell';
-                            if ($calendar_day_number % 7 === 0) {
-                                $calendar_cell_class .= ' is-unavailable';
-                            } elseif ($calendar_day_number % 5 === 0) {
+                            if (!empty($calendar_confirmed_dates[$calendar_date_key])) {
                                 $calendar_cell_class .= ' is-available';
                             }
                             $calendar_weekday_cells[] = [
@@ -63137,7 +63185,7 @@ final class CMN_One_Plugin {
                             </div>
                             <div class="cmn-calendar-detail">
                                 <h3>Cover Details</h3>
-                                <p>Select a date to view or edit cover needs.</p>
+                                <p>Green days show confirmed cover already booked.</p>
                                 <button class="cmn-primary">Add Cover Need</button>
                             </div>
                         </div>
