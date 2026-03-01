@@ -17542,6 +17542,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-carousel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:stretch}
 .cmn-live-arrow{width:42px;min-height:100%;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(10,8,20,.8);color:#fff;font-size:26px;line-height:1;cursor:pointer}
 .cmn-live-card{background:linear-gradient(180deg,rgba(197,17,47,.95),rgba(102,7,28,.96));border:1px solid rgba(255,71,99,.65);border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.35);padding:12px;display:flex;flex-direction:column;gap:8px;min-height:100%}
+.cmn-live-card.is-bookable{background:linear-gradient(180deg,rgba(20,142,74,.95),rgba(8,82,44,.96));border-color:rgba(74,222,128,.68);box-shadow:0 10px 24px rgba(4,35,20,.44),0 0 18px rgba(74,222,128,.24)}
 .cmn-live-card.is-pending-confirmation{background:linear-gradient(180deg,rgba(151,109,12,.94),rgba(92,66,10,.96));border-color:rgba(250,204,21,.6);box-shadow:0 10px 24px rgba(24,18,4,.42),0 0 18px rgba(250,204,21,.2)}
 .cmn-live-brand{font-size:13px;font-weight:800;letter-spacing:.02em;color:#f3f4f6}
 .cmn-live-brand span{color:#ff1f43 !important;font-weight:900}
@@ -17552,7 +17553,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-role{font-size:12px;color:#ffe6eb}
 .cmn-live-rating{margin-top:3px;font-size:12px;color:#f8fafc}
 .cmn-live-status{padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap}
-.cmn-live-status.available{background:#fa143d;color:#fff}
+.cmn-live-status.available{background:#22c55e;color:#052e16}
 .cmn-live-status.not_responded{background:#f0bf2d;color:#18140a}
 .cmn-live-status.not_available{background:#6f7482;color:#fff}
 .cmn-live-presence{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.3);background:rgba(17,14,29,.75);font-size:11px;font-weight:700;letter-spacing:.04em;color:#e2e8f0;text-transform:uppercase}
