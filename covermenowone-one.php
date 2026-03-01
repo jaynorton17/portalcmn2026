@@ -820,6 +820,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_update_school_assignments', [$this, 'handle_update_school_assignments']);
         add_action('admin_post_cmn_school_update_profile', [$this, 'handle_school_update_profile']);
         add_action('admin_post_cmn_school_add_team_member', [$this, 'handle_school_add_team_member']);
+        add_action('admin_post_cmn_school_create_long_booking', [$this, 'handle_school_create_long_booking']);
         add_action('admin_post_cmn_school_template_defaults_save', [$this, 'handle_school_template_defaults_save']);
         add_action('admin_post_cmn_update_candidate_rate', [$this, 'handle_update_candidate_rate']);
         add_action('admin_post_cmn_update_status', [$this, 'handle_update_status']);
@@ -7073,6 +7074,33 @@ final class CMN_One_Plugin {
         ];
     }
 
+    private function get_invoice_month_generation_cutoff_timestamp($year, $month, $hour = 18, $minute = 0) {
+        $bounds = $this->get_invoice_month_bounds((int) $year, (int) $month);
+        if (!$bounds) {
+            return 0;
+        }
+        $period_end = (string) ($bounds['period_end'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $period_end)) {
+            return 0;
+        }
+        $tz = wp_timezone();
+        $cutoff = DateTimeImmutable::createFromFormat(
+            'Y-m-d H:i:s',
+            $period_end . sprintf(' %02d:%02d:00', max(0, min(23, (int) $hour)), max(0, min(59, (int) $minute))),
+            $tz
+        );
+        if (!($cutoff instanceof DateTimeImmutable)) {
+            $cutoff = new DateTimeImmutable($period_end . ' 18:00:00', $tz);
+        }
+        $weekday = (int) $cutoff->format('N');
+        if ($weekday === 6) {
+            $cutoff = $cutoff->modify('-1 day');
+        } elseif ($weekday === 7) {
+            $cutoff = $cutoff->modify('-2 days');
+        }
+        return (int) $cutoff->getTimestamp();
+    }
+
     private function get_next_monthly_invoice_generation_timestamp($reference_ts = 0) {
         $reference_ts = (int) $reference_ts;
         if ($reference_ts < 1) {
@@ -7080,11 +7108,25 @@ final class CMN_One_Plugin {
         }
         $tz = wp_timezone();
         $reference = (new DateTimeImmutable('@' . max(1, $reference_ts)))->setTimezone($tz);
-        $candidate = $reference->modify('first day of this month')->setTime(2, 0, 0);
-        if ($reference >= $candidate) {
-            $candidate = $candidate->modify('first day of next month')->setTime(2, 0, 0);
+        $candidate_ts = $this->get_invoice_month_generation_cutoff_timestamp(
+            (int) $reference->format('Y'),
+            (int) $reference->format('n'),
+            18,
+            0
+        );
+        if ($candidate_ts < 1) {
+            return 0;
         }
-        return (int) $candidate->getTimestamp();
+        if ($reference->getTimestamp() >= $candidate_ts) {
+            $next_month_ref = $reference->modify('first day of next month');
+            $candidate_ts = $this->get_invoice_month_generation_cutoff_timestamp(
+                (int) $next_month_ref->format('Y'),
+                (int) $next_month_ref->format('n'),
+                18,
+                0
+            );
+        }
+        return (int) $candidate_ts;
     }
 
     private function get_next_invoice_overdue_reminder_timestamp($reference_ts = 0) {
@@ -7108,6 +7150,12 @@ final class CMN_One_Plugin {
         }
         $tz = wp_timezone();
         $reference = (new DateTimeImmutable('@' . max(1, $reference_ts)))->setTimezone($tz);
+        $current_year = (int) $reference->format('Y');
+        $current_month = (int) $reference->format('n');
+        $current_month_cutoff_ts = $this->get_invoice_month_generation_cutoff_timestamp($current_year, $current_month, 18, 0);
+        if ($current_month_cutoff_ts > 0 && $reference->getTimestamp() >= $current_month_cutoff_ts) {
+            return $this->get_invoice_month_bounds($current_year, $current_month);
+        }
         $previous_month = $reference->modify('first day of previous month');
         return $this->get_invoice_month_bounds(
             (int) $previous_month->format('Y'),
@@ -51986,6 +52034,14 @@ final class CMN_One_Plugin {
         if ($invoice_email === '' && $billing_email !== '') {
             $invoice_email = $billing_email;
         }
+        $payment_terms_days = isset($invoice_data['payment_terms_days'])
+            ? (int) $invoice_data['payment_terms_days']
+            : (int) self::INVOICE_DEFAULT_PAYMENT_TERMS_DAYS;
+        $payment_terms_days = max(0, min(365, $payment_terms_days));
+        $due_date = $this->normalize_invoice_date($invoice_data['due_date'] ?? '');
+        if ($due_date === '') {
+            $due_date = $this->calculate_invoice_due_date($period_end, $payment_terms_days);
+        }
 
         $now = current_time('mysql');
         $sent_at = $this->normalize_invoice_datetime($invoice_data['sent_at'] ?? '');
@@ -52023,9 +52079,9 @@ final class CMN_One_Plugin {
         $table = $this->get_invoices_table();
         $sql = $wpdb->prepare(
             "INSERT INTO {$table}
-            (school_id, invoice_number, period_start, period_end, status, currency, subtotal, adjustments_total, vat_total, total, amount_paid, amount_due, billing_email, billing_contact, billing_reference, invoice_email, created_at, updated_at, sent_at, paid_at)
+            (school_id, invoice_number, period_start, period_end, status, currency, subtotal, adjustments_total, vat_total, total, amount_paid, amount_due, billing_email, billing_contact, billing_reference, invoice_email, payment_terms_days, due_date, created_at, updated_at, sent_at, paid_at)
             VALUES
-            (%d, %s, %s, %s, %s, %s, %f, %f, %f, %f, %f, %f, %s, %s, %s, %s, %s, %s, NULLIF(%s, ''), NULLIF(%s, ''))",
+            (%d, %s, %s, %s, %s, %s, %f, %f, %f, %f, %f, %f, %s, %s, %s, %s, %d, NULLIF(%s, ''), %s, %s, NULLIF(%s, ''), NULLIF(%s, ''))",
             $school_id,
             $invoice_number,
             $period_start,
@@ -52042,6 +52098,8 @@ final class CMN_One_Plugin {
             $billing_contact,
             $billing_reference,
             $invoice_email,
+            $payment_terms_days,
+            $due_date,
             $now,
             $now,
             $sent_at,
@@ -55108,6 +55166,19 @@ final class CMN_One_Plugin {
         ];
     }
 
+    private function calculate_invoice_due_date($period_end, $payment_terms_days = self::INVOICE_DEFAULT_PAYMENT_TERMS_DAYS) {
+        $period_end = $this->normalize_invoice_date($period_end);
+        $payment_terms_days = max(0, min(365, (int) $payment_terms_days));
+        if ($period_end === '') {
+            return '';
+        }
+        $due_ts = strtotime($period_end . ' +' . $payment_terms_days . ' days');
+        if ($due_ts === false) {
+            return '';
+        }
+        return gmdate('Y-m-d', $due_ts);
+    }
+
     private function get_completed_payable_booking_statuses() {
         return ['approved', 'confirmed', 'completed', 'completed_attended', 'accepted', 'candidate_accepted'];
     }
@@ -55431,6 +55502,7 @@ final class CMN_One_Plugin {
                 'billing_contact' => '',
                 'billing_reference' => '',
                 'invoice_email' => '',
+                'payment_terms_days' => (int) self::INVOICE_DEFAULT_PAYMENT_TERMS_DAYS,
                 'missing_billing_email' => true,
             ];
         }
@@ -55447,11 +55519,20 @@ final class CMN_One_Plugin {
         if ($invoice_email === '' && $billing_email !== '') {
             $invoice_email = $billing_email;
         }
+        $payment_terms_days = (int) get_post_meta($school_id, 'cmn_invoice_payment_terms_days', true);
+        if ($payment_terms_days < 1) {
+            $payment_terms_days = (int) get_post_meta($school_id, 'cmn_payment_terms_days', true);
+        }
+        if ($payment_terms_days < 1) {
+            $payment_terms_days = (int) self::INVOICE_DEFAULT_PAYMENT_TERMS_DAYS;
+        }
+        $payment_terms_days = max(1, min(365, $payment_terms_days));
         return [
             'billing_email' => $billing_email,
             'billing_contact' => $billing_contact,
             'billing_reference' => $billing_reference,
             'invoice_email' => $invoice_email,
+            'payment_terms_days' => $payment_terms_days,
             'missing_billing_email' => ($billing_email === '' && $invoice_email === ''),
         ];
     }
@@ -56024,6 +56105,8 @@ final class CMN_One_Plugin {
         $created_invoice = false;
         if (!$invoice_row) {
             $billing_snapshot = $this->get_school_invoice_billing_snapshot($school_id);
+            $payment_terms_days = max(1, (int) ($billing_snapshot['payment_terms_days'] ?? self::INVOICE_DEFAULT_PAYMENT_TERMS_DAYS));
+            $due_date = $this->calculate_invoice_due_date($period_end, $payment_terms_days);
             if (!empty($billing_snapshot['missing_billing_email'])) {
                 $warning = [
                     'code' => 'missing_billing_email',
@@ -56043,6 +56126,8 @@ final class CMN_One_Plugin {
                 'billing_contact' => (string) ($billing_snapshot['billing_contact'] ?? ''),
                 'billing_reference' => (string) ($billing_snapshot['billing_reference'] ?? ''),
                 'invoice_email' => (string) ($billing_snapshot['invoice_email'] ?? ''),
+                'payment_terms_days' => $payment_terms_days,
+                'due_date' => $due_date,
             ]);
             if ($invoice_id < 1) {
                 return new WP_Error('cmn_invoice_create_failed', 'Unable to create invoice record.');
@@ -63579,6 +63664,7 @@ final class CMN_One_Plugin {
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $school_requests_url = add_query_arg(['school' => 'requests'], $portal_url);
         $school_cover_url = add_query_arg(['school' => 'cover'], $portal_url);
+        $school_long_bookings_url = add_query_arg(['school' => 'long-bookings'], $portal_url);
         $school_settings_url = add_query_arg(['school' => 'settings'], $portal_url);
         $school_support_url = add_query_arg(['school' => 'support'], $portal_url);
         $school_hub_profile_url = add_query_arg(['school' => 'profile', 'cmn_tab' => false], $portal_url);
@@ -63639,6 +63725,8 @@ final class CMN_One_Plugin {
         $school_profile_notice = isset($_GET['cmn_school_profile_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_profile_msg'])) : '';
         $school_team_notice = isset($_GET['cmn_school_team_msg']) ? sanitize_text_field(rawurldecode((string) wp_unslash($_GET['cmn_school_team_msg']))) : '';
         $school_team_notice_type = sanitize_key((string) ($_GET['cmn_school_team_status'] ?? ''));
+        $long_booking_notice = isset($_GET['cmn_long_booking_msg']) ? sanitize_text_field(rawurldecode((string) wp_unslash($_GET['cmn_long_booking_msg']))) : '';
+        $long_booking_notice_type = sanitize_key((string) ($_GET['cmn_long_booking_status'] ?? ''));
         $priority_notice = isset($_GET['cmn_priority_notice']) ? sanitize_text_field(wp_unslash($_GET['cmn_priority_notice'])) : '';
         $priority_notice_type = sanitize_key((string) ($_GET['cmn_priority_notice_type'] ?? ''));
         $can_request = !$is_preview && $user_school_id && $school_status === 'client';
@@ -63652,6 +63740,11 @@ final class CMN_One_Plugin {
                 'key' => 'cover',
                 'label' => 'COVER ME NOW',
                 'args' => ['school' => 'cover', 'cmn_tab' => false],
+            ],
+            [
+                'key' => 'long-bookings',
+                'label' => 'Long Bookings',
+                'args' => ['school' => 'long-bookings', 'cmn_tab' => false],
             ],
             [
                 'key' => 'my_hub',
@@ -63867,6 +63960,239 @@ final class CMN_One_Plugin {
                             </div>
                         <?php endif; ?>
                         <?php echo $this->render_school_live_matches_panel((int) $user_school_id, (array) $availability_candidates, (bool) $can_request, (array) $school_ready_responses, (string) $availability_label); ?>
+                    <?php elseif ($tab === 'long-bookings') : ?>
+                        <?php
+                        $long_booking_notice_class = 'cmn-register-success';
+                        if ($long_booking_notice_type === 'error') {
+                            $long_booking_notice_class = 'cmn-register-error';
+                        } elseif ($long_booking_notice_type === 'warning') {
+                            $long_booking_notice_class = 'cmn-register-warning';
+                        }
+
+                        $long_booking_today = current_time('Y-m-d');
+                        $long_booking_default_start = $this->get_tomorrow_date();
+                        if (!$this->is_weekday_date($long_booking_default_start)) {
+                            $long_booking_default_start = $long_booking_today;
+                            while (!$this->is_weekday_date($long_booking_default_start)) {
+                                $long_booking_default_start = gmdate('Y-m-d', strtotime($long_booking_default_start . ' +1 day'));
+                            }
+                        }
+                        $long_booking_start = isset($_GET['cmn_lb_start']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_lb_start'])) : $long_booking_default_start;
+                        $long_booking_end = isset($_GET['cmn_lb_end']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_lb_end'])) : $long_booking_start;
+                        $long_booking_role = isset($_GET['cmn_lb_role']) ? sanitize_text_field(wp_unslash((string) $_GET['cmn_lb_role'])) : '';
+                        $long_booking_rate = isset($_GET['cmn_lb_rate']) ? (float) wp_unslash((string) $_GET['cmn_lb_rate']) : 0.0;
+                        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $long_booking_start)) {
+                            $long_booking_start = $long_booking_default_start;
+                        }
+                        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $long_booking_end)) {
+                            $long_booking_end = $long_booking_start;
+                        }
+                        if ($long_booking_end < $long_booking_start) {
+                            $long_booking_end = $long_booking_start;
+                        }
+                        if ($long_booking_rate < 0) {
+                            $long_booking_rate = 0.0;
+                        }
+
+                        $long_booking_role_options = [
+                            'Teacher',
+                            'Supply Teacher',
+                            'Cover Supervisor',
+                            'HLTA',
+                            'Teaching Assistant',
+                            'SEN Teacher',
+                            'SEN TA',
+                            'ECT',
+                        ];
+                        if ($long_booking_role !== '' && !in_array($long_booking_role, $long_booking_role_options, true)) {
+                            $long_booking_role_options[] = $long_booking_role;
+                        }
+                        $long_booking_match_error = '';
+                        $long_booking_matches = [];
+                        if ((int) $user_school_id < 1) {
+                            $long_booking_match_error = 'School profile not found.';
+                        } elseif ($long_booking_start < $long_booking_today) {
+                            $long_booking_match_error = 'Start date must be today or later.';
+                        } elseif ($long_booking_end < $long_booking_start) {
+                            $long_booking_match_error = 'End date must be on or after start date.';
+                        } else {
+                            $long_booking_matches = $this->get_school_long_booking_candidate_matches(
+                                (int) $user_school_id,
+                                $long_booking_start,
+                                $long_booking_end,
+                                $long_booking_role,
+                                60
+                            );
+                            if (!$long_booking_matches) {
+                                $long_booking_match_error = 'No candidates are currently available for every weekday in that date range.';
+                            }
+                        }
+                        $long_booking_recent_posts = [];
+                        if ((int) $user_school_id > 0) {
+                            $long_booking_recent_posts = get_posts([
+                                'post_type' => 'cmn_booking',
+                                'post_status' => ['publish', 'private', 'draft', 'pending'],
+                                'posts_per_page' => 12,
+                                'orderby' => 'date',
+                                'order' => 'DESC',
+                                'meta_query' => [
+                                    [
+                                        'key' => 'cmn_school_id',
+                                        'value' => (int) $user_school_id,
+                                        'compare' => '=',
+                                        'type' => 'NUMERIC',
+                                    ],
+                                    [
+                                        'key' => 'cmn_booking_type',
+                                        'value' => 'long_term',
+                                        'compare' => '=',
+                                    ],
+                                ],
+                            ]);
+                        }
+                        ?>
+                        <header class="cmn-school-header">
+                            <h2>Long Bookings</h2>
+                            <p>Plan long-term cover and only surface candidates available for every weekday in your selected range.</p>
+                        </header>
+                        <?php if ($long_booking_notice !== '') : ?>
+                            <div class="<?php echo esc_attr($long_booking_notice_class); ?>"><?php echo esc_html($long_booking_notice); ?></div>
+                        <?php endif; ?>
+                        <div class="cmn-dashboard-card">
+                            <h3>Find Available Candidates</h3>
+                            <form method="get" action="<?php echo esc_url($portal_url); ?>" class="cmn-form">
+                                <input type="hidden" name="school" value="long-bookings">
+                                <input type="hidden" name="cmn_tab" value="">
+                                <div class="cmn-form-grid">
+                                    <label>Start date
+                                        <input type="date" name="cmn_lb_start" value="<?php echo esc_attr($long_booking_start); ?>" min="<?php echo esc_attr($long_booking_today); ?>" required>
+                                    </label>
+                                    <label>End date
+                                        <input type="date" name="cmn_lb_end" value="<?php echo esc_attr($long_booking_end); ?>" min="<?php echo esc_attr($long_booking_start); ?>" required>
+                                    </label>
+                                    <label>Role (optional)
+                                        <select name="cmn_lb_role">
+                                            <option value="">Any role</option>
+                                            <?php foreach ($long_booking_role_options as $long_booking_role_option) : ?>
+                                                <option value="<?php echo esc_attr((string) $long_booking_role_option); ?>"<?php selected($long_booking_role, (string) $long_booking_role_option); ?>><?php echo esc_html((string) $long_booking_role_option); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
+                                    <label>Daily charge rate (GBP)
+                                        <input type="number" name="cmn_lb_rate" min="0" max="999" step="0.01" value="<?php echo esc_attr($long_booking_rate > 0 ? number_format($long_booking_rate, 2, '.', '') : ''); ?>" placeholder="Optional">
+                                    </label>
+                                </div>
+                                <div class="cmn-settings-actions">
+                                    <button class="cmn-primary" type="submit">Find candidates</button>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="cmn-dashboard-card">
+                            <h3>Matching Candidates</h3>
+                            <?php if ($long_booking_match_error !== '') : ?>
+                                <div class="cmn-empty"><?php echo esc_html($long_booking_match_error); ?></div>
+                            <?php else : ?>
+                                <?php if ($is_preview) : ?>
+                                    <div class="cmn-empty">Preview mode: creating long bookings is disabled.</div>
+                                <?php else : ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
+                                        <?php wp_nonce_field('cmn_school_create_long_booking', 'cmn_school_long_booking_nonce'); ?>
+                                        <input type="hidden" name="action" value="cmn_school_create_long_booking">
+                                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr($school_long_bookings_url); ?>">
+                                        <input type="hidden" name="cmn_lb_start_date" value="<?php echo esc_attr($long_booking_start); ?>">
+                                        <input type="hidden" name="cmn_lb_end_date" value="<?php echo esc_attr($long_booking_end); ?>">
+                                        <input type="hidden" name="cmn_lb_role" value="<?php echo esc_attr($long_booking_role); ?>">
+                                        <input type="hidden" name="cmn_lb_rate" value="<?php echo esc_attr($long_booking_rate > 0 ? number_format($long_booking_rate, 2, '.', '') : ''); ?>">
+                                        <div class="cmn-form-grid">
+                                            <label>Start time
+                                                <input type="time" name="cmn_lb_start_time" value="08:30">
+                                            </label>
+                                            <label>End time
+                                                <input type="time" name="cmn_lb_end_time" value="15:30">
+                                            </label>
+                                            <label class="cmn-school-profile-field--full">Notes for account manager
+                                                <textarea name="cmn_lb_notes" rows="3" placeholder="Outline subjects, year groups, behaviour profile, and any timetable notes."></textarea>
+                                            </label>
+                                        </div>
+                                        <div class="cmn-list">
+                                            <?php foreach ($long_booking_matches as $long_booking_match) : ?>
+                                                <?php
+                                                $long_match_candidate_id = (int) ($long_booking_match['candidate_id'] ?? 0);
+                                                if ($long_match_candidate_id < 1) {
+                                                    continue;
+                                                }
+                                                $long_match_name = sanitize_text_field((string) ($long_booking_match['full_name'] ?? $long_booking_match['first_name'] ?? 'Candidate'));
+                                                $long_match_role = sanitize_text_field((string) ($long_booking_match['role_line'] ?? ''));
+                                                $long_match_location = sanitize_text_field((string) ($long_booking_match['location_distance'] ?? ''));
+                                                $long_match_rating = round((float) ($long_booking_match['rating'] ?? 0), 1);
+                                                $long_match_reviews = max(0, (int) ($long_booking_match['reviews'] ?? 0));
+                                                $long_match_skills = is_array($long_booking_match['skills'] ?? null) ? (array) $long_booking_match['skills'] : [];
+                                                $long_match_profile_url = esc_url((string) ($long_booking_match['profile_url'] ?? ''));
+                                                ?>
+                                                <label class="cmn-list-item">
+                                                    <input type="checkbox" name="cmn_lb_candidate_ids[]" value="<?php echo esc_attr((string) $long_match_candidate_id); ?>" checked>
+                                                    <div style="display:grid;gap:4px;min-width:0;">
+                                                        <strong><?php echo esc_html($long_match_name !== '' ? $long_match_name : 'Candidate'); ?></strong>
+                                                        <span><?php echo esc_html($long_match_role !== '' ? $long_match_role : 'Role not set'); ?></span>
+                                                        <?php if ($long_match_location !== '') : ?><span><?php echo esc_html($long_match_location); ?></span><?php endif; ?>
+                                                        <small class="cmn-muted">
+                                                            <?php echo esc_html($long_match_reviews > 0 ? ('Rating ' . number_format($long_match_rating, 1) . ' / 5 (' . $long_match_reviews . ' reviews)') : 'No feedback yet'); ?>
+                                                            <?php if ($long_match_skills) : ?> • <?php echo esc_html(implode(', ', array_slice($long_match_skills, 0, 3))); ?><?php endif; ?>
+                                                        </small>
+                                                    </div>
+                                                    <?php if ($long_match_profile_url !== '') : ?>
+                                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($long_match_profile_url); ?>">View profile</a>
+                                                    <?php endif; ?>
+                                                </label>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <div class="cmn-settings-actions">
+                                            <button class="cmn-primary" type="submit">Create Long Booking Request</button>
+                                        </div>
+                                        <p class="cmn-muted">Selected candidates, your account manager, and admin will receive portal notifications.</p>
+                                    </form>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </div>
+                        <div class="cmn-dashboard-card">
+                            <h3>Recent Long Booking Requests</h3>
+                            <?php if (!$long_booking_recent_posts) : ?>
+                                <div class="cmn-empty">No long booking requests created yet.</div>
+                            <?php else : ?>
+                                <div class="cmn-list">
+                                    <?php foreach ($long_booking_recent_posts as $long_booking_post) : ?>
+                                        <?php
+                                        if (!($long_booking_post instanceof WP_Post)) {
+                                            continue;
+                                        }
+                                        $long_booking_post_id = (int) $long_booking_post->ID;
+                                        $long_booking_post_role = sanitize_text_field((string) get_post_meta($long_booking_post_id, 'cmn_role', true));
+                                        $long_booking_post_start = sanitize_text_field((string) get_post_meta($long_booking_post_id, 'cmn_start_date', true));
+                                        $long_booking_post_end = sanitize_text_field((string) get_post_meta($long_booking_post_id, 'cmn_end_date', true));
+                                        $long_booking_post_status = sanitize_key((string) get_post_meta($long_booking_post_id, 'cmn_status', true));
+                                        if ($long_booking_post_status === '') {
+                                            $long_booking_post_status = 'requested';
+                                        }
+                                        $long_booking_post_candidates = (array) get_post_meta($long_booking_post_id, 'cmn_long_booking_candidate_ids', true);
+                                        $long_booking_post_targets = count(array_filter(array_map('intval', $long_booking_post_candidates)));
+                                        ?>
+                                        <div class="cmn-list-item">
+                                            <strong><?php echo esc_html($long_booking_post_role !== '' ? $long_booking_post_role : 'Long booking'); ?></strong>
+                                            <span>
+                                                <?php
+                                                $long_booking_post_date_label = $long_booking_post_start !== '' ? date_i18n('M j, Y', strtotime($long_booking_post_start)) : 'Date TBC';
+                                                if ($long_booking_post_end !== '' && $long_booking_post_end !== $long_booking_post_start) {
+                                                    $long_booking_post_date_label .= ' to ' . date_i18n('M j, Y', strtotime($long_booking_post_end));
+                                                }
+                                                echo esc_html($long_booking_post_date_label);
+                                                ?>
+                                            </span>
+                                            <small class="cmn-muted"><?php echo esc_html('Status: ' . ucfirst(str_replace('_', ' ', $long_booking_post_status)) . ($long_booking_post_targets > 0 ? (' • ' . $long_booking_post_targets . ' candidate target(s)') : '')); ?></small>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     <?php elseif ($tab === 'candidate_profile') : ?>
                         <?php
                         $school_candidate_id = isset($_GET['candidate_id']) ? (int) $_GET['candidate_id'] : 0;
@@ -78331,6 +78657,251 @@ final class CMN_One_Plugin {
         return $until_ts && $until_ts > current_time('timestamp');
     }
 
+    private function get_weekday_dates_in_range($start_date, $end_date, $max_weekdays = 220) {
+        $start_date = $this->normalize_invoice_date($start_date);
+        $end_date = $this->normalize_invoice_date($end_date);
+        $max_weekdays = max(1, min(260, (int) $max_weekdays));
+        if ($start_date === '' || $end_date === '' || $end_date < $start_date) {
+            return [];
+        }
+        $start_dt = DateTime::createFromFormat('Y-m-d', $start_date, wp_timezone());
+        $end_dt = DateTime::createFromFormat('Y-m-d', $end_date, wp_timezone());
+        if (!$start_dt || !$end_dt) {
+            return [];
+        }
+        $dates = [];
+        $cursor = clone $start_dt;
+        while ($cursor <= $end_dt) {
+            $cursor_date = $cursor->format('Y-m-d');
+            if ($this->is_weekday_date($cursor_date)) {
+                $dates[] = $cursor_date;
+                if (count($dates) > $max_weekdays) {
+                    return [];
+                }
+            }
+            $cursor->modify('+1 day');
+        }
+        return $dates;
+    }
+
+    private function candidate_is_available_for_long_booking_range($candidate_id, $start_date, $end_date, $candidate_profile_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        $candidate_profile_id = (int) $candidate_profile_id;
+        if ($candidate_id < 1) {
+            return false;
+        }
+        if ($candidate_profile_id < 1) {
+            $candidate_profile_id = $candidate_id;
+        }
+        $weekday_dates = $this->get_weekday_dates_in_range($start_date, $end_date, 220);
+        if (!$weekday_dates) {
+            return false;
+        }
+        $calendar_map = $this->get_candidate_calendar_map($candidate_profile_id, $start_date, $end_date);
+        if (!$calendar_map && $candidate_profile_id !== $candidate_id) {
+            $calendar_map = $this->get_candidate_calendar_map($candidate_id, $start_date, $end_date);
+        }
+        foreach ($weekday_dates as $weekday_date) {
+            $status = strtolower((string) ($calendar_map[$weekday_date] ?? ''));
+            if ($status === 'booked_confirmed' || $status === 'unavailable') {
+                return false;
+            }
+            if ($status !== 'available') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function get_school_long_booking_candidate_matches($school_id, $start_date, $end_date, $role_filter = '', $limit = 60) {
+        $school_id = (int) $school_id;
+        $start_date = $this->normalize_invoice_date($start_date);
+        $end_date = $this->normalize_invoice_date($end_date);
+        $role_filter = sanitize_text_field((string) $role_filter);
+        $limit = max(1, min(100, (int) $limit));
+        if ($school_id < 1 || $start_date === '' || $end_date === '' || $end_date < $start_date) {
+            return [];
+        }
+        $weekday_dates = $this->get_weekday_dates_in_range($start_date, $end_date, 220);
+        if (!$weekday_dates) {
+            return [];
+        }
+
+        $candidate_ids = get_posts([
+            'post_type' => 'cmn_candidate',
+            'post_status' => ['publish', 'private', 'draft', 'pending'],
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+        ]);
+        if (!$candidate_ids) {
+            return [];
+        }
+
+        $school_live_coords = $this->ensure_school_geo_coordinates($school_id);
+        $distance_debug_school_user_id = 0;
+        $distance_debug_school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
+        if (!empty($distance_debug_school_user_ids[0])) {
+            $distance_debug_school_user_id = (int) $distance_debug_school_user_ids[0];
+        }
+        if ($distance_debug_school_user_id < 1) {
+            $distance_debug_school_user_id = (int) get_current_user_id();
+        }
+        $distance_debug_school_postcode = $this->get_geo_lookup_postcode_for_post($school_id, $distance_debug_school_user_id);
+        $distance_debug_school_exact_postcodes = $this->get_geo_exact_postcodes_for_post($school_id, $distance_debug_school_user_id);
+        $distance_debug_school_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_school_postcode);
+        $school_user_id = (int) get_current_user_id();
+
+        $matches = [];
+        $seen_identity = [];
+        foreach ((array) $candidate_ids as $candidate_id_raw) {
+            $candidate_id = (int) $candidate_id_raw;
+            if ($candidate_id < 1) {
+                continue;
+            }
+            if ($this->is_candidate_hidden_for_school_live_matches($school_id, $candidate_id)) {
+                continue;
+            }
+            $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+            if ($candidate_status === 'rejected') {
+                continue;
+            }
+            $candidate_identity_key = $this->get_candidate_identity_key($candidate_id);
+            if ($candidate_identity_key !== '' && isset($seen_identity[$candidate_identity_key])) {
+                continue;
+            }
+
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $candidate_profile_id = $this->resolve_candidate_profile_post_id($candidate_id, $candidate_user_id);
+            if ($candidate_profile_id < 1) {
+                $candidate_profile_id = $candidate_id;
+            }
+            if (!$this->candidate_is_available_for_long_booking_range($candidate_id, $start_date, $end_date, $candidate_profile_id)) {
+                continue;
+            }
+
+            $role_labels = $this->get_candidate_role_labels($candidate_profile_id);
+            if (!$role_labels && $candidate_profile_id !== $candidate_id) {
+                $role_labels = $this->get_candidate_role_labels($candidate_id);
+            }
+            if ($role_filter !== '') {
+                $role_matches_filter = false;
+                foreach ((array) $role_labels as $role_label) {
+                    if (stripos((string) $role_label, $role_filter) !== false) {
+                        $role_matches_filter = true;
+                        break;
+                    }
+                }
+                if (!$role_matches_filter) {
+                    continue;
+                }
+            }
+
+            $role_primary = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
+            $role_secondary = isset($role_labels[1]) ? (string) $role_labels[1] : '';
+            $candidate_post = get_post($candidate_id);
+            if (!($candidate_post instanceof WP_Post)) {
+                continue;
+            }
+            $candidate_name = sanitize_text_field((string) $candidate_post->post_title);
+            if ($candidate_name === '') {
+                $candidate_name = 'Candidate';
+            }
+            $name_parts = preg_split('/\s+/', trim($candidate_name));
+            $first_name = $name_parts ? (string) $name_parts[0] : $candidate_name;
+            $candidate_town_city = $this->get_candidate_town_city_label($candidate_profile_id, $candidate_user_id);
+            $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
+
+            $distance_label = 'Distance pending';
+            $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_profile_id, $candidate_user_id);
+            $distance_debug_candidate_exact_postcodes = $this->get_geo_exact_postcodes_for_post($candidate_profile_id, $candidate_user_id);
+            $distance_debug_candidate_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_candidate_postcode);
+            $exact_postcode_overlap = array_values(array_intersect(
+                (array) $distance_debug_school_exact_postcodes,
+                (array) $distance_debug_candidate_exact_postcodes
+            ));
+            $has_exact_postcode_match = !empty($exact_postcode_overlap);
+            if (
+                !$has_exact_postcode_match
+                && $distance_debug_school_exact_postcode !== ''
+                && $distance_debug_candidate_exact_postcode !== ''
+                && $distance_debug_school_exact_postcode === $distance_debug_candidate_exact_postcode
+            ) {
+                $has_exact_postcode_match = true;
+            }
+            if ($has_exact_postcode_match) {
+                $distance_label = '0 miles';
+            } elseif ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
+                $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_profile_id);
+                if (!$candidate_coords || !isset($candidate_coords['lat'], $candidate_coords['lng'])) {
+                    $candidate_coords = $this->get_geo_coordinates_for_post($candidate_profile_id);
+                }
+                if ($candidate_coords && isset($candidate_coords['lat'], $candidate_coords['lng'])) {
+                    $distance_miles = (float) $this->marketing_haversine_miles(
+                        (float) $candidate_coords['lat'],
+                        (float) $candidate_coords['lng'],
+                        (float) $school_live_coords['lat'],
+                        (float) $school_live_coords['lng']
+                    );
+                    if ($distance_miles >= 0) {
+                        $distance_label = rtrim(rtrim(number_format(max(0.0, $distance_miles), 1, '.', ''), '0'), '.') . ' miles';
+                    }
+                }
+            }
+            if ($distance_label === 'Distance pending') {
+                $fallback_travel_radius = (float) $this->get_candidate_travel_radius_miles($candidate_profile_id);
+                if ($fallback_travel_radius > 0) {
+                    $distance_label = 'Up to ' . rtrim(rtrim(number_format($fallback_travel_radius, 1, '.', ''), '0'), '.') . ' miles';
+                }
+            }
+            $distance_with_away = $distance_label;
+            if (
+                $distance_with_away !== ''
+                && !preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_with_away)
+                && preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_with_away)
+                && !preg_match('/\baway\b/i', $distance_with_away)
+            ) {
+                $distance_with_away .= ' away';
+            }
+            $location_distance = $candidate_town_city !== ''
+                ? ($candidate_town_city . ($distance_with_away !== '' ? (' • ' . $distance_with_away) : ''))
+                : $distance_with_away;
+
+            $matches[] = [
+                'candidate_id' => $candidate_id,
+                'full_name' => $candidate_name,
+                'first_name' => $first_name,
+                'role_line' => trim($role_primary . ($role_secondary !== '' ? ' • ' . $role_secondary : '')),
+                'distance' => $distance_label,
+                'town_city' => $candidate_town_city,
+                'location_distance' => $location_distance,
+                'rating' => round((float) ($rating['avg_rating'] ?? 0), 1),
+                'reviews' => (int) ($rating['feedback_count'] ?? 0),
+                'skills' => $this->get_candidate_live_match_skills($candidate_profile_id, 3),
+                'photo_url' => $this->get_school_live_match_photo_url($candidate_profile_id),
+                'profile_url' => $this->get_school_candidate_profile_url($candidate_id, $school_user_id),
+            ];
+            if ($candidate_identity_key !== '') {
+                $seen_identity[$candidate_identity_key] = true;
+            }
+        }
+
+        usort($matches, static function ($a, $b) {
+            $a_rating = (float) ($a['rating'] ?? 0);
+            $b_rating = (float) ($b['rating'] ?? 0);
+            if ($a_rating !== $b_rating) {
+                return ($a_rating > $b_rating) ? -1 : 1;
+            }
+            $a_name = strtolower((string) ($a['full_name'] ?? ''));
+            $b_name = strtolower((string) ($b['full_name'] ?? ''));
+            return strcmp($a_name, $b_name);
+        });
+
+        if (count($matches) > $limit) {
+            $matches = array_slice($matches, 0, $limit);
+        }
+        return $matches;
+    }
+
     private function get_school_not_interested_candidates($school_id, $limit = 30) {
         $school_id = (int) $school_id;
         $limit = max(1, (int) $limit);
@@ -78834,29 +79405,37 @@ final class CMN_One_Plugin {
                 . '<div class="cmn-live-offer" data-live-offer></div>'
                 . '</article>';
         };
-        $arrange_visible_for_depth = static function(array $rows) {
-            $row_count = count($rows);
-            if ($row_count < 2) {
-                return $rows;
+        $get_visible_window_for_carousel = static function(array $rows, $center_index = 0, $limit = 3) {
+            $total_rows = count($rows);
+            if ($total_rows < 1) {
+                return [];
             }
-            $target_index = 0;
-            $available_index = -1;
-            foreach ($rows as $row_idx => $row_item) {
-                if (($row_item['status'] ?? '') === 'available') {
-                    $available_index = (int) $row_idx;
-                    break;
-                }
+            $limit = max(1, min((int) $limit, $total_rows));
+            $center_index = ((int) $center_index % $total_rows + $total_rows) % $total_rows;
+            if ($limit === 1) {
+                return [$rows[$center_index]];
             }
-            if ($available_index < 0 || $available_index === $target_index) {
-                return $rows;
+            if ($limit === 2) {
+                return [
+                    $rows[$center_index],
+                    $rows[($center_index + 1) % $total_rows],
+                ];
             }
-            $available_row = $rows[$available_index];
-            array_splice($rows, $available_index, 1);
-            array_splice($rows, $target_index, 0, [$available_row]);
-            return array_values($rows);
+            return [
+                $rows[($center_index - 1 + $total_rows) % $total_rows],
+                $rows[$center_index],
+                $rows[($center_index + 1) % $total_rows],
+            ];
         };
         $initial_count = count($all);
-        $initial_visible = $arrange_visible_for_depth(array_slice($all, 0, min(3, $initial_count)));
+        $initial_active_index = 0;
+        foreach ($all as $all_index => $all_item) {
+            if (($all_item['status'] ?? '') === 'available') {
+                $initial_active_index = (int) $all_index;
+                break;
+            }
+        }
+        $initial_visible = $get_visible_window_for_carousel($all, $initial_active_index, min(3, $initial_count));
         $visibility_reason_parts = [];
         if ($visibility_reasons['marked_unavailable'] > 0) {
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['marked_unavailable']) . ' marked not available';
@@ -78921,7 +79500,7 @@ final class CMN_One_Plugin {
             </div>
             <div class="cmn-live-dots" data-live-dots>
                 <?php for ($dot_idx = 0; $dot_idx < $initial_count; $dot_idx++) : ?>
-                    <button type="button" class="cmn-live-dot<?php echo $dot_idx === 0 ? ' is-active' : ''; ?>" data-live-dot="<?php echo esc_attr((string) $dot_idx); ?>" aria-label="<?php echo esc_attr('Show candidate ' . ((int) $dot_idx + 1)); ?>"></button>
+                    <button type="button" class="cmn-live-dot<?php echo $dot_idx === $initial_active_index ? ' is-active' : ''; ?>" data-live-dot="<?php echo esc_attr((string) $dot_idx); ?>" aria-label="<?php echo esc_attr('Show candidate ' . ((int) $dot_idx + 1)); ?>"></button>
                 <?php endfor; ?>
             </div>
             <div class="cmn-live-kpis" data-live-kpis></div>
@@ -91218,6 +91797,222 @@ p{margin:0;line-height:1.5}
         }
         wp_safe_redirect(add_query_arg(['cmn_notice' => rawurlencode('Rebook request sent.')], $redirect_url));
         exit;
+    }
+
+    public function handle_school_create_long_booking() {
+        if (!is_user_logged_in() || !$this->is_school_user()) {
+            wp_die('Unauthorized', 403);
+        }
+        if (
+            !isset($_POST['cmn_school_long_booking_nonce']) ||
+            !wp_verify_nonce((string) $_POST['cmn_school_long_booking_nonce'], 'cmn_school_create_long_booking')
+        ) {
+            wp_die('Invalid request', 403);
+        }
+
+        $school_user_id = (int) get_current_user_id();
+        $school_id = (int) $this->resolve_school_id_for_user($school_user_id);
+        $default_redirect = add_query_arg(['school' => 'long-bookings'], $this->get_portal_base_url());
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        if ($redirect === '') {
+            $redirect = $default_redirect;
+        }
+        $redirect_with_notice = function ($status, $message) use ($redirect) {
+            $status = sanitize_key((string) $status);
+            if (!in_array($status, ['success', 'warning', 'error'], true)) {
+                $status = 'success';
+            }
+            wp_safe_redirect(add_query_arg([
+                'cmn_long_booking_status' => $status,
+                'cmn_long_booking_msg' => rawurlencode(sanitize_text_field((string) $message)),
+            ], $redirect));
+            exit;
+        };
+
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            $redirect_with_notice('error', 'School profile not found.');
+        }
+        if (!$this->user_can_access_school($school_id, $school_user_id)) {
+            wp_die('Unauthorized', 403);
+        }
+
+        $start_date = sanitize_text_field((string) ($_POST['cmn_lb_start_date'] ?? ''));
+        $end_date = sanitize_text_field((string) ($_POST['cmn_lb_end_date'] ?? ''));
+        $role = sanitize_text_field((string) ($_POST['cmn_lb_role'] ?? ''));
+        $start_time = sanitize_text_field((string) ($_POST['cmn_lb_start_time'] ?? '08:30'));
+        $end_time = sanitize_text_field((string) ($_POST['cmn_lb_end_time'] ?? '15:30'));
+        $notes = sanitize_textarea_field((string) ($_POST['cmn_lb_notes'] ?? ''));
+        $requested_rate = round((float) ($_POST['cmn_lb_rate'] ?? 0), 2);
+        $role_filter = $role;
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
+            $redirect_with_notice('error', 'Select a valid start and end date.');
+        }
+        if ($end_date < $start_date) {
+            $redirect_with_notice('error', 'End date must be on or after start date.');
+        }
+        $today = current_time('Y-m-d');
+        if ($start_date < $today) {
+            $redirect_with_notice('error', 'Start date must be today or later.');
+        }
+        $weekday_dates = $this->get_weekday_dates_in_range($start_date, $end_date, 220);
+        if (!$weekday_dates) {
+            $redirect_with_notice('error', 'Select a date range that includes weekdays only and is no longer than 220 weekdays.');
+        }
+        if ($requested_rate < 0) {
+            $requested_rate = 0.0;
+        }
+
+        $matched_candidates = $this->get_school_long_booking_candidate_matches($school_id, $start_date, $end_date, $role_filter, 100);
+        $matched_candidate_ids = array_values(array_filter(array_map(static function ($row) {
+            return max(0, (int) ($row['candidate_id'] ?? 0));
+        }, (array) $matched_candidates)));
+        $matched_candidate_id_map = array_fill_keys($matched_candidate_ids, true);
+
+        $selected_candidate_ids_raw = isset($_POST['cmn_lb_candidate_ids']) ? (array) $_POST['cmn_lb_candidate_ids'] : [];
+        $selected_candidate_ids = [];
+        foreach ($selected_candidate_ids_raw as $candidate_id_raw) {
+            $candidate_id = (int) $candidate_id_raw;
+            if ($candidate_id > 0 && isset($matched_candidate_id_map[$candidate_id])) {
+                $selected_candidate_ids[$candidate_id] = $candidate_id;
+            }
+        }
+        $selected_candidate_ids = array_values($selected_candidate_ids);
+        if ($role === '') {
+            $role = 'Long-term cover';
+        }
+
+        $school_location = sanitize_text_field((string) get_post_meta($school_id, 'cmn_location', true));
+        $post_title = $role . ' - ' . date_i18n('M j, Y', strtotime($start_date));
+        if ($end_date !== $start_date) {
+            $post_title .= ' to ' . date_i18n('M j, Y', strtotime($end_date));
+        }
+        $post_title .= ' (Long Booking)';
+        $booking_id = wp_insert_post([
+            'post_type' => 'cmn_booking',
+            'post_status' => 'publish',
+            'post_title' => $post_title,
+        ]);
+        if (is_wp_error($booking_id) || (int) $booking_id < 1) {
+            $redirect_with_notice('error', 'Unable to create long booking request right now.');
+        }
+        $booking_id = (int) $booking_id;
+
+        update_post_meta($booking_id, 'cmn_date', $start_date);
+        update_post_meta($booking_id, 'cmn_start_date', $start_date);
+        update_post_meta($booking_id, 'cmn_end_date', $end_date);
+        update_post_meta($booking_id, 'cmn_start_time', $start_time);
+        update_post_meta($booking_id, 'cmn_end_time', $end_time);
+        update_post_meta($booking_id, 'cmn_role', $role);
+        update_post_meta($booking_id, 'cmn_notes', $notes);
+        update_post_meta($booking_id, 'cmn_status', 'requested');
+        update_post_meta($booking_id, 'cmn_booking_type', 'long_term');
+        update_post_meta($booking_id, 'cmn_source', 'school_long_booking');
+        update_post_meta($booking_id, 'cmn_school_id', $school_id);
+        update_post_meta($booking_id, 'cmn_location', $school_location);
+        update_post_meta($booking_id, 'cmn_created_by', $school_user_id);
+        update_post_meta($booking_id, 'cmn_created_at', time());
+        if ($requested_rate > 0) {
+            update_post_meta($booking_id, 'cmn_school_charge_rate', $requested_rate);
+            update_post_meta($booking_id, 'cmn_requested_rate', $requested_rate);
+        }
+        update_post_meta($booking_id, 'cmn_long_booking_candidate_ids', $selected_candidate_ids);
+
+        $confirmation_seed = $this->ensure_booking_completion_confirmations_for_booking($booking_id, $school_user_id);
+        if (is_wp_error($confirmation_seed)) {
+            $this->add_audit_log('school_partner_confirmation_seed_failed', 'booking', (string) $booking_id, [
+                'school_id' => $school_id,
+                'school_user_id' => $school_user_id,
+                'message' => $confirmation_seed->get_error_message(),
+                'source' => 'school_long_booking_create',
+            ], $school_user_id);
+        }
+
+        $school_name = get_the_title($school_id) ?: 'School';
+        $date_label = date_i18n('M j, Y', strtotime($start_date));
+        if ($end_date !== $start_date) {
+            $date_label .= ' to ' . date_i18n('M j, Y', strtotime($end_date));
+        }
+        $role_label = $role !== '' ? $role : 'long-term cover';
+        $target_count = count($selected_candidate_ids);
+        $base_message = $school_name . ' created a long booking request for ' . $date_label . ' (' . $role_label . ').';
+        if ($target_count > 0) {
+            $base_message .= ' ' . $target_count . ' candidate target(s) selected.';
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $school_link = add_query_arg(['school' => 'long-bookings'], $portal_url);
+        $staff_link = add_query_arg(['view' => 'requests'], $portal_url);
+        $candidate_link = add_query_arg(['candidate' => 'bookings'], $portal_url);
+
+        $school_notify_ids = $this->get_school_user_ids_for_school_request($school_id);
+        $school_notify_ids[] = $school_user_id;
+        $school_notify_ids = array_values(array_unique(array_filter(array_map('intval', $school_notify_ids))));
+        foreach ($school_notify_ids as $notify_school_user_id) {
+            $this->add_notification(
+                (int) $notify_school_user_id,
+                'long_booking_created',
+                'Long booking request created',
+                'Your long booking request for ' . $date_label . ' has been created.',
+                $school_link
+            );
+        }
+
+        $account_manager_user_id = (int) $this->get_request_account_manager_user_id($school_id);
+        if ($account_manager_user_id > 0) {
+            $this->add_notification(
+                $account_manager_user_id,
+                'long_booking_request',
+                'New long booking request',
+                $base_message,
+                $staff_link
+            );
+        }
+        foreach ($this->get_admin_users_for_support() as $admin_id) {
+            $admin_id = (int) $admin_id;
+            if ($admin_id < 1) {
+                continue;
+            }
+            if ($account_manager_user_id > 0 && $admin_id === $account_manager_user_id) {
+                continue;
+            }
+            $this->add_notification(
+                $admin_id,
+                'long_booking_request',
+                'New long booking request',
+                $base_message,
+                $staff_link
+            );
+        }
+        foreach ($selected_candidate_ids as $selected_candidate_id) {
+            $candidate_user_id = (int) $this->get_candidate_user_id((int) $selected_candidate_id);
+            if ($candidate_user_id < 1) {
+                continue;
+            }
+            $this->add_notification(
+                $candidate_user_id,
+                'long_booking_match',
+                'Long-term cover opportunity',
+                $school_name . ' has a long-term cover request for ' . $date_label . '.',
+                $candidate_link
+            );
+        }
+
+        $this->add_audit_log('school_long_booking_created', 'booking', (string) $booking_id, [
+            'school_id' => $school_id,
+            'school_user_id' => $school_user_id,
+            'start_date' => $start_date,
+            'end_date' => $end_date,
+            'role' => $role,
+            'selected_candidates' => $selected_candidate_ids,
+        ], $school_user_id);
+
+        $success_message = 'Long booking request created.';
+        if ($target_count > 0) {
+            $success_message .= ' Notifications sent to ' . $target_count . ' candidate target(s).';
+        } else {
+            $success_message .= ' No candidate targets selected, so only school/staff notifications were sent.';
+        }
+        $redirect_with_notice('success', $success_message);
     }
 
     public function handle_candidate_request_action() {

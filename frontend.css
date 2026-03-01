@@ -17611,6 +17611,21 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
   border-color:rgba(0,0,0,.22);
 }
 .cmn-live-card.is-pending-confirmation{z-index:1;transform:translateY(4px) scale(1.05);opacity:1;filter:none;background:linear-gradient(180deg,rgba(98,71,9,.92),rgba(54,38,7,.96));border-color:rgba(181,136,18,.3);box-shadow:0 10px 24px rgba(24,18,4,.28),0 0 8px rgba(181,136,18,.14)}
+@media (min-width:1201px){
+  .cmn-live-carousel .cmn-live-card:not(:nth-child(2)){
+    z-index:1;
+    transform:translateY(10px) scale(.98);
+    filter:saturate(.9);
+  }
+  .cmn-live-carousel .cmn-live-card:nth-child(2){
+    z-index:5;
+    transform:translateY(-12px) scale(1.08);
+    filter:none;
+  }
+  .cmn-live-carousel .cmn-live-card:nth-child(2):hover{
+    transform:translateY(-14px) scale(1.09);
+  }
+}
 .cmn-live-brand{font-size:13px;font-weight:800;letter-spacing:.02em;color:#f3f4f6}
 .cmn-live-brand span{color:#ff1f43 !important;font-weight:900}
 .cmn-live-card-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}

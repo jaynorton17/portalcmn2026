@@ -12923,40 +12923,35 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     };
 
-    var getVisibleWindow = function(list, offset, count){
+    var findFirstAvailableIndex = function(list){
+      var rows = Array.isArray(list) ? list : [];
+      for (var i = 0; i < rows.length; i += 1) {
+        if (String((rows[i] && rows[i].status) || '') === 'available') {
+          return i;
+        }
+      }
+      return -1;
+    };
+
+    var getVisibleWindow = function(list, centerIndex, count){
       if (!list.length) {
         return [];
       }
       var limit = Math.max(1, Math.min(count, list.length));
       var out = [];
-      for (var i = 0; i < limit; i += 1) {
-        out.push(list[(offset + i) % list.length]);
+      if (limit === 1) {
+        out.push(list[(centerIndex + list.length) % list.length]);
+        return out;
       }
+      if (limit === 2) {
+        out.push(list[(centerIndex - 1 + list.length) % list.length]);
+        out.push(list[(centerIndex + list.length) % list.length]);
+        return out;
+      }
+      out.push(list[(centerIndex - 1 + list.length) % list.length]);
+      out.push(list[(centerIndex + list.length) % list.length]);
+      out.push(list[(centerIndex + 1) % list.length]);
       return out;
-    };
-
-    var arrangeVisibleForDepth = function(visible){
-      if (!Array.isArray(visible) || visible.length < 2) {
-        return Array.isArray(visible) ? visible : [];
-      }
-      var arranged = visible.slice();
-      var availableIndex = -1;
-      for (var i = 0; i < arranged.length; i += 1) {
-        if (String((arranged[i] && arranged[i].status) || '') === 'available') {
-          availableIndex = i;
-          break;
-        }
-      }
-      if (availableIndex < 0) {
-        return arranged;
-      }
-      var targetIndex = 0;
-      if (availableIndex === targetIndex) {
-        return arranged;
-      }
-      var availableCard = arranged.splice(availableIndex, 1)[0];
-      arranged.splice(targetIndex, 0, availableCard);
-      return arranged;
     };
 
     var postAction = function(action, candidateId, extra){
@@ -13157,7 +13152,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var list = getFiltered();
       if (!list.length) { carousel.innerHTML = '<div class="cmn-muted">No candidates in this tab.</div>'; dots.innerHTML=''; renderTabs(); return; }
       if (startIndex >= list.length) startIndex = 0;
-      var visible = arrangeVisibleForDepth(getVisibleWindow(list, startIndex, 3));
+      var visible = getVisibleWindow(list, startIndex, 3);
       carousel.innerHTML = visible.map(function(item){ return cardHtml(item); }).join('');
       dots.innerHTML = list.map(function(_,idx){ return '<button type="button" class="cmn-live-dot'+(idx===startIndex?' is-active':'')+'" data-live-dot="'+idx+'" aria-label="Show candidate '+(idx+1)+'"></button>'; }).join('');
       renderTabs();
@@ -13165,7 +13160,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     root.addEventListener('click', function(e){
       var tabBtn = e.target.closest('[data-live-tab]');
-      if (tabBtn) { tab = tabBtn.getAttribute('data-live-tab') || 'all'; startIndex = 0; render(); return; }
+      if (tabBtn) {
+        tab = tabBtn.getAttribute('data-live-tab') || 'all';
+        startIndex = 0;
+        var tabRows = getFiltered();
+        var firstAvailableIdx = findFirstAvailableIndex(tabRows);
+        if (firstAvailableIdx >= 0) {
+          startIndex = firstAvailableIdx;
+        }
+        render();
+        return;
+      }
       var hiddenToggleBtn = e.target.closest('[data-live-hidden-toggle]');
       if (hiddenToggleBtn) {
         var hiddenList = root.querySelector('[data-live-hidden-list]');
@@ -13186,7 +13191,17 @@ document.addEventListener('DOMContentLoaded', function () {
       if (dot) { startIndex = parseInt(dot.getAttribute('data-live-dot') || '0',10) || 0; render(); return; }
       if (drawer && e.target.closest('[data-live-filter-open]')) { drawer.hidden = false; return; }
       if (drawer && e.target.closest('[data-live-filter-close]')) { drawer.hidden = true; return; }
-      if (drawer && e.target.closest('[data-live-filter-apply]')) { startIndex = 0; drawer.hidden = true; render(); return; }
+      if (drawer && e.target.closest('[data-live-filter-apply]')) {
+        startIndex = 0;
+        var filteredRows = getFiltered();
+        var firstAvailableFiltered = findFirstAvailableIndex(filteredRows);
+        if (firstAvailableFiltered >= 0) {
+          startIndex = firstAvailableFiltered;
+        }
+        drawer.hidden = true;
+        render();
+        return;
+      }
       if (e.target.closest('[data-live-broadcast]')) { postAction('broadcast_request', 0, {}); return; }
 
       var actionBtn = e.target.closest('[data-live-action]');
@@ -13205,6 +13220,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (action === 'not_interested') {
           datasetAll = datasetAll.filter(function(item){ return Number(item.candidate_id) !== candidateId; });
           startIndex = 0;
+          var filteredAfterHide = getFiltered();
+          var firstAvailableAfterHide = findFirstAvailableIndex(filteredAfterHide);
+          if (firstAvailableAfterHide >= 0) {
+            startIndex = firstAvailableAfterHide;
+          }
           render();
           return;
         }
@@ -13263,6 +13283,11 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }, {passive:true});
 
+    var initialRows = getFiltered();
+    var initialAvailableIdx = findFirstAvailableIndex(initialRows);
+    if (initialAvailableIdx >= 0) {
+      startIndex = initialAvailableIdx;
+    }
     render();
     pollPresence();
     window.setInterval(pollPresence, 20000);
