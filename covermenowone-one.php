@@ -64063,9 +64063,6 @@ final class CMN_One_Plugin {
                                             <label data-school-cover-manager-field<?php echo $main_contact_is_cover_manager ? ' hidden' : ''; ?>>Cover Manager Number
                                                 <input type="text" name="cmn_cover_manager_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager_phone', true)); ?>">
                                             </label>
-                                            <label>Email Greeting Name
-                                                <input type="text" name="cmn_email_name" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_email_name', true)); ?>">
-                                            </label>
                                         </div>
                                     </section>
 
@@ -93367,7 +93364,19 @@ p{margin:0;line-height:1.5}
         $values = [];
         foreach ($field_contract as $field_key => $field_config) {
             $post_key = 'cmn_' . $field_key;
-            $raw_value = $_POST[$post_key] ?? '';
+            $storage = (string) ($field_config['storage'] ?? '');
+            if (!array_key_exists($post_key, $_POST)) {
+                if ($storage === 'post_meta') {
+                    $meta_key = (string) ($field_config['key'] ?? '');
+                    $values[$field_key] = $meta_key !== '' ? get_post_meta($school_id, $meta_key, true) : '';
+                } elseif ($storage === 'post_title') {
+                    $values[$field_key] = (string) get_the_title($school_id);
+                } else {
+                    $values[$field_key] = '';
+                }
+                continue;
+            }
+            $raw_value = $_POST[$post_key];
             $values[$field_key] = $this->sanitize_profile_contract_value($raw_value, $field_config);
         }
 
