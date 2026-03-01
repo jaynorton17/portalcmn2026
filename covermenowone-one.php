@@ -10,6 +10,79 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!function_exists('cmn_get_page_by_title')) {
+    function cmn_get_page_by_title($title, $output = OBJECT, $post_type = 'page') {
+        static $cache = [];
+        $title = (string) $title;
+        $cache_key = md5(wp_json_encode([
+            'title' => $title,
+            'post_type' => $post_type,
+            'output' => is_scalar($output) ? (string) $output : gettype($output),
+        ]));
+        if (array_key_exists($cache_key, $cache)) {
+            return $cache[$cache_key];
+        }
+
+        $post = null;
+        $query = get_posts([
+            'post_type' => $post_type,
+            'post_status' => 'any',
+            'posts_per_page' => 1,
+            'title' => $title,
+            'orderby' => 'ID',
+            'order' => 'ASC',
+            'suppress_filters' => true,
+            'no_found_rows' => true,
+            'update_post_meta_cache' => false,
+            'update_post_term_cache' => false,
+            'cache_results' => true,
+        ]);
+        if (!empty($query[0]) && $query[0] instanceof WP_Post) {
+            $post = $query[0];
+        } else {
+            global $wpdb;
+            $post_type_values = array_values(array_filter(array_map('sanitize_key', (array) $post_type)));
+            if (!$post_type_values) {
+                $post_type_values = ['page'];
+            }
+            $placeholders = implode(',', array_fill(0, count($post_type_values), '%s'));
+            $params = array_merge($post_type_values, [$title]);
+            $post_id = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT ID
+                 FROM {$wpdb->posts}
+                 WHERE post_type IN ({$placeholders})
+                   AND post_title = %s
+                   AND post_status <> 'trash'
+                 ORDER BY ID ASC
+                 LIMIT 1",
+                $params
+            ));
+            if ($post_id > 0) {
+                $candidate = get_post($post_id);
+                if ($candidate instanceof WP_Post) {
+                    $post = $candidate;
+                }
+            }
+        }
+
+        if ($post === null) {
+            $cache[$cache_key] = null;
+            return null;
+        }
+
+        if ($output === ARRAY_A) {
+            $cache[$cache_key] = (array) $post;
+            return $cache[$cache_key];
+        }
+        if ($output === ARRAY_N) {
+            $cache[$cache_key] = array_values((array) $post);
+            return $cache[$cache_key];
+        }
+        $cache[$cache_key] = $post;
+        return $post;
+    }
+}
+
 final class CmnRateEngine {
     private $rule_resolver;
 
@@ -1055,7 +1128,7 @@ final class CMN_One_Plugin {
     }
 
     private static function create_page_if_missing($title, $shortcode) {
-        $existing = get_page_by_title($title);
+        $existing = cmn_get_page_by_title($title);
         if ($existing) {
             return;
         }
@@ -1131,7 +1204,7 @@ final class CMN_One_Plugin {
             return $changed;
         }
 
-        $by_title = get_page_by_title($title, OBJECT, 'page');
+        $by_title = cmn_get_page_by_title($title, OBJECT, 'page');
         if ($by_title instanceof WP_Post) {
             $updates = ['ID' => (int) $by_title->ID];
             $changed = false;
@@ -1186,7 +1259,7 @@ final class CMN_One_Plugin {
             return $changed;
         }
 
-        $covermenow_by_title = get_page_by_title('CoverMeNow ONE', OBJECT, 'page');
+        $covermenow_by_title = cmn_get_page_by_title('CoverMeNow ONE', OBJECT, 'page');
         if ($covermenow_by_title instanceof WP_Post) {
             $updates = ['ID' => (int) $covermenow_by_title->ID];
             $changed = false;
@@ -1241,7 +1314,7 @@ final class CMN_One_Plugin {
             return $changed;
         }
 
-        $portal_by_title = get_page_by_title('Portal', OBJECT, 'page');
+        $portal_by_title = cmn_get_page_by_title('Portal', OBJECT, 'page');
         if ($portal_by_title instanceof WP_Post) {
             $updates = ['ID' => (int) $portal_by_title->ID];
             $changed = false;
@@ -1288,7 +1361,7 @@ final class CMN_One_Plugin {
             return $by_path;
         }
 
-        $by_title = get_page_by_title('CoverMeNow ONE', OBJECT, 'page');
+        $by_title = cmn_get_page_by_title('CoverMeNow ONE', OBJECT, 'page');
         if ($by_title instanceof WP_Post) {
             $cached = $by_title;
             return $by_title;
@@ -1300,7 +1373,7 @@ final class CMN_One_Plugin {
             return $by_path;
         }
 
-        $by_title = get_page_by_title('Portal', OBJECT, 'page');
+        $by_title = cmn_get_page_by_title('Portal', OBJECT, 'page');
         if ($by_title instanceof WP_Post) {
             $cached = $by_title;
             return $by_title;
@@ -8227,7 +8300,7 @@ final class CMN_One_Plugin {
     }
 
     private function render_staff_shell($active, $inner_html) {
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $wordpress_dashboard_url = add_query_arg(['cmn_admin' => '1'], wp_login_url(admin_url('/')));
         $user = wp_get_current_user();
@@ -23603,7 +23676,7 @@ final class CMN_One_Plugin {
         if (!$this->is_staff_user()) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to admin staff only.</p></div></section>';
         }
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $school_identifier = isset($_GET['school_id']) ? sanitize_text_field($_GET['school_id']) : '';
         $requested_pid = isset($_GET['pid']) ? (int) $_GET['pid'] : 0;
@@ -26877,7 +26950,7 @@ final class CMN_One_Plugin {
             }
         }
         $requests = $this->get_candidate_requests_for_status($status_filter, 100, $assigned_domains);
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
 
         ob_start();
@@ -36809,7 +36882,7 @@ final class CMN_One_Plugin {
         if (!in_array($bucket, ['sales', 'clients', 'all'], true)) {
             $bucket = 'clients';
         }
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $message = isset($_GET['cmn_contact_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_contact_msg'])) : '';
         $import_token = isset($_GET['cmn_contact_import_token']) ? sanitize_text_field($_GET['cmn_contact_import_token']) : '';
@@ -39205,12 +39278,12 @@ final class CMN_One_Plugin {
         $staff_cover_options = $this->get_cover_delegate_users($current_user_id);
         $staff_presence_status = sanitize_key((string) ($_GET['cmn_staff_presence_status'] ?? ''));
         $staff_presence_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_staff_presence_msg'] ?? '')));
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $candidate_preview = add_query_arg(['as' => 'candidate'], $portal_url);
         $school_preview = add_query_arg(['as' => 'school'], $portal_url);
-        $candidate_reg_page = get_page_by_title('Candidate Registration');
-        $school_reg_page = get_page_by_title('School Registration');
+        $candidate_reg_page = cmn_get_page_by_title('Candidate Registration');
+        $school_reg_page = cmn_get_page_by_title('School Registration');
         $candidate_reg_url = $candidate_reg_page ? get_permalink($candidate_reg_page) : home_url('/candidate-registration');
         $school_reg_url = $school_reg_page ? get_permalink($school_reg_page) : home_url('/school-registration');
         $candidate_admin_url = admin_url('post-new.php?post_type=cmn_candidate');
@@ -39771,7 +39844,7 @@ final class CMN_One_Plugin {
                 $value = trim((string) $value);
                 return $value !== '' ? $value : '—';
             };
-            $portal_page = get_page_by_title('Portal');
+            $portal_page = cmn_get_page_by_title('Portal');
             $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
             $school_code = $meta('cmn_school_id');
             if ($school_code === '') {
@@ -62607,7 +62680,7 @@ final class CMN_One_Plugin {
 
     public function render_school_landing_shortcode() {
         $school_url = add_query_arg(['view' => 'register-school'], $this->get_portal_base_url());
-        $login_page = get_page_by_title('Login');
+        $login_page = cmn_get_page_by_title('Login');
         $login_url = $login_page ? get_permalink($login_page) : home_url('/login');
 
         ob_start();
@@ -62656,7 +62729,7 @@ final class CMN_One_Plugin {
 
     public function render_candidate_landing_shortcode() {
         $candidate_url = add_query_arg(['view' => 'register-candidate'], $this->get_portal_base_url());
-        $login_page = get_page_by_title('Login');
+        $login_page = cmn_get_page_by_title('Login');
         $login_url = $login_page ? get_permalink($login_page) : home_url('/login');
 
         ob_start();
@@ -62726,7 +62799,7 @@ final class CMN_One_Plugin {
         $school_location = $user_school_id ? get_post_meta($user_school_id, 'cmn_location', true) : '';
         $school_postcode = $user_school_id ? get_post_meta($user_school_id, 'cmn_postcode', true) : '';
         $school_coords = $user_school_id ? $this->get_geo_coordinates_for_post($user_school_id) : null;
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $school_requests_url = add_query_arg(['school' => 'requests'], $portal_url);
         $school_cover_url = add_query_arg(['school' => 'cover'], $portal_url);
@@ -64870,7 +64943,7 @@ final class CMN_One_Plugin {
         }
         $weekly_pay_date_display = date_i18n('d/m/Y', strtotime($weekly_pay_date_raw));
 
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $tab = isset($_GET['candidate']) ? sanitize_text_field($_GET['candidate']) : 'dashboard';
         $cmn_tab = isset($_GET['cmn_tab']) ? sanitize_key((string) wp_unslash($_GET['cmn_tab'])) : '';
@@ -80489,7 +80562,7 @@ final class CMN_One_Plugin {
         if ($redirect) {
             wp_redirect($redirect);
         } else {
-            $portal_page = get_page_by_title('Portal');
+            $portal_page = cmn_get_page_by_title('Portal');
             $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
             wp_redirect(add_query_arg(['view' => 'schools'], $portal_url));
         }
@@ -82344,7 +82417,7 @@ p{margin:0;line-height:1.5}
         if ($request_page instanceof WP_Post) {
             return get_permalink((int) $request_page->ID);
         }
-        $request_page = get_page_by_title('Request Received', OBJECT, 'page');
+        $request_page = cmn_get_page_by_title('Request Received', OBJECT, 'page');
         if ($request_page instanceof WP_Post) {
             return get_permalink((int) $request_page->ID);
         }
@@ -84888,7 +84961,7 @@ p{margin:0;line-height:1.5}
             $status_display = $status_raw !== '' ? $status_raw : 'pending';
             $edit_link = get_edit_post_link($resolved_school_id, '');
             if ($edit_link === '') {
-                $portal_page = get_page_by_title('Portal');
+                $portal_page = cmn_get_page_by_title('Portal');
                 $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
                 $school_code = (string) get_post_meta($resolved_school_id, 'cmn_school_id', true);
                 if ($school_code === '') {
@@ -84922,7 +84995,7 @@ p{margin:0;line-height:1.5}
         $requested_pid = max(0, (int) $requested_pid);
         $portal_url = esc_url_raw((string) $portal_url);
         if ($portal_url === '') {
-            $portal_page = get_page_by_title('Portal');
+            $portal_page = cmn_get_page_by_title('Portal');
             $portal_url = $portal_page ? (string) get_permalink($portal_page) : home_url('/portal');
         }
 
@@ -84966,7 +85039,7 @@ p{margin:0;line-height:1.5}
         if ($school_code === '') {
             $school_code = (string) $school_post_id;
         }
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $profile_url = add_query_arg(['view' => 'schools', 'school_id' => $school_code, 'pid' => $school_post_id], $portal_url);
         $edit_link = get_edit_post_link($school_post_id, '');
@@ -85186,7 +85259,7 @@ p{margin:0;line-height:1.5}
         }
         $name = sanitize_text_field($name);
         if ($name !== '') {
-            $by_title = get_page_by_title($name, OBJECT, 'cmn_school');
+            $by_title = cmn_get_page_by_title($name, OBJECT, 'cmn_school');
             if ($by_title) {
                 return (int) $by_title->ID;
             }
@@ -85199,7 +85272,7 @@ p{margin:0;line-height:1.5}
         if ($name === '') {
             return 0;
         }
-        $by_title = get_page_by_title($name, OBJECT, 'cmn_school');
+        $by_title = cmn_get_page_by_title($name, OBJECT, 'cmn_school');
         if ($by_title) {
             return (int) $by_title->ID;
         }
@@ -90907,7 +90980,7 @@ p{margin:0;line-height:1.5}
             $school_charge_rate_input = (float) ($suggested['school_rate'] ?? 0.0);
         }
         $requested_date = sanitize_text_field($request['requested_date'] ?? '');
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         if ($requested_date && strtotime($requested_date) < strtotime(date('Y-m-d'))) {
             $redirect = wp_get_referer() ?: home_url('/portal');
@@ -92744,7 +92817,7 @@ p{margin:0;line-height:1.5}
         $end_time = get_post_meta($booking_id, 'cmn_end_time', true);
         $location = get_post_meta($booking_id, 'cmn_location', true);
         $rate = $this->get_candidate_rate($candidate_id, $school_id);
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $accept_url = add_query_arg([
             'action' => 'cmn_candidate_response',
@@ -92799,7 +92872,7 @@ p{margin:0;line-height:1.5}
         $message = "Candidate response received: {$response}. Booking ID: {$booking_id}.";
         $this->send_cmn_mail($account['email'], $subject, $message, 'candidate@covermenow.co.uk', 'CoverMeNow ONE');
 
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         wp_redirect(add_query_arg('candidate_response', $response, $portal_url));
         exit;
@@ -94858,7 +94931,7 @@ p{margin:0;line-height:1.5}
             ]);
         }
 
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $school_code = get_post_meta($post_id, 'cmn_school_id', true);
         $redirect = add_query_arg(['view' => 'schools', 'school_id' => $school_code], $portal_url);
@@ -94906,7 +94979,7 @@ p{margin:0;line-height:1.5}
                 }
             }
         }
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         wp_redirect(add_query_arg(['view' => 'staff'], $portal_url));
         exit;
@@ -96697,7 +96770,7 @@ p{margin:0;line-height:1.5}
                 }
             }
         }
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $bucket = sanitize_key((string) ($_POST['cmn_bucket'] ?? 'clients'));
         if (!in_array($bucket, ['sales', 'clients', 'all'], true)) {
@@ -96796,7 +96869,7 @@ p{margin:0;line-height:1.5}
                 $this->link_contact_to_school($contact_id, $domain, false);
             }
         }
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $bucket = sanitize_key((string) ($_POST['cmn_bucket'] ?? 'clients'));
         if (!in_array($bucket, ['sales', 'clients', 'all'], true)) {
@@ -96838,7 +96911,7 @@ p{margin:0;line-height:1.5}
         if ($contact_id) {
             wp_delete_post($contact_id, true);
         }
-        $portal_page = get_page_by_title('Portal');
+        $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $bucket = sanitize_key((string) ($_POST['cmn_bucket'] ?? 'clients'));
         if (!in_array($bucket, ['sales', 'clients', 'all'], true)) {
@@ -97420,7 +97493,7 @@ p{margin:0;line-height:1.5}
         if ($redirect) {
             wp_redirect($redirect);
         } else {
-            $portal_page = get_page_by_title('Portal');
+            $portal_page = cmn_get_page_by_title('Portal');
             $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
             wp_redirect(add_query_arg(['view' => 'schools'], $portal_url));
         }
@@ -97450,7 +97523,7 @@ p{margin:0;line-height:1.5}
         if ($redirect) {
             wp_redirect($redirect);
         } else {
-            $portal_page = get_page_by_title('Portal');
+            $portal_page = cmn_get_page_by_title('Portal');
             $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
             wp_redirect(add_query_arg(['view' => 'schools'], $portal_url));
         }
@@ -97477,7 +97550,7 @@ p{margin:0;line-height:1.5}
         if ($redirect) {
             wp_redirect($redirect);
         } else {
-            $portal_page = get_page_by_title('Portal');
+            $portal_page = cmn_get_page_by_title('Portal');
             $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
             $school_code = get_post_meta($school_id, 'cmn_school_id', true);
             wp_redirect(add_query_arg(['view' => 'schools', 'school_id' => $school_code], $portal_url));
