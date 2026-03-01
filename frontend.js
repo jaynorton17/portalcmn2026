@@ -12964,6 +12964,20 @@ document.addEventListener('DOMContentLoaded', function () {
     root.addEventListener('click', function(e){
       var tabBtn = e.target.closest('[data-live-tab]');
       if (tabBtn) { tab = tabBtn.getAttribute('data-live-tab') || 'all'; startIndex = 0; render(); return; }
+      var hiddenToggleBtn = e.target.closest('[data-live-hidden-toggle]');
+      if (hiddenToggleBtn) {
+        var hiddenList = root.querySelector('[data-live-hidden-list]');
+        if (hiddenList) {
+          var isHidden = hiddenList.hasAttribute('hidden');
+          if (isHidden) {
+            hiddenList.removeAttribute('hidden');
+          } else {
+            hiddenList.setAttribute('hidden', 'hidden');
+          }
+          hiddenToggleBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+        }
+        return;
+      }
       if (e.target.closest('[data-live-prev]')) { var prevLen = Math.max(1, getFiltered().length); startIndex = (startIndex - 1 + prevLen) % prevLen; render(); return; }
       if (e.target.closest('[data-live-next]')) { startIndex = (startIndex + 1) % Math.max(1,getFiltered().length); render(); return; }
       var dot = e.target.closest('[data-live-dot]');
@@ -12976,7 +12990,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var actionBtn = e.target.closest('[data-live-action]');
       if (!actionBtn) { return; }
       var card = actionBtn.closest('.cmn-live-card');
-      var candidateId = parseInt((card && card.getAttribute('data-candidate-id')) || '0', 10);
+      var candidateId = parseInt(String(actionBtn.getAttribute('data-candidate-id') || ''), 10);
+      if (!candidateId) {
+        candidateId = parseInt((card && card.getAttribute('data-candidate-id')) || '0', 10);
+      }
       if (!candidateId) { return; }
       var action = actionBtn.getAttribute('data-live-action') || '';
       var current = datasetAll.find(function(item){ return Number(item.candidate_id) === candidateId; }) || null;
@@ -12987,6 +13004,10 @@ document.addEventListener('DOMContentLoaded', function () {
           datasetAll = datasetAll.filter(function(item){ return Number(item.candidate_id) !== candidateId; });
           startIndex = 0;
           render();
+          return;
+        }
+        if (action === 'restore_not_interested' || action === 'put_back') {
+          window.location.reload();
           return;
         }
         if (action === 'shortlist_toggle') {

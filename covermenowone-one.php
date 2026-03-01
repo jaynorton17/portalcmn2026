@@ -77343,6 +77343,47 @@ final class CMN_One_Plugin {
         return $until_ts && $until_ts > current_time('timestamp');
     }
 
+    private function get_school_not_interested_candidates($school_id, $limit = 30) {
+        $school_id = (int) $school_id;
+        $limit = max(1, (int) $limit);
+        if ($school_id < 1) {
+            return [];
+        }
+        $ids = get_posts([
+            'post_type' => 'cmn_candidate',
+            'post_status' => ['publish', 'private', 'draft'],
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+        ]);
+        $rows = [];
+        foreach ((array) $ids as $candidate_id_raw) {
+            $candidate_id = (int) $candidate_id_raw;
+            if ($candidate_id < 1 || !$this->is_candidate_hidden_for_school_live_matches($school_id, $candidate_id)) {
+                continue;
+            }
+            $until_raw = (string) get_post_meta($candidate_id, 'cmn_school_hidden_until_' . $school_id, true);
+            $until_ts = $until_raw !== '' ? strtotime($until_raw) : 0;
+            $rows[] = [
+                'candidate_id' => $candidate_id,
+                'name' => (string) get_the_title($candidate_id),
+                'until_ts' => $until_ts,
+                'until_label' => $until_ts ? date_i18n('j M Y g:i A', $until_ts) : '',
+            ];
+        }
+        usort($rows, static function($a, $b){
+            $a_ts = (int) ($a['until_ts'] ?? 0);
+            $b_ts = (int) ($b['until_ts'] ?? 0);
+            if ($a_ts === $b_ts) {
+                return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+            }
+            return $a_ts <=> $b_ts;
+        });
+        if (count($rows) > $limit) {
+            $rows = array_slice($rows, 0, $limit);
+        }
+        return $rows;
+    }
+
     private function render_school_live_matches_panel($school_id, $availability_candidates, $can_request, $school_ready_responses, $availability_label) {
         $school_id = (int) $school_id;
         $today = current_time('Y-m-d');
@@ -77742,6 +77783,9 @@ final class CMN_One_Plugin {
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
         }
         $visibility_reason_text = $visibility_reason_parts ? ('If someone is missing: ' . implode(' | ', $visibility_reason_parts) . '.') : '';
+        $not_interested_candidates = $this->get_school_not_interested_candidates($school_id, 40);
+        $not_interested_count = count($not_interested_candidates);
+        $not_interested_panel_id = 'cmn-live-hidden-list-' . $school_id;
         ob_start();
         ?>
         <section class="cmn-live-matches" data-live-matches-root data-live-matches='<?php echo esc_attr(wp_json_encode($payload)); ?>'>
@@ -77751,6 +77795,33 @@ final class CMN_One_Plugin {
                 <button type="button" class="cmn-ghost cmn-live-filter-btn" data-live-filter-open>Filters</button>
             </div>
             <div class="cmn-live-tabs" role="tablist" aria-label="Live match tabs"></div>
+            <?php if ($not_interested_count > 0) : ?>
+                <div class="cmn-live-not-interested-wrap">
+                    <button type="button" class="cmn-live-not-interested-link" data-live-hidden-toggle aria-expanded="false" aria-controls="<?php echo esc_attr($not_interested_panel_id); ?>">
+                        Not Interested (<?php echo esc_html((string) $not_interested_count); ?>)
+                    </button>
+                    <div class="cmn-live-not-interested-list" id="<?php echo esc_attr($not_interested_panel_id); ?>" data-live-hidden-list hidden>
+                        <?php foreach ($not_interested_candidates as $hidden_row) : ?>
+                            <?php
+                            $hidden_candidate_id = (int) ($hidden_row['candidate_id'] ?? 0);
+                            $hidden_name = sanitize_text_field((string) ($hidden_row['name'] ?? 'Candidate'));
+                            $hidden_until_label = sanitize_text_field((string) ($hidden_row['until_label'] ?? ''));
+                            ?>
+                            <div class="cmn-live-not-interested-item">
+                                <div class="cmn-live-not-interested-copy">
+                                    <strong><?php echo esc_html($hidden_name !== '' ? $hidden_name : 'Candidate'); ?></strong>
+                                    <?php if ($hidden_until_label !== '') : ?>
+                                        <span>Hidden until <?php echo esc_html($hidden_until_label); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <button type="button" class="cmn-ghost" data-live-action="restore_not_interested" data-candidate-id="<?php echo esc_attr((string) $hidden_candidate_id); ?>">
+                                    Put back
+                                </button>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
             <?php if ($visibility_reason_text !== '') : ?>
                 <p class="cmn-live-visibility-note"><?php echo esc_html($visibility_reason_text); ?></p>
             <?php endif; ?>
@@ -89600,6 +89671,14 @@ p{margin:0;line-height:1.5}
                 'hidden_until' => $until,
             ]);
             wp_send_json_success(['message' => 'Candidate removed from this feed.']);
+        }
+
+        if ($action_type === 'restore_not_interested' || $action_type === 'put_back') {
+            delete_post_meta($candidate_id, 'cmn_school_hidden_until_' . (int) $school_id);
+            $this->add_audit_log('school_live_match_not_interested_restored', 'candidate', (string) $candidate_id, [
+                'school_id' => (int) $school_id,
+            ]);
+            wp_send_json_success(['message' => 'Candidate restored to main list.']);
         }
 
         if ($action_type === 'shortlist_toggle') {

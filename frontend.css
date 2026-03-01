@@ -17342,6 +17342,14 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .cmn-live-tab{border:1px solid rgba(255,255,255,.2);background:rgba(20,18,34,.8);color:#f2f2f6;border-radius:999px;padding:8px 14px;font-size:14px;cursor:pointer}
 .cmn-live-tab.is-active{background:linear-gradient(180deg,#ff1239,#cf0f2b);border-color:#ff2345}
+.cmn-live-not-interested-wrap{display:grid;gap:8px;margin:0 0 10px}
+.cmn-live-not-interested-link{justify-self:start;background:none;border:0;padding:0;color:#ffd166;font-size:13px;font-weight:700;text-decoration:underline;cursor:pointer}
+.cmn-live-not-interested-list{display:grid;gap:8px;padding:10px;border-radius:10px;background:rgba(13,16,27,.7);border:1px solid rgba(255,255,255,.12)}
+.cmn-live-not-interested-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(8,10,18,.72);border:1px solid rgba(255,255,255,.08)}
+.cmn-live-not-interested-copy{display:grid;gap:2px;min-width:0}
+.cmn-live-not-interested-copy strong{font-size:13px;line-height:1.25;color:#fff}
+.cmn-live-not-interested-copy span{font-size:11px;color:#cfd3db}
+.cmn-live-not-interested-item .cmn-ghost{min-height:30px;padding:6px 10px;font-size:12px;white-space:nowrap}
 .cmn-live-visibility-note{margin:0 0 12px;padding:8px 12px;border-radius:10px;background:rgba(13,16,27,.7);border:1px solid rgba(255,255,255,.12);font-size:12px;color:#d6d8df}
 .cmn-live-carousel-wrap{display:grid;grid-template-columns:auto 1fr auto;align-items:stretch;gap:10px}
 .cmn-live-carousel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:stretch}
