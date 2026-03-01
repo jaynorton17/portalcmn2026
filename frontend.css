@@ -14576,6 +14576,14 @@ body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-toprow {
   flex-wrap: nowrap;
 }
 
+body.cmn-portal-page .cmn-school-main .cmn-school-hub-toprow {
+  margin: 6px 0 14px;
+}
+
+body.cmn-portal-page .cmn-school-main .cmn-school-profile-hub-tabs {
+  margin: 0;
+}
+
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-profile-hub-tabs {
   margin: 0;
   flex: 1 1 auto;
@@ -16391,6 +16399,9 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-availability-hero .cmn-
 @media (max-width: 980px) {
   body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-toprow {
     flex-direction: column;
+  }
+  body.cmn-portal-page .cmn-school-main .cmn-school-hub-toprow .cmn-tabs {
+    width: 100%;
   }
   body.cmn-portal-page .cmn-candidate-main .cmn-candidate-hub-status {
     width: 100%;

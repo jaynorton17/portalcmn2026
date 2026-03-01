@@ -62814,6 +62814,10 @@ final class CMN_One_Plugin {
         $school_cover_url = add_query_arg(['school' => 'cover'], $portal_url);
         $school_settings_url = add_query_arg(['school' => 'settings'], $portal_url);
         $school_support_url = add_query_arg(['school' => 'support'], $portal_url);
+        $school_hub_profile_url = add_query_arg(['school' => 'profile', 'cmn_tab' => false], $portal_url);
+        $school_hub_calendar_url = add_query_arg(['school' => 'calendar', 'cmn_tab' => false], $portal_url);
+        $school_hub_team_url = add_query_arg(['school' => 'team', 'cmn_tab' => false], $portal_url);
+        $school_hub_templates_url = add_query_arg(['school' => 'templates', 'cmn_tab' => false], $portal_url);
         $tab = isset($_GET['school']) ? sanitize_text_field($_GET['school']) : 'dashboard';
         $cmn_tab = isset($_GET['cmn_tab']) ? sanitize_key((string) wp_unslash($_GET['cmn_tab'])) : '';
         if (in_array($cmn_tab, ['partner_savings', 'partner-savings'], true)) {
@@ -62821,6 +62825,11 @@ final class CMN_One_Plugin {
         } elseif ($tab === 'partner-savings') {
             $tab = 'partner_savings';
         }
+        if ($tab === 'my_hub') {
+            $tab = 'profile';
+        }
+        $school_hub_tabs = ['profile', 'calendar', 'team', 'templates'];
+        $is_school_hub_tab = in_array($tab, $school_hub_tabs, true);
         $availability_candidates = $this->get_school_dashboard_available_candidates($user_school_id ?: 0, 24);
         $availability_debug_report = null;
         if ($this->is_school_debug_enabled() && $this->is_staff_user() && $user_school_id > 0) {
@@ -62876,9 +62885,9 @@ final class CMN_One_Plugin {
                 'args' => ['school' => 'cover', 'cmn_tab' => false],
             ],
             [
-                'key' => 'calendar',
-                'label' => 'Calendar',
-                'args' => ['school' => 'calendar', 'cmn_tab' => false],
+                'key' => 'my_hub',
+                'label' => 'My Hub',
+                'args' => ['school' => 'my_hub', 'cmn_tab' => false],
             ],
             [
                 'key' => 'requests',
@@ -62907,24 +62916,9 @@ final class CMN_One_Plugin {
                 'args' => ['school' => 'priority-allocation', 'cmn_tab' => false],
             ],
             [
-                'key' => 'team',
-                'label' => 'My Team',
-                'args' => ['school' => 'team', 'cmn_tab' => false],
-            ],
-            [
-                'key' => 'profile',
-                'label' => 'Profile',
-                'args' => ['school' => 'profile', 'cmn_tab' => false],
-            ],
-            [
                 'key' => 'support',
                 'label' => 'Support',
                 'args' => ['school' => 'support', 'cmn_tab' => false],
-            ],
-            [
-                'key' => 'templates',
-                'label' => 'Templates',
-                'args' => ['school' => 'templates', 'cmn_tab' => false],
             ],
             [
                 'key' => 'settings',
@@ -62958,8 +62952,12 @@ final class CMN_One_Plugin {
                             $link_args = is_array($nav_item['args'] ?? null) ? (array) $nav_item['args'] : ['school' => $key, 'cmn_tab' => false];
                             $link = add_query_arg($link_args, $portal_url);
                             $has_icon = (string) ($nav_item['icon'] ?? '') === 'savings';
+                            $is_active_nav_item = $tab === $key;
+                            if ($key === 'my_hub' && $is_school_hub_tab) {
+                                $is_active_nav_item = true;
+                            }
                             ?>
-                            <a class="cmn-school-nav-link<?php echo $tab === $key ? ' is-active' : ''; ?><?php echo $has_icon ? ' cmn-school-nav-link--with-icon' : ''; ?>" href="<?php echo esc_url($link); ?>">
+                            <a class="cmn-school-nav-link<?php echo $is_active_nav_item ? ' is-active' : ''; ?><?php echo $has_icon ? ' cmn-school-nav-link--with-icon' : ''; ?>" href="<?php echo esc_url($link); ?>">
                                 <?php if ($has_icon) : ?>
                                     <span class="cmn-school-nav-icon" aria-hidden="true">
                                         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
@@ -62976,7 +62974,17 @@ final class CMN_One_Plugin {
                         <a class="cmn-school-nav-link" href="<?php echo esc_url($this->get_portal_logout_url($portal_url)); ?>">Logout</a>
                     </nav>
                 </aside>
-                <main class="cmn-school-main">
+                <main class="cmn-school-main cmn-school-main--<?php echo esc_attr(sanitize_html_class((string) $tab)); ?>">
+                    <?php if ($is_school_hub_tab) : ?>
+                        <div class="cmn-school-hub-toprow">
+                            <nav class="cmn-tabs cmn-school-profile-hub-tabs" aria-label="My Hub quick tabs">
+                                <a class="cmn-tab<?php echo $tab === 'profile' ? ' is-active' : ''; ?>" href="<?php echo esc_url($school_hub_profile_url); ?>">Profile</a>
+                                <a class="cmn-tab<?php echo $tab === 'calendar' ? ' is-active' : ''; ?>" href="<?php echo esc_url($school_hub_calendar_url); ?>">Calendar</a>
+                                <a class="cmn-tab<?php echo $tab === 'team' ? ' is-active' : ''; ?>" href="<?php echo esc_url($school_hub_team_url); ?>">My Team</a>
+                                <a class="cmn-tab<?php echo $tab === 'templates' ? ' is-active' : ''; ?>" href="<?php echo esc_url($school_hub_templates_url); ?>">Templates</a>
+                            </nav>
+                        </div>
+                    <?php endif; ?>
                     <?php if ($tab === 'dashboard') : ?>
                         <header class="cmn-school-header">
                             <h2>Candidates Available This and Next Morning</h2>
