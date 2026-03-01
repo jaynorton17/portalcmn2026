@@ -64014,111 +64014,128 @@ final class CMN_One_Plugin {
                             <form class="cmn-dashboard-card cmn-doc-upload-card cmn-dashboard-card-wide cmn-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                                 <?php wp_nonce_field('cmn_school_profile_update', 'cmn_school_profile_nonce'); ?>
                                 <input type="hidden" name="action" value="cmn_school_update_profile">
-                                <h3>School Details</h3>
-                                <div class="cmn-form-grid">
-                                    <label>School Name
-                                        <input type="text" name="cmn_school_name" required value="<?php echo esc_attr(get_the_title($user_school_id)); ?>">
-                                    </label>
-                                    <label>Location
-                                        <input type="text" name="cmn_location" required value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_location', true)); ?>">
-                                    </label>
-                                    <label>Email
-                                        <input type="email" name="cmn_email" required value="<?php echo esc_attr($school_email_value); ?>">
-                                    </label>
-                                    <label>Phone
-                                        <input type="text" name="cmn_phone" required value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_phone', true)); ?>">
-                                    </label>
-                                    <label>Website
-                                        <input type="url" name="cmn_website" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_website', true)); ?>">
-                                    </label>
-                                    <label>Primary Contact
-                                        <input type="text" name="cmn_contact1" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1', true)); ?>">
-                                    </label>
-                                    <label>Primary Contact Role
-                                        <input type="text" name="cmn_contact_role" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact_role', true)); ?>">
-                                    </label>
-                                    <label>Primary Contact Email
-                                        <input type="email" name="cmn_contact1_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1_email', true)); ?>">
-                                    </label>
-                                    <label>Primary Contact Phone
-                                        <input type="text" name="cmn_primary_contact_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_primary_contact_phone', true)); ?>">
-                                    </label>
-                                    <label>Cover Manager Name
-                                        <input type="text" name="cmn_cover_manager" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager', true)); ?>">
-                                    </label>
-                                    <label>Cover Manager Email
-                                        <input type="email" name="cmn_cover_manager_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager_email', true)); ?>">
-                                    </label>
-                                    <label>Email Greeting Name
-                                        <input type="text" name="cmn_email_name" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_email_name', true)); ?>">
-                                    </label>
-                                    <label>House / Number
-                                        <input type="text" name="cmn_house_number" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_house_number', true)); ?>">
-                                    </label>
-                                    <label>Address line 1
-                                        <input type="text" name="cmn_address_line1" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_address_line1', true)); ?>">
-                                    </label>
-                                    <label>Address line 2
-                                        <input type="text" name="cmn_address_line2" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_address_line2', true)); ?>">
-                                    </label>
-                                    <label>Address line 3
-                                        <input type="text" name="cmn_address_line3" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_address_line3', true)); ?>">
-                                    </label>
-                                    <label>Town / City
-                                        <input type="text" name="cmn_town" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_town', true)); ?>">
-                                    </label>
-                                    <label>County
-                                        <input type="text" name="cmn_county" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_county', true)); ?>">
-                                    </label>
-                                    <label>Postcode
-                                        <input type="text" name="cmn_postcode" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_postcode', true)); ?>">
-                                    </label>
-                                </div>
-                                <h3>School Profile</h3>
-                                <div class="cmn-form-grid">
-                                    <label>School type
-                                        <select name="cmn_school_type">
-                                            <option value="">Select</option>
-                                            <?php foreach ($school_type_options as $option_value) : ?>
-                                                <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_school_type', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </label>
-                                    <label>Pupil count
-                                        <select name="cmn_pupil_count">
-                                            <option value="">Select</option>
-                                            <?php foreach ($pupil_count_options as $option_value) : ?>
-                                                <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_pupil_count', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </label>
-                                    <label>Supply frequency
-                                        <select name="cmn_supply_frequency">
-                                            <option value="">Select</option>
-                                            <?php foreach ($supply_frequency_options as $option_value) : ?>
-                                                <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_supply_frequency', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </label>
-                                    <label>Use agencies
-                                        <select name="cmn_use_agencies">
-                                            <option value="">Select</option>
-                                            <?php foreach ($agency_usage_options as $option_value) : ?>
-                                                <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_use_agencies', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </label>
-                                    <label>Agency count
-                                        <select name="cmn_agency_count">
-                                            <option value="">Select</option>
-                                            <?php foreach ($agency_count_options as $option_value) : ?>
-                                                <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_agency_count', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </label>
-                                    <label>Notes
-                                        <textarea name="cmn_notes" rows="4"><?php echo esc_textarea((string) get_post_meta($user_school_id, 'cmn_notes', true)); ?></textarea>
-                                    </label>
+                                <div class="cmn-school-profile-tile-grid">
+                                    <section class="cmn-school-profile-tile">
+                                        <h3>Contact Details</h3>
+                                        <div class="cmn-form-grid">
+                                            <label>School Name
+                                                <input type="text" name="cmn_school_name" required value="<?php echo esc_attr(get_the_title($user_school_id)); ?>">
+                                            </label>
+                                            <label>School Email
+                                                <input type="email" name="cmn_email" required value="<?php echo esc_attr($school_email_value); ?>">
+                                            </label>
+                                            <label>School Phone
+                                                <input type="text" name="cmn_phone" required value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_phone', true)); ?>">
+                                            </label>
+                                            <label>Website
+                                                <input type="url" name="cmn_website" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_website', true)); ?>">
+                                            </label>
+                                            <label>Main Contact Name
+                                                <input type="text" name="cmn_contact1" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1', true)); ?>">
+                                            </label>
+                                            <label>Main Contact Role
+                                                <input type="text" name="cmn_contact_role" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact_role', true)); ?>">
+                                            </label>
+                                            <label>Main Contact Email
+                                                <input type="email" name="cmn_contact1_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1_email', true)); ?>">
+                                            </label>
+                                            <label>Main Contact Number
+                                                <input type="text" name="cmn_primary_contact_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_primary_contact_phone', true)); ?>">
+                                            </label>
+                                            <label>Cover Manager Name
+                                                <input type="text" name="cmn_cover_manager" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager', true)); ?>">
+                                            </label>
+                                            <label>Cover Manager Email
+                                                <input type="email" name="cmn_cover_manager_email" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager_email', true)); ?>">
+                                            </label>
+                                            <label>Cover Manager Number
+                                                <input type="text" name="cmn_cover_manager_phone" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_cover_manager_phone', true)); ?>">
+                                            </label>
+                                            <label>Email Greeting Name
+                                                <input type="text" name="cmn_email_name" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_email_name', true)); ?>">
+                                            </label>
+                                        </div>
+                                    </section>
+
+                                    <section class="cmn-school-profile-tile">
+                                        <h3>School Address</h3>
+                                        <div class="cmn-form-grid">
+                                            <label>Location
+                                                <input type="text" name="cmn_location" required value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_location', true)); ?>">
+                                            </label>
+                                            <label>Postcode
+                                                <input type="text" name="cmn_postcode" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_postcode', true)); ?>">
+                                            </label>
+                                            <label>House / Number
+                                                <input type="text" name="cmn_house_number" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_house_number', true)); ?>">
+                                            </label>
+                                            <label>Address line 1
+                                                <input type="text" name="cmn_address_line1" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_address_line1', true)); ?>">
+                                            </label>
+                                            <label>Address line 2
+                                                <input type="text" name="cmn_address_line2" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_address_line2', true)); ?>">
+                                            </label>
+                                            <label>Address line 3
+                                                <input type="text" name="cmn_address_line3" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_address_line3', true)); ?>">
+                                            </label>
+                                            <label>Town / City
+                                                <input type="text" name="cmn_town" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_town', true)); ?>">
+                                            </label>
+                                            <label>County
+                                                <input type="text" name="cmn_county" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_county', true)); ?>">
+                                            </label>
+                                        </div>
+                                    </section>
+
+                                    <section class="cmn-school-profile-tile">
+                                        <h3>School Profile</h3>
+                                        <p class="cmn-muted">Answers to your school profile questions.</p>
+                                        <div class="cmn-form-grid">
+                                            <label>School type
+                                                <select name="cmn_school_type">
+                                                    <option value="">Select</option>
+                                                    <?php foreach ($school_type_options as $option_value) : ?>
+                                                        <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_school_type', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </label>
+                                            <label>Pupil count
+                                                <select name="cmn_pupil_count">
+                                                    <option value="">Select</option>
+                                                    <?php foreach ($pupil_count_options as $option_value) : ?>
+                                                        <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_pupil_count', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </label>
+                                            <label>Supply frequency
+                                                <select name="cmn_supply_frequency">
+                                                    <option value="">Select</option>
+                                                    <?php foreach ($supply_frequency_options as $option_value) : ?>
+                                                        <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_supply_frequency', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </label>
+                                            <label>Use agencies
+                                                <select name="cmn_use_agencies">
+                                                    <option value="">Select</option>
+                                                    <?php foreach ($agency_usage_options as $option_value) : ?>
+                                                        <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_use_agencies', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </label>
+                                            <label>Agency count
+                                                <select name="cmn_agency_count">
+                                                    <option value="">Select</option>
+                                                    <?php foreach ($agency_count_options as $option_value) : ?>
+                                                        <option value="<?php echo esc_attr($option_value); ?>"<?php selected((string) get_post_meta($user_school_id, 'cmn_agency_count', true), $option_value); ?>><?php echo esc_html($option_value); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </label>
+                                            <label class="cmn-school-profile-field--full">Notes
+                                                <textarea name="cmn_notes" rows="4"><?php echo esc_textarea((string) get_post_meta($user_school_id, 'cmn_notes', true)); ?></textarea>
+                                            </label>
+                                        </div>
+                                    </section>
                                 </div>
                                 <div class="cmn-settings-actions">
                                     <button class="cmn-primary" type="submit">Save Profile</button>
@@ -93369,12 +93386,18 @@ p{margin:0;line-height:1.5}
         if ($primary_contact_phone === '') {
             $primary_contact_phone = (string) ($values['phone'] ?? '');
         }
+        $cover_manager_phone = sanitize_text_field(wp_unslash((string) ($_POST['cmn_cover_manager_phone'] ?? '')));
 
         update_post_meta($school_id, 'cmn_primary_contact_name', (string) ($values['contact1'] ?? ''));
         update_post_meta($school_id, 'cmn_primary_contact_role', (string) ($values['contact_role'] ?? ''));
         update_post_meta($school_id, 'cmn_primary_contact_email', $primary_contact_email);
         update_post_meta($school_id, 'cmn_primary_contact_phone', $primary_contact_phone);
         update_post_meta($school_id, 'cmn_contact1_email', $primary_contact_email);
+        if ($cover_manager_phone === '') {
+            delete_post_meta($school_id, 'cmn_cover_manager_phone');
+        } else {
+            update_post_meta($school_id, 'cmn_cover_manager_phone', $cover_manager_phone);
+        }
 
         $cover_manager_name = (string) ($values['cover_manager'] ?? '');
         if ($cover_manager_name !== '') {

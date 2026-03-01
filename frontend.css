@@ -6448,6 +6448,34 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   border-color: rgba(255, 255, 255, 0.16) !important;
 }
 
+.cmn-school-profile-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.cmn-school-profile-tile {
+  border: 1px solid var(--cmn-border);
+  border-radius: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.cmn-school-profile-tile h3 {
+  margin: 0;
+}
+
+.cmn-school-profile-tile .cmn-muted {
+  margin: 0;
+}
+
+.cmn-school-profile-field--full {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 900px) {
   .cmn-school-profile-tabs {
     gap: 6px;
@@ -6465,6 +6493,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 
   .cmn-school-profile-status {
     width: 100%;
+  }
+
+  .cmn-school-profile-tile-grid {
+    grid-template-columns: 1fr;
   }
 }
 
