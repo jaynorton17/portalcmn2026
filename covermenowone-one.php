@@ -7843,6 +7843,24 @@ final class CMN_One_Plugin {
         if (!$user_id) {
             return 0;
         }
+        $candidate_by_user = get_posts([
+            'post_type' => 'cmn_candidate',
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'meta_query' => [
+                [
+                    'key' => 'cmn_user_id',
+                    'value' => (int) $user_id,
+                    'compare' => '=',
+                    'type' => 'NUMERIC',
+                ],
+            ],
+            'orderby' => 'date',
+            'order' => 'DESC',
+        ]);
+        if ($candidate_by_user) {
+            return (int) $candidate_by_user[0];
+        }
         $user = get_user_by('id', $user_id);
         if (!$user || !$user->user_email) {
             return 0;
@@ -77016,6 +77034,60 @@ final class CMN_One_Plugin {
         return (string) ($photo_state['url'] ?? $this->get_default_profile_photo_url());
     }
 
+    private function get_candidate_identity_key($candidate_id) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1) {
+            return '';
+        }
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        if ($candidate_user_id > 0) {
+            return 'u:' . (string) $candidate_user_id;
+        }
+        $candidate_email = strtolower(trim((string) get_post_meta($candidate_id, 'cmn_email', true)));
+        if ($candidate_email !== '' && is_email($candidate_email)) {
+            return 'e:' . $candidate_email;
+        }
+        return 'p:' . (string) $candidate_id;
+    }
+
+    private function normalize_candidate_skill_values($raw_value) {
+        $flattened = [];
+        $walk = static function ($value) use (&$walk, &$flattened) {
+            if (is_array($value)) {
+                foreach ($value as $nested_value) {
+                    $walk($nested_value);
+                }
+                return;
+            }
+            if (!is_scalar($value)) {
+                return;
+            }
+            $text = trim((string) $value);
+            if ($text === '') {
+                return;
+            }
+            $decoded = json_decode($text, true);
+            if (is_array($decoded)) {
+                $walk($decoded);
+                return;
+            }
+            $parts = preg_split('/[\r\n,;|]+/', $text);
+            if (!is_array($parts)) {
+                $parts = [$text];
+            }
+            foreach ($parts as $part) {
+                $clean = sanitize_text_field((string) $part);
+                if ($clean !== '') {
+                    $flattened[] = $clean;
+                }
+            }
+        };
+        $walk($raw_value);
+        return array_values(array_unique(array_filter($flattened, static function ($item) {
+            return trim((string) $item) !== '';
+        })));
+    }
+
     private function get_candidate_live_match_skills($candidate_id, $limit = 3) {
         $candidate_id = (int) $candidate_id;
         $limit = max(1, min(6, (int) $limit));
@@ -77025,31 +77097,41 @@ final class CMN_One_Plugin {
         }
 
         $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
-        $raw_skills = $candidate_user_id > 0
-            ? get_user_meta($candidate_user_id, 'cmn_contact_card_skills', true)
-            : [];
-        if (empty($raw_skills)) {
-            $raw_skills = get_post_meta($candidate_id, 'cmn_contact_card_skills', true);
-        }
-        if (is_string($raw_skills) && $raw_skills !== '') {
-            $decoded = json_decode($raw_skills, true);
-            if (is_array($decoded)) {
-                $raw_skills = $decoded;
-            } else {
-                $raw_skills = array_map('trim', explode(',', $raw_skills));
+        $skill_meta_keys = [
+            'cmn_contact_card_skills',
+            'contact_card_skills',
+            'cmn_skills',
+            'skills',
+            'cmn_core_skills',
+            'cmn_strengths',
+        ];
+        $skills = [];
+        if ($candidate_user_id > 0) {
+            foreach ($skill_meta_keys as $meta_key) {
+                $meta_values = $this->normalize_candidate_skill_values(get_user_meta($candidate_user_id, $meta_key, true));
+                foreach ($meta_values as $meta_value) {
+                    if (!in_array($meta_value, $skills, true)) {
+                        $skills[] = $meta_value;
+                    }
+                    if (count($skills) >= $limit) {
+                        break 2;
+                    }
+                }
             }
         }
-        if (!is_array($raw_skills)) {
-            $raw_skills = [];
+        if (count($skills) < $limit) {
+            foreach ($skill_meta_keys as $meta_key) {
+                $meta_values = $this->normalize_candidate_skill_values(get_post_meta($candidate_id, $meta_key, true));
+                foreach ($meta_values as $meta_value) {
+                    if (!in_array($meta_value, $skills, true)) {
+                        $skills[] = $meta_value;
+                    }
+                    if (count($skills) >= $limit) {
+                        break 2;
+                    }
+                }
+            }
         }
-        $skills = array_values(array_unique(array_filter(array_map(
-            static function ($item) {
-                return sanitize_text_field((string) $item);
-            },
-            $raw_skills
-        ), static function ($item) {
-            return $item !== '';
-        })));
         if (count($skills) > $limit) {
             $skills = array_slice($skills, 0, $limit);
         }
@@ -77092,10 +77174,18 @@ final class CMN_One_Plugin {
             'posts_per_page' => -1,
             'fields' => 'ids',
         ]);
+        $visibility_seen_identity = [];
         foreach ((array) $visibility_candidate_ids as $visibility_candidate_id_raw) {
             $visibility_candidate_id = (int) $visibility_candidate_id_raw;
             if ($visibility_candidate_id < 1) {
                 continue;
+            }
+            $visibility_identity_key = $this->get_candidate_identity_key($visibility_candidate_id);
+            if ($visibility_identity_key !== '' && isset($visibility_seen_identity[$visibility_identity_key])) {
+                continue;
+            }
+            if ($visibility_identity_key !== '') {
+                $visibility_seen_identity[$visibility_identity_key] = true;
             }
             if ($this->is_candidate_hidden_for_school_live_matches($school_id, $visibility_candidate_id)) {
                 $visibility_reasons['hidden_not_interested']++;
@@ -77115,12 +77205,17 @@ final class CMN_One_Plugin {
                 'orderby' => 'date',
                 'order' => 'DESC',
             ]);
+            $fallback_seen_identity = [];
             foreach ((array) $fallback_posts as $fallback_post) {
                 if (!($fallback_post instanceof WP_Post)) {
                     continue;
                 }
                 $candidate_id = (int) $fallback_post->ID;
                 if ($candidate_id < 1) {
+                    continue;
+                }
+                $fallback_identity_key = $this->get_candidate_identity_key($candidate_id);
+                if ($fallback_identity_key !== '' && isset($fallback_seen_identity[$fallback_identity_key])) {
                     continue;
                 }
                 $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
@@ -77138,6 +77233,9 @@ final class CMN_One_Plugin {
                     'availability_date' => $target_date,
                     'is_confirmed' => false,
                 ];
+                if ($fallback_identity_key !== '') {
+                    $fallback_seen_identity[$fallback_identity_key] = true;
+                }
             }
         }
         if (!$candidates) {
@@ -77164,12 +77262,17 @@ final class CMN_One_Plugin {
             ? $this->get_geo_lookup_postcode_for_post($school_id, get_current_user_id())
             : '';
         $candidate_geo_lookup_budget = 8;
+        $rendered_identity_keys = [];
         foreach ($candidates as $item) {
             $candidate = $item['post'] ?? null;
             if (!$candidate || empty($candidate->ID)) {
                 continue;
             }
             $candidate_id = (int) $candidate->ID;
+            $render_identity_key = $this->get_candidate_identity_key($candidate_id);
+            if ($render_identity_key !== '' && isset($rendered_identity_keys[$render_identity_key])) {
+                continue;
+            }
             if ($this->is_candidate_hidden_for_school_live_matches($school_id, $candidate_id)) {
                 continue;
             }
@@ -77262,6 +77365,9 @@ final class CMN_One_Plugin {
                 'presence_label' => $presence_label,
                 'target_date' => (string) ($item['availability_date'] ?? $target_date),
             ];
+            if ($render_identity_key !== '') {
+                $rendered_identity_keys[$render_identity_key] = true;
+            }
         }
         usort($all, static function($a, $b){
             $a_online = !empty($a['is_physically_online']) ? 1 : 0;
@@ -77337,7 +77443,7 @@ final class CMN_One_Plugin {
                 $skills_html .= '<span class="cmn-live-skill">' . esc_html($skill_text) . '</span>';
             }
             if ($distance_text !== '' && preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_text)) {
-                // Keep informational labels as-is.
+                $distance_text = 'Distance pending';
             } elseif ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
                 $distance_text .= ' miles';
             } elseif ($distance_text !== '') {
@@ -77449,13 +77555,16 @@ final class CMN_One_Plugin {
 
         $out = [];
         $seen = [];
+        $seen_identity = [];
 
         foreach ($today_rows as $item) {
             $post = $item['post'] ?? null;
             $candidate_id = ($post && isset($post->ID)) ? (int) $post->ID : 0;
+            $candidate_identity_key = $this->get_candidate_identity_key($candidate_id);
             if (
                 $candidate_id < 1
                 || isset($seen[$candidate_id])
+                || ($candidate_identity_key !== '' && isset($seen_identity[$candidate_identity_key]))
                 || $this->is_candidate_unavailable($candidate_id, $today)
             ) {
                 continue;
@@ -77465,6 +77574,9 @@ final class CMN_One_Plugin {
             $item['is_confirmed'] = true;
             $out[] = $item;
             $seen[$candidate_id] = true;
+            if ($candidate_identity_key !== '') {
+                $seen_identity[$candidate_identity_key] = true;
+            }
             if ($limit > 0 && count($out) >= $limit) {
                 return $out;
             }
@@ -77473,9 +77585,11 @@ final class CMN_One_Plugin {
         foreach ($tomorrow_rows as $item) {
             $post = $item['post'] ?? null;
             $candidate_id = ($post && isset($post->ID)) ? (int) $post->ID : 0;
+            $candidate_identity_key = $this->get_candidate_identity_key($candidate_id);
             if (
                 $candidate_id < 1
                 || isset($seen[$candidate_id])
+                || ($candidate_identity_key !== '' && isset($seen_identity[$candidate_identity_key]))
                 || $this->is_candidate_unavailable($candidate_id, $tomorrow)
             ) {
                 continue;
@@ -77485,6 +77599,9 @@ final class CMN_One_Plugin {
             $item['is_confirmed'] = true;
             $out[] = $item;
             $seen[$candidate_id] = true;
+            if ($candidate_identity_key !== '') {
+                $seen_identity[$candidate_identity_key] = true;
+            }
             if ($limit > 0 && count($out) >= $limit) {
                 break;
             }
@@ -77498,7 +77615,11 @@ final class CMN_One_Plugin {
         ]);
         foreach ((array) $base_candidate_ids as $candidate_id_raw) {
             $candidate_id = (int) $candidate_id_raw;
+            $candidate_identity_key = $this->get_candidate_identity_key($candidate_id);
             if ($candidate_id < 1 || isset($seen[$candidate_id])) {
+                continue;
+            }
+            if ($candidate_identity_key !== '' && isset($seen_identity[$candidate_identity_key])) {
                 continue;
             }
             $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
@@ -77521,6 +77642,9 @@ final class CMN_One_Plugin {
                 'is_confirmed' => false,
             ];
             $seen[$candidate_id] = true;
+            if ($candidate_identity_key !== '') {
+                $seen_identity[$candidate_identity_key] = true;
+            }
             if ($limit > 0 && count($out) >= $limit) {
                 break;
             }

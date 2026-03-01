@@ -12868,7 +12868,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return '';
       }
       if (/\b(unavailable|unknown|n\/a|pending)\b/i.test(raw)) {
-        return raw;
+        return 'Distance pending';
       }
       if (/^\d+(\.\d+)?$/.test(raw)) {
         return raw + ' miles';
