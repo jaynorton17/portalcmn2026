@@ -78660,7 +78660,6 @@ final class CMN_One_Plugin {
         <section class="cmn-live-matches" data-live-matches-root data-live-matches='<?php echo esc_attr(wp_json_encode($payload)); ?>'>
             <div class="cmn-live-matches-head">
                 <h2>Available Candidates</h2>
-                <p><span class="cmn-dot-live"></span> <strong>Live</strong> Matches (excluding unavailable)</p>
                 <button type="button" class="cmn-ghost cmn-live-filter-btn" data-live-filter-open>Filters</button>
             </div>
             <div class="cmn-live-tabs" role="tablist" aria-label="Live match tabs"></div>
