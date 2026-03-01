@@ -6602,6 +6602,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   gap: 16px;
 }
 
+.cmn-school-main--calendar .cmn-calendar-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .cmn-calendar-panel {
   background: var(--cmn-panel-strong);
   border: 1px solid var(--cmn-border);

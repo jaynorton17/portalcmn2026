@@ -63099,27 +63099,40 @@ final class CMN_One_Plugin {
                         <header class="cmn-school-header">
                             <h2>Calendar</h2>
                         </header>
+                        <?php
+                        $calendar_timezone = wp_timezone();
+                        $calendar_month_start = new DateTimeImmutable('first day of this month', $calendar_timezone);
+                        $calendar_month_end = $calendar_month_start->modify('last day of this month');
+                        $calendar_weekday_cells = [];
+                        for ($calendar_cursor = $calendar_month_start; $calendar_cursor <= $calendar_month_end; $calendar_cursor = $calendar_cursor->modify('+1 day')) {
+                            $calendar_day_of_week = (int) $calendar_cursor->format('N');
+                            if ($calendar_day_of_week >= 6) {
+                                continue;
+                            }
+                            $calendar_day_number = (int) $calendar_cursor->format('j');
+                            $calendar_cell_class = 'cmn-calendar-cell';
+                            if ($calendar_day_number % 7 === 0) {
+                                $calendar_cell_class .= ' is-unavailable';
+                            } elseif ($calendar_day_number % 5 === 0) {
+                                $calendar_cell_class .= ' is-available';
+                            }
+                            $calendar_weekday_cells[] = [
+                                'class' => $calendar_cell_class,
+                                'day' => $calendar_day_number,
+                            ];
+                        }
+                        ?>
                         <div class="cmn-school-calendar">
                             <div class="cmn-calendar-panel">
                                 <div class="cmn-calendar-grid">
-                                    <div class="cmn-calendar-day">S</div>
                                     <div class="cmn-calendar-day">M</div>
                                     <div class="cmn-calendar-day">T</div>
                                     <div class="cmn-calendar-day">W</div>
                                     <div class="cmn-calendar-day">T</div>
                                     <div class="cmn-calendar-day">F</div>
-                                    <div class="cmn-calendar-day">S</div>
-                                    <?php for ($i = 1; $i <= 30; $i++) : ?>
-                                        <?php
-                                        $class = 'cmn-calendar-cell';
-                                        if ($i % 7 === 0) {
-                                            $class .= ' is-unavailable';
-                                        } elseif ($i % 5 === 0) {
-                                            $class .= ' is-available';
-                                        }
-                                        ?>
-                                        <div class="<?php echo esc_attr($class); ?>"><span><?php echo esc_html($i); ?></span></div>
-                                    <?php endfor; ?>
+                                    <?php foreach ($calendar_weekday_cells as $calendar_cell) : ?>
+                                        <div class="<?php echo esc_attr((string) ($calendar_cell['class'] ?? 'cmn-calendar-cell')); ?>"><span><?php echo esc_html((string) ($calendar_cell['day'] ?? '')); ?></span></div>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                             <div class="cmn-calendar-detail">
@@ -64027,9 +64040,6 @@ final class CMN_One_Plugin {
                                             <label>School Phone
                                                 <input type="text" name="cmn_phone" required value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_phone', true)); ?>">
                                             </label>
-                                            <label>Website
-                                                <input type="url" name="cmn_website" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_website', true)); ?>">
-                                            </label>
                                             <label>Main Contact Name
                                                 <input type="text" name="cmn_contact1" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_contact1', true)); ?>">
                                             </label>
@@ -64058,13 +64068,16 @@ final class CMN_One_Plugin {
                                     </section>
 
                                     <section class="cmn-school-profile-tile">
-                                        <h3>School Address</h3>
+                                        <h3>School Details</h3>
                                         <div class="cmn-form-grid">
                                             <label>Location
                                                 <input type="text" name="cmn_location" required value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_location', true)); ?>">
                                             </label>
                                             <label>Postcode
                                                 <input type="text" name="cmn_postcode" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_postcode', true)); ?>">
+                                            </label>
+                                            <label>Website
+                                                <input type="url" name="cmn_website" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_website', true)); ?>">
                                             </label>
                                             <label>House / Number
                                                 <input type="text" name="cmn_house_number" value="<?php echo esc_attr((string) get_post_meta($user_school_id, 'cmn_house_number', true)); ?>">
