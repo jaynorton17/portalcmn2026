@@ -77228,6 +77228,47 @@ final class CMN_One_Plugin {
         return $skills;
     }
 
+    private function resolve_candidate_profile_post_id($candidate_id, $candidate_user_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_id < 1 && $candidate_user_id < 1) {
+            return 0;
+        }
+        if ($candidate_user_id < 1 && $candidate_id > 0) {
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        }
+        if ($candidate_user_id < 1) {
+            return max(0, $candidate_id);
+        }
+        static $candidate_profile_cache = [];
+        if (isset($candidate_profile_cache[$candidate_user_id])) {
+            $cached_id = (int) $candidate_profile_cache[$candidate_user_id];
+            return $cached_id > 0 ? $cached_id : max(0, $candidate_id);
+        }
+        $latest_candidate_ids = get_posts([
+            'post_type' => 'cmn_candidate',
+            'post_status' => ['publish', 'private', 'draft', 'pending'],
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'orderby' => 'modified',
+            'order' => 'DESC',
+            'meta_query' => [
+                [
+                    'key' => 'cmn_user_id',
+                    'value' => $candidate_user_id,
+                    'compare' => '=',
+                    'type' => 'NUMERIC',
+                ],
+            ],
+        ]);
+        $resolved_id = !empty($latest_candidate_ids[0]) ? (int) $latest_candidate_ids[0] : 0;
+        if ($resolved_id < 1) {
+            $resolved_id = max(0, $candidate_id);
+        }
+        $candidate_profile_cache[$candidate_user_id] = $resolved_id;
+        return $resolved_id;
+    }
+
     private function get_candidate_town_city_label($candidate_id, $candidate_user_id = 0) {
         $candidate_id = (int) $candidate_id;
         $candidate_user_id = (int) $candidate_user_id;
@@ -77433,12 +77474,19 @@ final class CMN_One_Plugin {
                 continue;
             }
             $role_labels = $this->get_candidate_role_labels($candidate_id);
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $candidate_profile_id = $this->resolve_candidate_profile_post_id($candidate_id, $candidate_user_id);
+            if ($candidate_profile_id < 1) {
+                $candidate_profile_id = $candidate_id;
+            }
+            if ($candidate_profile_id !== $candidate_id) {
+                $role_labels = $this->get_candidate_role_labels($candidate_profile_id);
+            }
             $role_primary = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
             $role_secondary = isset($role_labels[1]) ? (string) $role_labels[1] : '';
-            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
-            $candidate_town_city = $this->get_candidate_town_city_label($candidate_id, $candidate_user_id);
-            $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_id, $candidate_user_id);
-            $distance_debug_candidate_exact_postcodes = $this->get_geo_exact_postcodes_for_post($candidate_id, $candidate_user_id);
+            $candidate_town_city = $this->get_candidate_town_city_label($candidate_profile_id, $candidate_user_id);
+            $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_profile_id, $candidate_user_id);
+            $distance_debug_candidate_exact_postcodes = $this->get_geo_exact_postcodes_for_post($candidate_profile_id, $candidate_user_id);
             $distance_debug_candidate_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_candidate_postcode);
             $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
             $name_parts = preg_split('/\s+/', trim((string) $candidate->post_title));
@@ -77486,10 +77534,10 @@ final class CMN_One_Plugin {
                 $candidate_coords = null;
                 if ($candidate_geo_lookup_budget > 0) {
                     $candidate_geo_lookup_budget--;
-                    $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_id);
+                    $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_profile_id);
                 }
                 if (!$candidate_coords || !isset($candidate_coords['lat'], $candidate_coords['lng'])) {
-                    $candidate_coords = $this->get_geo_coordinates_for_post($candidate_id);
+                    $candidate_coords = $this->get_geo_coordinates_for_post($candidate_profile_id);
                 }
                 if ($candidate_coords && isset($candidate_coords['lat'], $candidate_coords['lng'])) {
                     $distance_miles = (float) $this->marketing_haversine_miles(
@@ -77504,17 +77552,30 @@ final class CMN_One_Plugin {
                 }
             }
             if ($distance_label === 'Distance pending') {
-                $fallback_travel_radius = (float) $this->get_candidate_travel_radius_miles($candidate_id);
+                $fallback_travel_radius = (float) $this->get_candidate_travel_radius_miles($candidate_profile_id);
                 if ($fallback_travel_radius > 0) {
                     $distance_label = 'Up to ' . rtrim(rtrim(number_format($fallback_travel_radius, 1, '.', ''), '0'), '.') . ' miles';
                 }
             }
-            $distance_debug_key = 'cmn_distance_debug_' . md5((string) $school_id . '|' . (string) $candidate_id . '|' . $distance_label);
+            $distance_debug_key = 'cmn_distance_debug_' . md5(
+                (string) $school_id
+                . '|'
+                . (string) $candidate_id
+                . '|'
+                . (string) $candidate_profile_id
+                . '|'
+                . (string) $distance_label
+                . '|'
+                . (string) $distance_debug_school_postcode
+                . '|'
+                . (string) $distance_debug_candidate_postcode
+            );
             if (get_transient($distance_debug_key) === false) {
                 set_transient($distance_debug_key, 1, HOUR_IN_SECONDS);
                 error_log('[CMN_DISTANCE_DEBUG] ' . wp_json_encode([
                     'school_id' => (int) $school_id,
                     'candidate_id' => (int) $candidate_id,
+                    'candidate_profile_id' => (int) $candidate_profile_id,
                     'distance' => (string) $distance_label,
                     'school_postcode' => (string) $distance_debug_school_postcode,
                     'school_exact_postcodes' => array_values((array) $distance_debug_school_exact_postcodes),
@@ -77527,7 +77588,7 @@ final class CMN_One_Plugin {
             $all[] = [
                 'candidate_id' => $candidate_id,
                 'first_name' => $first_name,
-                'photo_url' => $this->get_school_live_match_photo_url($candidate_id),
+                'photo_url' => $this->get_school_live_match_photo_url($candidate_profile_id),
                 'profile_url' => $this->get_school_candidate_profile_url($candidate_id, get_current_user_id()),
                 'role_line' => trim($role_primary . ($role_secondary !== '' ? ' • ' . $role_secondary : '')),
                 'rating' => round((float) ($rating['avg_rating'] ?? 0), 1),
@@ -77540,7 +77601,7 @@ final class CMN_One_Plugin {
                 'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
                 'confirmed_at' => $status_key === 'available' ? date_i18n('g:i A', strtotime((string) ($item['created_at'] ?? current_time('mysql')))) : '',
                 'day_rate' => round($day_rate, 0),
-                'skills' => $this->get_candidate_live_match_skills($candidate_id, 3),
+                'skills' => $this->get_candidate_live_match_skills($candidate_profile_id, 3),
                 'is_shortlisted' => $is_shortlisted ? 1 : 0,
                 'is_physically_online' => $is_physically_online ? 1 : 0,
                 'presence_label' => $presence_label,
@@ -78158,6 +78219,21 @@ final class CMN_One_Plugin {
                 $this->append_geo_lookup_values($candidate_values, $meta_value);
             }
         }
+        $post_meta_all = get_post_meta($post_id);
+        if (is_array($post_meta_all)) {
+            foreach ($post_meta_all as $meta_key => $meta_values) {
+                $meta_key = (string) $meta_key;
+                if ($meta_key === '' || in_array($meta_key, $post_meta_keys, true)) {
+                    continue;
+                }
+                if (preg_match('/(postcode|post_code|postal|zip|address|location|town|city|county)/i', $meta_key) !== 1) {
+                    continue;
+                }
+                foreach ((array) $meta_values as $meta_value) {
+                    $this->append_geo_lookup_values($candidate_values, $meta_value);
+                }
+            }
+        }
 
         $fallback_user_id = (int) $fallback_user_id;
         if ($fallback_user_id < 1 && get_post_type($post_id) === 'cmn_candidate') {
@@ -78181,6 +78257,21 @@ final class CMN_One_Plugin {
                 $meta_values = get_user_meta($fallback_user_id, $meta_key, false);
                 foreach ((array) $meta_values as $meta_value) {
                     $this->append_geo_lookup_values($candidate_values, $meta_value);
+                }
+            }
+            $user_meta_all = get_user_meta($fallback_user_id);
+            if (is_array($user_meta_all)) {
+                foreach ($user_meta_all as $meta_key => $meta_values) {
+                    $meta_key = (string) $meta_key;
+                    if ($meta_key === '' || in_array($meta_key, $user_meta_keys, true)) {
+                        continue;
+                    }
+                    if (preg_match('/(postcode|post_code|postal|zip|address|location|town|city|county)/i', $meta_key) !== 1) {
+                        continue;
+                    }
+                    foreach ((array) $meta_values as $meta_value) {
+                        $this->append_geo_lookup_values($candidate_values, $meta_value);
+                    }
                 }
             }
         }
