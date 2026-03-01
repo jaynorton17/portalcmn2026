@@ -78654,8 +78654,10 @@ final class CMN_One_Plugin {
             $tomorrow = $this->get_tomorrow_date();
         }
 
-        $today_rows = $today ? $this->get_available_candidates_with_times($today, $school_id, $limit) : [];
-        $tomorrow_rows = $tomorrow ? $this->get_available_candidates_with_times($tomorrow, $school_id, $limit) : [];
+        // School live matches should reflect real candidate availability globally,
+        // not only pre-assigned candidate lists.
+        $today_rows = $today ? $this->get_available_candidates_with_times($today, 0, $limit) : [];
+        $tomorrow_rows = $tomorrow ? $this->get_available_candidates_with_times($tomorrow, 0, $limit) : [];
 
         $out = [];
         $seen = [];
