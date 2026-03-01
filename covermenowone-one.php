@@ -78621,8 +78621,29 @@ final class CMN_One_Plugin {
                 . '<div class="cmn-live-offer" data-live-offer></div>'
                 . '</article>';
         };
+        $arrange_visible_for_depth = static function(array $rows) {
+            $row_count = count($rows);
+            if ($row_count < 2) {
+                return $rows;
+            }
+            $target_index = $row_count >= 3 ? 1 : 0;
+            $available_index = -1;
+            foreach ($rows as $row_idx => $row_item) {
+                if (($row_item['status'] ?? '') === 'available') {
+                    $available_index = (int) $row_idx;
+                    break;
+                }
+            }
+            if ($available_index < 0 || $available_index === $target_index) {
+                return $rows;
+            }
+            $available_row = $rows[$available_index];
+            array_splice($rows, $available_index, 1);
+            array_splice($rows, $target_index, 0, [$available_row]);
+            return array_values($rows);
+        };
         $initial_count = count($all);
-        $initial_visible = array_slice($all, 0, min(3, $initial_count));
+        $initial_visible = $arrange_visible_for_depth(array_slice($all, 0, min(3, $initial_count)));
         $visibility_reason_parts = [];
         if ($visibility_reasons['marked_unavailable'] > 0) {
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['marked_unavailable']) . ' marked not available';

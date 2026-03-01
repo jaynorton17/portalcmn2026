@@ -12935,6 +12935,30 @@ document.addEventListener('DOMContentLoaded', function () {
       return out;
     };
 
+    var arrangeVisibleForDepth = function(visible){
+      if (!Array.isArray(visible) || visible.length < 2) {
+        return Array.isArray(visible) ? visible : [];
+      }
+      var arranged = visible.slice();
+      var availableIndex = -1;
+      for (var i = 0; i < arranged.length; i += 1) {
+        if (String((arranged[i] && arranged[i].status) || '') === 'available') {
+          availableIndex = i;
+          break;
+        }
+      }
+      if (availableIndex < 0) {
+        return arranged;
+      }
+      var targetIndex = arranged.length >= 3 ? 1 : 0;
+      if (availableIndex === targetIndex) {
+        return arranged;
+      }
+      var availableCard = arranged.splice(availableIndex, 1)[0];
+      arranged.splice(targetIndex, 0, availableCard);
+      return arranged;
+    };
+
     var postAction = function(action, candidateId, extra){
       var form = new FormData();
       form.append('action', 'cmn_school_live_match_action');
@@ -13133,7 +13157,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var list = getFiltered();
       if (!list.length) { carousel.innerHTML = '<div class="cmn-muted">No candidates in this tab.</div>'; dots.innerHTML=''; renderTabs(); return; }
       if (startIndex >= list.length) startIndex = 0;
-      var visible = getVisibleWindow(list, startIndex, 3);
+      var visible = arrangeVisibleForDepth(getVisibleWindow(list, startIndex, 3));
       carousel.innerHTML = visible.map(function(item){ return cardHtml(item); }).join('');
       dots.innerHTML = list.map(function(_,idx){ return '<button type="button" class="cmn-live-dot'+(idx===startIndex?' is-active':'')+'" data-live-dot="'+idx+'" aria-label="Show candidate '+(idx+1)+'"></button>'; }).join('');
       renderTabs();
