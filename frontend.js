@@ -12950,7 +12950,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (availableIndex < 0) {
         return arranged;
       }
-      var targetIndex = arranged.length >= 3 ? 1 : 0;
+      var targetIndex = 0;
       if (availableIndex === targetIndex) {
         return arranged;
       }

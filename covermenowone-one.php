@@ -78626,7 +78626,7 @@ final class CMN_One_Plugin {
             if ($row_count < 2) {
                 return $rows;
             }
-            $target_index = $row_count >= 3 ? 1 : 0;
+            $target_index = 0;
             $available_index = -1;
             foreach ($rows as $row_idx => $row_item) {
                 if (($row_item['status'] ?? '') === 'available') {
