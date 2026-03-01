@@ -78307,7 +78307,53 @@ final class CMN_One_Plugin {
             $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
             $name_parts = preg_split('/\s+/', trim((string) $candidate->post_title));
             $first_name = $name_parts ? (string) $name_parts[0] : (string) $candidate->post_title;
+            $item_availability_date = sanitize_text_field((string) ($item['availability_date'] ?? ''));
+            $availability_dates_for_check = [];
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $item_availability_date)) {
+                $availability_dates_for_check[] = $item_availability_date;
+            }
+            $availability_dates_for_check[] = $today;
+            $availability_dates_for_check[] = $tomorrow;
+            $availability_dates_for_check = array_values(array_unique(array_filter($availability_dates_for_check)));
+
+            // Canonical card state: confirmed availability should be reflected consistently across candidate + school cards.
             $is_confirmed = !empty($item['is_confirmed']);
+            $confirmed_at_source = sanitize_text_field((string) ($item['created_at'] ?? ''));
+            if (!$is_confirmed) {
+                $saved_contact_card_show_available_raw = '';
+                if ($candidate_user_id > 0) {
+                    $saved_contact_card_show_available_raw = (string) get_user_meta($candidate_user_id, 'cmn_contact_card_show_available', true);
+                }
+                if ($saved_contact_card_show_available_raw === '' && $candidate_profile_id > 0) {
+                    $saved_contact_card_show_available_raw = (string) get_post_meta($candidate_profile_id, 'cmn_contact_card_show_available', true);
+                }
+                if ($saved_contact_card_show_available_raw === '' && $candidate_id > 0) {
+                    $saved_contact_card_show_available_raw = (string) get_post_meta($candidate_id, 'cmn_contact_card_show_available', true);
+                }
+                if (in_array(strtolower(trim($saved_contact_card_show_available_raw)), ['1', 'true', 'yes', 'on'], true)) {
+                    $is_confirmed = true;
+                }
+            }
+            if (!$is_confirmed && $availability_dates_for_check) {
+                foreach ($availability_dates_for_check as $check_date) {
+                    $has_availability = $this->has_candidate_availability($candidate_profile_id, $check_date);
+                    if (!$has_availability && $candidate_profile_id !== $candidate_id) {
+                        $has_availability = $this->has_candidate_availability($candidate_id, $check_date);
+                    }
+                    if (!$has_availability) {
+                        continue;
+                    }
+                    $is_confirmed = true;
+                    $confirmed_entry = $this->get_candidate_availability_entry($candidate_profile_id, $check_date);
+                    if ((!is_array($confirmed_entry) || empty($confirmed_entry['created_at'])) && $candidate_profile_id !== $candidate_id) {
+                        $confirmed_entry = $this->get_candidate_availability_entry($candidate_id, $check_date);
+                    }
+                    if (is_array($confirmed_entry) && !empty($confirmed_entry['created_at'])) {
+                        $confirmed_at_source = sanitize_text_field((string) $confirmed_entry['created_at']);
+                    }
+                    break;
+                }
+            }
             $status_key = $is_confirmed ? 'available' : 'not_responded';
             $candidate_presence_snapshot = $candidate_user_id > 0
                 ? $this->get_candidate_presence_snapshot($candidate_user_id)
@@ -78401,6 +78447,14 @@ final class CMN_One_Plugin {
                     'candidate_coords' => isset($candidate_coords) && is_array($candidate_coords) ? $candidate_coords : null,
                 ]));
             }
+            $confirmed_at_label = '';
+            if ($status_key === 'available') {
+                $confirmed_at_ts = $confirmed_at_source !== '' ? strtotime($confirmed_at_source) : false;
+                if ($confirmed_at_ts === false) {
+                    $confirmed_at_ts = current_time('timestamp');
+                }
+                $confirmed_at_label = date_i18n('g:i A', $confirmed_at_ts);
+            }
             $all[] = [
                 'candidate_id' => $candidate_id,
                 'first_name' => $first_name,
@@ -78415,7 +78469,7 @@ final class CMN_One_Plugin {
                 'distance' => $distance_label,
                 'town_city' => $candidate_town_city,
                 'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
-                'confirmed_at' => $status_key === 'available' ? date_i18n('g:i A', strtotime((string) ($item['created_at'] ?? current_time('mysql')))) : '',
+                'confirmed_at' => $confirmed_at_label,
                 'day_rate' => round($day_rate, 0),
                 'skills' => $this->get_candidate_live_match_skills($candidate_profile_id, 3),
                 'is_shortlisted' => $is_shortlisted ? 1 : 0,
