@@ -13141,7 +13141,7 @@ document.addEventListener('DOMContentLoaded', function () {
         + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
         + (locationDistanceText ? '<div class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</div>' : '')
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
-        + '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now">Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="'+(item.profile_url || '#')+'" target="_blank" rel="noopener">View Profile</a></div>'
+        + '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now">Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost cmn-btn-mini" href="'+(item.profile_url || '#')+'">View Profile</a></div>'
         + '<div class="cmn-live-offer" data-live-offer></div>'
         + '</article>';
     };

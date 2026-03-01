@@ -41197,6 +41197,212 @@ final class CMN_One_Plugin {
         return ob_get_clean();
     }
 
+    private function render_school_candidate_profile_panel($school_id, $candidate_id, $back_url = '') {
+        $school_id = (int) $school_id;
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1) {
+            return '<div class="cmn-panel-card"><p>Candidate not found.</p></div>';
+        }
+
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        $candidate_profile_id = (int) $this->resolve_candidate_profile_post_id($candidate_id, $candidate_user_id);
+        if ($candidate_profile_id < 1) {
+            $candidate_profile_id = $candidate_id;
+        }
+        $candidate = get_post($candidate_profile_id);
+        if (!$candidate || $candidate->post_type !== 'cmn_candidate') {
+            $candidate = get_post($candidate_id);
+            if (!$candidate || $candidate->post_type !== 'cmn_candidate') {
+                return '<div class="cmn-panel-card"><p>Candidate not found.</p></div>';
+            }
+            $candidate_profile_id = (int) $candidate->ID;
+        }
+        if ($candidate_user_id < 1) {
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_profile_id);
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $fallback_back_url = add_query_arg(['school' => 'cover', 'cmn_tab' => false], $portal_url);
+        $back_url = is_string($back_url) && $back_url !== ''
+            ? wp_validate_redirect($back_url, $fallback_back_url)
+            : $fallback_back_url;
+
+        $candidate_name = sanitize_text_field((string) $candidate->post_title);
+        $role_labels = $this->get_candidate_role_labels($candidate_profile_id);
+        if (!$role_labels && $candidate_profile_id !== $candidate_id) {
+            $role_labels = $this->get_candidate_role_labels($candidate_id);
+        }
+        $role_line = $role_labels ? implode(' | ', array_map('sanitize_text_field', $role_labels)) : 'Candidate';
+        $location = sanitize_text_field((string) get_post_meta($candidate_profile_id, 'cmn_location', true));
+        if ($location === '' && $candidate_profile_id !== $candidate_id) {
+            $location = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_location', true));
+        }
+        $town_city = sanitize_text_field((string) $this->get_candidate_town_city_label($candidate_profile_id, $candidate_user_id));
+        if ($town_city === '' && $candidate_profile_id !== $candidate_id) {
+            $town_city = sanitize_text_field((string) $this->get_candidate_town_city_label($candidate_id, $candidate_user_id));
+        }
+        $postcode = sanitize_text_field((string) get_post_meta($candidate_profile_id, 'cmn_postcode', true));
+        if ($postcode === '' && $candidate_profile_id !== $candidate_id) {
+            $postcode = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_postcode', true));
+        }
+        $phone = $candidate_user_id > 0 ? sanitize_text_field((string) get_user_meta($candidate_user_id, 'phone', true)) : '';
+        if ($phone === '') {
+            $phone = sanitize_text_field((string) get_post_meta($candidate_profile_id, 'cmn_phone', true));
+        }
+        if ($phone === '' && $candidate_profile_id !== $candidate_id) {
+            $phone = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_phone', true));
+        }
+        $email = sanitize_email((string) get_post_meta($candidate_profile_id, 'cmn_email', true));
+        if ($email === '' && $candidate_profile_id !== $candidate_id) {
+            $email = sanitize_email((string) get_post_meta($candidate_id, 'cmn_email', true));
+        }
+        if ($email === '' && $candidate_user_id > 0) {
+            $candidate_user = get_user_by('id', $candidate_user_id);
+            if ($candidate_user instanceof WP_User) {
+                $email = sanitize_email((string) $candidate_user->user_email);
+            }
+        }
+        $photo_url = esc_url($this->get_school_live_match_photo_url($candidate_profile_id));
+
+        $today = current_time('Y-m-d');
+        $tomorrow = $this->get_tomorrow_date();
+        $is_candidate_unavailable = static function($unavailable_today, $unavailable_tomorrow) {
+            return $unavailable_today && $unavailable_tomorrow;
+        };
+        $unavailable_today = $this->is_candidate_unavailable($candidate_profile_id, $today);
+        $unavailable_tomorrow = $tomorrow !== '' ? $this->is_candidate_unavailable($candidate_profile_id, $tomorrow) : false;
+        if ($candidate_profile_id !== $candidate_id) {
+            $unavailable_today = $unavailable_today && $this->is_candidate_unavailable($candidate_id, $today);
+            if ($tomorrow !== '') {
+                $unavailable_tomorrow = $unavailable_tomorrow && $this->is_candidate_unavailable($candidate_id, $tomorrow);
+            }
+        }
+        $availability_status_class = 'cmn-live-status not_responded';
+        $availability_status_label = 'NOT RESPONDED';
+        if ($is_candidate_unavailable($unavailable_today, $unavailable_tomorrow)) {
+            $availability_status_class = 'cmn-live-status not_available';
+            $availability_status_label = 'NOT AVAILABLE';
+        } else {
+            $available_now = $this->has_candidate_availability($candidate_profile_id, $today);
+            if (!$available_now && $candidate_profile_id !== $candidate_id) {
+                $available_now = $this->has_candidate_availability($candidate_id, $today);
+            }
+            if (!$available_now && $tomorrow !== '') {
+                $available_now = $this->has_candidate_availability($candidate_profile_id, $tomorrow);
+                if (!$available_now && $candidate_profile_id !== $candidate_id) {
+                    $available_now = $this->has_candidate_availability($candidate_id, $tomorrow);
+                }
+            }
+            if ($available_now) {
+                $availability_status_class = 'cmn-live-status available';
+                $availability_status_label = 'AVAILABLE NOW';
+            }
+        }
+
+        $skills = $this->get_candidate_live_match_skills($candidate_profile_id, 12);
+        if (!$skills && $candidate_profile_id !== $candidate_id) {
+            $skills = $this->get_candidate_live_match_skills($candidate_id, 12);
+        }
+        if (!$skills) {
+            $skills = ['Classroom Management', 'Communication', 'First Aid'];
+        }
+        $skills_html = '';
+        foreach ((array) $skills as $skill) {
+            $skill_text = sanitize_text_field((string) $skill);
+            if ($skill_text === '') {
+                continue;
+            }
+            $skills_html .= '<span class="cmn-live-skill">' . esc_html($skill_text) . '</span>';
+        }
+        if ($skills_html === '') {
+            $skills_html = '<span class="cmn-live-skill">Classroom Management</span><span class="cmn-live-skill">Communication</span><span class="cmn-live-skill">First Aid</span>';
+        }
+
+        $rating_payload = $this->get_candidate_average_rating_payload($candidate_user_id);
+        $average_rating = round((float) ($rating_payload['avg_rating'] ?? 0), 1);
+        $feedback_count = (int) ($rating_payload['feedback_count'] ?? 0);
+        $rating_label = $feedback_count > 0
+            ? number_format($average_rating, 1) . '/5 (' . $feedback_count . ' review' . ($feedback_count === 1 ? '' : 's') . ')'
+            : 'No feedback yet';
+
+        $download_cv_url = '';
+        $current_user_id = (int) get_current_user_id();
+        if ($current_user_id > 0) {
+            if ($this->is_candidate_doc_visible_to_school($candidate_profile_id, 'cv_formatted')) {
+                $formatted_status = $this->get_candidate_cv_formatted_status($candidate_profile_id);
+                if (!empty($formatted_status['available'])) {
+                    $download_cv_url = (string) add_query_arg([
+                        'action' => 'cmn_candidate_download_doc',
+                        'candidate_id' => $candidate_profile_id,
+                        'doc_type' => 'cv_formatted',
+                        'cmn_nonce' => wp_create_nonce('cmn_candidate_download_doc_' . $candidate_profile_id . '_cv_formatted_' . $current_user_id),
+                    ], admin_url('admin-post.php'));
+                }
+            }
+            if ($download_cv_url === '' && $this->is_candidate_doc_visible_to_school($candidate_profile_id, 'cv')) {
+                $download_cv_url = (string) add_query_arg([
+                    'action' => 'cmn_candidate_download_doc',
+                    'candidate_id' => $candidate_profile_id,
+                    'doc_type' => 'cv',
+                    'cmn_nonce' => wp_create_nonce('cmn_candidate_download_doc_' . $candidate_profile_id . '_cv_' . $current_user_id),
+                ], admin_url('admin-post.php'));
+            }
+        }
+
+        ob_start();
+        ?>
+        <header class="cmn-school-header">
+            <div class="cmn-header-row">
+                <div>
+                    <h2>Candidate Profile</h2>
+                    <p>Detailed profile from your live candidate list.</p>
+                </div>
+                <a class="cmn-ghost" href="<?php echo esc_url($back_url); ?>">Back to candidates</a>
+            </div>
+        </header>
+        <div class="cmn-profile-grid">
+            <div class="cmn-panel-card">
+                <div class="cmn-live-ident">
+                    <img class="cmn-live-avatar" src="<?php echo esc_url($photo_url); ?>" alt="<?php echo esc_attr($candidate_name); ?>">
+                    <div>
+                        <div class="cmn-live-name"><?php echo esc_html($candidate_name); ?></div>
+                        <div class="cmn-live-role"><?php echo esc_html($role_line); ?></div>
+                    </div>
+                </div>
+                <div class="cmn-meta-grid" style="margin-top:12px;">
+                    <div><strong>Status:</strong> <span class="<?php echo esc_attr($availability_status_class); ?>"><?php echo esc_html($availability_status_label); ?></span></div>
+                    <?php if ($town_city !== '') : ?><div><strong>Town / City:</strong> <?php echo esc_html($town_city); ?></div><?php endif; ?>
+                    <?php if ($location !== '') : ?><div><strong>Location:</strong> <?php echo esc_html($location); ?></div><?php endif; ?>
+                    <?php if ($postcode !== '') : ?><div><strong>Postcode:</strong> <?php echo esc_html($postcode); ?></div><?php endif; ?>
+                </div>
+            </div>
+            <div class="cmn-panel-card">
+                <h3>Contact Details</h3>
+                <div class="cmn-meta-grid">
+                    <div><strong>Email:</strong> <?php echo $email !== '' ? esc_html($email) : '<span class="cmn-muted">Not shared</span>'; ?></div>
+                    <div><strong>Phone:</strong> <?php echo $phone !== '' ? esc_html($phone) : '<span class="cmn-muted">Not shared</span>'; ?></div>
+                </div>
+            </div>
+            <div class="cmn-panel-card">
+                <h3>Key Skills</h3>
+                <div class="cmn-live-skills"><?php echo $skills_html; ?></div>
+            </div>
+            <div class="cmn-panel-card">
+                <h3>Feedback</h3>
+                <div class="cmn-meta-grid">
+                    <div><strong>Average rating:</strong> <?php echo esc_html($rating_label); ?></div>
+                    <?php if ($download_cv_url !== '') : ?>
+                        <div><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($download_cv_url); ?>">Download CV</a></div>
+                    <?php else : ?>
+                        <div class="cmn-muted">CV download not available</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
     private function get_candidate_availability_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_candidate_availability';
@@ -56496,29 +56702,27 @@ final class CMN_One_Plugin {
         if ($candidate_id < 1 || $user_id < 1) {
             return '';
         }
+        if (get_post_type($candidate_id) !== 'cmn_candidate') {
+            return '';
+        }
 
-        if ($this->is_candidate_doc_visible_to_school($candidate_id, 'cv_formatted')) {
-            $formatted = $this->get_candidate_cv_formatted_status($candidate_id);
-            if (!empty($formatted['available'])) {
-                return (string) add_query_arg([
-                    'action' => 'cmn_candidate_download_doc',
-                    'candidate_id' => $candidate_id,
-                    'doc_type' => 'cv',
-                    'cmn_nonce' => wp_create_nonce('cmn_candidate_download_doc_' . $candidate_id . '_cv_' . $user_id),
-                ], admin_url('admin-post.php'));
+        $is_school_user = $this->is_school_user($user_id);
+        $is_staff_user = $this->is_staff_user($user_id);
+        if (!$is_school_user && !$is_staff_user) {
+            return '';
+        }
+        if ($is_school_user) {
+            $school_id = (int) $this->resolve_school_id_for_user($user_id);
+            if ($school_id < 1) {
+                return '';
             }
         }
 
-        if ($this->is_candidate_doc_visible_to_school($candidate_id, 'cv')) {
-            return (string) add_query_arg([
-                'action' => 'cmn_candidate_download_doc',
-                'candidate_id' => $candidate_id,
-                'doc_type' => 'cv',
-                'cmn_nonce' => wp_create_nonce('cmn_candidate_download_doc_' . $candidate_id . '_cv_' . $user_id),
-            ], admin_url('admin-post.php'));
-        }
-
-        return '';
+        return (string) add_query_arg([
+            'school' => 'candidate_profile',
+            'candidate_id' => $candidate_id,
+            'cmn_tab' => false,
+        ], $this->get_portal_base_url());
     }
 
     private function get_request_candidate_pay_rate($candidate_id, $school_id, $request = []) {
@@ -63518,6 +63722,9 @@ final class CMN_One_Plugin {
                             $link = add_query_arg($link_args, $portal_url);
                             $has_icon = (string) ($nav_item['icon'] ?? '') === 'savings';
                             $is_active_nav_item = $tab === $key;
+                            if ($key === 'cover' && $tab === 'candidate_profile') {
+                                $is_active_nav_item = true;
+                            }
                             if ($key === 'my_hub' && $is_school_hub_tab) {
                                 $is_active_nav_item = true;
                             }
@@ -63660,6 +63867,12 @@ final class CMN_One_Plugin {
                             </div>
                         <?php endif; ?>
                         <?php echo $this->render_school_live_matches_panel((int) $user_school_id, (array) $availability_candidates, (bool) $can_request, (array) $school_ready_responses, (string) $availability_label); ?>
+                    <?php elseif ($tab === 'candidate_profile') : ?>
+                        <?php
+                        $school_candidate_id = isset($_GET['candidate_id']) ? (int) $_GET['candidate_id'] : 0;
+                        $school_candidate_back_url = add_query_arg(['school' => 'cover', 'cmn_tab' => false], $portal_url);
+                        echo $this->render_school_candidate_profile_panel((int) $user_school_id, $school_candidate_id, $school_candidate_back_url);
+                        ?>
                     <?php elseif ($tab === 'calendar') : ?>
                         <header class="cmn-school-header">
                             <h2>Calendar</h2>
@@ -78617,7 +78830,7 @@ final class CMN_One_Plugin {
                 . ($location_distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($location_distance_text) . '</div>' : '')
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
-                . '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="' . $profile_url . '" target="_blank" rel="noopener">View Profile</a></div>'
+                . '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost cmn-btn-mini" href="' . $profile_url . '">View Profile</a></div>'
                 . '<div class="cmn-live-offer" data-live-offer></div>'
                 . '</article>';
         };
