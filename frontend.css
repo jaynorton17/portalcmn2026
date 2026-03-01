@@ -6342,6 +6342,39 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  align-items: start;
+}
+
+.cmn-school-team-users-card {
+  display: grid;
+  gap: 12px;
+}
+
+.cmn-school-team-users-card .cmn-card-header {
+  align-items: center;
+}
+
+.cmn-school-team-user-list {
+  gap: 8px;
+}
+
+.cmn-school-team-user-item {
+  align-items: flex-start;
+}
+
+.cmn-school-team-user-item small {
+  display: block;
+  font-size: 12px;
+}
+
+.cmn-school-team-add-form {
+  margin-top: 4px;
+}
+
+.cmn-account-manager-card--right {
+  justify-self: end;
+  width: 100%;
+  max-width: 420px;
 }
 
 .cmn-account-manager-card {
@@ -6572,6 +6605,11 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 @media (max-width: 900px) {
   .cmn-school-team-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cmn-account-manager-card--right {
+    justify-self: stretch;
+    max-width: none;
   }
 
   .cmn-account-manager-square {

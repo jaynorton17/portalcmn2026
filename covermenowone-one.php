@@ -819,6 +819,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_staff_set_candidate_doc_visibility', [$this, 'handle_staff_set_candidate_doc_visibility']);
         add_action('admin_post_cmn_update_school_assignments', [$this, 'handle_update_school_assignments']);
         add_action('admin_post_cmn_school_update_profile', [$this, 'handle_school_update_profile']);
+        add_action('admin_post_cmn_school_add_team_member', [$this, 'handle_school_add_team_member']);
         add_action('admin_post_cmn_school_template_defaults_save', [$this, 'handle_school_template_defaults_save']);
         add_action('admin_post_cmn_update_candidate_rate', [$this, 'handle_update_candidate_rate']);
         add_action('admin_post_cmn_update_status', [$this, 'handle_update_status']);
@@ -826,6 +827,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_staff_candidate_compliance_decision', [$this, 'handle_staff_candidate_compliance_decision']);
         add_action('admin_post_cmn_save_release_version', [$this, 'handle_save_release_version']);
         add_action('admin_post_cmn_save_staff_availability_settings', [$this, 'handle_save_staff_availability_settings']);
+        add_action('admin_post_cmn_save_school_team_user_limit', [$this, 'handle_save_school_team_user_limit']);
         add_action('admin_post_cmn_save_converter_settings', [$this, 'handle_save_converter_settings']);
         add_action('admin_post_cmn_email_sender_add', [$this, 'handle_email_sender_add']);
         add_action('admin_post_cmn_email_sender_toggle', [$this, 'handle_email_sender_toggle']);
@@ -7920,6 +7922,255 @@ final class CMN_One_Plugin {
             return $school_id;
         }
         return 0;
+    }
+
+    private function get_school_team_additional_user_limit() {
+        $limit = (int) get_option('cmn_school_team_additional_user_limit', 5);
+        return max(0, min(100, $limit));
+    }
+
+    private function get_school_team_total_user_limit() {
+        return 1 + $this->get_school_team_additional_user_limit();
+    }
+
+    private function get_school_portal_users($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [];
+        }
+
+        $team_users = [];
+        $mapped_users = get_users([
+            'role__in' => ['cmn_school_manager', 'cmn_school_staff'],
+            'meta_key' => 'cmn_school_id',
+            'meta_value' => (string) $school_id,
+            'orderby' => 'registered',
+            'order' => 'ASC',
+        ]);
+        foreach ((array) $mapped_users as $mapped_user) {
+            if (!$mapped_user instanceof WP_User) {
+                continue;
+            }
+            $mapped_user_id = (int) ($mapped_user->ID ?? 0);
+            if ($mapped_user_id < 1 || !$this->is_school_user($mapped_user_id)) {
+                continue;
+            }
+            $team_users[$mapped_user_id] = $mapped_user;
+        }
+
+        $email_candidates = [
+            sanitize_email((string) get_post_meta($school_id, 'cmn_primary_contact_email', true)),
+            sanitize_email((string) get_post_meta($school_id, 'cmn_contact1_email', true)),
+            sanitize_email((string) get_post_meta($school_id, 'cmn_contact2_email', true)),
+            sanitize_email((string) get_post_meta($school_id, 'cmn_contact3_email', true)),
+            sanitize_email((string) get_post_meta($school_id, 'cmn_email', true)),
+        ];
+        $email_candidates = array_values(array_unique(array_filter($email_candidates, function ($email) {
+            return $email !== '' && is_email($email);
+        })));
+
+        foreach ($email_candidates as $email) {
+            $user = get_user_by('email', $email);
+            if (!$user instanceof WP_User) {
+                continue;
+            }
+            $user_id = (int) ($user->ID ?? 0);
+            if ($user_id < 1 || !$this->is_school_user($user_id)) {
+                continue;
+            }
+            $mapped_school_id = (int) get_user_meta($user_id, 'cmn_school_id', true);
+            if ($mapped_school_id !== $school_id) {
+                update_user_meta($user_id, 'cmn_school_id', $school_id);
+            }
+            $team_users[$user_id] = $user;
+        }
+
+        $team_users = array_values($team_users);
+        usort($team_users, function ($a, $b) {
+            $a_registered = $a instanceof WP_User ? strtotime((string) ($a->user_registered ?? '')) : false;
+            $b_registered = $b instanceof WP_User ? strtotime((string) ($b->user_registered ?? '')) : false;
+            $a_ts = $a_registered === false ? 0 : (int) $a_registered;
+            $b_ts = $b_registered === false ? 0 : (int) $b_registered;
+            if ($a_ts === $b_ts) {
+                $a_id = $a instanceof WP_User ? (int) ($a->ID ?? 0) : 0;
+                $b_id = $b instanceof WP_User ? (int) ($b->ID ?? 0) : 0;
+                return $a_id <=> $b_id;
+            }
+            return $a_ts <=> $b_ts;
+        });
+
+        return $team_users;
+    }
+
+    private function get_school_team_owner_user_id($team_users = []) {
+        $team_users = is_array($team_users) ? $team_users : [];
+        foreach ($team_users as $team_user) {
+            if (!$team_user instanceof WP_User) {
+                continue;
+            }
+            $roles = (array) $team_user->roles;
+            if (in_array('cmn_school_manager', $roles, true)) {
+                return (int) $team_user->ID;
+            }
+        }
+        if (!empty($team_users[0]) && $team_users[0] instanceof WP_User) {
+            return (int) $team_users[0]->ID;
+        }
+        return 0;
+    }
+
+    private function get_school_team_member_role_label($user, $owner_user_id = 0) {
+        if (!$user instanceof WP_User) {
+            return 'Team member';
+        }
+        $user_id = (int) ($user->ID ?? 0);
+        if ($owner_user_id > 0 && $user_id === (int) $owner_user_id) {
+            return 'Account owner';
+        }
+        $roles = (array) $user->roles;
+        if (in_array('cmn_school_manager', $roles, true)) {
+            return 'Manager';
+        }
+        return 'Team member';
+    }
+
+    private function send_school_team_member_invite_email($school_id, $member_user_id, $invited_by_user_id = 0) {
+        $school_id = (int) $school_id;
+        $member_user_id = (int) $member_user_id;
+        $invited_by_user_id = (int) $invited_by_user_id;
+        if ($school_id < 1 || $member_user_id < 1) {
+            return false;
+        }
+        $user = get_user_by('id', $member_user_id);
+        if (!$user instanceof WP_User) {
+            return false;
+        }
+
+        $school_name = trim((string) get_the_title($school_id));
+        if ($school_name === '') {
+            $school_name = 'your school';
+        }
+        $invited_by_label = 'your school team';
+        if ($invited_by_user_id > 0) {
+            $invited_by_user = get_user_by('id', $invited_by_user_id);
+            if ($invited_by_user instanceof WP_User) {
+                $candidate_label = trim((string) $invited_by_user->display_name);
+                if ($candidate_label !== '') {
+                    $invited_by_label = $candidate_label;
+                }
+            }
+        }
+
+        $reset_link = $this->build_password_reset_link($user);
+        $subject = 'You have been added to CoverMeNow ONE';
+        $message_lines = [
+            'Hi ' . ((string) ($user->display_name ?: $user->user_login)) . ',',
+            '',
+            'You have been added to ' . $school_name . ' in CoverMeNow ONE.',
+            'Added by: ' . $invited_by_label,
+            '',
+            'Login: ' . $this->get_portal_base_url(),
+        ];
+        if ($reset_link !== '') {
+            $message_lines[] = 'Set your password: ' . $reset_link;
+        }
+        $message_lines[] = '';
+        $message_lines[] = 'You can now create and manage bookings for your school team.';
+        $message = implode("\n", $message_lines);
+
+        return $this->send_school_email((string) $user->user_email, $subject, $message);
+    }
+
+    private function create_school_team_limit_request_ticket($school_user_id, $school_id, $requested_name, $requested_email, $current_total, $total_limit) {
+        $school_user_id = (int) $school_user_id;
+        $school_id = (int) $school_id;
+        if ($school_user_id < 1 || $school_id < 1) {
+            return ['ticket_id' => 0, 'ticket_ref' => ''];
+        }
+
+        global $wpdb;
+        $ticket_table = $this->get_support_ticket_table();
+        $message_table = $this->get_support_message_table();
+        if (!$this->candidate_rewards_table_exists($ticket_table) || !$this->candidate_rewards_table_exists($message_table)) {
+            return ['ticket_id' => 0, 'ticket_ref' => ''];
+        }
+
+        $subject = 'School team user limit increase request';
+        $ticket_ref = $this->generate_support_ticket_ref();
+        $school_name = trim((string) get_the_title($school_id));
+        if ($school_name === '') {
+            $school_name = 'School #' . $school_id;
+        }
+        $requester = get_user_by('id', $school_user_id);
+        $requester_label = $requester instanceof WP_User
+            ? trim((string) ($requester->display_name ?: $requester->user_login))
+            : ('User #' . $school_user_id);
+        $requester_email = $requester instanceof WP_User ? sanitize_email((string) $requester->user_email) : '';
+
+        $message_lines = [
+            'A school requested an increase to their team user limit.',
+            '',
+            'School: ' . $school_name . ' (ID ' . $school_id . ')',
+            'Requested by: ' . $requester_label . ($requester_email !== '' ? ' (' . $requester_email . ')' : ''),
+            'Current team size: ' . max(0, (int) $current_total),
+            'Current included limit: ' . max(1, (int) $total_limit),
+            'Requested member name: ' . ($requested_name !== '' ? $requested_name : 'Not provided'),
+            'Requested member email: ' . ($requested_email !== '' ? $requested_email : 'Not provided'),
+        ];
+        $message = implode("\n", $message_lines);
+
+        $now = current_time('mysql');
+        $ticket_data = [
+            'ticket_ref' => $ticket_ref,
+            'created_by_user_id' => $school_user_id,
+            'user_role_type' => 'school',
+            'subject' => $subject,
+            'category' => 'Account Management',
+            'status' => 'new',
+            'is_new_for_admin' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+            'closed_at' => null,
+        ];
+        $ticket_format = ['%s', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s'];
+        if ($this->support_ticket_has_column('queue_key')) {
+            $ticket_data['queue_key'] = 'school_team_limit';
+            $ticket_format[] = '%s';
+        }
+        if ($this->support_ticket_has_column('assigned_to_user_id')) {
+            $assigned_to_user_id = $this->get_support_primary_admin_user_id();
+            $ticket_data['assigned_to_user_id'] = $assigned_to_user_id > 0 ? $assigned_to_user_id : null;
+            $ticket_format[] = '%d';
+        }
+        if ($this->support_ticket_has_column('priority')) {
+            $ticket_data['priority'] = 'normal';
+            $ticket_format[] = '%s';
+        }
+
+        $inserted = $wpdb->insert($ticket_table, $ticket_data, $ticket_format);
+        if (!$inserted) {
+            return ['ticket_id' => 0, 'ticket_ref' => ''];
+        }
+        $ticket_id = (int) $wpdb->insert_id;
+        if ($ticket_id < 1) {
+            return ['ticket_id' => 0, 'ticket_ref' => ''];
+        }
+
+        $wpdb->insert($message_table, [
+            'ticket_id' => $ticket_id,
+            'sender_user_id' => $school_user_id,
+            'sender_type' => 'user',
+            'message' => $message,
+            'attachment_ids' => null,
+            'created_at' => $now,
+        ], ['%d', '%d', '%s', '%s', '%s', '%s']);
+
+        $this->notify_admins_support($ticket_id, $ticket_ref, $subject, $message);
+
+        return [
+            'ticket_id' => $ticket_id,
+            'ticket_ref' => $ticket_ref,
+        ];
     }
 
     private function get_candidate_id_for_user($user_id = 0) {
@@ -39588,6 +39839,10 @@ final class CMN_One_Plugin {
         $admin_recipient_notice_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_admin_recipient_msg'] ?? '')));
         $admin_recipient_value = $this->get_admin_recipient_email();
         $admin_recipient_constant = defined('CMN_ADMIN_RECIPIENT_EMAIL');
+        $school_team_limit_notice_status = sanitize_key((string) ($_GET['cmn_school_team_limit_status'] ?? ''));
+        $school_team_limit_notice_msg = sanitize_text_field(rawurldecode((string) wp_unslash((string) ($_GET['cmn_school_team_limit_msg'] ?? ''))));
+        $school_team_additional_limit = $this->get_school_team_additional_user_limit();
+        $school_team_total_limit = 1 + $school_team_additional_limit;
 
         ob_start();
         ?>
@@ -39726,6 +39981,25 @@ final class CMN_One_Plugin {
                     <button class="cmn-primary" type="submit"<?php echo $admin_recipient_constant ? ' disabled' : ''; ?>>Save recipient</button>
                 </form>
             </div>
+            <div class="cmn-dashboard-card">
+                <h3>School Team User Limit</h3>
+                <p class="cmn-muted">Controls how many additional portal users each school can add on top of the original account owner.</p>
+                <?php if ($school_team_limit_notice_msg !== '') : ?>
+                    <p class="<?php echo $school_team_limit_notice_status === 'success' ? 'cmn-register-success' : 'cmn-register-warning'; ?>">
+                        <?php echo esc_html($school_team_limit_notice_msg); ?>
+                    </p>
+                <?php endif; ?>
+                <form class="cmn-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <?php wp_nonce_field('cmn_save_school_team_user_limit', 'cmn_save_school_team_user_limit_nonce'); ?>
+                    <input type="hidden" name="action" value="cmn_save_school_team_user_limit">
+                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url(add_query_arg(['view' => 'settings'], $this->get_portal_base_url())); ?>">
+                    <label>Additional users allowed per school
+                        <input type="number" name="cmn_school_team_additional_user_limit" min="0" max="100" step="1" value="<?php echo esc_attr((string) $school_team_additional_limit); ?>">
+                    </label>
+                    <p class="cmn-muted">Current total included users per school: <?php echo esc_html((string) $school_team_total_limit); ?> (1 owner + <?php echo esc_html((string) $school_team_additional_limit); ?> additional).</p>
+                    <button class="cmn-primary" type="submit">Save team limit</button>
+                </form>
+            </div>
             <?php endif; ?>
             <?php if ($can_manage_admin_tools) : ?>
             <?php if ($upload_limit_warning !== '') : ?>
@@ -39843,6 +40117,34 @@ final class CMN_One_Plugin {
             'view' => 'settings',
             'cmn_admin_recipient_status' => 'success',
             'cmn_admin_recipient_msg' => rawurlencode('Admin recipient updated.'),
+        ], $redirect));
+        exit;
+    }
+
+    public function handle_save_school_team_user_limit() {
+        if (!is_user_logged_in() || !$this->is_admin_user()) {
+            wp_die('Unauthorized', 403);
+        }
+        if (
+            !isset($_POST['cmn_save_school_team_user_limit_nonce']) ||
+            !wp_verify_nonce((string) $_POST['cmn_save_school_team_user_limit_nonce'], 'cmn_save_school_team_user_limit')
+        ) {
+            wp_die('Invalid request', 403);
+        }
+
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        if ($redirect === '') {
+            $redirect = add_query_arg(['view' => 'settings'], $this->get_portal_base_url());
+        }
+
+        $limit = (int) ($_POST['cmn_school_team_additional_user_limit'] ?? 5);
+        $limit = max(0, min(100, $limit));
+        update_option('cmn_school_team_additional_user_limit', $limit, false);
+
+        wp_safe_redirect(add_query_arg([
+            'view' => 'settings',
+            'cmn_school_team_limit_status' => 'success',
+            'cmn_school_team_limit_msg' => rawurlencode('School team additional user limit updated.'),
         ], $redirect));
         exit;
     }
@@ -63131,6 +63433,8 @@ final class CMN_One_Plugin {
         $school_ready_responses = (!$is_preview && $this->is_school_user()) ? $this->get_school_ready_responses(get_current_user_id()) : [];
         $ready_response_notice = isset($_GET['cmn_ready_response_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_ready_response_msg'])) : '';
         $school_profile_notice = isset($_GET['cmn_school_profile_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_profile_msg'])) : '';
+        $school_team_notice = isset($_GET['cmn_school_team_msg']) ? sanitize_text_field(rawurldecode((string) wp_unslash($_GET['cmn_school_team_msg']))) : '';
+        $school_team_notice_type = sanitize_key((string) ($_GET['cmn_school_team_status'] ?? ''));
         $priority_notice = isset($_GET['cmn_priority_notice']) ? sanitize_text_field(wp_unslash($_GET['cmn_priority_notice'])) : '';
         $priority_notice_type = sanitize_key((string) ($_GET['cmn_priority_notice_type'] ?? ''));
         $can_request = !$is_preview && $user_school_id && $school_status === 'client';
@@ -64318,16 +64622,91 @@ final class CMN_One_Plugin {
                             $team_call_href = 'tel:' . preg_replace('/[^0-9\+]/', '', $team_manager_phone);
                         }
                         $team_chat_fallback_url = $this->get_school_account_manager_chat_support_url(0);
-                        $team_cover_manager_name = trim((string) get_post_meta($user_school_id, 'cmn_cover_manager', true));
-                        if ($team_cover_manager_name === '') {
-                            $team_cover_manager_name = 'Not set';
+                        $team_members = $this->get_school_portal_users((int) $user_school_id);
+                        $team_owner_user_id = $this->get_school_team_owner_user_id($team_members);
+                        $team_user_total_limit = $this->get_school_team_total_user_limit();
+                        $team_additional_limit = $this->get_school_team_additional_user_limit();
+                        $team_current_total = count($team_members);
+                        $team_remaining_slots = max(0, $team_user_total_limit - $team_current_total);
+                        $team_limit_reached = $team_current_total >= $team_user_total_limit;
+                        $team_notice_class = 'cmn-register-success';
+                        if ($school_team_notice_type === 'error') {
+                            $team_notice_class = 'cmn-register-error';
+                        } elseif ($school_team_notice_type === 'warning') {
+                            $team_notice_class = 'cmn-register-warning';
                         }
                         ?>
                         <header class="cmn-school-header">
                             <h2>My Team</h2>
                         </header>
+                        <?php if ($school_team_notice !== '') : ?>
+                            <div class="<?php echo esc_attr($team_notice_class); ?>"><?php echo esc_html($school_team_notice); ?></div>
+                        <?php endif; ?>
                         <div class="cmn-school-team-grid">
-                            <article class="cmn-dashboard-card cmn-account-manager-card">
+                            <article class="cmn-dashboard-card cmn-school-team-users-card">
+                                <div class="cmn-card-header">
+                                    <h3>School Team</h3>
+                                    <span class="cmn-status-chip<?php echo $team_limit_reached ? ' is-warning' : ' is-approved'; ?>">
+                                        <?php echo esc_html((string) $team_current_total . ' / ' . (string) $team_user_total_limit); ?>
+                                    </span>
+                                </div>
+                                <p class="cmn-muted">Team members can create and manage bookings on behalf of your school.</p>
+                                <?php if (!$team_members) : ?>
+                                    <div class="cmn-empty">No team users found yet.</div>
+                                <?php else : ?>
+                                    <div class="cmn-list cmn-school-team-user-list">
+                                        <?php foreach ($team_members as $team_member) : ?>
+                                            <?php
+                                            if (!$team_member instanceof WP_User) {
+                                                continue;
+                                            }
+                                            $team_member_id = (int) ($team_member->ID ?? 0);
+                                            if ($team_member_id < 1) {
+                                                continue;
+                                            }
+                                            $team_member_name = trim((string) ($team_member->display_name ?: $team_member->user_login));
+                                            if ($team_member_name === '') {
+                                                $team_member_name = 'User #' . $team_member_id;
+                                            }
+                                            $team_member_email = sanitize_email((string) $team_member->user_email);
+                                            $team_member_role_label = $this->get_school_team_member_role_label($team_member, $team_owner_user_id);
+                                            $team_member_last_login = (int) get_user_meta($team_member_id, 'cmn_last_login', true);
+                                            $team_member_last_login_label = $team_member_last_login > 0
+                                                ? ('Last login ' . date_i18n('j M Y g:ia', $team_member_last_login))
+                                                : 'No login recorded yet';
+                                            ?>
+                                            <div class="cmn-list-item cmn-school-team-user-item">
+                                                <strong><?php echo esc_html($team_member_name); ?></strong>
+                                                <span><?php echo esc_html($team_member_email !== '' ? $team_member_email : 'Email unavailable'); ?></span>
+                                                <small class="cmn-muted"><?php echo esc_html($team_member_role_label . ' • ' . $team_member_last_login_label); ?></small>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if ($is_preview) : ?>
+                                    <div class="cmn-empty">Preview mode: adding team members is disabled.</div>
+                                <?php else : ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form cmn-school-team-add-form">
+                                        <?php wp_nonce_field('cmn_school_add_team_member', 'cmn_school_add_team_member_nonce'); ?>
+                                        <input type="hidden" name="action" value="cmn_school_add_team_member">
+                                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($school_hub_team_url); ?>">
+                                        <label>Team member name
+                                            <input type="text" name="cmn_team_member_name" required maxlength="120" placeholder="Full name">
+                                        </label>
+                                        <label>Team member email
+                                            <input type="email" name="cmn_team_member_email" required maxlength="190" placeholder="name@schooldomain.com">
+                                        </label>
+                                        <button class="cmn-primary" type="submit">Add Team Member</button>
+                                    </form>
+                                    <p class="cmn-muted">Included users: account owner + <?php echo esc_html((string) $team_additional_limit); ?> additional team members.</p>
+                                    <?php if ($team_limit_reached) : ?>
+                                        <p class="cmn-register-warning">Included limit reached. Additional requests will be sent to admin for approval.</p>
+                                    <?php else : ?>
+                                        <p class="cmn-muted"><?php echo esc_html((string) $team_remaining_slots); ?> team slots remaining.</p>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </article>
+                            <article class="cmn-dashboard-card cmn-account-manager-card cmn-account-manager-card--right">
                                 <h3>Account Manager</h3>
                                 <div class="cmn-account-manager-square">
                                     <div class="cmn-account-manager-head">
@@ -64363,10 +64742,6 @@ final class CMN_One_Plugin {
                                     </div>
                                     <p class="cmn-muted">Live chat opens in Support and routes directly to your account manager.</p>
                                 </div>
-                            </article>
-                            <article class="cmn-dashboard-card">
-                                <h3>Cover Manager</h3>
-                                <p><?php echo esc_html($team_cover_manager_name); ?></p>
                             </article>
                         </div>
                     <?php elseif ($tab === 'profile') : ?>
@@ -93826,6 +94201,187 @@ p{margin:0;line-height:1.5}
         $redirect_url = add_query_arg(['school' => 'profile'], $this->get_portal_base_url());
         wp_safe_redirect(add_query_arg(['cmn_school_profile_msg' => rawurlencode('School profile updated.')], $redirect_url));
         exit;
+    }
+
+    public function handle_school_add_team_member() {
+        if (!is_user_logged_in()) {
+            wp_die('Unauthorized', 403);
+        }
+        if (
+            !isset($_POST['cmn_school_add_team_member_nonce']) ||
+            !wp_verify_nonce((string) $_POST['cmn_school_add_team_member_nonce'], 'cmn_school_add_team_member')
+        ) {
+            wp_die('Invalid request', 403);
+        }
+
+        $school_user_id = (int) get_current_user_id();
+        if (!$this->is_school_user($school_user_id)) {
+            wp_die('Unauthorized', 403);
+        }
+
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        if ($redirect === '') {
+            $redirect = add_query_arg(['school' => 'team'], $this->get_portal_base_url());
+        }
+        $redirect_with_notice = function ($status, $message) use ($redirect) {
+            $status = sanitize_key((string) $status);
+            if (!in_array($status, ['success', 'warning', 'error'], true)) {
+                $status = 'success';
+            }
+            wp_safe_redirect(add_query_arg([
+                'cmn_school_team_status' => $status,
+                'cmn_school_team_msg' => rawurlencode(sanitize_text_field((string) $message)),
+            ], $redirect));
+            exit;
+        };
+
+        $school_id = (int) $this->resolve_school_id_for_user($school_user_id);
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            $redirect_with_notice('error', 'School account could not be resolved.');
+        }
+        if (!$this->user_can_access_school($school_id, $school_user_id)) {
+            wp_die('Unauthorized', 403);
+        }
+
+        $member_name = trim((string) sanitize_text_field((string) ($_POST['cmn_team_member_name'] ?? '')));
+        $member_email = sanitize_email((string) ($_POST['cmn_team_member_email'] ?? ''));
+        if ($member_name === '') {
+            $redirect_with_notice('error', 'Team member name is required.');
+        }
+        if ($member_email === '' || !is_email($member_email)) {
+            $redirect_with_notice('error', 'Please enter a valid team member email address.');
+        }
+
+        $team_users = $this->get_school_portal_users($school_id);
+        $team_user_ids = array_values(array_filter(array_map(function ($user) {
+            return ($user instanceof WP_User) ? (int) $user->ID : 0;
+        }, (array) $team_users)));
+        $current_total = count($team_user_ids);
+        $total_limit = $this->get_school_team_total_user_limit();
+
+        $existing_user = get_user_by('email', $member_email);
+        $existing_user_id = $existing_user instanceof WP_User ? (int) $existing_user->ID : 0;
+        $is_existing_team_member = $existing_user_id > 0 && in_array($existing_user_id, $team_user_ids, true);
+
+        if (!$is_existing_team_member && $current_total >= $total_limit) {
+            $request = $this->create_school_team_limit_request_ticket(
+                $school_user_id,
+                $school_id,
+                $member_name,
+                $member_email,
+                $current_total,
+                $total_limit
+            );
+            $ticket_id = (int) ($request['ticket_id'] ?? 0);
+            $ticket_ref = sanitize_text_field((string) ($request['ticket_ref'] ?? ''));
+            if ($ticket_ref !== '') {
+                $redirect_with_notice('warning', 'Included team limit reached. Request sent to admin (' . $ticket_ref . ').');
+            }
+            if ($ticket_id > 0) {
+                $redirect_with_notice('warning', 'Included team limit reached. Request sent to admin.');
+            }
+            $redirect_with_notice('warning', 'Included team limit reached. Unable to open request ticket automatically - please contact support.');
+        }
+
+        $member_user_id = 0;
+        $was_existing_user = $existing_user_id > 0;
+        if ($existing_user_id > 0) {
+            $existing_roles = (array) $existing_user->roles;
+            $is_staff_account = in_array('administrator', $existing_roles, true)
+                || in_array('cmn_admin', $existing_roles, true)
+                || in_array('cmn_staff', $existing_roles, true)
+                || in_array('cmn_account_manager', $existing_roles, true);
+            if ($is_staff_account) {
+                $redirect_with_notice('error', 'That email already belongs to an internal staff account.');
+            }
+
+            $is_candidate_account = in_array('cmn_candidate', $existing_roles, true)
+                || in_array('cmn_candidate_pending', $existing_roles, true)
+                || in_array('candidate', $existing_roles, true);
+            if ($is_candidate_account && !$this->is_school_user($existing_user_id)) {
+                $redirect_with_notice('error', 'That email already belongs to a candidate account.');
+            }
+
+            $mapped_school_id = (int) get_user_meta($existing_user_id, 'cmn_school_id', true);
+            if ($this->is_school_user($existing_user_id) && $mapped_school_id > 0 && $mapped_school_id !== $school_id) {
+                $redirect_with_notice('error', 'That user is already linked to another school.');
+            }
+
+            if (!$this->is_school_user($existing_user_id)) {
+                $promoted = new WP_User($existing_user_id);
+                $promoted->set_role('cmn_school_staff');
+            }
+            update_user_meta($existing_user_id, 'cmn_school_id', $school_id);
+            if ($member_name !== '') {
+                wp_update_user([
+                    'ID' => $existing_user_id,
+                    'display_name' => $member_name,
+                ]);
+            }
+            $state_result = $this->ensure_school_partner_state_for_user($existing_user_id);
+            if (is_wp_error($state_result)) {
+                $redirect_with_notice('error', 'Unable to initialise team member school profile.');
+            }
+            $member_user_id = $existing_user_id;
+        } else {
+            $email_local = sanitize_user((string) strstr($member_email, '@', true), true);
+            if ($email_local === '') {
+                $email_local = sanitize_user(strtolower(str_replace(' ', '', $member_name)), true);
+            }
+            if ($email_local === '') {
+                $email_local = 'schooluser';
+            }
+            $user_login = $email_local;
+            $suffix = 1;
+            while (username_exists($user_login)) {
+                $user_login = $email_local . $suffix;
+                $suffix++;
+            }
+
+            $created_user_id = wp_insert_user([
+                'user_login' => $user_login,
+                'user_email' => $member_email,
+                'display_name' => $member_name,
+                'role' => 'cmn_school_staff',
+                'user_pass' => wp_generate_password(20, true),
+            ]);
+            if (is_wp_error($created_user_id) || (int) $created_user_id < 1) {
+                $error_message = is_wp_error($created_user_id) ? (string) $created_user_id->get_error_message() : 'Unable to create team member.';
+                $redirect_with_notice('error', $error_message);
+            }
+            $member_user_id = (int) $created_user_id;
+            update_user_meta($member_user_id, 'cmn_school_id', $school_id);
+            $state_result = $this->ensure_school_partner_state_for_user($member_user_id);
+            if (is_wp_error($state_result)) {
+                $redirect_with_notice('error', 'Unable to initialise team member school profile.');
+            }
+        }
+
+        $invite_sent = $this->send_school_team_member_invite_email($school_id, $member_user_id, $school_user_id);
+        if ($is_existing_team_member) {
+            $redirect_with_notice(
+                $invite_sent ? 'success' : 'warning',
+                $invite_sent
+                    ? 'Team member already exists. Password setup email re-sent.'
+                    : 'Team member already exists. Password email could not be sent.'
+            );
+        }
+
+        if ($was_existing_user) {
+            $redirect_with_notice(
+                $invite_sent ? 'success' : 'warning',
+                $invite_sent
+                    ? 'Existing user added to your school team.'
+                    : 'Existing user added, but invite email could not be sent.'
+            );
+        }
+
+        $redirect_with_notice(
+            $invite_sent ? 'success' : 'warning',
+            $invite_sent
+                ? 'Team member added and invite email sent.'
+                : 'Team member added, but invite email could not be sent.'
+        );
     }
 
     public function handle_update_candidate_rate() {
