@@ -77228,6 +77228,66 @@ final class CMN_One_Plugin {
         return $skills;
     }
 
+    private function get_candidate_town_city_label($candidate_id, $candidate_user_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_id < 1 && $candidate_user_id < 1) {
+            return '';
+        }
+        if ($candidate_user_id < 1 && $candidate_id > 0) {
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        }
+
+        $values = [];
+        $append_value = static function (&$target_values, $raw_value) use (&$append_value) {
+            if (is_array($raw_value)) {
+                foreach ($raw_value as $nested_value) {
+                    $append_value($target_values, $nested_value);
+                }
+                return;
+            }
+            if (is_object($raw_value)) {
+                return;
+            }
+            $value = sanitize_text_field((string) $raw_value);
+            if ($value === '' || in_array($value, $target_values, true)) {
+                return;
+            }
+            $target_values[] = $value;
+        };
+
+        if ($candidate_user_id > 0) {
+            $user_keys = ['cmn_town', 'town', 'cmn_city', 'city', 'cmn_location', 'location', 'cmn_address_line2'];
+            foreach ($user_keys as $meta_key) {
+                $meta_values = get_user_meta($candidate_user_id, $meta_key, false);
+                foreach ((array) $meta_values as $meta_value) {
+                    $append_value($values, $meta_value);
+                }
+            }
+        }
+
+        if ($candidate_id > 0) {
+            $post_keys = ['cmn_town', 'town', 'cmn_city', 'city', 'cmn_location', 'location', 'cmn_address_line2'];
+            foreach ($post_keys as $meta_key) {
+                $meta_values = get_post_meta($candidate_id, $meta_key, false);
+                foreach ((array) $meta_values as $meta_value) {
+                    $append_value($values, $meta_value);
+                }
+            }
+        }
+
+        foreach ($values as $value) {
+            if ($value === '') {
+                continue;
+            }
+            if ($this->normalize_uk_postcode_for_lookup($value) !== '' && preg_match('/^[A-Z0-9 ]+$/i', $value) === 1) {
+                continue;
+            }
+            return $value;
+        }
+        return '';
+    }
+
     private function is_candidate_hidden_for_school_live_matches($school_id, $candidate_id) {
         $school_id = (int) $school_id;
         $candidate_id = (int) $candidate_id;
@@ -77376,6 +77436,7 @@ final class CMN_One_Plugin {
             $role_primary = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
             $role_secondary = isset($role_labels[1]) ? (string) $role_labels[1] : '';
             $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $candidate_town_city = $this->get_candidate_town_city_label($candidate_id, $candidate_user_id);
             $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_id, $candidate_user_id);
             $distance_debug_candidate_exact_postcodes = $this->get_geo_exact_postcodes_for_post($candidate_id, $candidate_user_id);
             $distance_debug_candidate_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_candidate_postcode);
@@ -77475,6 +77536,7 @@ final class CMN_One_Plugin {
                 'status' => $status_key,
                 'status_label' => $status_key === 'available' ? 'AVAILABLE NOW' : 'NOT RESPONDED',
                 'distance' => $distance_label,
+                'town_city' => $candidate_town_city,
                 'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
                 'confirmed_at' => $status_key === 'available' ? date_i18n('g:i A', strtotime((string) ($item['created_at'] ?? current_time('mysql')))) : '',
                 'day_rate' => round($day_rate, 0),
@@ -77542,6 +77604,7 @@ final class CMN_One_Plugin {
             $presence_label = sanitize_text_field((string) ($item['presence_label'] ?? 'Last seen at --:--'));
             $confirmed_at = sanitize_text_field((string) ($item['confirmed_at'] ?? ''));
             $distance_text = sanitize_text_field((string) ($item['distance'] ?? ''));
+            $town_city_text = sanitize_text_field((string) ($item['town_city'] ?? ''));
             $rating_label = sanitize_text_field((string) ($item['rating_label'] ?? (number_format((float) ($item['rating'] ?? 0), 2) . ' out of 5 stars')));
             $skills = array_values(array_filter(array_map(
                 static function ($skill_item) {
@@ -77574,6 +77637,23 @@ final class CMN_One_Plugin {
                     $distance_text .= ' miles';
                 }
             }
+            $distance_with_away = $distance_text;
+            if (
+                $distance_with_away !== ''
+                && !preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_with_away)
+                && preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_with_away)
+                && !preg_match('/\baway\b/i', $distance_with_away)
+            ) {
+                $distance_with_away .= ' away';
+            }
+            $location_distance_text = '';
+            if ($town_city_text !== '' && $distance_with_away !== '') {
+                $location_distance_text = $town_city_text . ' • ' . $distance_with_away;
+            } elseif ($town_city_text !== '') {
+                $location_distance_text = $town_city_text;
+            } else {
+                $location_distance_text = $distance_with_away;
+            }
             $banner_html = $status === 'available'
                 ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
                 : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
@@ -77584,7 +77664,7 @@ final class CMN_One_Plugin {
                 . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div><div class="cmn-live-rating">' . esc_html($rating_label) . '</div></div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
                 . $presence_html
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
-                . ($distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($distance_text) . '</div>' : '')
+                . ($location_distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($location_distance_text) . '</div>' : '')
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
                 . '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost" href="' . $profile_url . '" target="_blank" rel="noopener">View Profile</a></div>'
