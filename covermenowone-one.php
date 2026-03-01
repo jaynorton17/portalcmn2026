@@ -77261,6 +77261,7 @@ final class CMN_One_Plugin {
         $distance_debug_school_postcode = $school_id > 0
             ? $this->get_geo_lookup_postcode_for_post($school_id, get_current_user_id())
             : '';
+        $distance_debug_school_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_school_postcode);
         $candidate_geo_lookup_budget = 40;
         $rendered_identity_keys = [];
         foreach ($candidates as $item) {
@@ -77280,6 +77281,8 @@ final class CMN_One_Plugin {
             $role_primary = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
             $role_secondary = isset($role_labels[1]) ? (string) $role_labels[1] : '';
             $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_id, $candidate_user_id);
+            $distance_debug_candidate_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_candidate_postcode);
             $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
             $name_parts = preg_split('/\s+/', trim((string) $candidate->post_title));
             $first_name = $name_parts ? (string) $name_parts[0] : (string) $candidate->post_title;
@@ -77306,7 +77309,13 @@ final class CMN_One_Plugin {
                 $day_rate = 160.0;
             }
             $distance_label = 'Distance pending';
-            if ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
+            if (
+                $distance_debug_school_exact_postcode !== ''
+                && $distance_debug_candidate_exact_postcode !== ''
+                && $distance_debug_school_exact_postcode === $distance_debug_candidate_exact_postcode
+            ) {
+                $distance_label = '0 miles';
+            } elseif ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
                 $candidate_coords = null;
                 if ($candidate_geo_lookup_budget > 0) {
                     $candidate_geo_lookup_budget--;
@@ -77333,7 +77342,6 @@ final class CMN_One_Plugin {
                     $distance_label = 'Up to ' . rtrim(rtrim(number_format($fallback_travel_radius, 1, '.', ''), '0'), '.') . ' miles';
                 }
             }
-            $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_id, $candidate_user_id);
             $distance_debug_key = 'cmn_distance_debug_' . md5((string) $school_id . '|' . (string) $candidate_id . '|' . $distance_label);
             if (get_transient($distance_debug_key) === false) {
                 set_transient($distance_debug_key, 1, HOUR_IN_SECONDS);
