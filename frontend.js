@@ -12897,6 +12897,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var payload = {};
     try { payload = JSON.parse(payloadRaw); } catch (e) { payload = {}; }
     var datasetAll = Array.isArray(payload.all) ? payload.all.slice() : [];
+    var canRequest = Number((payload && payload.can_request) || 0) === 1;
     var tab = 'all';
     var startIndex = 0;
     var carousel = root.querySelector('[data-live-carousel]');
@@ -12904,6 +12905,24 @@ document.addEventListener('DOMContentLoaded', function () {
     var tabsEl = root.querySelector('.cmn-live-tabs');
     var kpis = root.querySelector('[data-live-kpis]');
     var drawer = root.querySelector('[data-live-filter-drawer]');
+    var offerModal = root.querySelector('[data-live-offer-modal]');
+    var offerModalName = root.querySelector('[data-live-offer-candidate-name]');
+    var offerModalRole = root.querySelector('[data-live-offer-candidate-role]');
+    var offerModalRate = root.querySelector('[data-live-offer-candidate-rate]');
+    var offerModalDate = root.querySelector('[data-live-offer-booking-date]');
+    var offerModalTime = root.querySelector('[data-live-offer-booking-time]');
+    var offerModalTimer = root.querySelector('[data-live-offer-modal-timer]');
+    var offerModalMessage = root.querySelector('[data-live-offer-modal-message]');
+    var offerModalSend = root.querySelector('[data-live-offer-send]');
+    var offerModalState = {
+      candidateId: 0,
+      targetDate: '',
+      roleLine: '',
+      timerDeadlineMs: 0,
+      timerId: null,
+      isSending: false
+    };
+    var offerTickerId = null;
     if (drawer) {
       drawer.hidden = true;
     }
@@ -12914,6 +12933,56 @@ document.addEventListener('DOMContentLoaded', function () {
       {key:'not_responded', label:'Not Responded'},
       {key:'shortlist', label:'Shortlist'}
     ];
+
+    var escapeHtml = function(value){
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    var parseUtcMysqlDate = function(rawValue){
+      var raw = String(rawValue || '').trim();
+      if (!raw) {
+        return null;
+      }
+      var normalized = raw.replace(' ', 'T');
+      if (!/Z$/.test(normalized)) {
+        normalized += 'Z';
+      }
+      var parsed = new Date(normalized);
+      if (isNaN(parsed.getTime())) {
+        return null;
+      }
+      return parsed;
+    };
+
+    var formatCountdown = function(totalSeconds){
+      var safe = Math.max(0, Math.floor(totalSeconds));
+      var mins = String(Math.floor(safe / 60)).padStart(2, '0');
+      var secs = String(safe % 60).padStart(2, '0');
+      return mins + ':' + secs;
+    };
+
+    var normalizeOfferState = function(rawState){
+      var state = String(rawState || '').trim().toLowerCase();
+      if (['offered', 'accepted', 'declined', 'expired'].indexOf(state) === -1) {
+        return '';
+      }
+      return state;
+    };
+
+    var findItemByCandidateId = function(candidateId){
+      var id = parseInt(String(candidateId || '0'), 10) || 0;
+      if (!id) {
+        return null;
+      }
+      return datasetAll.find(function(item){
+        return Number((item && item.candidate_id) || 0) === id;
+      }) || null;
+    };
 
     var getFiltered = function(){
       return datasetAll.filter(function(item){
@@ -12964,64 +13033,13 @@ document.addEventListener('DOMContentLoaded', function () {
       return fetch((window.cmnPortal && window.cmnPortal.ajaxUrl) || '', {method:'POST', credentials:'same-origin', body:form}).then(function(r){ return r.json(); });
     };
 
-    var pollPresence = function(){
-      if (!datasetAll.length || !window.cmnPortal || !window.cmnPortal.ajaxUrl || !window.cmnPortal.liveMatchNonce) {
-        return;
-      }
-      var ids = datasetAll.map(function(item){
-        return parseInt(String((item && item.candidate_id) || '0'), 10) || 0;
-      }).filter(function(id){ return id > 0; });
-      if (!ids.length) {
-        return;
-      }
-      var form = new FormData();
-      form.append('action', 'cmn_school_live_match_presence');
-      form.append('nonce', window.cmnPortal.liveMatchNonce);
-      ids.forEach(function(id){
-        form.append('candidate_ids[]', String(id));
-      });
-      fetch(window.cmnPortal.ajaxUrl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        body: form
-      }).then(function(response){
-        return response.json();
-      }).then(function(data){
-        if (!data || !data.success || !data.data || typeof data.data.presence !== 'object') {
-          return;
-        }
-        var presence = data.data.presence || {};
-        var changed = false;
-        datasetAll = datasetAll.map(function(item){
-          var key = String((item && item.candidate_id) || '');
-          if (!key || !Object.prototype.hasOwnProperty.call(presence, key)) {
-            return item;
-          }
-          var row = presence[key] || {};
-          var isOnline = String(row.is_online || '0') === '1' ? 1 : 0;
-          var label = String(row.label || 'Last seen at --:--');
-          if ((item.is_physically_online || 0) !== isOnline || String(item.presence_label || '') !== label) {
-            changed = true;
-          }
-          item.is_physically_online = isOnline;
-          item.presence_label = label;
-          return item;
-        });
-        if (changed) {
-          render();
-        }
-      }).catch(function(){
-        // Ignore transient network failures.
-      });
-    };
-
     var resolveDistanceText = function(rawValue){
       var raw = String(rawValue || '').trim();
       if (!raw) {
         return '';
       }
       if (/\b(unavailable|unknown|n\/a|pending)\b/i.test(raw)) {
-        return 'Distance pending';
+        return 'Distance unavailable';
       }
       if (/^\d+(\.\d+)?$/.test(raw)) {
         return raw + ' miles';
@@ -13053,13 +13071,239 @@ document.addEventListener('DOMContentLoaded', function () {
       return townCity || distanceWithAway;
     };
 
-    var escapeHtml = function(value){
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    var resolveOfferMarkup = function(item){
+      var state = normalizeOfferState(item && item.offer_state);
+      var expiresAt = parseUtcMysqlDate(item && item.offer_expires_at);
+      var chatUrl = String((item && item.offer_chat_url) || '').trim();
+      if (state === 'offered') {
+        if (expiresAt) {
+          var seconds = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+          if (seconds <= 0) {
+            return '<span class="cmn-live-offer-state is-expired">Offer expired</span>';
+          }
+          return '<span class="cmn-live-offer-state is-offered">Offer expires in ' + formatCountdown(seconds) + '</span>';
+        }
+        return '<span class="cmn-live-offer-state is-offered">Offer sent - awaiting response</span>';
+      }
+      if (state === 'accepted') {
+        if (chatUrl) {
+          return '<a class="cmn-live-offer-state is-accepted" href="' + escapeHtml(chatUrl) + '">Accepted - Open chat</a>';
+        }
+        return '<span class="cmn-live-offer-state is-accepted">Accepted</span>';
+      }
+      if (state === 'declined') {
+        return '<span class="cmn-live-offer-state is-declined">Declined by candidate</span>';
+      }
+      if (state === 'expired') {
+        return '<span class="cmn-live-offer-state is-expired">No response in time</span>';
+      }
+      return '';
+    };
+
+    var syncOfferTicker = function(){
+      if (offerTickerId) {
+        window.clearInterval(offerTickerId);
+        offerTickerId = null;
+      }
+      if (!carousel) {
+        return;
+      }
+      var activeRows = 0;
+      Array.prototype.slice.call(carousel.querySelectorAll('.cmn-live-card')).forEach(function(card){
+        var candidateId = parseInt(String(card.getAttribute('data-candidate-id') || '0'), 10) || 0;
+        if (!candidateId) {
+          return;
+        }
+        var item = findItemByCandidateId(candidateId);
+        if (!item) {
+          return;
+        }
+        var offerEl = card.querySelector('[data-live-offer]');
+        if (!offerEl) {
+          return;
+        }
+        var markup = resolveOfferMarkup(item);
+        offerEl.innerHTML = markup;
+        var state = normalizeOfferState(item.offer_state);
+        offerEl.classList.toggle('is-active', markup !== '');
+        if (state === 'offered') {
+          var expiresAt = parseUtcMysqlDate(item.offer_expires_at);
+          if (expiresAt && expiresAt.getTime() > Date.now()) {
+            activeRows += 1;
+          } else if (expiresAt && expiresAt.getTime() <= Date.now()) {
+            item.offer_state = 'expired';
+            item.offer_expires_at = '';
+          }
+        }
+      });
+      if (activeRows > 0) {
+        offerTickerId = window.setInterval(syncOfferTicker, 1000);
+      }
+    };
+
+    var closeOfferModal = function(){
+      if (!offerModal) {
+        return;
+      }
+      if (offerModalState.timerId) {
+        window.clearInterval(offerModalState.timerId);
+        offerModalState.timerId = null;
+      }
+      offerModalState.isSending = false;
+      offerModalState.candidateId = 0;
+      offerModalState.targetDate = '';
+      offerModalState.roleLine = '';
+      offerModalState.timerDeadlineMs = 0;
+      if (offerModalMessage) {
+        offerModalMessage.textContent = '';
+      }
+      if (offerModalSend) {
+        offerModalSend.disabled = false;
+      }
+      offerModal.hidden = true;
+      offerModal.classList.remove('is-open');
+      document.body.classList.remove('cmn-support-modal-lock');
+    };
+
+    var updateOfferModalTimer = function(){
+      if (!offerModalTimer || !offerModalState.timerDeadlineMs) {
+        return;
+      }
+      var seconds = Math.max(0, Math.ceil((offerModalState.timerDeadlineMs - Date.now()) / 1000));
+      offerModalTimer.textContent = formatCountdown(seconds);
+    };
+
+    var openOfferModal = function(item){
+      if (!offerModal || !item) {
+        return;
+      }
+      offerModalState.candidateId = parseInt(String(item.candidate_id || '0'), 10) || 0;
+      offerModalState.targetDate = String(item.target_date || '').trim();
+      offerModalState.roleLine = String(item.role_line || '').trim();
+      offerModalState.timerDeadlineMs = Date.now() + (15 * 60 * 1000);
+      if (offerModalTimer) {
+        offerModalTimer.textContent = '15:00';
+      }
+      if (offerModalName) {
+        offerModalName.textContent = String(item.first_name || 'Candidate');
+      }
+      if (offerModalRole) {
+        offerModalRole.textContent = String(item.role_line || 'Role not set');
+      }
+      if (offerModalRate) {
+        offerModalRate.textContent = 'Rate: £' + String(Math.round(Number(item.day_rate || 160)));
+      }
+      if (offerModalDate) {
+        var dateText = String(item.target_date || '').trim();
+        offerModalDate.textContent = dateText ? ('Date: ' + dateText) : 'Date: Today';
+      }
+      if (offerModalTime) {
+        offerModalTime.textContent = 'Time: Morning shift';
+      }
+      if (offerModalMessage) {
+        offerModalMessage.textContent = '';
+      }
+      if (offerModalSend) {
+        offerModalSend.disabled = false;
+      }
+      updateOfferModalTimer();
+      if (offerModalState.timerId) {
+        window.clearInterval(offerModalState.timerId);
+      }
+      offerModalState.timerId = window.setInterval(updateOfferModalTimer, 1000);
+      offerModal.hidden = false;
+      offerModal.classList.add('is-open');
+      document.body.classList.add('cmn-support-modal-lock');
+    };
+
+    var syncOfferRowsFromMap = function(offerMap){
+      if (!offerMap || typeof offerMap !== 'object') {
+        return false;
+      }
+      var changed = false;
+      datasetAll = datasetAll.map(function(item){
+        var key = String((item && item.candidate_id) || '');
+        if (!key || !Object.prototype.hasOwnProperty.call(offerMap, key)) {
+          return item;
+        }
+        var row = offerMap[key] || {};
+        var nextState = normalizeOfferState(row.state);
+        var nextExpiresAt = String(row.expires_at || '').trim();
+        var nextRequestId = parseInt(String(row.request_id || '0'), 10) || 0;
+        var nextBookingId = parseInt(String(row.booking_id || '0'), 10) || 0;
+        var nextChatUrl = String(row.chat_url || '').trim();
+        if (
+          String(item.offer_state || '') !== nextState
+          || String(item.offer_expires_at || '') !== nextExpiresAt
+          || Number(item.offer_request_id || 0) !== nextRequestId
+          || Number(item.offer_booking_id || 0) !== nextBookingId
+          || String(item.offer_chat_url || '') !== nextChatUrl
+        ) {
+          changed = true;
+        }
+        item.offer_state = nextState;
+        item.offer_expires_at = nextExpiresAt;
+        item.offer_request_id = nextRequestId;
+        item.offer_booking_id = nextBookingId;
+        item.offer_chat_url = nextChatUrl;
+        return item;
+      });
+      return changed;
+    };
+
+    var pollPresence = function(){
+      if (!datasetAll.length || !window.cmnPortal || !window.cmnPortal.ajaxUrl || !window.cmnPortal.liveMatchNonce) {
+        return;
+      }
+      var ids = datasetAll.map(function(item){
+        return parseInt(String((item && item.candidate_id) || '0'), 10) || 0;
+      }).filter(function(id){ return id > 0; });
+      if (!ids.length) {
+        return;
+      }
+      var form = new FormData();
+      form.append('action', 'cmn_school_live_match_presence');
+      form.append('nonce', window.cmnPortal.liveMatchNonce);
+      ids.forEach(function(id){
+        form.append('candidate_ids[]', String(id));
+      });
+      fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: form
+      }).then(function(response){
+        return response.json();
+      }).then(function(data){
+        if (!data || !data.success || !data.data || typeof data.data.presence !== 'object') {
+          return;
+        }
+        var presence = data.data.presence || {};
+        var offers = (data.data && typeof data.data.offers === 'object') ? data.data.offers : {};
+        var changed = false;
+        datasetAll = datasetAll.map(function(item){
+          var key = String((item && item.candidate_id) || '');
+          if (!key || !Object.prototype.hasOwnProperty.call(presence, key)) {
+            return item;
+          }
+          var row = presence[key] || {};
+          var isOnline = String(row.is_online || '0') === '1' ? 1 : 0;
+          var label = String(row.label || 'Last seen at --:--');
+          if ((item.is_physically_online || 0) !== isOnline || String(item.presence_label || '') !== label) {
+            changed = true;
+          }
+          item.is_physically_online = isOnline;
+          item.presence_label = label;
+          return item;
+        });
+        if (syncOfferRowsFromMap(offers)) {
+          changed = true;
+        }
+        if (changed) {
+          render();
+        }
+      }).catch(function(){
+        // Ignore transient network failures.
+      });
     };
 
     var clampRating = function(value){
@@ -13134,10 +13378,10 @@ document.addEventListener('DOMContentLoaded', function () {
         + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div>'+ratingMarkup+'</div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
         + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'
         + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
-        + (locationDistanceText ? '<div class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</div>' : '')
+        + (locationDistanceText ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</span></div>' : '')
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
-        + '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now">Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost cmn-btn-mini" href="'+(item.profile_url || '#')+'">View Profile</a></div>'
-        + '<div class="cmn-live-offer" data-live-offer></div>'
+        + '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button><button class="cmn-ghost cmn-live-secondary" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><a class="cmn-ghost cmn-live-secondary" href="'+(item.profile_url || '#')+'">View Profile</a></div><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">Not Interested</button></div>'
+        + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'
         + '</article>';
     };
 
@@ -13156,9 +13400,15 @@ document.addEventListener('DOMContentLoaded', function () {
       carousel.innerHTML = visible.map(function(item){ return cardHtml(item); }).join('');
       dots.innerHTML = list.map(function(_,idx){ return '<button type="button" class="cmn-live-dot'+(idx===startIndex?' is-active':'')+'" data-live-dot="'+idx+'" aria-label="Show candidate '+(idx+1)+'"></button>'; }).join('');
       renderTabs();
+      syncOfferTicker();
     };
 
     root.addEventListener('click', function(e){
+      if (offerModal && e.target.closest('[data-live-offer-modal-close]')) {
+        e.preventDefault();
+        closeOfferModal();
+        return;
+      }
       var tabBtn = e.target.closest('[data-live-tab]');
       if (tabBtn) {
         tab = tabBtn.getAttribute('data-live-tab') || 'all';
@@ -13206,6 +13456,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       var actionBtn = e.target.closest('[data-live-action]');
       if (!actionBtn) { return; }
+      if (actionBtn.disabled) { return; }
       var card = actionBtn.closest('.cmn-live-card');
       var candidateId = parseInt(String(actionBtn.getAttribute('data-candidate-id') || ''), 10);
       if (!candidateId) {
@@ -13214,6 +13465,12 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!candidateId) { return; }
       var action = actionBtn.getAttribute('data-live-action') || '';
       var current = datasetAll.find(function(item){ return Number(item.candidate_id) === candidateId; }) || null;
+      if (action === 'book_now') {
+        if (current) {
+          openOfferModal(current);
+        }
+        return;
+      }
       var extra = current ? {requested_date: (current.target_date || '')} : {};
       postAction(action, candidateId, extra).then(function(data){
         if (!data || !data.success) return;
@@ -13237,28 +13494,15 @@ document.addEventListener('DOMContentLoaded', function () {
           render();
           return;
         }
-        if (action === 'book_now' && data.data) {
-          var expiry = new Date((data.data.expires_at || '').replace(' ','T') + 'Z');
-          var offerEl = card ? card.querySelector('[data-live-offer]') : null;
-          if (offerEl && !isNaN(expiry.getTime())) {
-            if (offerEl._cmnTimerId) {
-              window.clearInterval(offerEl._cmnTimerId);
-            }
-            var tick = function(){
-              var now = new Date();
-              var sec = Math.max(0, Math.floor((expiry.getTime() - now.getTime())/1000));
-              var mm = String(Math.floor(sec/60)).padStart(2,'0');
-              var ss = String(sec%60).padStart(2,'0');
-              offerEl.textContent = sec > 0 ? ('Offer expires in '+mm+':'+ss) : 'Offer expired';
-            };
-            tick();
-            offerEl._cmnTimerId = window.setInterval(tick, 1000);
-          }
-        }
       });
     });
 
     root.addEventListener('keydown', function(e){
+      if (offerModal && !offerModal.hidden && e.key === 'Escape') {
+        e.preventDefault();
+        closeOfferModal();
+        return;
+      }
       if (e.key==='ArrowLeft'){
         var leftLen = Math.max(1, getFiltered().length);
         startIndex = (startIndex - 1 + leftLen) % leftLen;
@@ -13288,6 +13532,57 @@ document.addEventListener('DOMContentLoaded', function () {
     if (initialAvailableIdx >= 0) {
       startIndex = initialAvailableIdx;
     }
+
+    if (offerModalSend) {
+      offerModalSend.addEventListener('click', function(){
+        if (!offerModal || offerModalState.isSending || !offerModalState.candidateId) {
+          return;
+        }
+        offerModalState.isSending = true;
+        offerModalSend.disabled = true;
+        if (offerModalMessage) {
+          offerModalMessage.textContent = 'Sending offer...';
+        }
+        var item = findItemByCandidateId(offerModalState.candidateId);
+        var extra = {
+          requested_date: String(offerModalState.targetDate || (item && item.target_date) || ''),
+          role_label: String(offerModalState.roleLine || (item && item.role_line) || '')
+        };
+        postAction('book_now_send_offer', offerModalState.candidateId, extra).then(function(data){
+          if (!data || !data.success || !data.data) {
+            if (offerModalMessage) {
+              offerModalMessage.textContent = (data && data.data && data.data.message) ? String(data.data.message) : 'Unable to send offer.';
+            }
+            offerModalState.isSending = false;
+            offerModalSend.disabled = false;
+            return;
+          }
+          var mapPayload = {};
+          mapPayload[String(offerModalState.candidateId)] = {
+            state: String(data.data.offer_state || 'offered'),
+            expires_at: String(data.data.expires_at || ''),
+            request_id: parseInt(String(data.data.request_id || '0'), 10) || 0,
+            booking_id: parseInt(String(data.data.booking_id || '0'), 10) || 0,
+            chat_url: String(data.data.chat_url || '')
+          };
+          syncOfferRowsFromMap(mapPayload);
+          render();
+          if (offerModalMessage) {
+            offerModalMessage.textContent = String(data.data.message || 'Offer sent.');
+          }
+          window.setTimeout(function(){
+            closeOfferModal();
+          }, 350);
+        }).catch(function(){
+          if (offerModalMessage) {
+            offerModalMessage.textContent = 'Unable to send offer right now.';
+          }
+          offerModalState.isSending = false;
+          offerModalSend.disabled = false;
+        });
+      });
+    }
+
     render();
     pollPresence();
     window.setInterval(pollPresence, 20000);

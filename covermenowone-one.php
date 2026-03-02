@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.20
+ * Version: 0.1.21
  * Author: CoverMeNow
  */
 
@@ -603,7 +603,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.20';
+    const VERSION = '0.1.21';
     const SCHEMA_BASE_VERSION = 38;
     const SCHEMA_VERSION = 73;
     const EMAIL_CANDIDATE_DECLINED = false;
@@ -56638,7 +56638,14 @@ final class CMN_One_Plugin {
         if (!$user) {
             $user = get_user_by('email', 'jay.norton@covermenow.co.uk');
         }
-        return $user ? (int) $user->ID : 0;
+        if ($user) {
+            return (int) $user->ID;
+        }
+        $admin_ids = $this->get_admin_users_for_support();
+        if (!empty($admin_ids)) {
+            return (int) $admin_ids[0];
+        }
+        return 0;
     }
 
     private function get_request_account_manager_user_id($school_id, $request = []) {
@@ -56781,6 +56788,376 @@ final class CMN_One_Plugin {
         ));
     }
 
+    private function get_school_live_offer_state_map($school_id, $candidate_target_dates = []) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [];
+        }
+
+        $candidate_target_dates = is_array($candidate_target_dates) ? $candidate_target_dates : [];
+        $target_dates_by_candidate = [];
+        foreach ($candidate_target_dates as $candidate_id_key => $target_date_raw) {
+            $candidate_id = (int) $candidate_id_key;
+            if ($candidate_id < 1) {
+                $candidate_id = (int) $target_date_raw;
+                $target_date_raw = '';
+            }
+            if ($candidate_id < 1) {
+                continue;
+            }
+            $target_date = sanitize_text_field((string) $target_date_raw);
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
+                $target_date = '';
+            }
+            $target_dates_by_candidate[$candidate_id] = $target_date;
+        }
+        if (!$target_dates_by_candidate) {
+            return [];
+        }
+
+        global $wpdb;
+        $table = $this->get_candidate_requests_table();
+        $candidate_ids = array_keys($target_dates_by_candidate);
+        $candidate_placeholders = implode(',', array_fill(0, count($candidate_ids), '%d'));
+        $params = array_merge([$school_id], $candidate_ids);
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE school_id = %d
+               AND candidate_id IN ({$candidate_placeholders})
+             ORDER BY id DESC",
+            ...$params
+        ), ARRAY_A);
+
+        $preferred_rows = [];
+        $fallback_rows = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $candidate_id = (int) ($row['candidate_id'] ?? 0);
+            if ($candidate_id < 1 || !isset($target_dates_by_candidate[$candidate_id])) {
+                continue;
+            }
+            $requested_date = sanitize_text_field((string) ($row['requested_date'] ?? ''));
+            $target_date = (string) ($target_dates_by_candidate[$candidate_id] ?? '');
+            if ($target_date !== '' && $requested_date !== $target_date) {
+                if (!isset($fallback_rows[$candidate_id])) {
+                    $fallback_rows[$candidate_id] = $row;
+                }
+                continue;
+            }
+            if (!isset($preferred_rows[$candidate_id])) {
+                $preferred_rows[$candidate_id] = $row;
+            }
+        }
+
+        $accepted_statuses = ['accepted', 'confirmed', 'candidate_accepted', 'completed'];
+        $declined_statuses = ['declined', 'cancelled', 'candidate_declined'];
+        $map = [];
+        foreach ($target_dates_by_candidate as $candidate_id => $target_date) {
+            $request_row = $preferred_rows[$candidate_id] ?? $fallback_rows[$candidate_id] ?? null;
+            if (!is_array($request_row)) {
+                $map[$candidate_id] = [
+                    'state' => '',
+                    'expires_at' => '',
+                    'request_id' => 0,
+                    'booking_id' => 0,
+                    'chat_url' => '',
+                    'requested_date' => $target_date,
+                ];
+                continue;
+            }
+            $this->maybe_mark_request_expired($request_row);
+            $request_id = (int) ($request_row['id'] ?? 0);
+            $request_status = sanitize_key((string) ($request_row['status'] ?? ''));
+            $expires_at = $this->get_request_expires_at($request_row);
+            $booking_id = $request_id > 0 ? (int) $this->get_booking_id_for_request($request_id) : 0;
+            $booking_status = $booking_id > 0 ? sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true)) : '';
+            $offer_state = '';
+            if (in_array($request_status, $accepted_statuses, true) || in_array($booking_status, $accepted_statuses, true)) {
+                $offer_state = 'accepted';
+            } elseif (in_array($request_status, $declined_statuses, true) || in_array($booking_status, $declined_statuses, true)) {
+                $offer_state = 'declined';
+            } elseif ($request_status === 'expired' || $booking_status === 'expired' || $this->is_request_expired($request_row)) {
+                $offer_state = 'expired';
+            } elseif ($request_status === 'requested' || $request_status === 'pending' || $booking_status === 'offered') {
+                $offer_state = 'offered';
+            }
+            $chat_url = '';
+            if ($offer_state === 'accepted' && $booking_id > 0) {
+                $chat_url = add_query_arg([
+                    'school' => 'requests',
+                    'cmn_booking_chat' => $booking_id,
+                    'cmn_thread_type' => 'booking_details',
+                ], $this->get_portal_base_url());
+            }
+            $map[$candidate_id] = [
+                'state' => $offer_state,
+                'expires_at' => $expires_at,
+                'request_id' => $request_id,
+                'booking_id' => $booking_id,
+                'chat_url' => $chat_url,
+                'requested_date' => sanitize_text_field((string) ($request_row['requested_date'] ?? $target_date)),
+            ];
+        }
+
+        return $map;
+    }
+
+    private function create_or_refresh_school_live_offer_request($school_id, $candidate_id, $requested_date, $school_user_id = 0, $options = []) {
+        $school_id = (int) $school_id;
+        $candidate_id = (int) $candidate_id;
+        $school_user_id = (int) ($school_user_id ?: get_current_user_id());
+        $options = is_array($options) ? $options : [];
+        if ($school_id < 1 || $candidate_id < 1 || $school_user_id < 1) {
+            return new WP_Error('cmn_offer_invalid_input', 'Missing booking offer details.');
+        }
+        if (get_post_type($candidate_id) !== 'cmn_candidate') {
+            return new WP_Error('cmn_offer_candidate_not_found', 'Candidate not found.');
+        }
+
+        $school_status = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+        if ($school_status !== 'client') {
+            return new WP_Error('cmn_offer_school_not_ready', 'School access is pending approval.');
+        }
+        $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+        if ($candidate_status !== '' && $candidate_status !== 'approved') {
+            return new WP_Error('cmn_offer_candidate_unavailable', 'Candidate is not available.');
+        }
+        if (!$this->is_candidate_operationally_unlocked($candidate_id)) {
+            return new WP_Error('cmn_offer_candidate_locked', 'Candidate has not completed required operational documents.');
+        }
+
+        $requested_date = sanitize_text_field((string) $requested_date);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $requested_date)) {
+            $requested_date = current_time('Y-m-d');
+        }
+        if ($this->is_candidate_unavailable($candidate_id, $requested_date)) {
+            return new WP_Error('cmn_offer_candidate_marked_unavailable', 'Candidate is marked unavailable for the selected date.');
+        }
+
+        $school_domain = (string) get_post_meta($school_id, 'cmn_school_email_domain', true);
+        if ($school_domain === '') {
+            $school_email = (string) get_post_meta($school_id, 'cmn_email', true);
+            $school_domain = (string) $this->get_email_domain($school_email);
+        }
+        if ($school_domain === '') {
+            return new WP_Error('cmn_offer_missing_school_domain', 'School domain missing.');
+        }
+
+        $requested_role_label = sanitize_text_field((string) ($options['role_label'] ?? ''));
+        $requested_role_key = sanitize_title($requested_role_label);
+        $requested_candidate_pay_rate = isset($options['candidate_pay_rate']) ? (float) $options['candidate_pay_rate'] : 0.0;
+        $requested_school_charge_rate = isset($options['school_charge_rate']) ? (float) $options['school_charge_rate'] : 0.0;
+        $candidate_pay_rate = $requested_candidate_pay_rate > 0
+            ? round($requested_candidate_pay_rate, 2)
+            : $this->get_request_candidate_pay_rate($candidate_id, $school_id, [
+                'role_key' => $requested_role_key !== '' ? $requested_role_key : 'default',
+            ]);
+        $school_charge_rate = $requested_school_charge_rate > 0
+            ? round($requested_school_charge_rate, 2)
+            : $this->get_request_school_charge_rate($candidate_pay_rate, [
+                'candidate_id' => $candidate_id,
+                'school_id' => $school_id,
+                'role_key' => $requested_role_key !== '' ? $requested_role_key : 'default',
+                'school_email_domain' => $school_domain,
+            ]);
+        $request_sent_at = current_time('mysql');
+        $expires_at = gmdate('Y-m-d H:i:s', current_time('timestamp', true) + (15 * MINUTE_IN_SECONDS));
+        $account_manager_user_id = (int) $this->get_request_account_manager_user_id($school_id);
+        $ready_response_id = $this->normalize_ready_response_selection_for_request($options['ready_response_id'] ?? '', $school_user_id);
+
+        global $wpdb;
+        $table = $this->get_candidate_requests_table();
+        $existing_request = $wpdb->get_row($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE school_id = %d
+               AND candidate_id = %d
+               AND requested_date = %s
+             ORDER BY id DESC
+             LIMIT 1",
+            $school_id,
+            $candidate_id,
+            $requested_date
+        ), ARRAY_A);
+        if (is_array($existing_request)) {
+            $this->maybe_mark_request_expired($existing_request);
+        }
+
+        $request_id = 0;
+        $offer_created = false;
+        $idempotent = false;
+        if (is_array($existing_request) && !empty($existing_request['id'])) {
+            $request_id = (int) $existing_request['id'];
+            $existing_status = sanitize_key((string) ($existing_request['status'] ?? ''));
+            if ($existing_status === 'accepted') {
+                return new WP_Error('cmn_offer_already_accepted', 'This candidate has already accepted this booking.');
+            }
+            $existing_expires_at = $this->get_request_expires_at($existing_request);
+            $is_active_offer = ($existing_status === 'requested' || $existing_status === 'pending')
+                && !$this->is_request_expired($existing_request)
+                && $existing_expires_at !== '';
+
+            if ($is_active_offer) {
+                $idempotent = true;
+                $expires_at = $existing_expires_at;
+            } else {
+                $updated_status = $existing_status;
+                if (!in_array($existing_status, ['requested', 'pending'], true)) {
+                    $updated_status = 'requested';
+                }
+                $wpdb->update($table, [
+                    'status' => $updated_status,
+                    'request_sent_at' => $request_sent_at,
+                    'expires_at' => $expires_at,
+                    'candidate_pay_rate' => $candidate_pay_rate,
+                    'school_charge_rate' => $school_charge_rate,
+                    'internal_note' => $requested_role_label !== '' ? ('Requested role: ' . $requested_role_label) : '',
+                    'updated_at' => $request_sent_at,
+                ], [
+                    'id' => $request_id,
+                ], ['%s', '%s', '%s', '%f', '%f', '%s', '%s'], ['%d']);
+                $offer_created = true;
+            }
+        } else {
+            $inserted = $wpdb->insert($table, [
+                'school_id' => $school_id,
+                'school_email_domain' => $school_domain,
+                'school_user_id' => $school_user_id,
+                'candidate_id' => $candidate_id,
+                'account_manager_user_id' => $account_manager_user_id ?: null,
+                'ready_response_id' => $ready_response_id,
+                'requested_date' => $requested_date,
+                'status' => 'requested',
+                'request_sent_at' => $request_sent_at,
+                'expires_at' => $expires_at,
+                'candidate_pay_rate' => $candidate_pay_rate,
+                'school_charge_rate' => $school_charge_rate,
+                'internal_note' => $requested_role_label !== '' ? ('Requested role: ' . $requested_role_label) : '',
+                'requested_at' => $request_sent_at,
+                'updated_at' => $request_sent_at,
+            ], ['%d', '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s']);
+            if ($inserted) {
+                $request_id = (int) $wpdb->insert_id;
+                $offer_created = true;
+            } else {
+                $existing_request = $wpdb->get_row($wpdb->prepare(
+                    "SELECT *
+                     FROM {$table}
+                     WHERE school_id = %d
+                       AND candidate_id = %d
+                       AND requested_date = %s
+                     ORDER BY id DESC
+                     LIMIT 1",
+                    $school_id,
+                    $candidate_id,
+                    $requested_date
+                ), ARRAY_A);
+                if (!is_array($existing_request) || empty($existing_request['id'])) {
+                    return new WP_Error('cmn_offer_create_failed', 'Unable to create booking offer right now.');
+                }
+                $request_id = (int) $existing_request['id'];
+                $this->maybe_mark_request_expired($existing_request);
+                if (!$this->is_request_expired($existing_request) && sanitize_key((string) ($existing_request['status'] ?? '')) === 'requested') {
+                    $idempotent = true;
+                    $expires_at = $this->get_request_expires_at($existing_request);
+                } else {
+                    $wpdb->update($table, [
+                        'status' => 'requested',
+                        'request_sent_at' => $request_sent_at,
+                        'expires_at' => $expires_at,
+                        'candidate_pay_rate' => $candidate_pay_rate,
+                        'school_charge_rate' => $school_charge_rate,
+                        'internal_note' => $requested_role_label !== '' ? ('Requested role: ' . $requested_role_label) : '',
+                        'updated_at' => $request_sent_at,
+                    ], [
+                        'id' => $request_id,
+                    ], ['%s', '%s', '%s', '%f', '%f', '%s', '%s'], ['%d']);
+                    $offer_created = true;
+                }
+            }
+        }
+
+        if ($request_id < 1) {
+            return new WP_Error('cmn_offer_missing_request', 'Unable to resolve booking offer request.');
+        }
+        $request_row = $this->get_candidate_request_by_id($request_id);
+        if (!$request_row) {
+            return new WP_Error('cmn_offer_missing_request_row', 'Unable to load booking offer request.');
+        }
+
+        $booking_id = (int) $this->get_booking_id_for_request($request_id);
+        if ($booking_id < 1) {
+            $booking_id = (int) $this->create_booking_from_request($request_row, $school_id, $school_user_id);
+            if ($booking_id > 0) {
+                update_post_meta($booking_id, 'cmn_request_id', $request_id);
+            }
+        }
+        if ($booking_id < 1) {
+            return new WP_Error('cmn_offer_booking_failed', 'Unable to create booking offer.');
+        }
+
+        update_post_meta($booking_id, 'cmn_status', 'offered');
+        update_post_meta($booking_id, 'cmn_offer_active', '1');
+        update_post_meta($booking_id, 'cmn_offer_expires_at', $expires_at);
+        update_post_meta($booking_id, 'cmn_offer_candidate_id', $candidate_id);
+        update_post_meta($booking_id, 'cmn_offer_school_id', $school_id);
+        update_post_meta($booking_id, 'cmn_offer_request_id', $request_id);
+        update_post_meta($booking_id, 'cmn_offer_updated_at', current_time('mysql'));
+
+        if ($offer_created) {
+            $this->add_audit_log('offer_created', 'request', (string) $request_id, [
+                'school_id' => $school_id,
+                'candidate_id' => $candidate_id,
+                'requested_date' => $requested_date,
+                'booking_id' => $booking_id,
+            ], $school_user_id);
+        }
+        $this->add_audit_log('offer_sent', 'request', (string) $request_id, [
+            'school_id' => $school_id,
+            'candidate_id' => $candidate_id,
+            'requested_date' => $requested_date,
+            'booking_id' => $booking_id,
+            'idempotent' => $idempotent ? 1 : 0,
+        ], $school_user_id);
+
+        if (!$idempotent || $offer_created) {
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $candidate_link = add_query_arg(['candidate' => 'bookings'], $this->get_portal_base_url());
+            if ($candidate_user_id > 0) {
+                $this->add_notification(
+                    $candidate_user_id,
+                    'booking_request',
+                    'Booking offer',
+                    'You have a booking offer for ' . date_i18n('M j, Y', strtotime($requested_date)) . '.',
+                    $candidate_link
+                );
+            }
+            $candidate_email = sanitize_email((string) get_post_meta($candidate_id, 'cmn_email', true));
+            if ($candidate_email !== '') {
+                $this->send_candidate_email($candidate_email, 'You have a booking offer', "You have a booking offer for " . date_i18n('l, F jS', strtotime($requested_date)) . ".\n\nPlease log into your portal to respond:\n" . $candidate_link, [
+                    'type' => 'candidate_availability_request',
+                    'related_candidate_id' => $candidate_id,
+                    'related_request_id' => $request_id,
+                ]);
+            }
+        }
+
+        $offer_state_map = $this->get_school_live_offer_state_map($school_id, [$candidate_id => $requested_date]);
+        $state_row = (array) ($offer_state_map[$candidate_id] ?? []);
+        return [
+            'request_id' => $request_id,
+            'booking_id' => $booking_id,
+            'expires_at' => (string) ($state_row['expires_at'] ?? $expires_at),
+            'state' => sanitize_key((string) ($state_row['state'] ?? 'offered')),
+            'chat_url' => esc_url_raw((string) ($state_row['chat_url'] ?? '')),
+            'idempotent' => $idempotent ? 1 : 0,
+            'created' => $offer_created ? 1 : 0,
+        ];
+    }
+
     private function get_school_candidate_profile_url($candidate_id, $user_id = 0) {
         $candidate_id = (int) $candidate_id;
         $user_id = (int) $user_id;
@@ -56894,7 +57271,7 @@ final class CMN_One_Plugin {
         if (!$request_id) {
             return false;
         }
-        $wpdb->update($table, [
+        $updated = $wpdb->update($table, [
             'status' => 'expired',
             'updated_at' => current_time('mysql'),
         ], [
@@ -56902,6 +57279,24 @@ final class CMN_One_Plugin {
             'status' => $request['status'],
         ], ['%s', '%s'], ['%d', '%s']);
         $request['status'] = 'expired';
+        if ($updated === false) {
+            return false;
+        }
+
+        $booking_id = (int) $this->get_booking_id_for_request($request_id);
+        if ($booking_id > 0) {
+            update_post_meta($booking_id, 'cmn_status', 'expired');
+            update_post_meta($booking_id, 'cmn_offer_active', '0');
+            update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
+        }
+        if ((int) $updated > 0) {
+            $this->add_audit_log('expired', 'request', (string) $request_id, [
+                'booking_id' => $booking_id,
+                'candidate_id' => (int) ($request['candidate_id'] ?? 0),
+                'school_id' => (int) ($request['school_id'] ?? 0),
+                'requested_date' => sanitize_text_field((string) ($request['requested_date'] ?? '')),
+            ]);
+        }
         return true;
     }
 
@@ -59325,6 +59720,7 @@ final class CMN_One_Plugin {
         $accept_msg = 'Candidate ' . $candidate_name . ' has accepted this booking.';
         $accept_sender_user_id = $am_user_id ?: $school_user_id;
         $accept_sender_role = $am_user_id ? 'account_manager' : ($school_user_id ? 'school' : 'system');
+        $this->add_booking_thread_message($thread_id, 0, 'system', 'Booking accepted - please confirm details.');
         $this->add_booking_thread_message($thread_id, $accept_sender_user_id, $accept_sender_role, $accept_msg);
         $this->add_booking_thread_message($thread_id, $accept_sender_user_id, $accept_sender_role, 'Please use this chat to confirm start time, exact location, who to ask for on arrival, dress code, and any important on-site notes.');
         $this->add_booking_thread_message($thread_id, $accept_sender_user_id, $accept_sender_role, 'Important: do not discuss pay rates in this booking chat. Keep all booking communication documented here.');
@@ -78737,18 +79133,14 @@ final class CMN_One_Plugin {
             return [];
         }
 
-        $school_live_coords = $this->ensure_school_geo_coordinates($school_id);
-        $distance_debug_school_user_id = 0;
-        $distance_debug_school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
-        if (!empty($distance_debug_school_user_ids[0])) {
-            $distance_debug_school_user_id = (int) $distance_debug_school_user_ids[0];
+        $distance_school_user_id = 0;
+        $distance_school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
+        if (!empty($distance_school_user_ids[0])) {
+            $distance_school_user_id = (int) $distance_school_user_ids[0];
         }
-        if ($distance_debug_school_user_id < 1) {
-            $distance_debug_school_user_id = (int) get_current_user_id();
+        if ($distance_school_user_id < 1) {
+            $distance_school_user_id = (int) get_current_user_id();
         }
-        $distance_debug_school_postcode = $this->get_geo_lookup_postcode_for_post($school_id, $distance_debug_school_user_id);
-        $distance_debug_school_exact_postcodes = $this->get_geo_exact_postcodes_for_post($school_id, $distance_debug_school_user_id);
-        $distance_debug_school_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_school_postcode);
         $school_user_id = (int) get_current_user_id();
 
         $matches = [];
@@ -78811,47 +79203,16 @@ final class CMN_One_Plugin {
             $candidate_town_city = $this->get_candidate_town_city_label($candidate_profile_id, $candidate_user_id);
             $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
 
-            $distance_label = 'Distance pending';
-            $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_profile_id, $candidate_user_id);
-            $distance_debug_candidate_exact_postcodes = $this->get_geo_exact_postcodes_for_post($candidate_profile_id, $candidate_user_id);
-            $distance_debug_candidate_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_candidate_postcode);
-            $exact_postcode_overlap = array_values(array_intersect(
-                (array) $distance_debug_school_exact_postcodes,
-                (array) $distance_debug_candidate_exact_postcodes
-            ));
-            $has_exact_postcode_match = !empty($exact_postcode_overlap);
-            if (
-                !$has_exact_postcode_match
-                && $distance_debug_school_exact_postcode !== ''
-                && $distance_debug_candidate_exact_postcode !== ''
-                && $distance_debug_school_exact_postcode === $distance_debug_candidate_exact_postcode
-            ) {
-                $has_exact_postcode_match = true;
-            }
-            if ($has_exact_postcode_match) {
-                $distance_label = '0 miles';
-            } elseif ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
-                $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_profile_id);
-                if (!$candidate_coords || !isset($candidate_coords['lat'], $candidate_coords['lng'])) {
-                    $candidate_coords = $this->get_geo_coordinates_for_post($candidate_profile_id);
-                }
-                if ($candidate_coords && isset($candidate_coords['lat'], $candidate_coords['lng'])) {
-                    $distance_miles = (float) $this->marketing_haversine_miles(
-                        (float) $candidate_coords['lat'],
-                        (float) $candidate_coords['lng'],
-                        (float) $school_live_coords['lat'],
-                        (float) $school_live_coords['lng']
-                    );
-                    if ($distance_miles >= 0) {
-                        $distance_label = rtrim(rtrim(number_format(max(0.0, $distance_miles), 1, '.', ''), '0'), '.') . ' miles';
-                    }
-                }
-            }
-            if ($distance_label === 'Distance pending') {
-                $fallback_travel_radius = (float) $this->get_candidate_travel_radius_miles($candidate_profile_id);
-                if ($fallback_travel_radius > 0) {
-                    $distance_label = 'Up to ' . rtrim(rtrim(number_format($fallback_travel_radius, 1, '.', ''), '0'), '.') . ' miles';
-                }
+            $distance_payload = $this->get_live_match_distance_payload(
+                $school_id,
+                $candidate_profile_id,
+                $candidate_id,
+                $distance_school_user_id,
+                $candidate_user_id
+            );
+            $distance_label = sanitize_text_field((string) ($distance_payload['label'] ?? 'Distance unavailable'));
+            if ($distance_label === '') {
+                $distance_label = 'Distance unavailable';
             }
             $distance_with_away = $distance_label;
             if (
@@ -79040,25 +79401,33 @@ final class CMN_One_Plugin {
         $not_responded_count = 0;
         $shortlisted_count = 0;
         $target_date = current_time('Y-m-d');
-        $school_live_coords = $school_id > 0 ? $this->ensure_school_geo_coordinates($school_id) : null;
-        $distance_debug_school_user_id = 0;
+        $distance_school_user_id = 0;
         if ($school_id > 0) {
-            $distance_debug_school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
-            if (!empty($distance_debug_school_user_ids[0])) {
-                $distance_debug_school_user_id = (int) $distance_debug_school_user_ids[0];
+            $distance_school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
+            if (!empty($distance_school_user_ids[0])) {
+                $distance_school_user_id = (int) $distance_school_user_ids[0];
             }
         }
-        if ($distance_debug_school_user_id < 1) {
-            $distance_debug_school_user_id = (int) get_current_user_id();
+        if ($distance_school_user_id < 1) {
+            $distance_school_user_id = (int) get_current_user_id();
         }
-        $distance_debug_school_postcode = $school_id > 0
-            ? $this->get_geo_lookup_postcode_for_post($school_id, $distance_debug_school_user_id)
-            : '';
-        $distance_debug_school_exact_postcodes = $school_id > 0
-            ? $this->get_geo_exact_postcodes_for_post($school_id, $distance_debug_school_user_id)
-            : [];
-        $distance_debug_school_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_school_postcode);
-        $candidate_geo_lookup_budget = 40;
+        $candidate_target_dates_for_offer = [];
+        foreach ((array) $candidates as $candidate_row_for_offer) {
+            $candidate_post_for_offer = $candidate_row_for_offer['post'] ?? null;
+            if (!($candidate_post_for_offer instanceof WP_Post) || empty($candidate_post_for_offer->ID)) {
+                continue;
+            }
+            $candidate_id_for_offer = (int) $candidate_post_for_offer->ID;
+            if ($candidate_id_for_offer < 1) {
+                continue;
+            }
+            $candidate_target_date = sanitize_text_field((string) ($candidate_row_for_offer['availability_date'] ?? ''));
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $candidate_target_date)) {
+                $candidate_target_date = $target_date;
+            }
+            $candidate_target_dates_for_offer[$candidate_id_for_offer] = $candidate_target_date;
+        }
+        $offer_state_map = $this->get_school_live_offer_state_map($school_id, $candidate_target_dates_for_offer);
         $rendered_identity_keys = [];
         foreach ($candidates as $item) {
             $candidate = $item['post'] ?? null;
@@ -79085,9 +79454,6 @@ final class CMN_One_Plugin {
             $role_primary = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
             $role_secondary = isset($role_labels[1]) ? (string) $role_labels[1] : '';
             $candidate_town_city = $this->get_candidate_town_city_label($candidate_profile_id, $candidate_user_id);
-            $distance_debug_candidate_postcode = $this->get_geo_lookup_postcode_for_post($candidate_profile_id, $candidate_user_id);
-            $distance_debug_candidate_exact_postcodes = $this->get_geo_exact_postcodes_for_post($candidate_profile_id, $candidate_user_id);
-            $distance_debug_candidate_exact_postcode = $this->normalize_uk_postcode_for_lookup($distance_debug_candidate_postcode);
             $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
             $name_parts = preg_split('/\s+/', trim((string) $candidate->post_title));
             $first_name = $name_parts ? (string) $name_parts[0] : (string) $candidate->post_title;
@@ -79159,78 +79525,43 @@ final class CMN_One_Plugin {
             if ($day_rate <= 0) {
                 $day_rate = 160.0;
             }
-            $distance_label = 'Distance pending';
-            $exact_postcode_overlap = array_values(array_intersect(
-                (array) $distance_debug_school_exact_postcodes,
-                (array) $distance_debug_candidate_exact_postcodes
-            ));
-            $has_exact_postcode_match = !empty($exact_postcode_overlap);
-            if (
-                !$has_exact_postcode_match
-                &&
-                $distance_debug_school_exact_postcode !== ''
-                && $distance_debug_candidate_exact_postcode !== ''
-                && $distance_debug_school_exact_postcode === $distance_debug_candidate_exact_postcode
-            ) {
-                $has_exact_postcode_match = true;
-            }
-            if ($has_exact_postcode_match) {
-                $distance_label = '0 miles';
-            } elseif ($school_live_coords && isset($school_live_coords['lat'], $school_live_coords['lng'])) {
-                $candidate_coords = null;
-                if ($candidate_geo_lookup_budget > 0) {
-                    $candidate_geo_lookup_budget--;
-                    $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_profile_id);
-                }
-                if (!$candidate_coords || !isset($candidate_coords['lat'], $candidate_coords['lng'])) {
-                    $candidate_coords = $this->get_geo_coordinates_for_post($candidate_profile_id);
-                }
-                if ($candidate_coords && isset($candidate_coords['lat'], $candidate_coords['lng'])) {
-                    $distance_miles = (float) $this->marketing_haversine_miles(
-                        (float) $candidate_coords['lat'],
-                        (float) $candidate_coords['lng'],
-                        (float) $school_live_coords['lat'],
-                        (float) $school_live_coords['lng']
-                    );
-                    if ($distance_miles >= 0) {
-                        $distance_label = rtrim(rtrim(number_format(max(0.0, $distance_miles), 1, '.', ''), '0'), '.') . ' miles';
-                    }
-                }
-            }
-            if ($distance_label === 'Distance pending') {
-                $fallback_travel_radius = (float) $this->get_candidate_travel_radius_miles($candidate_profile_id);
-                if ($fallback_travel_radius > 0) {
-                    $distance_label = 'Up to ' . rtrim(rtrim(number_format($fallback_travel_radius, 1, '.', ''), '0'), '.') . ' miles';
-                }
-            }
-            $distance_debug_key = 'cmn_distance_debug_' . md5(
-                (string) $school_id
-                . '|'
-                . (string) $candidate_id
-                . '|'
-                . (string) $candidate_profile_id
-                . '|'
-                . (string) $distance_label
-                . '|'
-                . (string) $distance_debug_school_postcode
-                . '|'
-                . (string) $distance_debug_candidate_postcode
+            $distance_payload = $this->get_live_match_distance_payload(
+                $school_id,
+                $candidate_profile_id,
+                $candidate_id,
+                $distance_school_user_id,
+                $candidate_user_id
             );
-            if (get_transient($distance_debug_key) === false) {
-                set_transient($distance_debug_key, 1, HOUR_IN_SECONDS);
-                error_log('[CMN_DISTANCE_DEBUG] ' . wp_json_encode([
-                    'school_id' => (int) $school_id,
-                    'candidate_id' => (int) $candidate_id,
-                    'candidate_profile_id' => (int) $candidate_profile_id,
-                    'distance' => (string) $distance_label,
-                    'school_postcode' => (string) $distance_debug_school_postcode,
-                    'school_exact_postcodes' => array_values((array) $distance_debug_school_exact_postcodes),
-                    'candidate_postcode' => (string) $distance_debug_candidate_postcode,
-                    'candidate_exact_postcodes' => array_values((array) $distance_debug_candidate_exact_postcodes),
-                    'school_coords' => is_array($school_live_coords) ? $school_live_coords : null,
-                    'candidate_coords' => isset($candidate_coords) && is_array($candidate_coords) ? $candidate_coords : null,
-                ]));
+            $distance_label = sanitize_text_field((string) ($distance_payload['label'] ?? 'Distance unavailable'));
+            if ($distance_label === '') {
+                $distance_label = 'Distance unavailable';
             }
+            if ($distance_label === 'Distance unavailable') {
+                $distance_reason = sanitize_key((string) ($distance_payload['reason'] ?? 'unknown'));
+                $distance_debug_key = 'cmn_distance_unavailable_' . md5(
+                    (string) $school_id
+                    . '|'
+                    . (string) $candidate_id
+                    . '|'
+                    . (string) $candidate_profile_id
+                    . '|'
+                    . $distance_reason
+                );
+                if (get_transient($distance_debug_key) === false) {
+                    set_transient($distance_debug_key, 1, HOUR_IN_SECONDS);
+                    error_log('[CMN_DISTANCE_DEBUG] ' . wp_json_encode([
+                        'school_id' => (int) $school_id,
+                        'candidate_id' => (int) $candidate_id,
+                        'candidate_profile_id' => (int) $candidate_profile_id,
+                        'reason' => $distance_reason,
+                        'school_postcode' => (string) ($distance_payload['school_postcode'] ?? ''),
+                        'candidate_postcode' => (string) ($distance_payload['candidate_postcode'] ?? ''),
+                        'school_coords' => $distance_payload['school_coords'] ?? null,
+                        'candidate_coords' => $distance_payload['candidate_coords'] ?? null,
+                    ]));
+                }
+            }
+            $offer_state = (array) ($offer_state_map[$candidate_id] ?? []);
             $confirmed_at_label = '';
             if ($status_key === 'available') {
                 $confirmed_at_ts = $confirmed_at_source !== '' ? strtotime($confirmed_at_source) : false;
@@ -79260,6 +79591,11 @@ final class CMN_One_Plugin {
                 'is_physically_online' => $is_physically_online ? 1 : 0,
                 'presence_label' => $presence_label,
                 'target_date' => (string) ($item['availability_date'] ?? $target_date),
+                'offer_state' => sanitize_key((string) ($offer_state['state'] ?? '')),
+                'offer_expires_at' => sanitize_text_field((string) ($offer_state['expires_at'] ?? '')),
+                'offer_request_id' => (int) ($offer_state['request_id'] ?? 0),
+                'offer_booking_id' => (int) ($offer_state['booking_id'] ?? 0),
+                'offer_chat_url' => esc_url_raw((string) ($offer_state['chat_url'] ?? '')),
             ];
             if ($render_identity_key !== '') {
                 $rendered_identity_keys[$render_identity_key] = true;
@@ -79359,7 +79695,7 @@ final class CMN_One_Plugin {
                 $skills_html .= '<span class="cmn-live-skill">' . esc_html($skill_text) . '</span>';
             }
             if ($distance_text !== '' && preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_text)) {
-                $distance_text = 'Distance pending';
+                $distance_text = 'Distance unavailable';
             } elseif ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
                 $distance_text .= ' miles';
             } elseif ($distance_text !== '') {
@@ -79388,6 +79724,20 @@ final class CMN_One_Plugin {
             } else {
                 $location_distance_text = $distance_with_away;
             }
+            $offer_state = sanitize_key((string) ($item['offer_state'] ?? ''));
+            $offer_expires_at = sanitize_text_field((string) ($item['offer_expires_at'] ?? ''));
+            $offer_chat_url = esc_url((string) ($item['offer_chat_url'] ?? ''));
+            $offer_booking_id = (int) ($item['offer_booking_id'] ?? 0);
+            $offer_initial_text = '';
+            if ($offer_state === 'offered') {
+                $offer_initial_text = 'Offer sent - awaiting response.';
+            } elseif ($offer_state === 'accepted') {
+                $offer_initial_text = $offer_chat_url !== '' ? 'Accepted - open chat.' : 'Accepted.';
+            } elseif ($offer_state === 'declined') {
+                $offer_initial_text = 'Declined by candidate.';
+            } elseif ($offer_state === 'expired') {
+                $offer_initial_text = 'No response in time.';
+            }
             $banner_html = $status === 'available'
                 ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
                 : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
@@ -79398,11 +79748,11 @@ final class CMN_One_Plugin {
                 . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div>' . $rating_html . '</div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
                 . $presence_html
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
-                . ($location_distance_text !== '' ? '<div class="cmn-live-distance">' . esc_html($location_distance_text) . '</div>' : '')
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
+                . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
-                . '<div class="cmn-live-actions"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">✋ Not Interested</button><a class="cmn-ghost cmn-btn-mini" href="' . $profile_url . '">View Profile</a></div>'
-                . '<div class="cmn-live-offer" data-live-offer></div>'
+                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost cmn-live-secondary" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><a class="cmn-ghost cmn-live-secondary" href="' . $profile_url . '">View Profile</a></div><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">Not Interested</button></div>'
+                . '<div class="cmn-live-offer" data-live-offer data-offer-state="' . esc_attr($offer_state) . '" data-offer-expires-at="' . esc_attr($offer_expires_at) . '" data-offer-chat-url="' . esc_url($offer_chat_url) . '" data-offer-booking-id="' . esc_attr((string) $offer_booking_id) . '">' . esc_html($offer_initial_text) . '</div>'
                 . '</article>';
         };
         $get_visible_window_for_carousel = static function(array $rows, $center_index = 0, $limit = 3) {
@@ -79528,6 +79878,31 @@ final class CMN_One_Plugin {
                     <button type="button" class="cmn-ghost" data-live-filter-close>Close</button>
                 </div>
             </aside>
+            <div class="cmn-live-offer-modal" data-live-offer-modal hidden>
+                <div class="cmn-live-offer-modal__backdrop" data-live-offer-modal-close></div>
+                <div class="cmn-live-offer-modal__card" role="dialog" aria-modal="true" aria-labelledby="cmn-live-offer-modal-title">
+                    <div class="cmn-live-offer-modal__head">
+                        <h3 id="cmn-live-offer-modal-title">Send Booking Offer</h3>
+                        <button type="button" class="cmn-ghost cmn-live-offer-modal__close" data-live-offer-modal-close>Close</button>
+                    </div>
+                    <div class="cmn-live-offer-modal__section">
+                        <strong data-live-offer-candidate-name>Candidate</strong>
+                        <span data-live-offer-candidate-role>Role</span>
+                        <span data-live-offer-candidate-rate>Rate</span>
+                    </div>
+                    <div class="cmn-live-offer-modal__section">
+                        <strong>Booking details</strong>
+                        <span data-live-offer-booking-date>Date</span>
+                        <span data-live-offer-booking-time>Morning shift</span>
+                    </div>
+                    <div class="cmn-live-offer-modal__timer" data-live-offer-modal-timer>15:00</div>
+                    <div class="cmn-live-offer-modal__actions">
+                        <button type="button" class="cmn-primary" data-live-offer-send>Send Offer</button>
+                        <button type="button" class="cmn-ghost" data-live-offer-modal-close>Cancel</button>
+                    </div>
+                    <p class="cmn-live-offer-modal__message" data-live-offer-modal-message></p>
+                </div>
+            </div>
         </section>
         <?php
         return ob_get_clean();
@@ -79850,6 +80225,241 @@ final class CMN_One_Plugin {
         return $extracted;
     }
 
+    private function is_valid_geo_coordinates($coords, $allow_zero_pair = false) {
+        if (!is_array($coords) || !isset($coords['lat'], $coords['lng'])) {
+            return false;
+        }
+        $lat = $this->parse_marketing_coordinate_value($coords['lat']);
+        $lng = $this->parse_marketing_coordinate_value($coords['lng']);
+        if ($lat === null || $lng === null) {
+            return false;
+        }
+        $lat = (float) $lat;
+        $lng = (float) $lng;
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return false;
+        }
+        if (!$allow_zero_pair && abs($lat) < 0.00001 && abs($lng) < 0.00001) {
+            return false;
+        }
+        return true;
+    }
+
+    private function get_latest_normalized_postcode_from_meta_values($meta_values) {
+        $values = array_reverse(array_values((array) $meta_values));
+        foreach ($values as $raw_value) {
+            $normalized = $this->normalize_uk_postcode_for_lookup($raw_value);
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+        return '';
+    }
+
+    private function get_canonical_postcode_from_post_or_user($post_id, $fallback_user_id = 0) {
+        $post_id = (int) $post_id;
+        $fallback_user_id = (int) $fallback_user_id;
+        if ($post_id < 1 && $fallback_user_id < 1) {
+            return '';
+        }
+
+        if ($post_id > 0) {
+            $normalized = $this->get_latest_normalized_postcode_from_meta_values(get_post_meta($post_id, 'cmn_postcode', false));
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        if ($fallback_user_id > 0) {
+            $normalized = $this->get_latest_normalized_postcode_from_meta_values(get_user_meta($fallback_user_id, 'cmn_postcode', false));
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return '';
+    }
+
+    private function get_school_canonical_postcode_for_distance($school_id, $fallback_user_id = 0) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+            return '';
+        }
+        return $this->get_canonical_postcode_from_post_or_user($school_id, (int) $fallback_user_id);
+    }
+
+    private function get_candidate_canonical_postcode_for_distance($candidate_profile_id, $candidate_id = 0, $candidate_user_id = 0) {
+        $candidate_profile_id = (int) $candidate_profile_id;
+        $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        if ($candidate_profile_id < 1 && $candidate_id < 1) {
+            return '';
+        }
+        if ($candidate_user_id < 1 && $candidate_profile_id > 0) {
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_profile_id);
+        }
+        if ($candidate_user_id < 1 && $candidate_id > 0) {
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        }
+
+        $profile_postcode = $candidate_profile_id > 0
+            ? $this->get_canonical_postcode_from_post_or_user($candidate_profile_id, $candidate_user_id)
+            : '';
+        $candidate_postcode = '';
+        if ($candidate_id > 0 && $candidate_id !== $candidate_profile_id) {
+            $candidate_postcode = $this->get_canonical_postcode_from_post_or_user($candidate_id, $candidate_user_id);
+        }
+        if ($candidate_postcode !== '') {
+            return $candidate_postcode;
+        }
+        if ($profile_postcode !== '') {
+            return $profile_postcode;
+        }
+        return '';
+    }
+
+    private function get_latest_coordinate_from_meta_values($meta_values) {
+        $values = array_reverse(array_values((array) $meta_values));
+        foreach ($values as $raw_value) {
+            $parsed = $this->parse_marketing_coordinate_value($raw_value);
+            if ($parsed !== null) {
+                return (float) $parsed;
+            }
+        }
+        return null;
+    }
+
+    private function get_canonical_geo_coordinates_for_post($post_id, $fallback_user_id = 0) {
+        $post_id = (int) $post_id;
+        $fallback_user_id = (int) $fallback_user_id;
+        if ($post_id < 1 && $fallback_user_id < 1) {
+            return null;
+        }
+
+        $lat_keys = ['cmn_geo_lat', 'cmn_lat'];
+        $lng_keys = ['cmn_geo_lng', 'cmn_lng'];
+
+        if ($post_id > 0) {
+            $lat = null;
+            $lng = null;
+            foreach ($lat_keys as $lat_key) {
+                $lat = $this->get_latest_coordinate_from_meta_values(get_post_meta($post_id, $lat_key, false));
+                if ($lat !== null) {
+                    break;
+                }
+            }
+            foreach ($lng_keys as $lng_key) {
+                $lng = $this->get_latest_coordinate_from_meta_values(get_post_meta($post_id, $lng_key, false));
+                if ($lng !== null) {
+                    break;
+                }
+            }
+            $post_coords = ($lat !== null && $lng !== null) ? ['lat' => $lat, 'lng' => $lng] : null;
+            if ($this->is_valid_geo_coordinates($post_coords)) {
+                return $post_coords;
+            }
+        }
+
+        if ($fallback_user_id > 0) {
+            $lat = null;
+            $lng = null;
+            foreach ($lat_keys as $lat_key) {
+                $lat = $this->get_latest_coordinate_from_meta_values(get_user_meta($fallback_user_id, $lat_key, false));
+                if ($lat !== null) {
+                    break;
+                }
+            }
+            foreach ($lng_keys as $lng_key) {
+                $lng = $this->get_latest_coordinate_from_meta_values(get_user_meta($fallback_user_id, $lng_key, false));
+                if ($lng !== null) {
+                    break;
+                }
+            }
+            $user_coords = ($lat !== null && $lng !== null) ? ['lat' => $lat, 'lng' => $lng] : null;
+            if ($this->is_valid_geo_coordinates($user_coords)) {
+                return $user_coords;
+            }
+        }
+
+        return null;
+    }
+
+    private function format_distance_miles_label($distance_miles) {
+        $distance_miles = max(0.0, (float) $distance_miles);
+        if ($distance_miles < 0.1) {
+            return '0 miles';
+        }
+        return rtrim(rtrim(number_format($distance_miles, 1, '.', ''), '0'), '.') . ' miles';
+    }
+
+    private function get_live_match_distance_payload($school_id, $candidate_profile_id, $candidate_id = 0, $school_user_id = 0, $candidate_user_id = 0) {
+        $school_id = (int) $school_id;
+        $candidate_profile_id = (int) $candidate_profile_id;
+        $candidate_id = (int) $candidate_id;
+        $school_user_id = (int) $school_user_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        $payload = [
+            'label' => 'Distance unavailable',
+            'distance_miles' => null,
+            'reason' => 'missing_data',
+            'school_postcode' => '',
+            'candidate_postcode' => '',
+            'school_coords' => null,
+            'candidate_coords' => null,
+        ];
+        if ($school_id < 1 || $candidate_profile_id < 1) {
+            return $payload;
+        }
+
+        $school_postcode = $this->get_school_canonical_postcode_for_distance($school_id, $school_user_id);
+        $candidate_postcode = $this->get_candidate_canonical_postcode_for_distance($candidate_profile_id, $candidate_id, $candidate_user_id);
+        $payload['school_postcode'] = $school_postcode;
+        $payload['candidate_postcode'] = $candidate_postcode;
+
+        if ($school_postcode !== '' && $candidate_postcode !== '' && $school_postcode === $candidate_postcode) {
+            $payload['label'] = '0 miles';
+            $payload['distance_miles'] = 0.0;
+            $payload['reason'] = 'same_postcode';
+            return $payload;
+        }
+
+        $school_coords = $this->ensure_school_geo_coordinates($school_id);
+        $payload['school_coords'] = $school_coords;
+        if (!$this->is_valid_geo_coordinates($school_coords)) {
+            $payload['reason'] = 'missing_school_geocode';
+            return $payload;
+        }
+
+        $candidate_coords = null;
+        if ($candidate_id > 0 && $candidate_id !== $candidate_profile_id) {
+            $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_id);
+        }
+        if (!$this->is_valid_geo_coordinates($candidate_coords)) {
+            $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_profile_id);
+        }
+        $payload['candidate_coords'] = $candidate_coords;
+        if (!$this->is_valid_geo_coordinates($candidate_coords)) {
+            $payload['reason'] = 'missing_candidate_geocode';
+            return $payload;
+        }
+
+        $distance_miles = (float) $this->marketing_haversine_miles(
+            (float) $candidate_coords['lat'],
+            (float) $candidate_coords['lng'],
+            (float) $school_coords['lat'],
+            (float) $school_coords['lng']
+        );
+        if ($distance_miles < 0) {
+            $payload['reason'] = 'distance_calc_failed';
+            return $payload;
+        }
+
+        $payload['distance_miles'] = $distance_miles < 0.1 ? 0.0 : $distance_miles;
+        $payload['label'] = $this->format_distance_miles_label($distance_miles);
+        $payload['reason'] = 'computed';
+        return $payload;
+    }
+
     private function get_geo_coordinates_for_user($user_id) {
         $user_id = (int) $user_id;
         if ($user_id < 1) {
@@ -80135,13 +80745,21 @@ final class CMN_One_Plugin {
         update_post_meta($post_id, 'cmn_geo_updated_at', current_time('mysql'));
     }
 
+    private function clear_stale_geo_coordinates_for_post($post_id) {
+        $post_id = (int) $post_id;
+        if ($post_id < 1) {
+            return;
+        }
+        foreach (['cmn_lat', 'cmn_lng', 'cmn_geo_lat', 'cmn_geo_lng', 'cmn_geo_source', 'cmn_geo_updated_at'] as $meta_key) {
+            delete_post_meta($post_id, $meta_key);
+        }
+    }
+
     private function ensure_school_geo_coordinates($school_id) {
         $school_id = (int) $school_id;
         if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
             return null;
         }
-        $existing = $this->get_geo_coordinates_for_post($school_id);
-
         $fallback_school_user_id = 0;
         $school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
         if (!empty($school_user_ids[0])) {
@@ -80153,12 +80771,17 @@ final class CMN_One_Plugin {
                 $fallback_school_user_id = $current_user_id;
             }
         }
-        $normalized_postcode = $this->get_geo_lookup_postcode_for_post($school_id, $fallback_school_user_id);
+        $existing = $this->get_canonical_geo_coordinates_for_post($school_id, $fallback_school_user_id);
+        $normalized_postcode = $this->get_school_canonical_postcode_for_distance($school_id, $fallback_school_user_id);
         if ($normalized_postcode === '') {
             return $existing ?: null;
         }
 
         $attempted_postcode = strtoupper(trim((string) get_post_meta($school_id, 'cmn_geo_lookup_postcode', true)));
+        if ($attempted_postcode !== '' && $attempted_postcode !== $normalized_postcode) {
+            $this->clear_stale_geo_coordinates_for_post($school_id);
+            $existing = null;
+        }
         if ($existing && $attempted_postcode !== '' && $attempted_postcode === $normalized_postcode) {
             return $existing;
         }
@@ -80176,7 +80799,8 @@ final class CMN_One_Plugin {
                 'school_post_id' => $school_id,
                 'postcode' => $normalized_postcode,
             ]);
-            return $existing ?: null;
+            $postcode_changed = ($attempted_postcode !== '' && $attempted_postcode !== $normalized_postcode);
+            return $postcode_changed ? null : ($existing ?: null);
         }
 
         $lat = (float) $geocoded['lat'];
@@ -80189,7 +80813,8 @@ final class CMN_One_Plugin {
             'lng' => $lng,
             'source' => (string) ($geocoded['source'] ?? 'postcodes_io'),
         ]);
-        return ['lat' => $lat, 'lng' => $lng];
+        $stored = ['lat' => $lat, 'lng' => $lng];
+        return $this->is_valid_geo_coordinates($stored) ? $stored : null;
     }
 
     private function ensure_candidate_geo_coordinates($candidate_id) {
@@ -80197,15 +80822,18 @@ final class CMN_One_Plugin {
         if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
             return null;
         }
-        $existing = $this->get_geo_coordinates_for_post($candidate_id);
-
         $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
-        $normalized_postcode = $this->get_geo_lookup_postcode_for_post($candidate_id, $candidate_user_id);
+        $existing = $this->get_canonical_geo_coordinates_for_post($candidate_id, $candidate_user_id);
+        $normalized_postcode = $this->get_candidate_canonical_postcode_for_distance($candidate_id, $candidate_id, $candidate_user_id);
         if ($normalized_postcode === '') {
             return $existing ?: null;
         }
 
         $attempted_postcode = strtoupper(trim((string) get_post_meta($candidate_id, 'cmn_geo_lookup_postcode', true)));
+        if ($attempted_postcode !== '' && $attempted_postcode !== $normalized_postcode) {
+            $this->clear_stale_geo_coordinates_for_post($candidate_id);
+            $existing = null;
+        }
         if ($existing && $attempted_postcode !== '' && $attempted_postcode === $normalized_postcode) {
             return $existing;
         }
@@ -80223,7 +80851,8 @@ final class CMN_One_Plugin {
                 'candidate_post_id' => $candidate_id,
                 'postcode' => $normalized_postcode,
             ]);
-            return $existing ?: null;
+            $postcode_changed = ($attempted_postcode !== '' && $attempted_postcode !== $normalized_postcode);
+            return $postcode_changed ? null : ($existing ?: null);
         }
 
         $lat = (float) $geocoded['lat'];
@@ -80236,7 +80865,8 @@ final class CMN_One_Plugin {
             'lng' => $lng,
             'source' => (string) ($geocoded['source'] ?? 'postcodes_io'),
         ]);
-        return ['lat' => $lat, 'lng' => $lng];
+        $stored = ['lat' => $lat, 'lng' => $lng];
+        return $this->is_valid_geo_coordinates($stored) ? $stored : null;
     }
 
     private function candidate_matches_school_location_fallback($candidate_id, $school_id) {
@@ -91342,7 +91972,10 @@ p{margin:0;line-height:1.5}
         }
         $candidate_id = (int) ($_POST['candidate_id'] ?? 0);
         $action_type = sanitize_key((string) ($_POST['match_action'] ?? ''));
-        if ($candidate_id < 1 || $action_type === '') {
+        if ($action_type === '') {
+            wp_send_json_error(['message' => 'Missing action details.'], 400);
+        }
+        if ($candidate_id < 1 && !in_array($action_type, ['broadcast_request'], true)) {
             wp_send_json_error(['message' => 'Missing action details.'], 400);
         }
 
@@ -91389,17 +92022,34 @@ p{margin:0;line-height:1.5}
             wp_send_json_success(['message' => 'Broadcast request logged.']);
         }
 
-        if ($action_type === 'book_now') {
-            $_POST['requested_date'] = sanitize_text_field((string) ($_POST['requested_date'] ?? current_time('Y-m-d')));
-            $_POST['candidate_id'] = $candidate_id;
-            $_POST['nonce'] = wp_create_nonce('cmn_request_candidate');
-            // Mirror request creation while keeping expiry at 10 minutes.
-            add_filter('cmn_request_expiry_minutes', function(){ return 10; });
+        if ($action_type === 'book_now' || $action_type === 'book_now_send_offer') {
+            if (!$this->is_school_user()) {
+                wp_send_json_error(['message' => 'Unauthorized.'], 403);
+            }
+            $requested_date = sanitize_text_field((string) ($_POST['requested_date'] ?? current_time('Y-m-d')));
+            $offer_result = $this->create_or_refresh_school_live_offer_request($school_id, $candidate_id, $requested_date, get_current_user_id(), [
+                'role_label' => sanitize_text_field((string) ($_POST['role_label'] ?? '')),
+                'candidate_pay_rate' => isset($_POST['candidate_pay_rate']) ? (float) $_POST['candidate_pay_rate'] : 0.0,
+                'school_charge_rate' => isset($_POST['school_charge_rate']) ? (float) $_POST['school_charge_rate'] : 0.0,
+                'ready_response_id' => sanitize_text_field((string) ($_POST['ready_response_id'] ?? '')),
+            ]);
+            if (is_wp_error($offer_result)) {
+                wp_send_json_error(['message' => $offer_result->get_error_message()], 400);
+            }
             $this->add_audit_log('school_live_match_book_now_clicked', 'candidate', (string) $candidate_id, [
                 'school_id' => (int) $school_id,
+                'request_id' => (int) ($offer_result['request_id'] ?? 0),
+                'booking_id' => (int) ($offer_result['booking_id'] ?? 0),
             ]);
-            $this->handle_request_candidate();
-            return;
+            wp_send_json_success([
+                'message' => !empty($offer_result['idempotent']) ? 'Offer already active.' : 'Offer sent to candidate.',
+                'request_id' => (int) ($offer_result['request_id'] ?? 0),
+                'booking_id' => (int) ($offer_result['booking_id'] ?? 0),
+                'expires_at' => sanitize_text_field((string) ($offer_result['expires_at'] ?? '')),
+                'offer_state' => sanitize_key((string) ($offer_result['state'] ?? 'offered')),
+                'chat_url' => esc_url_raw((string) ($offer_result['chat_url'] ?? '')),
+                'idempotent' => !empty($offer_result['idempotent']) ? 1 : 0,
+            ]);
         }
 
         wp_send_json_error(['message' => 'Unknown action.'], 400);
@@ -91435,7 +92085,9 @@ p{margin:0;line-height:1.5}
             wp_send_json_success(['presence' => []]);
         }
 
+        $offer_state_map = $this->get_school_live_offer_state_map($school_id, array_fill_keys(array_values($candidate_ids), ''));
         $presence = [];
+        $offers = [];
         foreach (array_values($candidate_ids) as $candidate_id) {
             if (get_post_type($candidate_id) !== 'cmn_candidate') {
                 continue;
@@ -91449,6 +92101,14 @@ p{margin:0;line-height:1.5}
                     'is_online' => 0,
                     'label' => 'Last seen at --:--',
                 ];
+                $offer_row = (array) ($offer_state_map[$candidate_id] ?? []);
+                $offers[(string) $candidate_id] = [
+                    'state' => sanitize_key((string) ($offer_row['state'] ?? '')),
+                    'expires_at' => sanitize_text_field((string) ($offer_row['expires_at'] ?? '')),
+                    'request_id' => (int) ($offer_row['request_id'] ?? 0),
+                    'booking_id' => (int) ($offer_row['booking_id'] ?? 0),
+                    'chat_url' => esc_url_raw((string) ($offer_row['chat_url'] ?? '')),
+                ];
                 continue;
             }
             $snapshot = $this->get_candidate_presence_snapshot($candidate_user_id);
@@ -91456,9 +92116,20 @@ p{margin:0;line-height:1.5}
                 'is_online' => !empty($snapshot['is_online']) ? 1 : 0,
                 'label' => sanitize_text_field((string) ($snapshot['last_online_label'] ?? 'Last seen at --:--')),
             ];
+            $offer_row = (array) ($offer_state_map[$candidate_id] ?? []);
+            $offers[(string) $candidate_id] = [
+                'state' => sanitize_key((string) ($offer_row['state'] ?? '')),
+                'expires_at' => sanitize_text_field((string) ($offer_row['expires_at'] ?? '')),
+                'request_id' => (int) ($offer_row['request_id'] ?? 0),
+                'booking_id' => (int) ($offer_row['booking_id'] ?? 0),
+                'chat_url' => esc_url_raw((string) ($offer_row['chat_url'] ?? '')),
+            ];
         }
 
-        wp_send_json_success(['presence' => $presence]);
+        wp_send_json_success([
+            'presence' => $presence,
+            'offers' => $offers,
+        ]);
     }
 
     public function handle_request_candidate() {
@@ -92247,6 +92918,8 @@ p{margin:0;line-height:1.5}
             }
             if ($booking_id) {
                 update_post_meta($booking_id, 'cmn_status', 'declined');
+                update_post_meta($booking_id, 'cmn_offer_active', '0');
+                update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
                 $school_user_id = $this->get_school_user_id_for_request($request, $school_id);
                 $thread_id = $this->create_or_get_booking_thread($booking_id, 'decline_followup', [
                     'candidate_user_id' => get_current_user_id(),
@@ -92281,6 +92954,11 @@ p{margin:0;line-height:1.5}
                 'booking_id' => (int) $booking_id,
                 'reason' => $reason,
             ]);
+            $this->add_audit_log('declined', 'request', (string) $request_id, [
+                'candidate_id' => (int) $candidate_id,
+                'booking_id' => (int) $booking_id,
+                'reason' => $reason,
+            ]);
             wp_redirect(add_query_arg(['candidate' => 'bookings', 'cmn_notice' => rawurlencode('Request declined.')], $this->get_portal_base_url()));
             exit;
         }
@@ -92307,6 +92985,8 @@ p{margin:0;line-height:1.5}
                 exit;
             }
             update_post_meta($booking_id, 'cmn_status', 'accepted');
+            update_post_meta($booking_id, 'cmn_offer_active', '0');
+            update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
             $request_candidate_pay = $this->get_request_candidate_pay_rate($candidate_id, $school_id, $request);
             $request_school_charge = $this->get_request_school_charge_rate($request_candidate_pay, $request);
             update_post_meta($booking_id, 'cmn_candidate_pay_rate', $request_candidate_pay);
@@ -92341,6 +93021,11 @@ p{margin:0;line-height:1.5}
                     $this->add_booking_thread_participant($thread_id, $school_user_id, 'school');
                 }
                 $this->post_booking_acceptance_auto_messages($thread_id, $booking_id, $request, $school_id, $candidate_id, $school_user_id, $am_user_id);
+                $this->add_audit_log('chat_created_opened', 'booking', (string) $booking_id, [
+                    'thread_id' => (int) $thread_id,
+                    'thread_type' => 'booking_details',
+                    'request_id' => (int) $request_id,
+                ]);
             }
             $requested_label = !empty($request['requested_date']) ? date_i18n('M j, Y', strtotime($request['requested_date'])) : 'tomorrow';
             $candidate_name = get_the_title($candidate_id);
@@ -92380,6 +93065,11 @@ p{margin:0;line-height:1.5}
                 );
             }
             $this->add_audit_log('booking_accepted', 'request', (string) $request_id, [
+                'candidate_id' => (int) $candidate_id,
+                'booking_id' => (int) $booking_id,
+                'school_domain' => (string) ($request['school_email_domain'] ?? ''),
+            ]);
+            $this->add_audit_log('accepted', 'request', (string) $request_id, [
                 'candidate_id' => (int) $candidate_id,
                 'booking_id' => (int) $booking_id,
                 'school_domain' => (string) ($request['school_email_domain'] ?? ''),
