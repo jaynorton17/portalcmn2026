@@ -7519,6 +7519,56 @@ global $wpdb;
             add_role('cmn_candidate_pending', 'Candidate (Pending)', ['read' => true]);
         }
 
+        $this->sync_core_role_capabilities();
+    }
+
+    private function sync_core_role_capabilities() {
+        $role_caps = [
+            'administrator' => [
+                'portal.staff.view',
+                'partner.admin.mutate',
+                'system.after_booking_support.view',
+                'system.upgrade.run',
+            ],
+            'cmn_admin' => [
+                'portal.staff.view',
+                'partner.admin.mutate',
+                'system.after_booking_support.view',
+                'system.upgrade.run',
+            ],
+            // Staff-manager equivalent roles keep support-board visibility without admin-only upgrade capability.
+            'cmn_staff' => [
+                'portal.staff.view',
+                'partner.admin.mutate',
+                'system.after_booking_support.view',
+            ],
+            'cmn_staff_manager' => [
+                'portal.staff.view',
+                'partner.admin.mutate',
+                'system.after_booking_support.view',
+            ],
+            'cmn_account_manager' => [
+                'portal.staff.view',
+                'partner.admin.mutate',
+                'system.after_booking_support.view',
+            ],
+        ];
+
+        foreach ($role_caps as $role_slug => $caps) {
+            $role = get_role($role_slug);
+            if (!$role instanceof WP_Role) {
+                continue;
+            }
+            foreach ($caps as $cap) {
+                $cap = trim((string) $cap);
+                if ($cap === '') {
+                    continue;
+                }
+                if (!$role->has_cap($cap)) {
+                    $role->add_cap($cap, true);
+                }
+            }
+        }
     }
 
     public function enqueue_admin_assets($hook) {
@@ -8050,6 +8100,12 @@ global $wpdb;
         }
         if ($ability === 'portal.staff.view') {
             if ($actor_user_id < 1 || !$this->is_staff_user($actor_user_id)) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'system.after_booking_support.view') {
+            if ($actor_user_id < 1 || (!$this->is_admin_user($actor_user_id) && !$this->is_staff_role($actor_user_id))) {
                 return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
             }
             return true;
@@ -11049,6 +11105,38 @@ global $wpdb;
         return $ordered_groups;
     }
 
+    private function can_view_after_booking_support($user_id = 0) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            $user_id = (int) get_current_user_id();
+        }
+        if ($user_id < 1) {
+            return false;
+        }
+
+        // Keep a direct capability check aligned with portal guard abilities.
+        if (function_exists('current_user_can')
+            && current_user_can('portal.staff.view')
+            && current_user_can('system.after_booking_support.view')
+        ) {
+            return true;
+        }
+
+        $staff_check = $this->cmn_policy_require_ability('portal.staff.view', [
+            'actor_user_id' => $user_id,
+        ]);
+        if (is_wp_error($staff_check)) {
+            return false;
+        }
+        $support_check = $this->cmn_policy_require_ability('system.after_booking_support.view', [
+            'actor_user_id' => $user_id,
+        ]);
+        if (is_wp_error($support_check)) {
+            return false;
+        }
+        return true;
+    }
+
     private function render_staff_shell($active, $inner_html) {
         $ability_check = $this->cmn_policy_require_ability('portal.staff.view', [
             'actor_user_id' => (int) get_current_user_id(),
@@ -11067,6 +11155,7 @@ global $wpdb;
         $can_manage_automation = $this->can_manage_automation($user_id);
         $can_access_finance_nav = ($is_admin || $this->is_staff_role($user_id));
         $can_access_email_centre = $can_access_finance_nav;
+        $can_view_after_booking_support = $this->can_view_after_booking_support($user_id);
         $show_training_simulator = ($is_admin && $this->is_training_simulator_enabled());
         $pipeline_leads_label = 'Leads';
         $pipeline_needs_attention_label = 'Needs Attention';
@@ -11174,7 +11263,7 @@ global $wpdb;
                     ['key' => 'requests', 'label' => 'New Booking', 'icon' => 'bookings', 'url' => add_query_arg(['view' => 'requests'], $portal_url), 'active_keys' => ['requests']],
                     ['key' => 'bookings', 'label' => 'Live / Upcoming', 'icon' => 'active_bookings', 'url' => add_query_arg(['view' => 'bookings', 'cmn_status' => false], $portal_url), 'active_keys' => ['bookings', 'active_bookings']],
                     ['key' => 'bookings_completed', 'label' => 'Completed', 'icon' => 'completion_rates', 'url' => add_query_arg(['view' => 'bookings', 'cmn_status' => 'completed'], $portal_url), 'active_when' => ['view' => 'bookings', 'query' => ['cmn_status' => 'completed']]],
-                    $is_admin ? ['key' => 'after_booking_support', 'label' => 'After Booking Support Team', 'icon' => 'escalations', 'url' => add_query_arg(['view' => 'after-booking-support'], $portal_url)] : ['key' => 'feedback_insights', 'label' => 'After Booking Support Team', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url)],
+                    $can_view_after_booking_support ? ['key' => 'after_booking_support', 'label' => 'After Booking Support Team', 'icon' => 'escalations', 'url' => add_query_arg(['view' => 'after-booking-support'], $portal_url)] : ['key' => 'feedback_insights', 'label' => 'After Booking Support Team', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url)],
                 ])),
             ],
             'commercial' => [
@@ -31610,14 +31699,14 @@ global $wpdb;
 
     public function handle_after_booking_support_snapshot() {
         $this->cmn_endpoint_guard([
-            'ability_required' => 'portal.staff.view',
+            'ability_required' => 'system.after_booking_support.view',
             'nonce_mode' => 'required',
             'nonce_action' => 'cmn_after_booking_support_snapshot',
             'nonce_field' => 'nonce',
             'writes_state' => false,
             'transport' => 'ajax',
         ], function () {
-            if (!$this->is_admin_user()) {
+            if (!$this->can_view_after_booking_support()) {
                 wp_send_json([
                     'ok' => false,
                     'error' => [
@@ -31639,8 +31728,8 @@ global $wpdb;
         if (!is_user_logged_in()) {
             return $this->render_login_shortcode();
         }
-        if (!$this->is_admin_user()) {
-            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>After Booking Support Team is available to admins only.</p></div></section>';
+        if (!$this->can_view_after_booking_support()) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>After Booking Support Team is available to authorised staff only.</p></div></section>';
         }
 
         $portal_url = $this->get_portal_base_url();
@@ -110466,6 +110555,8 @@ if (!function_exists('cmn_can')) {
             case 'portal.logged_in':
                 return $user_id > 0;
             case 'portal.staff.view':
+                return $is_staff_or_admin;
+            case 'system.after_booking_support.view':
                 return $is_staff_or_admin;
             case 'partner.admin.mutate':
                 return $is_staff_or_admin;
