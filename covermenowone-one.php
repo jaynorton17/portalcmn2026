@@ -11227,7 +11227,7 @@ global $wpdb;
                     $is_admin ? ['key' => 'system_health', 'label' => 'System Health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url), 'active_when' => ['view' => ['system-health', 'system_health']]] : null,
                     $is_admin ? ['key' => 'system_logs', 'label' => 'Error Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
                     $is_admin ? ['key' => 'audit', 'label' => 'Audit Log', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
-                    $is_admin ? ['key' => 'wordpress_dashboard', 'label' => 'WordPress Dashboard', 'icon' => 'settings', 'url' => admin_url()] : null,
+                    null,
                     ['key' => 'tools', 'label' => 'Tools', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url), 'active_keys' => ['data_integrity']],
                     ['key' => 'data_integrity', 'label' => 'Data Integrity', 'icon' => 'data_integrity', 'url' => add_query_arg(['view' => 'data-integrity'], $portal_url)],
                     $is_admin ? ['key' => 'settings', 'label' => 'General Settings', 'icon' => 'settings', 'url' => add_query_arg(['view' => 'settings', 'cmn_settings_tab' => false], $portal_url)] : null,
@@ -31258,7 +31258,7 @@ global $wpdb;
         }
 
         $portal_url = $this->get_portal_base_url();
-        $requests = $this->get_candidate_requests_for_status('all', 250);
+        $requests = $this->get_candidate_requests_for_status('all', 100);
         $columns = [
             'pending' => ['label' => 'Pending Requests', 'items' => []],
             'negotiations' => ['label' => 'Negotiations', 'items' => []],
