@@ -146,7 +146,7 @@ for path in "${required_local_paths[@]}"; do
 done
 
 SSH_BASE=(ssh -p "$CMN_SFTP_PORT_VALUE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
-SFTP_BASE=(sftp -P "$CMN_SFTP_PORT_VALUE")
+SFTP_BASE=(sftp -P "$CMN_SFTP_PORT_VALUE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -oBatchMode=no)
 
 if command -v sshpass >/dev/null 2>&1; then
   if [[ -n "${SFTP_PASS:-}" ]]; then
