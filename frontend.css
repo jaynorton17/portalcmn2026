@@ -1331,17 +1331,27 @@ body.cmn-portal-page img[src*="fasthosts"] {
 
 .cmn-learning-module-tile-icon-wrap {
   display: flex;
-  justify-content: flex-start;
-  margin-bottom: 2px;
+  justify-content: center;
+  margin-bottom: 4px;
 }
 
 .cmn-learning-module-tile-icon {
+  width: min(100%, 220px);
+  height: 84px;
+  border-radius: 12px;
+  object-fit: contain;
+  object-position: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px 10px;
+}
+
+.cmn-learning-module-recommend .cmn-learning-module-tile-icon {
   width: 42px;
   height: 42px;
   border-radius: 10px;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  padding: 0;
 }
 
 .cmn-learning-module-card-head {

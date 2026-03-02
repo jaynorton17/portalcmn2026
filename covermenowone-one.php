@@ -71915,12 +71915,17 @@ global $wpdb;
                                 ];
                             }
                             $learning_module_lookup = [];
+                            $learning_module_icon_map = [];
                             foreach ($learning_module_tiles as $module_lookup_item) {
                                 $module_lookup_key = sanitize_key((string) ($module_lookup_item['key'] ?? ''));
                                 if ($module_lookup_key === '') {
                                     continue;
                                 }
                                 $learning_module_lookup[$module_lookup_key] = $module_lookup_item;
+                                $module_lookup_icon = esc_url_raw((string) ($module_lookup_item['icon_url'] ?? ''));
+                                if ($module_lookup_icon !== '') {
+                                    $learning_module_icon_map[$module_lookup_key] = $module_lookup_icon;
+                                }
                             }
 
                             $learning_open_module_key = '';
@@ -72137,7 +72142,8 @@ global $wpdb;
                                             $completion_item = is_array($learning_course_results[$course_key] ?? null) ? (array) $learning_course_results[$course_key] : [];
                                             $is_completed = !empty($completion_item['passed']);
                                             $completion_date = sanitize_text_field((string) ($completion_item['issued_date'] ?? ''));
-                                            $course_icon_url = esc_url_raw((string) ($course_item['icon_url'] ?? $learning_study_icon_url));
+                                            $module_icon_fallback = $learning_module_icon_map[$course_module_key] ?? $learning_study_icon_url;
+                                            $course_icon_url = esc_url_raw((string) ($course_item['icon_url'] ?? $module_icon_fallback));
                                             $required_course_keys = array_values(array_filter(array_map('sanitize_key', (array) ($course_item['requires_course_keys'] ?? []))));
                                             $missing_required_titles = [];
                                             foreach ($required_course_keys as $required_course_key) {
@@ -82327,11 +82333,36 @@ global $wpdb;
     }
 
     private function get_candidate_learning_modules_catalog() {
+        $learning_cover_base_path = plugin_dir_path(__FILE__) . 'assets/learning/course-covers/';
+        $learning_cover_base_url = plugin_dir_url(__FILE__) . 'assets/learning/course-covers/';
+        $default_icon_url = plugin_dir_url(__FILE__) . 'assets/learning/safeguarding/module-icon.png';
+        if (!file_exists(plugin_dir_path(__FILE__) . 'assets/learning/safeguarding/module-icon.png')) {
+            $default_icon_url = plugin_dir_url(__FILE__) . 'assets/courses.png';
+        }
+        $module_cover_files = [
+            'safeguarding_reporting_protocols' => 'safeguarding-reporting-protocols-uk-schools.png',
+            'safeguarding_statutory_practice' => 'safeguarding-uk-schools-statutory-duties-professional-practice.png',
+            'behaviour_management_uk_schools' => 'behaviour-management-uk-schools-lawful-practice-safeguarding-alignment.png',
+            'effective_classroom_supervision_cover_staff' => 'effective-classroom-supervision-cover-staff.png',
+            'health_safety_uk_schools' => 'health-safety-uk-schools-legal-duties-risk-management-professional-practice.png',
+            'professional_boundaries_uk_schools' => 'professional-boundaries-pupils-safeguarding-conduct-duty-care-uk-schools.png',
+            'safeguarding_cover_supervisors_practical' => 'safeguarding-cover-supervisors-practical-responsibilities-daily-practice.png',
+            'managing_behaviour_without_planning_lesson' => 'managing-behaviour-without-planning-the-lesson.png',
+        ];
+        $resolve_module_cover_url = static function ($module_key) use ($module_cover_files, $learning_cover_base_path, $learning_cover_base_url, $default_icon_url) {
+            $module_key = sanitize_key((string) $module_key);
+            $file_name = isset($module_cover_files[$module_key]) ? (string) $module_cover_files[$module_key] : '';
+            if ($file_name !== '' && file_exists($learning_cover_base_path . $file_name)) {
+                return $learning_cover_base_url . $file_name;
+            }
+            return $default_icon_url;
+        };
         return [
             [
                 'key' => 'safeguarding_reporting_protocols',
                 'title' => 'Safeguarding Reporting Protocols in UK Schools',
                 'description' => 'Develop legally compliant safeguarding reporting practices aligned with KCSIE, Ofsted EIF, and Teachers’ Standards to protect pupils effectively.',
+                'icon_url' => $resolve_module_cover_url('safeguarding_reporting_protocols'),
                 'hover_details' => [
                     'Legal and Statutory Framework for Safeguarding Reporting',
                     'Recognising Concerns and Identifying Reportable Issues',
@@ -82352,6 +82383,7 @@ global $wpdb;
                 'key' => 'safeguarding_statutory_practice',
                 'title' => 'Safeguarding in UK Schools: Statutory Duties and Professional Practice',
                 'description' => 'Understand statutory safeguarding duties, recognise risks, and implement compliant whole-school practices aligned with KCSIE and Ofsted EIF.',
+                'icon_url' => $resolve_module_cover_url('safeguarding_statutory_practice'),
                 'hover_details' => [
                     'Foundations of Safeguarding and Statutory Responsibilities',
                     'Recognising Abuse, Neglect and Emerging Risks',
@@ -82372,6 +82404,7 @@ global $wpdb;
                 'key' => 'behaviour_management_uk_schools',
                 'title' => 'Behaviour Management in UK Schools: Lawful Practice and Safeguarding Alignment',
                 'description' => 'Develop lawful, safeguarding-aligned behaviour management strategies consistent with DfE guidance, Ofsted EIF, and Teachers’ Standards.',
+                'icon_url' => $resolve_module_cover_url('behaviour_management_uk_schools'),
                 'hover_details' => [
                     'Legal Framework and Whole-School Behaviour Culture',
                     'Classroom Behaviour Strategies and De-escalation',
@@ -82392,6 +82425,7 @@ global $wpdb;
                 'key' => 'effective_classroom_supervision_cover_staff',
                 'title' => 'Effective Classroom Supervision for Cover Staff',
                 'description' => 'Develop confident, safeguarding-compliant classroom supervision skills aligned with UK school expectations and professional conduct standards.',
+                'icon_url' => $resolve_module_cover_url('effective_classroom_supervision_cover_staff'),
                 'hover_details' => [
                     'Role Clarity, Authority and Professional Expectations',
                     'Establishing Classroom Presence and Routines Quickly',
@@ -82416,6 +82450,7 @@ global $wpdb;
                 'key' => 'health_safety_uk_schools',
                 'title' => 'Health and Safety in UK Schools: Legal Duties, Risk Management and Professional Practice',
                 'description' => 'Understand statutory health and safety duties to protect pupils, staff and meet Ofsted, safeguarding and professional standards.',
+                'icon_url' => $resolve_module_cover_url('health_safety_uk_schools'),
                 'hover_details' => [
                     'Legal Framework and Professional Accountability',
                     'Risk Assessment and Safe School Environments',
@@ -82436,6 +82471,7 @@ global $wpdb;
                 'key' => 'professional_boundaries_uk_schools',
                 'title' => 'Professional Boundaries with Pupils: Safeguarding, Conduct and Duty of Care in UK Schools',
                 'description' => 'Strengthen professional boundaries to safeguard pupils, meet statutory duties, and uphold Teachers’ Standards in UK schools.',
+                'icon_url' => $resolve_module_cover_url('professional_boundaries_uk_schools'),
                 'hover_details' => [
                     'Understanding Professional Boundaries in UK Schools',
                     'Safe Communication and Digital Conduct',
@@ -82456,6 +82492,7 @@ global $wpdb;
                 'key' => 'safeguarding_cover_supervisors_practical',
                 'title' => 'Safeguarding for Cover Supervisors: Practical Responsibilities in Daily Practice',
                 'description' => 'Strengthen safeguarding confidence in cover roles through risk awareness, lawful supervision, and inspection-ready professional practice.',
+                'icon_url' => $resolve_module_cover_url('safeguarding_cover_supervisors_practical'),
                 'hover_details' => [
                     'Safeguarding Accountability in the Absence of the Regular Teacher',
                     'Supervision Risk Management: Corridors, Transitions and Unstructured Time',
@@ -82480,6 +82517,7 @@ global $wpdb;
                 'key' => 'managing_behaviour_without_planning_lesson',
                 'title' => 'Managing Behaviour Without Planning the Lesson',
                 'description' => 'Develop confident, policy-aligned behaviour management skills when supervising pre-set lessons without subject planning responsibility.',
+                'icon_url' => $resolve_module_cover_url('managing_behaviour_without_planning_lesson'),
                 'hover_details' => [
                     'Establishing Authority When You Did Not Plan the Lesson',
                     'Delivering Unfamiliar Content with Confidence and Control',
