@@ -109655,6 +109655,15 @@ if (!function_exists('cmn_can')) {
         $is_staff_or_admin = $is_admin || $role === 'staff';
 
         switch ($ability) {
+            case 'portal.logged_in':
+                return $user_id > 0;
+            case 'portal.staff.view':
+                return $is_staff_or_admin;
+            case 'partner.admin.mutate':
+                return $is_staff_or_admin;
+            case 'system.upgrade.run':
+                return $is_admin;
+
             case 'rewards.view_self':
                 return $role === 'candidate';
             case 'rewards.view_any':
