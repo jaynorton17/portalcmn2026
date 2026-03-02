@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.24
+ * Version: 0.1.25
  * Author: CoverMeNow
  */
 
@@ -603,7 +603,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.24';
+    const VERSION = '0.1.25';
     const SCHEMA_BASE_VERSION = 38;
     const SCHEMA_VERSION = 74;
     const OFFER_EXPIRY_SECONDS = 900;
@@ -762,6 +762,7 @@ final class CMN_One_Plugin {
         self::AUDIT_EVENT_SCHOOL_BOOK_NOW_CLICKED,
     ];
 
+    private static $schema_migration_context_depth = 0;
     private $automation_engine = null;
     private $rate_engine = null;
     private $vetting_engine = null;
@@ -1516,10 +1517,28 @@ final class CMN_One_Plugin {
         return null;
     }
 
+    private static function is_request_schema_migration_enabled() {
+        return defined('CMN_ENABLE_REQUEST_SCHEMA_MIGRATIONS') && CMN_ENABLE_REQUEST_SCHEMA_MIGRATIONS;
+    }
+
+    private static function begin_schema_migration_context() {
+        self::$schema_migration_context_depth++;
+    }
+
+    private static function end_schema_migration_context() {
+        if (self::$schema_migration_context_depth > 0) {
+            self::$schema_migration_context_depth--;
+        }
+    }
+
+    private static function is_schema_migration_context_active() {
+        return self::$schema_migration_context_depth > 0 || self::is_request_schema_migration_enabled();
+    }
+
     public function maybe_upgrade_schema() {
         // Default to upgrade-runner controlled migrations. Auto-upgrade can be enabled
         // explicitly for legacy environments.
-        if (!defined('CMN_ENABLE_REQUEST_SCHEMA_MIGRATIONS') || !CMN_ENABLE_REQUEST_SCHEMA_MIGRATIONS) {
+        if (!self::is_request_schema_migration_enabled()) {
             return;
         }
         $installed = (int) get_option('cmn_schema_version', 0);
@@ -1532,24 +1551,26 @@ final class CMN_One_Plugin {
     }
 
     private static function run_schema_migrations($installed_version = null) {
-        $installed = $installed_version === null ? (int) get_option('cmn_schema_version', 0) : (int) $installed_version;
+        self::begin_schema_migration_context();
+        try {
+            $installed = $installed_version === null ? (int) get_option('cmn_schema_version', 0) : (int) $installed_version;
 
-        if ($installed < self::SCHEMA_BASE_VERSION) {
-            self::install_schema();
-            $installed = (int) get_option('cmn_schema_version', 0);
-        }
+            if ($installed < self::SCHEMA_BASE_VERSION) {
+                self::install_schema();
+                $installed = (int) get_option('cmn_schema_version', 0);
+            }
 
-        if ($installed < 39) {
-            self::migrate_schema_v39_rewards_partner_finance_config();
-            $installed = 39;
-            update_option('cmn_schema_version', $installed, false);
-        }
+            if ($installed < 39) {
+                self::migrate_schema_v39_rewards_partner_finance_config();
+                $installed = 39;
+                update_option('cmn_schema_version', $installed, false);
+            }
 
-        if ($installed < 40) {
-            self::migrate_schema_v40_audit_events_ledger();
-            $installed = 40;
-            update_option('cmn_schema_version', $installed, false);
-        }
+            if ($installed < 40) {
+                self::migrate_schema_v40_audit_events_ledger();
+                $installed = 40;
+                update_option('cmn_schema_version', $installed, false);
+            }
 
         if ($installed < 41) {
             self::migrate_schema_v41_rewards_year_archive_scaffolding();
@@ -1736,8 +1757,11 @@ final class CMN_One_Plugin {
             $installed = 74;
             update_option('cmn_schema_version', $installed, false);
         }
-        if ($installed < self::SCHEMA_VERSION) {
-            update_option('cmn_schema_version', self::SCHEMA_VERSION, false);
+            if ($installed < self::SCHEMA_VERSION) {
+                update_option('cmn_schema_version', self::SCHEMA_VERSION, false);
+            }
+        } finally {
+            self::end_schema_migration_context();
         }
     }
 
@@ -3378,7 +3402,10 @@ final class CMN_One_Plugin {
      * 3) Upgrade runs only migrations above stored cmn_schema_version.
      */
     private static function migrate_schema_v39_rewards_partner_finance_config() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3512,7 +3539,10 @@ final class CMN_One_Plugin {
      * 3) Query helper returns latest events for module/entity filters.
      */
     private static function migrate_schema_v40_audit_events_ledger() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3559,7 +3589,10 @@ final class CMN_One_Plugin {
     }
 
     private static function migrate_schema_v41_rewards_year_archive_scaffolding() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         $rewards_config_years = self::get_rewards_config_years_table_name();
         $table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $rewards_config_years));
         if ($table_exists !== $rewards_config_years) {
@@ -3580,7 +3613,10 @@ final class CMN_One_Plugin {
      * 3) Existing installs add missing columns/indexes idempotently.
      */
     private static function migrate_schema_v42_candidate_shift_credits() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3622,7 +3658,10 @@ final class CMN_One_Plugin {
      * 3) Existing installs gain last_no_show_at without data loss.
      */
     private static function migrate_schema_v43_candidate_conduct_engine() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3677,7 +3716,10 @@ final class CMN_One_Plugin {
      * 2) Re-running migration is idempotent and does not duplicate indexes.
      */
     private static function migrate_schema_v44_rewards_tier_engine_state() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         $candidate_rewards = $wpdb->prefix . 'cmn_candidate_rewards';
         $exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $candidate_rewards));
         if ($exists !== $candidate_rewards) {
@@ -3695,7 +3737,10 @@ final class CMN_One_Plugin {
      * 3) Rewards state includes last_bonus_awarded_at and last_bonus_amount metadata fields.
      */
     private static function migrate_schema_v45_candidate_bonus_awards() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3752,7 +3797,10 @@ final class CMN_One_Plugin {
      * 3) Re-running migration is idempotent for columns and indexes.
      */
     private static function migrate_schema_v46_candidate_referrals() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3810,7 +3858,10 @@ final class CMN_One_Plugin {
      * 3) Re-running migration is idempotent and does not duplicate columns/indexes.
      */
     private static function migrate_schema_v47_school_partner_state() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3861,7 +3912,10 @@ final class CMN_One_Plugin {
      * 3) Re-running migration is idempotent for columns/indexes/unique keys.
      */
     private static function migrate_schema_v48_booking_completion_confirmations() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3911,7 +3965,10 @@ final class CMN_One_Plugin {
      * 3) Re-running migration is idempotent for columns/indexes.
      */
     private static function migrate_schema_v49_booking_completion_confirmation_reminders() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         $table = self::get_booking_completion_confirmations_table_name();
         self::maybe_add_missing_column($table, 'last_reminded_at', "datetime NULL");
         self::maybe_add_missing_column($table, 'reminder_stage', "tinyint(3) unsigned NULL DEFAULT 0");
@@ -3928,7 +3985,10 @@ final class CMN_One_Plugin {
      * 4) Migration remains idempotent for repeated runs.
      */
     private static function migrate_schema_v50_school_partner_progression_engine() {
-        $school_partner_state = self::get_school_partner_state_table_name();
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+$school_partner_state = self::get_school_partner_state_table_name();
         $school_partner_config = self::get_school_partner_config_table_name();
 
         self::maybe_add_missing_column($school_partner_state, 'estimated_savings_total', "decimal(12,2) NOT NULL DEFAULT 0.00");
@@ -3958,7 +4018,10 @@ final class CMN_One_Plugin {
      * 3) Fresh install + migration chain creates ledger table before runtime helpers are used.
      */
     private static function migrate_schema_v51_school_partner_credit_ledger_placeholder() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4005,7 +4068,10 @@ final class CMN_One_Plugin {
      * 3) Staff/admin overrides can persist reason + timestamp without schema errors.
      */
     private static function migrate_schema_v52_school_partner_admin_overrides() {
-        $school_partner_state = self::get_school_partner_state_table_name();
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+$school_partner_state = self::get_school_partner_state_table_name();
         self::maybe_add_missing_column($school_partner_state, 'manual_days_adjustment', "int NOT NULL DEFAULT 0");
         self::maybe_add_missing_column($school_partner_state, 'manual_days_adjustment_reason', "text NULL");
         self::maybe_add_missing_column($school_partner_state, 'manual_days_adjustment_updated_at', "datetime NULL");
@@ -4021,7 +4087,10 @@ final class CMN_One_Plugin {
      * 5) Audit event bank_details_updated is logged without raw bank values.
      */
     private static function migrate_schema_v53_candidate_bank_details() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4069,7 +4138,10 @@ final class CMN_One_Plugin {
      * 3) Legacy plaintext columns are no longer used for runtime reads.
      */
     private static function migrate_schema_v54_candidate_bank_details_encryption() {
-        $table = self::get_candidate_bank_details_table_name();
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+$table = self::get_candidate_bank_details_table_name();
         self::maybe_add_missing_column($table, 'sort_code_enc', "varbinary(255) NOT NULL DEFAULT ''");
         self::maybe_add_missing_column($table, 'account_number_enc', "varbinary(255) NOT NULL DEFAULT ''");
         self::maybe_add_missing_column($table, 'sort_code_last2', "varchar(2) NOT NULL DEFAULT ''");
@@ -4086,7 +4158,10 @@ final class CMN_One_Plugin {
      * 3) Re-running migration is safe and does not duplicate schema objects.
      */
     private static function migrate_schema_v55_payroll_period_locking() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4166,7 +4241,10 @@ final class CMN_One_Plugin {
      * 3) Migration is idempotent for repeated upgrades.
      */
     private static function migrate_schema_v56_payroll_payout_runs() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4242,7 +4320,10 @@ final class CMN_One_Plugin {
      * 3) Payout run items include adjustments_total for display + audit.
      */
     private static function migrate_schema_v57_payroll_adjustments_and_disputes() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4297,7 +4378,10 @@ final class CMN_One_Plugin {
      * 3) Existing installs can persist accepted timestamp/ip/user-agent audit fields.
      */
     private static function migrate_schema_v58_candidate_compliance_ack() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4342,7 +4426,10 @@ final class CMN_One_Plugin {
      * 3) Migration remains idempotent.
      */
     private static function migrate_schema_v59_candidate_remittance_docs() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4384,7 +4471,10 @@ final class CMN_One_Plugin {
      * 3) Migration is idempotent across re-runs.
      */
     private static function migrate_schema_v60_support_payroll_query_metadata() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4436,7 +4526,10 @@ final class CMN_One_Plugin {
      * 3) Migration remains idempotent.
      */
     private static function migrate_schema_v61_support_payroll_routing() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         $support_tickets_table = $wpdb->prefix . 'cmn_support_tickets';
         $finance_config_table = self::get_finance_config_table_name();
 
@@ -4459,7 +4552,10 @@ final class CMN_One_Plugin {
      * 3) Migration is idempotent across repeated upgrades.
      */
     private static function migrate_schema_v62_training_mode_state_and_scoping() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4534,7 +4630,10 @@ final class CMN_One_Plugin {
      * 3) Structured email logs table exists independently from legacy send logging table.
      */
     private static function migrate_schema_v63_email_template_storage() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4655,7 +4754,10 @@ final class CMN_One_Plugin {
      * 3) Email templates support default sender assignment linkage.
      */
     private static function migrate_schema_v64_email_sender_directory() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4696,7 +4798,10 @@ final class CMN_One_Plugin {
      * 3) Migration remains idempotent for existing installations.
      */
     private static function migrate_schema_v65_email_log_rendering_and_resend() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4718,7 +4823,10 @@ final class CMN_One_Plugin {
      * 3) Migration is idempotent and safe on existing installs.
      */
     private static function migrate_schema_v66_email_logs_table_hardening() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4803,7 +4911,10 @@ final class CMN_One_Plugin {
      * 3) Schema migration is safe to run repeatedly on production databases.
      */
     private static function migrate_schema_v67_email_sender_table_normalization() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -4928,7 +5039,10 @@ final class CMN_One_Plugin {
      * 3) No message body content is persisted during migration/backfill.
      */
     private static function migrate_schema_v68_email_logs_canonical_backfill() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -5052,7 +5166,10 @@ final class CMN_One_Plugin {
      * 3) Migration remains idempotent and safe for repeated production runs.
      */
     private static function migrate_schema_v69_priority_allocation() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -5141,7 +5258,10 @@ final class CMN_One_Plugin {
      * 3) Migration is idempotent and safe to run repeatedly.
      */
     private static function migrate_schema_v70_candidate_feedback_system() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -5243,7 +5363,10 @@ final class CMN_One_Plugin {
      * 3) Indexes support secure token lookup and efficient staff/source filtering.
      */
     private static function migrate_schema_v71_livechat_support_threads() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -5304,7 +5427,10 @@ final class CMN_One_Plugin {
      * 3) Existing notifications remain visible because available_at defaults to NULL.
      */
     private static function migrate_schema_v72_notification_preferences_centre() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -5325,7 +5451,10 @@ final class CMN_One_Plugin {
      * 3) Migration is idempotent and safe on existing installs.
      */
     private static function migrate_schema_v73_support_feedback_request_lifecycle() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -5352,7 +5481,10 @@ final class CMN_One_Plugin {
      * 3) Hotspot indexes are added only when missing.
      */
     private static function migrate_schema_v74_job_locks_and_hot_indexes() {
-        global $wpdb;
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+global $wpdb;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -8263,6 +8395,17 @@ final class CMN_One_Plugin {
         $provided = trim((string) ($_REQUEST['token'] ?? $_REQUEST['cmn_runner_token'] ?? ''));
         $expected = $this->get_automation_runner_token();
         $as_json = strtolower(trim((string) ($_REQUEST['format'] ?? 'json'))) === 'json';
+        $rate_bucket = 'cmn_run_automation_' . substr(md5((string) $this->get_request_ip_address()), 0, 12) . '_' . substr(md5((string) $provided), 0, 8);
+        $rate_check = $this->cmn_rate_limit($rate_bucket, 90, 300);
+        if (is_wp_error($rate_check)) {
+            status_header(429);
+            if ($as_json) {
+                wp_send_json_error(['message' => 'Too many requests. Please try again shortly.'], 429);
+            }
+            header('Content-Type: text/plain; charset=utf-8');
+            echo 'Too many requests. Please try again shortly.';
+            exit;
+        }
         if ($provided === '' || !hash_equals($expected, $provided)) {
             status_header(403);
             if ($as_json) {
@@ -8316,6 +8459,15 @@ final class CMN_One_Plugin {
         }
         $provided = trim((string) wp_unslash($_GET['token'] ?? $_REQUEST['token'] ?? ''));
         $expected = $this->get_automation_runner_token();
+        $rate_bucket = 'cmn_set_release_' . substr(md5((string) $this->get_request_ip_address()), 0, 12) . '_' . substr(md5((string) $provided), 0, 8);
+        $rate_check = $this->cmn_rate_limit($rate_bucket, 60, 300);
+        if (is_wp_error($rate_check)) {
+            status_header(429);
+            wp_send_json([
+                'ok' => false,
+                'error' => 'Too many requests. Please try again shortly.',
+            ], 429);
+        }
         if ($provided === '' || !hash_equals($expected, $provided)) {
             status_header(403);
             wp_send_json([
@@ -8363,7 +8515,13 @@ final class CMN_One_Plugin {
             return;
         }
 
-        $redirect = wp_get_referer();
+        $redirect = esc_url_raw((string) ($_POST['cmn_return_url'] ?? ''));
+        if ($redirect !== '') {
+            $redirect = wp_validate_redirect($redirect, $this->get_portal_base_url());
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = wp_get_referer();
+        }
         if (!is_string($redirect) || $redirect === '') {
             $redirect = add_query_arg(['view' => 'system-health'], $this->get_portal_base_url());
         }
@@ -15808,7 +15966,11 @@ final class CMN_One_Plugin {
         $ticket_table = $this->get_support_ticket_table();
         $message_table = $this->get_support_message_table();
         $livechat_table = $this->get_livechat_threads_table();
-        self::migrate_schema_v71_livechat_support_threads();
+        if (!$this->candidate_rewards_table_exists($livechat_table)) {
+            wp_send_json_error([
+                'message' => 'Live chat is temporarily unavailable while an upgrade is pending. Please try again shortly.',
+            ], 503);
+        }
 
         $ticket_ref = $this->generate_support_ticket_ref();
         $guest_type_label = $guest_type === 'school' ? 'School' : ($guest_type === 'candidate' ? 'Candidate' : 'Other');
@@ -22718,6 +22880,305 @@ final class CMN_One_Plugin {
         wp_send_json_success($this->get_notifications_payload($user_id));
     }
 
+    private function cmn_heartbeat_parse_request_int_list($raw_values, $max_count = 120) {
+        if (!is_array($raw_values)) {
+            $raw_values = explode(',', (string) $raw_values);
+        }
+        $max_count = max(1, (int) $max_count);
+        $ids = [];
+        foreach ((array) $raw_values as $raw_value) {
+            $id = (int) $raw_value;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+            if (count($ids) >= $max_count) {
+                break;
+            }
+        }
+        return array_values($ids);
+    }
+
+    private function cmn_heartbeat_parse_request_string_list($raw_values, $max_count = 20) {
+        if (!is_array($raw_values)) {
+            $raw_values = explode(',', (string) $raw_values);
+        }
+        $max_count = max(1, (int) $max_count);
+        $items = [];
+        foreach ((array) $raw_values as $raw_value) {
+            $value = sanitize_key((string) $raw_value);
+            if ($value !== '') {
+                $items[$value] = $value;
+            }
+            if (count($items) >= $max_count) {
+                break;
+            }
+        }
+        return array_values($items);
+    }
+
+    private function cmn_heartbeat_resolve_channels($raw_channels, array $context = []) {
+        $allowed = [
+            'notifications',
+            'live_matches',
+            'support_tickets',
+            'booking_chats',
+            'staff_lounge',
+            'account_manager_chat_status',
+        ];
+        $requested = $this->cmn_heartbeat_parse_request_string_list($raw_channels, 20);
+        $channels = [];
+        foreach ($requested as $requested_channel) {
+            if (in_array($requested_channel, $allowed, true)) {
+                $channels[$requested_channel] = $requested_channel;
+            }
+        }
+
+        if (empty($channels)) {
+            $channels['notifications'] = 'notifications';
+        }
+        if (!empty($context['candidate_ids'])) {
+            $channels['live_matches'] = 'live_matches';
+        }
+        if (!empty($context['support_ticket_ids'])) {
+            $channels['support_tickets'] = 'support_tickets';
+        }
+        if (!empty($context['booking_thread_ids'])) {
+            $channels['booking_chats'] = 'booking_chats';
+        }
+        if (!empty($context['staff_lounge_thread_types'])) {
+            $channels['staff_lounge'] = 'staff_lounge';
+        }
+        if (!empty($context['include_account_manager_chat_status'])) {
+            $channels['account_manager_chat_status'] = 'account_manager_chat_status';
+        }
+
+        return array_values($channels);
+    }
+
+    private function cmn_heartbeat_get_cached_channel_payload($channel_key, array $scope, callable $builder, $ttl_seconds = 3) {
+        $channel_key = sanitize_key((string) $channel_key);
+        if ($channel_key === '') {
+            return call_user_func($builder);
+        }
+        $cache_scope = [
+            'channel' => $channel_key,
+            'scope' => $scope,
+        ];
+        $cache_key = 'cmn_hb_ch_' . md5(wp_json_encode($cache_scope));
+        $cached = get_transient($cache_key);
+        if (is_array($cached) || is_scalar($cached)) {
+            return $cached;
+        }
+        $payload = call_user_func($builder);
+        set_transient($cache_key, $payload, max(1, (int) $ttl_seconds));
+        return $payload;
+    }
+
+    private function cmn_heartbeat_get_max_message_id(array $messages) {
+        $max_id = 0;
+        foreach ($messages as $message_row) {
+            $message_id = (int) ($message_row['id'] ?? 0);
+            if ($message_id > $max_id) {
+                $max_id = $message_id;
+            }
+        }
+        return $max_id;
+    }
+
+    private function cmn_get_support_ticket_heartbeat_payload($ticket_id, $viewer_user_id, $since_message_id = 0) {
+        $ticket_id = (int) $ticket_id;
+        $viewer_user_id = (int) $viewer_user_id;
+        if ($ticket_id < 1 || $viewer_user_id < 1) {
+            return null;
+        }
+        $ticket = $this->get_support_ticket($ticket_id);
+        if (!$ticket || !$this->can_access_support_ticket($ticket, $viewer_user_id)) {
+            return null;
+        }
+
+        $ticket = $this->normalize_support_ticket_for_view($ticket, $this->is_staff_user($viewer_user_id));
+        $messages = $this->get_support_ticket_messages($ticket_id);
+        $formatted = [];
+        foreach ($messages as $msg) {
+            $sender_type = sanitize_key((string) ($msg['sender_type'] ?? ''));
+            $sender_name = $sender_type === 'admin' ? 'Support' : 'Requester';
+            if (!empty($msg['sender_user_id'])) {
+                $sender_user = get_user_by('id', (int) $msg['sender_user_id']);
+                if ($sender_user) {
+                    $sender_name = $sender_user->display_name ?: $sender_user->user_login;
+                }
+            }
+            $formatted[] = [
+                'id' => (int) ($msg['id'] ?? 0),
+                'sender_type' => $sender_type !== '' ? $sender_type : 'user',
+                'sender_name' => $sender_name,
+                'message' => (string) ($msg['message'] ?? ''),
+                'attachments' => $this->get_support_message_attachments($msg),
+                'created_at' => (string) ($msg['created_at'] ?? ''),
+            ];
+        }
+
+        $latest_message_id = $this->cmn_heartbeat_get_max_message_id($formatted);
+        if ($since_message_id > 0 && $latest_message_id <= $since_message_id) {
+            return [
+                'ticket' => $ticket,
+                'messages' => [],
+                'latest_message_id' => $latest_message_id,
+                'feedback' => null,
+                'payroll_query' => null,
+                'payroll_context' => null,
+            ];
+        }
+
+        $feedback = $this->get_support_feedback($ticket_id, $this->is_staff_user($viewer_user_id) ? 0 : $viewer_user_id);
+        $payroll_query_meta = $this->get_support_payroll_query_metadata_by_ticket($ticket_id);
+        $payroll_context = [];
+        if ($this->is_staff_user($viewer_user_id)) {
+            $payroll_context = $this->build_staff_payroll_ticket_context($ticket, $payroll_query_meta);
+        }
+        $this->mark_support_ticket_read_for_user($ticket_id, $viewer_user_id, $messages);
+
+        return [
+            'ticket' => $ticket,
+            'messages' => $formatted,
+            'latest_message_id' => $latest_message_id,
+            'feedback' => $feedback ?: null,
+            'payroll_query' => $payroll_query_meta ?: null,
+            'payroll_context' => $payroll_context ?: null,
+        ];
+    }
+
+    private function cmn_get_booking_chat_heartbeat_payload($thread_id, $viewer_user_id, $since_message_id = 0) {
+        $thread_id = (int) $thread_id;
+        $viewer_user_id = (int) $viewer_user_id;
+        if ($thread_id < 1 || $viewer_user_id < 1) {
+            return null;
+        }
+        if (!$this->user_can_access_booking_thread($thread_id, $viewer_user_id)) {
+            return null;
+        }
+
+        global $wpdb;
+        $thread_table = $this->get_booking_threads_table();
+        $thread = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$thread_table} WHERE id = %d LIMIT 1",
+            $thread_id
+        ), ARRAY_A);
+        if (!$thread) {
+            return null;
+        }
+        if ($this->is_school_user($viewer_user_id) && $this->normalize_booking_thread_type((string) ($thread['thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS)) === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION) {
+            return null;
+        }
+
+        $messages = $this->get_booking_thread_messages($thread_id);
+        $payload = [];
+        foreach ($messages as $message_row) {
+            $sender_role = $this->normalize_participant_role_type((string) ($message_row['sender_role_type'] ?? self::PARTICIPANT_ROLE_SYSTEM), self::PARTICIPANT_ROLE_SYSTEM);
+            $sender_name = ucfirst(str_replace('_', ' ', $sender_role));
+            if (!empty($message_row['sender_user_id'])) {
+                $sender_user = get_user_by('id', (int) $message_row['sender_user_id']);
+                if ($sender_user) {
+                    $sender_name = $sender_user->display_name ?: $sender_user->user_login;
+                }
+            }
+            $payload[] = [
+                'id' => (int) ($message_row['id'] ?? 0),
+                'sender_user_id' => (int) ($message_row['sender_user_id'] ?? 0),
+                'sender_role_type' => $sender_role,
+                'sender_name' => $sender_name,
+                'message' => (string) ($message_row['message'] ?? ''),
+                'created_at' => (string) ($message_row['created_at'] ?? ''),
+                'attachments' => $this->get_booking_message_attachments($message_row),
+            ];
+        }
+
+        $latest_message_id = $this->cmn_heartbeat_get_max_message_id($payload);
+        if ($since_message_id > 0 && $latest_message_id <= $since_message_id) {
+            return [
+                'thread' => [
+                    'id' => (int) ($thread['id'] ?? 0),
+                    'booking_id' => (int) ($thread['booking_id'] ?? 0),
+                    'thread_type' => $this->normalize_booking_thread_type((string) ($thread['thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS)),
+                    'status' => $this->normalize_booking_thread_status((string) ($thread['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE)),
+                ],
+                'messages' => [],
+                'latest_message_id' => $latest_message_id,
+            ];
+        }
+
+        return [
+            'thread' => [
+                'id' => (int) ($thread['id'] ?? 0),
+                'booking_id' => (int) ($thread['booking_id'] ?? 0),
+                'thread_type' => $this->normalize_booking_thread_type((string) ($thread['thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS)),
+                'status' => $this->normalize_booking_thread_status((string) ($thread['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE)),
+            ],
+            'messages' => $payload,
+            'latest_message_id' => $latest_message_id,
+        ];
+    }
+
+    private function cmn_get_staff_lounge_heartbeat_payload($thread_type, $viewer_user_id, $since_message_id = 0) {
+        $viewer_user_id = (int) $viewer_user_id;
+        if ($viewer_user_id < 1 || !$this->is_staff_user($viewer_user_id)) {
+            return null;
+        }
+        $thread_type = $this->normalize_staff_lounge_thread_type((string) $thread_type);
+        $messages = $this->get_staff_lounge_messages($thread_type, 120);
+        $latest_message_id = $this->cmn_heartbeat_get_max_message_id($messages);
+        if ($since_message_id > 0 && $latest_message_id <= $since_message_id) {
+            return [
+                'thread_type' => $thread_type,
+                'messages' => [],
+                'latest_message_id' => $latest_message_id,
+            ];
+        }
+        return [
+            'thread_type' => $thread_type,
+            'messages' => $messages,
+            'latest_message_id' => $latest_message_id,
+        ];
+    }
+
+    private function cmn_get_account_manager_chat_heartbeat_payload($school_user_id) {
+        $school_user_id = (int) $school_user_id;
+        if ($school_user_id < 1 || !$this->is_school_user($school_user_id)) {
+            return null;
+        }
+        $ticket = $this->get_school_account_manager_chat_ticket_for_user($school_user_id, false);
+        $ticket_id = max(0, (int) ($ticket['id'] ?? 0));
+        $unread_count = $ticket_id > 0 ? $this->get_support_unread_count_for_user($ticket_id, $school_user_id, 'admin') : 0;
+        return [
+            'ticket_id' => $ticket_id,
+            'unread_count' => $unread_count,
+            'has_unread' => $unread_count > 0 ? 1 : 0,
+            'support_url' => $this->get_school_account_manager_chat_support_url($ticket_id),
+        ];
+    }
+
+    private function cmn_heartbeat_touch_presence_coalesced($actor_user_id) {
+        $actor_user_id = (int) $actor_user_id;
+        if ($actor_user_id < 1) {
+            return;
+        }
+        if ($this->is_staff_user($actor_user_id)) {
+            $touch_key = 'cmn_hb_touch_staff_' . $actor_user_id;
+            if (!get_transient($touch_key)) {
+                $this->touch_staff_presence($actor_user_id, false);
+                set_transient($touch_key, 1, 30);
+            }
+            return;
+        }
+        if ($this->is_candidate_user($actor_user_id)) {
+            $touch_key = 'cmn_hb_touch_candidate_' . $actor_user_id;
+            if (!get_transient($touch_key)) {
+                $this->touch_candidate_presence($actor_user_id, false);
+                set_transient($touch_key, 1, 20);
+            }
+        }
+    }
+
     public function handle_portal_heartbeat() {
         $actor_user_id = (int) get_current_user_id();
         $ip_hash = substr(md5((string) $this->get_request_ip_address()), 0, 12);
@@ -22742,47 +23203,53 @@ final class CMN_One_Plugin {
             return;
         }
 
+        $this->cmn_heartbeat_touch_presence_coalesced($actor_user_id);
+
         $view_context = sanitize_key((string) ($_POST['view_context'] ?? 'dashboard'));
         if ($view_context === '') {
             $view_context = 'dashboard';
         }
         $since_event_id = max(0, (int) ($_POST['since_event_id'] ?? 0));
-        $raw_candidate_ids = $_POST['candidate_ids'] ?? [];
-        if (!is_array($raw_candidate_ids)) {
-            $raw_candidate_ids = explode(',', (string) $raw_candidate_ids);
-        }
-        $candidate_ids = [];
-        foreach ((array) $raw_candidate_ids as $candidate_id_raw) {
-            $candidate_id = (int) $candidate_id_raw;
-            if ($candidate_id > 0) {
-                $candidate_ids[$candidate_id] = $candidate_id;
-            }
-            if (count($candidate_ids) >= 120) {
-                break;
-            }
-        }
-        $candidate_ids = array_values($candidate_ids);
+        $candidate_ids = $this->cmn_heartbeat_parse_request_int_list($_POST['candidate_ids'] ?? [], 120);
+        $support_ticket_ids = $this->cmn_heartbeat_parse_request_int_list($_POST['support_ticket_ids'] ?? ($_POST['support_ticket_id'] ?? []), 25);
+        $booking_thread_ids = $this->cmn_heartbeat_parse_request_int_list($_POST['booking_thread_ids'] ?? ($_POST['booking_thread_id'] ?? []), 25);
+        $staff_lounge_thread_types = $this->cmn_heartbeat_parse_request_string_list($_POST['staff_lounge_thread_types'] ?? ($_POST['staff_lounge_thread_type'] ?? []), 10);
+        $include_account_manager_chat_status = !empty($_POST['include_account_manager_chat_status']) && (string) $_POST['include_account_manager_chat_status'] !== '0';
+        $support_since_message_id = max(0, (int) ($_POST['support_since_message_id'] ?? 0));
+        $booking_chat_since_message_id = max(0, (int) ($_POST['booking_chat_since_message_id'] ?? 0));
+        $staff_lounge_since_message_id = max(0, (int) ($_POST['staff_lounge_since_message_id'] ?? 0));
 
-        $cache_scope = [
-            'user_id' => $actor_user_id,
-            'view_context' => $view_context,
-            'since_event_id' => $since_event_id,
+        $channels = $this->cmn_heartbeat_resolve_channels($_POST['channels'] ?? [], [
             'candidate_ids' => $candidate_ids,
-        ];
-        $cache_key = 'cmn_hb_' . md5(wp_json_encode($cache_scope));
-        $cached = get_transient($cache_key);
-        if (is_array($cached) && !empty($cached['event_id_latest'])) {
-            wp_send_json_success($cached);
+            'support_ticket_ids' => $support_ticket_ids,
+            'booking_thread_ids' => $booking_thread_ids,
+            'staff_lounge_thread_types' => $staff_lounge_thread_types,
+            'include_account_manager_chat_status' => $include_account_manager_chat_status,
+        ]);
+
+        $deltas = [];
+        if (in_array('notifications', $channels, true)) {
+            $deltas['notifications'] = $this->cmn_heartbeat_get_cached_channel_payload('notifications', [
+                'user_id' => $actor_user_id,
+                'since_event_id' => $since_event_id,
+            ], function () use ($actor_user_id) {
+                return $this->get_notifications_payload($actor_user_id);
+            }, 3);
         }
 
-        $deltas = [
-            'notifications' => $this->get_notifications_payload($actor_user_id),
-        ];
         $event_id_latest = (int) current_time('timestamp', true);
 
-        if ($this->is_school_user($actor_user_id) && !empty($candidate_ids)) {
+        if (in_array('live_matches', $channels, true) && $this->is_school_user($actor_user_id) && !empty($candidate_ids)) {
             $school_id = (int) $this->resolve_school_id_for_user($actor_user_id);
-            if ($school_id > 0) {
+            $live_match_payload = $this->cmn_heartbeat_get_cached_channel_payload('live_matches', [
+                'user_id' => $actor_user_id,
+                'school_id' => $school_id,
+                'candidate_ids' => $candidate_ids,
+                'since_event_id' => $since_event_id,
+            ], function () use ($school_id, $candidate_ids) {
+                if ($school_id < 1 || empty($candidate_ids)) {
+                    return ['presence' => [], 'offers' => []];
+                }
                 $offer_state_map = $this->get_school_live_offer_state_map($school_id, array_fill_keys($candidate_ids, ''));
                 $presence = [];
                 $offers = [];
@@ -22813,8 +23280,97 @@ final class CMN_One_Plugin {
                         'chat_url' => esc_url_raw((string) ($offer_row['chat_url'] ?? '')),
                     ];
                 }
-                $deltas['live_match_presence'] = $presence;
-                $deltas['live_match_offers'] = $offers;
+                return [
+                    'presence' => $presence,
+                    'offers' => $offers,
+                ];
+            }, 3);
+            $deltas['live_match_presence'] = (array) ($live_match_payload['presence'] ?? []);
+            $deltas['live_match_offers'] = (array) ($live_match_payload['offers'] ?? []);
+        }
+
+        if (in_array('support_tickets', $channels, true) && !empty($support_ticket_ids)) {
+            $deltas['support_tickets'] = $this->cmn_heartbeat_get_cached_channel_payload('support_tickets', [
+                'user_id' => $actor_user_id,
+                'ticket_ids' => $support_ticket_ids,
+                'since_message_id' => $support_since_message_id,
+            ], function () use ($support_ticket_ids, $actor_user_id, $support_since_message_id) {
+                $ticket_map = [];
+                foreach ($support_ticket_ids as $ticket_id) {
+                    $ticket_payload = $this->cmn_get_support_ticket_heartbeat_payload((int) $ticket_id, $actor_user_id, $support_since_message_id);
+                    if (is_array($ticket_payload)) {
+                        $ticket_map[(string) $ticket_id] = $ticket_payload;
+                    }
+                }
+                return $ticket_map;
+            }, 3);
+        }
+
+        if (in_array('booking_chats', $channels, true) && !empty($booking_thread_ids)) {
+            $deltas['booking_chats'] = $this->cmn_heartbeat_get_cached_channel_payload('booking_chats', [
+                'user_id' => $actor_user_id,
+                'thread_ids' => $booking_thread_ids,
+                'since_message_id' => $booking_chat_since_message_id,
+            ], function () use ($booking_thread_ids, $actor_user_id, $booking_chat_since_message_id) {
+                $thread_map = [];
+                foreach ($booking_thread_ids as $thread_id) {
+                    $thread_payload = $this->cmn_get_booking_chat_heartbeat_payload((int) $thread_id, $actor_user_id, $booking_chat_since_message_id);
+                    if (is_array($thread_payload)) {
+                        $thread_map[(string) $thread_id] = $thread_payload;
+                    }
+                }
+                return $thread_map;
+            }, 3);
+        }
+
+        if (in_array('staff_lounge', $channels, true) && !empty($staff_lounge_thread_types)) {
+            $deltas['staff_lounge'] = $this->cmn_heartbeat_get_cached_channel_payload('staff_lounge', [
+                'user_id' => $actor_user_id,
+                'thread_types' => $staff_lounge_thread_types,
+                'since_message_id' => $staff_lounge_since_message_id,
+            ], function () use ($staff_lounge_thread_types, $actor_user_id, $staff_lounge_since_message_id) {
+                $thread_map = [];
+                foreach ($staff_lounge_thread_types as $thread_type) {
+                    $payload = $this->cmn_get_staff_lounge_heartbeat_payload((string) $thread_type, $actor_user_id, $staff_lounge_since_message_id);
+                    if (is_array($payload)) {
+                        $thread_map[(string) $thread_type] = $payload;
+                    }
+                }
+                return $thread_map;
+            }, 3);
+        }
+
+        if (in_array('account_manager_chat_status', $channels, true) && $this->is_school_user($actor_user_id)) {
+            $deltas['account_manager_chat_status'] = $this->cmn_heartbeat_get_cached_channel_payload('account_manager_chat_status', [
+                'user_id' => $actor_user_id,
+                'since_event_id' => $since_event_id,
+            ], function () use ($actor_user_id) {
+                return $this->cmn_get_account_manager_chat_heartbeat_payload($actor_user_id) ?: [];
+            }, 3);
+        }
+
+        if (!empty($deltas['support_tickets']) && is_array($deltas['support_tickets'])) {
+            foreach ($deltas['support_tickets'] as $ticket_payload) {
+                $latest_message_id = (int) ($ticket_payload['latest_message_id'] ?? 0);
+                if ($latest_message_id > $event_id_latest) {
+                    $event_id_latest = $latest_message_id;
+                }
+            }
+        }
+        if (!empty($deltas['booking_chats']) && is_array($deltas['booking_chats'])) {
+            foreach ($deltas['booking_chats'] as $thread_payload) {
+                $latest_message_id = (int) ($thread_payload['latest_message_id'] ?? 0);
+                if ($latest_message_id > $event_id_latest) {
+                    $event_id_latest = $latest_message_id;
+                }
+            }
+        }
+        if (!empty($deltas['staff_lounge']) && is_array($deltas['staff_lounge'])) {
+            foreach ($deltas['staff_lounge'] as $thread_payload) {
+                $latest_message_id = (int) ($thread_payload['latest_message_id'] ?? 0);
+                if ($latest_message_id > $event_id_latest) {
+                    $event_id_latest = $latest_message_id;
+                }
             }
         }
 
@@ -22822,9 +23378,9 @@ final class CMN_One_Plugin {
             'event_id_latest' => $event_id_latest,
             'since_event_id' => $since_event_id,
             'view_context' => $view_context,
+            'channels' => $channels,
             'deltas' => $deltas,
         ];
-        set_transient($cache_key, $payload, 3);
 
         wp_send_json_success($payload);
     }
@@ -30413,6 +30969,9 @@ final class CMN_One_Plugin {
         $critical = (int) ($last_run['critical_count'] ?? 0);
         $warning = (int) ($last_run['warning_count'] ?? 0);
         $info = (int) ($last_run['info_count'] ?? 0);
+        $upgrade_status = sanitize_key((string) ($_GET['cmn_upgrade_status'] ?? ''));
+        $upgrade_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_upgrade_msg'] ?? '')));
+        $upgrade_msg_class = $upgrade_status === 'success' ? 'cmn-register-success' : ($upgrade_status === 'busy' ? 'cmn-register-warning' : ($upgrade_status === 'error' ? 'cmn-register-error' : 'cmn-muted'));
 
         ob_start();
         ?>
@@ -30424,6 +30983,14 @@ final class CMN_One_Plugin {
                 </div>
                 <div class="cmn-header-actions">
                     <button class="cmn-primary" type="button" data-system-health-run>Run New Scan</button>
+                    <?php if ($this->is_admin_user()) : ?>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-flex;gap:8px;align-items:center;">
+                            <?php wp_nonce_field('cmn_run_upgrade_runner', 'cmn_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_run_upgrade_runner">
+                            <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr($this->get_current_url()); ?>">
+                            <button class="cmn-ghost" type="submit">Run Upgrade Runner</button>
+                        </form>
+                    <?php endif; ?>
                 </div>
             </div>
         </header>
@@ -30438,6 +31005,9 @@ final class CMN_One_Plugin {
                     <div><span>Info</span><strong data-health-last-info><?php echo esc_html($info); ?></strong></div>
                 </div>
                 <div class="cmn-system-health-run-msg" data-system-health-run-msg></div>
+                <?php if ($upgrade_msg !== '') : ?>
+                    <div class="<?php echo esc_attr($upgrade_msg_class); ?>"><?php echo esc_html($upgrade_msg); ?></div>
+                <?php endif; ?>
             </div>
 
             <div class="cmn-system-health-tabs" role="tablist" aria-label="System Health tabs">
@@ -95075,6 +95645,7 @@ p{margin:0;line-height:1.5}
                 'status' => $this->normalize_booking_thread_status((string) ($thread['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE)),
             ],
             'messages' => $payload,
+            'latest_message_id' => $this->cmn_heartbeat_get_max_message_id($payload),
         ]);
     }
 
@@ -100730,6 +101301,7 @@ p{margin:0;line-height:1.5}
         wp_send_json_success([
             'thread_type' => $thread_type,
             'messages' => $messages,
+            'latest_message_id' => $this->cmn_heartbeat_get_max_message_id($messages),
         ]);
     }
 
@@ -101484,7 +102056,13 @@ p{margin:0;line-height:1.5}
             wp_send_json_error(['message' => 'Ticket not found.'], 404);
         }
 
-        self::migrate_schema_v73_support_feedback_request_lifecycle();
+        if (
+            !$this->support_ticket_has_column('feedback_request_status')
+            || !$this->support_ticket_has_column('feedback_requested_at')
+            || !$this->support_ticket_has_column('feedback_request_expires_at')
+        ) {
+            wp_send_json_error(['message' => 'Feedback request lifecycle schema is not ready. Please run the upgrade runner.'], 503);
+        }
         $this->maybe_expire_support_feedback_requests();
 
         $ticket = $this->get_support_ticket($ticket_id);
