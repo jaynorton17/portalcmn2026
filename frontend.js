@@ -7679,6 +7679,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   var bookingChatRoots = document.querySelectorAll('[data-booking-chat]');
   if (bookingChatRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.bookingChatNonce) {
+    var BOOKING_THREAD_TYPES = {
+      BOOKING_DETAILS: 'booking_details'
+    };
     bookingChatRoots.forEach(function (chatRoot, bookingChatIndex) {
       var threadId = parseInt(chatRoot.getAttribute('data-thread-id') || '0', 10);
       if (!threadId) {
@@ -7704,7 +7707,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var forcePrompt = (new URLSearchParams(window.location.search).get('cmn_feedback_prompt') || '') === '1';
       var isFeedbackModalOpen = false;
       var feedbackSubmitInFlight = false;
-      var currentThreadType = 'booking_details';
+      var currentThreadType = BOOKING_THREAD_TYPES.BOOKING_DETAILS;
       var defaultStarFields = ['stars_1', 'stars_2', 'stars_3', 'stars_overall'];
       var activeStarFields = defaultStarFields.slice();
 
@@ -7878,7 +7881,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         summaryEl.innerHTML = '';
-        if (!payload || currentThreadType !== 'booking_details') {
+        if (!payload || currentThreadType !== BOOKING_THREAD_TYPES.BOOKING_DETAILS) {
           return;
         }
         var hasSummary = false;
@@ -8006,7 +8009,7 @@ document.addEventListener('DOMContentLoaded', function () {
       };
 
       var fetchBookingFeedback = function () {
-        if (!bookingId || !window.cmnPortal.bookingFeedbackNonce || !feedbackRole || currentThreadType !== 'booking_details') {
+        if (!bookingId || !window.cmnPortal.bookingFeedbackNonce || !feedbackRole || currentThreadType !== BOOKING_THREAD_TYPES.BOOKING_DETAILS) {
           setBookingFeedbackModalOpen(false);
           if (summaryEl) {
             summaryEl.innerHTML = '';
@@ -8066,7 +8069,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           if (data.data.thread) {
             bookingId = parseInt(data.data.thread.booking_id || bookingId || 0, 10);
-            currentThreadType = data.data.thread.thread_type || 'booking_details';
+            currentThreadType = data.data.thread.thread_type || BOOKING_THREAD_TYPES.BOOKING_DETAILS;
           }
           renderBookingChatMessages(data.data.messages || []);
           return fetchBookingFeedback();
@@ -12892,6 +12895,18 @@ document.addEventListener('DOMContentLoaded', function () {
 (function(){
   var roots = document.querySelectorAll('[data-live-matches-root]');
   if (!roots.length) { return; }
+  var LIVE_OFFER_STATES = {
+    OFFERED: 'offered',
+    ACCEPTED: 'accepted',
+    DECLINED: 'declined',
+    EXPIRED: 'expired'
+  };
+  var LIVE_OFFER_STATE_SET = [
+    LIVE_OFFER_STATES.OFFERED,
+    LIVE_OFFER_STATES.ACCEPTED,
+    LIVE_OFFER_STATES.DECLINED,
+    LIVE_OFFER_STATES.EXPIRED
+  ];
   roots.forEach(function(root){
     var payloadRaw = root.getAttribute('data-live-matches') || '{}';
     var payload = {};
@@ -12968,7 +12983,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var normalizeOfferState = function(rawState){
       var state = String(rawState || '').trim().toLowerCase();
-      if (['offered', 'accepted', 'declined', 'expired'].indexOf(state) === -1) {
+      if (LIVE_OFFER_STATE_SET.indexOf(state) === -1) {
         return '';
       }
       return state;
@@ -13075,7 +13090,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var state = normalizeOfferState(item && item.offer_state);
       var expiresAt = parseUtcMysqlDate(item && item.offer_expires_at);
       var chatUrl = String((item && item.offer_chat_url) || '').trim();
-      if (state === 'offered') {
+      if (state === LIVE_OFFER_STATES.OFFERED) {
         if (expiresAt) {
           var seconds = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
           if (seconds <= 0) {
@@ -13085,16 +13100,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         return '<span class="cmn-live-offer-state is-offered">Offer sent - awaiting response</span>';
       }
-      if (state === 'accepted') {
+      if (state === LIVE_OFFER_STATES.ACCEPTED) {
         if (chatUrl) {
           return '<a class="cmn-live-offer-state is-accepted" href="' + escapeHtml(chatUrl) + '">Accepted - Open chat</a>';
         }
         return '<span class="cmn-live-offer-state is-accepted">Accepted</span>';
       }
-      if (state === 'declined') {
+      if (state === LIVE_OFFER_STATES.DECLINED) {
         return '<span class="cmn-live-offer-state is-declined">Declined by candidate</span>';
       }
-      if (state === 'expired') {
+      if (state === LIVE_OFFER_STATES.EXPIRED) {
         return '<span class="cmn-live-offer-state is-expired">No response in time</span>';
       }
       return '';
@@ -13126,12 +13141,12 @@ document.addEventListener('DOMContentLoaded', function () {
         offerEl.innerHTML = markup;
         var state = normalizeOfferState(item.offer_state);
         offerEl.classList.toggle('is-active', markup !== '');
-        if (state === 'offered') {
+        if (state === LIVE_OFFER_STATES.OFFERED) {
           var expiresAt = parseUtcMysqlDate(item.offer_expires_at);
           if (expiresAt && expiresAt.getTime() > Date.now()) {
             activeRows += 1;
           } else if (expiresAt && expiresAt.getTime() <= Date.now()) {
-            item.offer_state = 'expired';
+            item.offer_state = LIVE_OFFER_STATES.EXPIRED;
             item.offer_expires_at = '';
           }
         }
@@ -13559,7 +13574,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           var mapPayload = {};
           mapPayload[String(offerModalState.candidateId)] = {
-            state: String(data.data.offer_state || 'offered'),
+            state: String(data.data.offer_state || LIVE_OFFER_STATES.OFFERED),
             expires_at: String(data.data.expires_at || ''),
             request_id: parseInt(String(data.data.request_id || '0'), 10) || 0,
             booking_id: parseInt(String(data.data.booking_id || '0'), 10) || 0,

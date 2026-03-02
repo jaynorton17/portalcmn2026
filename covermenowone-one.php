@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.21
+ * Version: 0.1.22
  * Author: CoverMeNow
  */
 
@@ -603,7 +603,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.21';
+    const VERSION = '0.1.22';
     const SCHEMA_BASE_VERSION = 38;
     const SCHEMA_VERSION = 73;
     const EMAIL_CANDIDATE_DECLINED = false;
@@ -656,6 +656,110 @@ final class CMN_One_Plugin {
     ];
     const CANDIDATE_REWARDS_CYCLE_TARGET = 30;
     const SUPPORT_FEEDBACK_REQUEST_WINDOW_HOURS = 48;
+    const REQUEST_STATUS_REQUESTED = 'requested';
+    const REQUEST_STATUS_PENDING = 'pending';
+    const REQUEST_STATUS_TENTATIVE = 'tentative';
+    const REQUEST_STATUS_ACCEPTED = 'accepted';
+    const REQUEST_STATUS_CONFIRMED = 'confirmed';
+    const REQUEST_STATUS_COMPLETED = 'completed';
+    const REQUEST_STATUS_DECLINED = 'declined';
+    const REQUEST_STATUS_CANCELLED = 'cancelled';
+    const REQUEST_STATUS_EXPIRED = 'expired';
+    const REQUEST_STATUS_CANDIDATE_ACCEPTED = 'candidate_accepted';
+    const REQUEST_STATUS_CANDIDATE_DECLINED = 'candidate_declined';
+    const REQUEST_STATUS_SET = [
+        self::REQUEST_STATUS_REQUESTED,
+        self::REQUEST_STATUS_PENDING,
+        self::REQUEST_STATUS_TENTATIVE,
+        self::REQUEST_STATUS_ACCEPTED,
+        self::REQUEST_STATUS_CONFIRMED,
+        self::REQUEST_STATUS_COMPLETED,
+        self::REQUEST_STATUS_DECLINED,
+        self::REQUEST_STATUS_CANCELLED,
+        self::REQUEST_STATUS_EXPIRED,
+        self::REQUEST_STATUS_CANDIDATE_ACCEPTED,
+        self::REQUEST_STATUS_CANDIDATE_DECLINED,
+    ];
+    const OFFER_STATE_OFFERED = 'offered';
+    const OFFER_STATE_ACCEPTED = 'accepted';
+    const OFFER_STATE_DECLINED = 'declined';
+    const OFFER_STATE_EXPIRED = 'expired';
+    const OFFER_STATE_SET = [
+        self::OFFER_STATE_OFFERED,
+        self::OFFER_STATE_ACCEPTED,
+        self::OFFER_STATE_DECLINED,
+        self::OFFER_STATE_EXPIRED,
+    ];
+    const BOOKING_STATUS_REQUESTED = 'requested';
+    const BOOKING_STATUS_OFFERED = 'offered';
+    const BOOKING_STATUS_ACCEPTED = 'accepted';
+    const BOOKING_STATUS_CONFIRMED = 'confirmed';
+    const BOOKING_STATUS_COMPLETED = 'completed';
+    const BOOKING_STATUS_DECLINED = 'declined';
+    const BOOKING_STATUS_CANCELLED = 'cancelled';
+    const BOOKING_STATUS_EXPIRED = 'expired';
+    const BOOKING_STATUS_CANDIDATE_ACCEPTED = 'candidate_accepted';
+    const BOOKING_STATUS_CANDIDATE_DECLINED = 'candidate_declined';
+    const BOOKING_STATUS_SET = [
+        self::BOOKING_STATUS_REQUESTED,
+        self::BOOKING_STATUS_OFFERED,
+        self::BOOKING_STATUS_ACCEPTED,
+        self::BOOKING_STATUS_CONFIRMED,
+        self::BOOKING_STATUS_COMPLETED,
+        self::BOOKING_STATUS_DECLINED,
+        self::BOOKING_STATUS_CANCELLED,
+        self::BOOKING_STATUS_EXPIRED,
+        self::BOOKING_STATUS_CANDIDATE_ACCEPTED,
+        self::BOOKING_STATUS_CANDIDATE_DECLINED,
+    ];
+    const BOOKING_THREAD_TYPE_BOOKING_DETAILS = 'booking_details';
+    const BOOKING_THREAD_TYPE_PAY_NEGOTIATION = 'pay_negotiation';
+    const BOOKING_THREAD_TYPE_DECLINE_FOLLOWUP = 'decline_followup';
+    const BOOKING_THREAD_TYPE_SCHOOL_COORDINATION = 'school_coordination';
+    const BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION = 'candidate_coordination';
+    const BOOKING_THREAD_TYPE_SET = [
+        self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
+        self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION,
+        self::BOOKING_THREAD_TYPE_DECLINE_FOLLOWUP,
+        self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION,
+        self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION,
+    ];
+    const BOOKING_THREAD_STATUS_ACTIVE = 'active';
+    const BOOKING_THREAD_STATUS_CLOSED = 'closed';
+    const BOOKING_THREAD_STATUS_SET = [
+        self::BOOKING_THREAD_STATUS_ACTIVE,
+        self::BOOKING_THREAD_STATUS_CLOSED,
+    ];
+    const PARTICIPANT_ROLE_CANDIDATE = 'candidate';
+    const PARTICIPANT_ROLE_SCHOOL = 'school';
+    const PARTICIPANT_ROLE_ACCOUNT_MANAGER = 'account_manager';
+    const PARTICIPANT_ROLE_ADMIN = 'admin';
+    const PARTICIPANT_ROLE_SYSTEM = 'system';
+    const PARTICIPANT_ROLE_SET = [
+        self::PARTICIPANT_ROLE_CANDIDATE,
+        self::PARTICIPANT_ROLE_SCHOOL,
+        self::PARTICIPANT_ROLE_ACCOUNT_MANAGER,
+        self::PARTICIPANT_ROLE_ADMIN,
+        self::PARTICIPANT_ROLE_SYSTEM,
+    ];
+    const AUDIT_EVENT_OFFER_CREATED = 'offer_created';
+    const AUDIT_EVENT_OFFER_SENT = 'offer_sent';
+    const AUDIT_EVENT_OFFER_VIEWED = 'offer_viewed';
+    const AUDIT_EVENT_ACCEPTED = 'accepted';
+    const AUDIT_EVENT_DECLINED = 'declined';
+    const AUDIT_EVENT_EXPIRED = 'expired';
+    const AUDIT_EVENT_CHAT_CREATED_OPENED = 'chat_created_opened';
+    const AUDIT_EVENT_SCHOOL_BOOK_NOW_CLICKED = 'school_live_match_book_now_clicked';
+    const AUDIT_EVENT_SET = [
+        self::AUDIT_EVENT_OFFER_CREATED,
+        self::AUDIT_EVENT_OFFER_SENT,
+        self::AUDIT_EVENT_OFFER_VIEWED,
+        self::AUDIT_EVENT_ACCEPTED,
+        self::AUDIT_EVENT_DECLINED,
+        self::AUDIT_EVENT_EXPIRED,
+        self::AUDIT_EVENT_CHAT_CREATED_OPENED,
+        self::AUDIT_EVENT_SCHOOL_BOOK_NOW_CLICKED,
+    ];
 
     private $automation_engine = null;
     private $rate_engine = null;
@@ -19149,6 +19253,11 @@ final class CMN_One_Plugin {
         if ($table === '') {
             return 0;
         }
+        $action_type = sanitize_key((string) $action_type);
+        $normalized_key_event = $this->normalize_audit_event_name($action_type, '');
+        if ($normalized_key_event !== '') {
+            $action_type = $normalized_key_event;
+        }
         $user_id = $user_id ? (int) $user_id : (int) get_current_user_id();
         $details_json = '';
         if (is_array($details) && !empty($details)) {
@@ -19158,7 +19267,7 @@ final class CMN_One_Plugin {
         }
         $wpdb->insert($table, [
             'user_id' => $user_id ?: null,
-            'action_type' => sanitize_key((string) $action_type),
+            'action_type' => $action_type,
             'reference_type' => sanitize_key((string) $reference_type),
             'reference_id' => sanitize_text_field((string) $reference_id),
             'details_json' => $details_json,
@@ -26957,32 +27066,32 @@ final class CMN_One_Plugin {
     }
 
     private function get_war_room_column_key($request) {
-        $status = strtolower((string) ($request['status'] ?? 'requested'));
-        if ($status === 'pending') {
-            $status = 'requested';
+        $status = $this->normalize_request_status((string) ($request['status'] ?? self::REQUEST_STATUS_REQUESTED), self::REQUEST_STATUS_REQUESTED);
+        if ($status === self::REQUEST_STATUS_PENDING) {
+            $status = self::REQUEST_STATUS_REQUESTED;
         }
-        if (in_array($status, ['accepted', 'confirmed'], true)) {
-            return 'accepted';
+        if (in_array($status, [self::REQUEST_STATUS_ACCEPTED, self::REQUEST_STATUS_CONFIRMED], true)) {
+            return self::REQUEST_STATUS_ACCEPTED;
         }
-        if ($status === 'tentative') {
+        if ($status === self::REQUEST_STATUS_TENTATIVE) {
             return 'negotiations';
         }
-        if (in_array($status, ['declined', 'cancelled'], true)) {
-            return 'declined';
+        if (in_array($status, [self::REQUEST_STATUS_DECLINED, self::REQUEST_STATUS_CANCELLED], true)) {
+            return self::REQUEST_STATUS_DECLINED;
         }
-        if ($status === 'expired') {
-            return 'expired';
+        if ($status === self::REQUEST_STATUS_EXPIRED) {
+            return self::REQUEST_STATUS_EXPIRED;
         }
         if (in_array($status, ['candidate_contacted', 'staff_reviewing', 'negotiation'], true)) {
             return 'negotiations';
         }
-        if ($status === 'requested') {
+        if ($status === self::REQUEST_STATUS_REQUESTED) {
             $request_id = (int) ($request['id'] ?? 0);
             if ($request_id > 0) {
                 $booking_id = $this->get_booking_id_for_request($request_id);
                 if ($booking_id > 0) {
-                    $active_thread = sanitize_key((string) get_post_meta($booking_id, 'cmn_active_thread', true));
-                    if ($active_thread === 'pay_negotiation') {
+                    $active_thread = $this->normalize_booking_thread_type((string) get_post_meta($booking_id, 'cmn_active_thread', true), '');
+                    if ($active_thread === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION) {
                         return 'negotiations';
                     }
                 }
@@ -27600,7 +27709,7 @@ final class CMN_One_Plugin {
                                 <button class="cmn-ghost cmn-btn-mini" type="button" data-request-toggle="confirm-<?php echo esc_attr($request['id']); ?>">Confirm</button>
                                 <button class="cmn-ghost cmn-btn-mini" type="button" data-request-toggle="decline-<?php echo esc_attr($request['id']); ?>">Decline</button>
                                 <?php if ($expired_now) : ?><span class="cmn-muted"><br>Expired</span><?php endif; ?>
-                            <?php elseif ($status === 'expired') : ?>
+                            <?php elseif ($status === self::REQUEST_STATUS_EXPIRED) : ?>
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
                                     <?php wp_nonce_field('cmn_update_candidate_request', 'cmn_update_candidate_request_nonce'); ?>
                                     <input type="hidden" name="action" value="cmn_update_candidate_request">
@@ -27618,9 +27727,9 @@ final class CMN_One_Plugin {
                             <?php else : ?>
                                 <span class="cmn-muted">-</span>
                             <?php endif; ?>
-                            <?php if ($request_booking_id && in_array($status, ['accepted', 'confirmed', 'declined', 'cancelled'], true)) : ?>
+                            <?php if ($request_booking_id && in_array($status, [self::REQUEST_STATUS_ACCEPTED, self::REQUEST_STATUS_CONFIRMED, self::REQUEST_STATUS_DECLINED, self::REQUEST_STATUS_CANCELLED], true)) : ?>
                                 <br>
-                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => $status === 'declined' ? 'decline_followup' : 'booking_details'], $portal_url) . '#cmn-request-chat'); ?>">Open booking chat</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => $status === self::REQUEST_STATUS_DECLINED ? self::BOOKING_THREAD_TYPE_DECLINE_FOLLOWUP : self::BOOKING_THREAD_TYPE_BOOKING_DETAILS], $portal_url) . '#cmn-request-chat'); ?>">Open booking chat</a>
                             <?php endif; ?>
                             <?php if ($status === 'requested') : ?>
                                 <br>
@@ -27628,18 +27737,18 @@ final class CMN_One_Plugin {
                                     <?php wp_nonce_field('cmn_open_booking_thread', 'cmn_open_booking_thread_nonce'); ?>
                                     <input type="hidden" name="action" value="cmn_open_booking_thread">
                                     <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr((int) $request['id']); ?>">
-                                    <input type="hidden" name="cmn_thread_type" value="candidate_coordination">
+                                    <input type="hidden" name="cmn_thread_type" value="<?php echo esc_attr(self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION); ?>">
                                     <button class="cmn-ghost cmn-btn-mini" type="submit">Chat candidate only</button>
                                 </form>
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
                                     <?php wp_nonce_field('cmn_open_booking_thread', 'cmn_open_booking_thread_nonce'); ?>
                                     <input type="hidden" name="action" value="cmn_open_booking_thread">
                                     <input type="hidden" name="cmn_request_id" value="<?php echo esc_attr((int) $request['id']); ?>">
-                                    <input type="hidden" name="cmn_thread_type" value="school_coordination">
+                                    <input type="hidden" name="cmn_thread_type" value="<?php echo esc_attr(self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION); ?>">
                                     <button class="cmn-ghost cmn-btn-mini" type="submit">Chat school only</button>
                                 </form>
                                 <?php if ($request_booking_id) : ?>
-                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => 'pay_negotiation'], $portal_url) . '#cmn-request-chat'); ?>">Open pay negotiation</a>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION], $portal_url) . '#cmn-request-chat'); ?>">Open pay negotiation</a>
                                 <?php endif; ?>
                             <?php endif; ?>
                         </td>
@@ -27716,10 +27825,7 @@ final class CMN_One_Plugin {
         </table>
         <?php
         $staff_chat_booking_id = isset($_GET['cmn_booking_chat']) ? (int) $_GET['cmn_booking_chat'] : 0;
-        $staff_chat_thread_type = sanitize_key((string) ($_GET['cmn_thread_type'] ?? 'booking_details'));
-        if (!in_array($staff_chat_thread_type, ['booking_details', 'pay_negotiation', 'decline_followup', 'school_coordination', 'candidate_coordination'], true)) {
-            $staff_chat_thread_type = 'booking_details';
-        }
+        $staff_chat_thread_type = $this->normalize_booking_thread_type((string) ($_GET['cmn_thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS));
         if ($staff_chat_booking_id) :
             $staff_chat_thread = $this->ensure_booking_thread_for_view($staff_chat_booking_id, $staff_chat_thread_type);
             if ($staff_chat_thread && $this->user_can_access_booking_thread((int) $staff_chat_thread['id'], get_current_user_id())) :
@@ -27746,30 +27852,30 @@ final class CMN_One_Plugin {
         ?>
             <div class="cmn-dashboard-card cmn-request-chat-panel" id="cmn-request-chat">
                 <div class="cmn-card-header">
-                    <h3><?php echo esc_html($staff_chat_thread_type === 'pay_negotiation' ? 'Pay Negotiation Chat' : ($staff_chat_thread_type === 'school_coordination' ? 'School Coordination Chat' : ($staff_chat_thread_type === 'candidate_coordination' ? 'Candidate Coordination Chat' : 'Booking Chat'))); ?></h3>
+                    <h3><?php echo esc_html($staff_chat_thread_type === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION ? 'Pay Negotiation Chat' : ($staff_chat_thread_type === self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION ? 'School Coordination Chat' : ($staff_chat_thread_type === self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION ? 'Candidate Coordination Chat' : 'Booking Chat'))); ?></h3>
                     <span class="cmn-muted"><?php echo esc_html($staff_booking_ref); ?></span>
                     <label class="cmn-inline cmn-muted" style="gap:6px;align-items:center;">
-                        <input type="checkbox" disabled <?php checked($staff_chat_thread_type === 'pay_negotiation'); ?>>
+                        <input type="checkbox" disabled <?php checked($staff_chat_thread_type === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION); ?>>
                         <span>Pay negotiation</span>
                     </label>
-                    <?php $staff_thread_status = sanitize_key((string) ($staff_chat_thread['status'] ?? 'active')); ?>
-                    <span class="cmn-status-chip <?php echo esc_attr($staff_thread_status === 'closed' ? 'is-warning' : 'is-approved'); ?>"><?php echo esc_html($staff_thread_status === 'closed' ? 'Closed' : 'Open'); ?></span>
+                    <?php $staff_thread_status = in_array(sanitize_key((string) ($staff_chat_thread['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE)), self::BOOKING_THREAD_STATUS_SET, true) ? sanitize_key((string) ($staff_chat_thread['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE)) : self::BOOKING_THREAD_STATUS_ACTIVE; ?>
+                    <span class="cmn-status-chip <?php echo esc_attr($staff_thread_status === self::BOOKING_THREAD_STATUS_CLOSED ? 'is-warning' : 'is-approved'); ?>"><?php echo esc_html($staff_thread_status === self::BOOKING_THREAD_STATUS_CLOSED ? 'Closed' : 'Open'); ?></span>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
                         <?php wp_nonce_field('cmn_set_booking_thread_status', 'cmn_set_booking_thread_status_nonce'); ?>
                         <input type="hidden" name="action" value="cmn_set_booking_thread_status">
                         <input type="hidden" name="cmn_thread_id" value="<?php echo esc_attr((int) $staff_chat_thread['id']); ?>">
-                        <input type="hidden" name="cmn_thread_status" value="<?php echo esc_attr($staff_thread_status === 'closed' ? 'active' : 'closed'); ?>">
-                        <button class="cmn-ghost cmn-btn-mini" type="submit"><?php echo esc_html($staff_thread_status === 'closed' ? 'Reopen chat' : 'Close chat'); ?></button>
+                        <input type="hidden" name="cmn_thread_status" value="<?php echo esc_attr($staff_thread_status === self::BOOKING_THREAD_STATUS_CLOSED ? self::BOOKING_THREAD_STATUS_ACTIVE : self::BOOKING_THREAD_STATUS_CLOSED); ?>">
+                        <button class="cmn-ghost cmn-btn-mini" type="submit"><?php echo esc_html($staff_thread_status === self::BOOKING_THREAD_STATUS_CLOSED ? 'Reopen chat' : 'Close chat'); ?></button>
                     </form>
                 </div>
-                <div class="cmn-support-messages" data-booking-chat data-thread-id="<?php echo esc_attr((int) $staff_chat_thread['id']); ?>" data-thread-role="<?php echo esc_attr($this->is_admin_user() ? 'admin' : 'account_manager'); ?>">
+                <div class="cmn-support-messages" data-booking-chat data-thread-id="<?php echo esc_attr((int) $staff_chat_thread['id']); ?>" data-thread-role="<?php echo esc_attr($this->is_admin_user() ? self::PARTICIPANT_ROLE_ADMIN : self::PARTICIPANT_ROLE_ACCOUNT_MANAGER); ?>">
                     <?php foreach ($this->get_booking_thread_messages((int) $staff_chat_thread['id']) as $chat_msg) : ?>
                         <?php
-                        $chat_sender_role = sanitize_key((string) ($chat_msg['sender_role_type'] ?? 'system'));
+                        $chat_sender_role = $this->normalize_participant_role_type((string) ($chat_msg['sender_role_type'] ?? self::PARTICIPANT_ROLE_SYSTEM), self::PARTICIPANT_ROLE_SYSTEM);
                         $chat_class = 'is-system';
-                        if ($chat_sender_role === 'candidate' || $chat_sender_role === 'school') {
+                        if ($chat_sender_role === self::PARTICIPANT_ROLE_CANDIDATE || $chat_sender_role === self::PARTICIPANT_ROLE_SCHOOL) {
                             $chat_class = 'is-user is-' . $chat_sender_role;
-                        } elseif (in_array($chat_sender_role, ['account_manager', 'admin'], true)) {
+                        } elseif (in_array($chat_sender_role, [self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, self::PARTICIPANT_ROLE_ADMIN], true)) {
                             $chat_class = 'is-admin is-' . $chat_sender_role;
                         }
                         ?>
@@ -28610,7 +28716,7 @@ final class CMN_One_Plugin {
                         <td>
                             #<?php echo esc_html((string) $booking_id); ?>
                             <?php if ($booking_id > 0) : ?>
-                                <br><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => 'booking_details'], $portal_url) . '#cmn-request-chat'); ?>">Open chat</a>
+                                <br><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS], $portal_url) . '#cmn-request-chat'); ?>">Open chat</a>
                             <?php endif; ?>
                         </td>
                         <td><?php echo esc_html((string) $school_name); ?></td>
@@ -56633,6 +56739,238 @@ final class CMN_One_Plugin {
         return $columns;
     }
 
+    private function normalize_request_status($status, $fallback = '') {
+        $status = sanitize_key((string) $status);
+        if (in_array($status, self::REQUEST_STATUS_SET, true)) {
+            return $status;
+        }
+        $fallback = sanitize_key((string) $fallback);
+        return in_array($fallback, self::REQUEST_STATUS_SET, true) ? $fallback : '';
+    }
+
+    private function normalize_offer_state($state, $fallback = '') {
+        $state = sanitize_key((string) $state);
+        if (in_array($state, self::OFFER_STATE_SET, true)) {
+            return $state;
+        }
+        $fallback = sanitize_key((string) $fallback);
+        return in_array($fallback, self::OFFER_STATE_SET, true) ? $fallback : '';
+    }
+
+    private function normalize_booking_status($status, $fallback = '') {
+        $status = sanitize_key((string) $status);
+        if (in_array($status, self::BOOKING_STATUS_SET, true)) {
+            return $status;
+        }
+        $fallback = sanitize_key((string) $fallback);
+        return in_array($fallback, self::BOOKING_STATUS_SET, true) ? $fallback : '';
+    }
+
+    private function normalize_booking_thread_type($thread_type, $fallback = self::BOOKING_THREAD_TYPE_BOOKING_DETAILS) {
+        $thread_type = sanitize_key((string) $thread_type);
+        if (in_array($thread_type, self::BOOKING_THREAD_TYPE_SET, true)) {
+            return $thread_type;
+        }
+        $fallback = sanitize_key((string) $fallback);
+        return in_array($fallback, self::BOOKING_THREAD_TYPE_SET, true) ? $fallback : self::BOOKING_THREAD_TYPE_BOOKING_DETAILS;
+    }
+
+    private function normalize_participant_role_type($role_type, $fallback = self::PARTICIPANT_ROLE_SYSTEM) {
+        $role_type = sanitize_key((string) $role_type);
+        if (in_array($role_type, self::PARTICIPANT_ROLE_SET, true)) {
+            return $role_type;
+        }
+        $fallback = sanitize_key((string) $fallback);
+        return in_array($fallback, self::PARTICIPANT_ROLE_SET, true) ? $fallback : self::PARTICIPANT_ROLE_SYSTEM;
+    }
+
+    private function normalize_booking_thread_status($status, $fallback = self::BOOKING_THREAD_STATUS_ACTIVE) {
+        $status = sanitize_key((string) $status);
+        if (in_array($status, self::BOOKING_THREAD_STATUS_SET, true)) {
+            return $status;
+        }
+        $fallback = sanitize_key((string) $fallback);
+        return in_array($fallback, self::BOOKING_THREAD_STATUS_SET, true) ? $fallback : self::BOOKING_THREAD_STATUS_ACTIVE;
+    }
+
+    private function normalize_audit_event_name($event_name, $fallback = '') {
+        $event_name = sanitize_key((string) $event_name);
+        if (in_array($event_name, self::AUDIT_EVENT_SET, true)) {
+            return $event_name;
+        }
+        $fallback = sanitize_key((string) $fallback);
+        if ($fallback !== '' && in_array($fallback, self::AUDIT_EVENT_SET, true)) {
+            return $fallback;
+        }
+        return '';
+    }
+
+    private function is_request_status_active_offer($status) {
+        $status = $this->normalize_request_status($status);
+        return in_array($status, [self::REQUEST_STATUS_REQUESTED, self::REQUEST_STATUS_PENDING], true);
+    }
+
+    private function is_request_status_accepted($status) {
+        $status = $this->normalize_request_status($status);
+        return in_array($status, [
+            self::REQUEST_STATUS_ACCEPTED,
+            self::REQUEST_STATUS_CONFIRMED,
+            self::REQUEST_STATUS_CANDIDATE_ACCEPTED,
+            self::REQUEST_STATUS_COMPLETED,
+        ], true);
+    }
+
+    private function is_request_status_declined($status) {
+        $status = $this->normalize_request_status($status);
+        return in_array($status, [
+            self::REQUEST_STATUS_DECLINED,
+            self::REQUEST_STATUS_CANCELLED,
+            self::REQUEST_STATUS_CANDIDATE_DECLINED,
+        ], true);
+    }
+
+    private function is_booking_status_accepted($status) {
+        $status = $this->normalize_booking_status($status);
+        return in_array($status, [
+            self::BOOKING_STATUS_ACCEPTED,
+            self::BOOKING_STATUS_CONFIRMED,
+            self::BOOKING_STATUS_CANDIDATE_ACCEPTED,
+            self::BOOKING_STATUS_COMPLETED,
+        ], true);
+    }
+
+    private function is_booking_status_declined($status) {
+        $status = $this->normalize_booking_status($status);
+        return in_array($status, [
+            self::BOOKING_STATUS_DECLINED,
+            self::BOOKING_STATUS_CANCELLED,
+            self::BOOKING_STATUS_CANDIDATE_DECLINED,
+        ], true);
+    }
+
+    private function can_transition_request_status($from_status, $to_status) {
+        $to_status = $this->normalize_request_status($to_status);
+        if ($to_status === '') {
+            return false;
+        }
+        $from_status = sanitize_key((string) $from_status);
+        if ($from_status === '' || $from_status === $to_status || !in_array($from_status, self::REQUEST_STATUS_SET, true)) {
+            return true;
+        }
+        $map = [
+            self::REQUEST_STATUS_REQUESTED => [
+                self::REQUEST_STATUS_PENDING,
+                self::REQUEST_STATUS_TENTATIVE,
+                self::REQUEST_STATUS_ACCEPTED,
+                self::REQUEST_STATUS_DECLINED,
+                self::REQUEST_STATUS_EXPIRED,
+                self::REQUEST_STATUS_CANCELLED,
+            ],
+            self::REQUEST_STATUS_PENDING => [
+                self::REQUEST_STATUS_REQUESTED,
+                self::REQUEST_STATUS_TENTATIVE,
+                self::REQUEST_STATUS_ACCEPTED,
+                self::REQUEST_STATUS_DECLINED,
+                self::REQUEST_STATUS_EXPIRED,
+                self::REQUEST_STATUS_CANCELLED,
+            ],
+            self::REQUEST_STATUS_TENTATIVE => [
+                self::REQUEST_STATUS_REQUESTED,
+                self::REQUEST_STATUS_PENDING,
+                self::REQUEST_STATUS_ACCEPTED,
+                self::REQUEST_STATUS_DECLINED,
+                self::REQUEST_STATUS_EXPIRED,
+                self::REQUEST_STATUS_CANCELLED,
+            ],
+            self::REQUEST_STATUS_ACCEPTED => [
+                self::REQUEST_STATUS_CONFIRMED,
+                self::REQUEST_STATUS_COMPLETED,
+                self::REQUEST_STATUS_CANCELLED,
+            ],
+            self::REQUEST_STATUS_CONFIRMED => [
+                self::REQUEST_STATUS_COMPLETED,
+                self::REQUEST_STATUS_CANCELLED,
+            ],
+            self::REQUEST_STATUS_DECLINED => [
+                self::REQUEST_STATUS_REQUESTED,
+                self::REQUEST_STATUS_PENDING,
+            ],
+            self::REQUEST_STATUS_EXPIRED => [
+                self::REQUEST_STATUS_REQUESTED,
+                self::REQUEST_STATUS_PENDING,
+            ],
+            self::REQUEST_STATUS_CANCELLED => [
+                self::REQUEST_STATUS_REQUESTED,
+                self::REQUEST_STATUS_PENDING,
+            ],
+        ];
+        if (!isset($map[$from_status])) {
+            return true;
+        }
+        return in_array($to_status, $map[$from_status], true);
+    }
+
+    private function can_transition_booking_status($from_status, $to_status) {
+        $to_status = $this->normalize_booking_status($to_status);
+        if ($to_status === '') {
+            return false;
+        }
+        $from_status = sanitize_key((string) $from_status);
+        if ($from_status === '' || $from_status === $to_status || !in_array($from_status, self::BOOKING_STATUS_SET, true)) {
+            return true;
+        }
+        $map = [
+            self::BOOKING_STATUS_REQUESTED => [
+                self::BOOKING_STATUS_OFFERED,
+                self::BOOKING_STATUS_ACCEPTED,
+                self::BOOKING_STATUS_DECLINED,
+                self::BOOKING_STATUS_EXPIRED,
+                self::BOOKING_STATUS_CANCELLED,
+            ],
+            self::BOOKING_STATUS_OFFERED => [
+                self::BOOKING_STATUS_ACCEPTED,
+                self::BOOKING_STATUS_DECLINED,
+                self::BOOKING_STATUS_EXPIRED,
+                self::BOOKING_STATUS_CANCELLED,
+            ],
+            self::BOOKING_STATUS_ACCEPTED => [
+                self::BOOKING_STATUS_CONFIRMED,
+                self::BOOKING_STATUS_COMPLETED,
+                self::BOOKING_STATUS_CANCELLED,
+            ],
+            self::BOOKING_STATUS_CONFIRMED => [
+                self::BOOKING_STATUS_COMPLETED,
+                self::BOOKING_STATUS_CANCELLED,
+            ],
+            self::BOOKING_STATUS_DECLINED => [
+                self::BOOKING_STATUS_OFFERED,
+                self::BOOKING_STATUS_REQUESTED,
+            ],
+            self::BOOKING_STATUS_EXPIRED => [
+                self::BOOKING_STATUS_OFFERED,
+                self::BOOKING_STATUS_REQUESTED,
+            ],
+        ];
+        if (!isset($map[$from_status])) {
+            return true;
+        }
+        return in_array($to_status, $map[$from_status], true);
+    }
+
+    private function update_booking_status_if_allowed($booking_id, $next_status) {
+        $booking_id = (int) $booking_id;
+        $next_status = $this->normalize_booking_status($next_status);
+        if ($booking_id < 1 || $next_status === '') {
+            return false;
+        }
+        $current_status = sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
+        if (!$this->can_transition_booking_status($current_status, $next_status)) {
+            return false;
+        }
+        update_post_meta($booking_id, 'cmn_status', $next_status);
+        return true;
+    }
+
     private function get_fallback_account_manager_user_id() {
         $user = get_user_by('email', 'j.norton@covermenow.co.uk');
         if (!$user) {
@@ -56852,8 +57190,6 @@ final class CMN_One_Plugin {
             }
         }
 
-        $accepted_statuses = ['accepted', 'confirmed', 'candidate_accepted', 'completed'];
-        $declined_statuses = ['declined', 'cancelled', 'candidate_declined'];
         $map = [];
         foreach ($target_dates_by_candidate as $candidate_id => $target_date) {
             $request_row = $preferred_rows[$candidate_id] ?? $fallback_rows[$candidate_id] ?? null;
@@ -56870,30 +57206,30 @@ final class CMN_One_Plugin {
             }
             $this->maybe_mark_request_expired($request_row);
             $request_id = (int) ($request_row['id'] ?? 0);
-            $request_status = sanitize_key((string) ($request_row['status'] ?? ''));
+            $request_status = $this->normalize_request_status((string) ($request_row['status'] ?? ''));
             $expires_at = $this->get_request_expires_at($request_row);
             $booking_id = $request_id > 0 ? (int) $this->get_booking_id_for_request($request_id) : 0;
-            $booking_status = $booking_id > 0 ? sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true)) : '';
+            $booking_status = $booking_id > 0 ? $this->normalize_booking_status((string) get_post_meta($booking_id, 'cmn_status', true)) : '';
             $offer_state = '';
-            if (in_array($request_status, $accepted_statuses, true) || in_array($booking_status, $accepted_statuses, true)) {
-                $offer_state = 'accepted';
-            } elseif (in_array($request_status, $declined_statuses, true) || in_array($booking_status, $declined_statuses, true)) {
-                $offer_state = 'declined';
-            } elseif ($request_status === 'expired' || $booking_status === 'expired' || $this->is_request_expired($request_row)) {
-                $offer_state = 'expired';
-            } elseif ($request_status === 'requested' || $request_status === 'pending' || $booking_status === 'offered') {
-                $offer_state = 'offered';
+            if ($this->is_request_status_accepted($request_status) || $this->is_booking_status_accepted($booking_status)) {
+                $offer_state = self::OFFER_STATE_ACCEPTED;
+            } elseif ($this->is_request_status_declined($request_status) || $this->is_booking_status_declined($booking_status)) {
+                $offer_state = self::OFFER_STATE_DECLINED;
+            } elseif ($request_status === self::REQUEST_STATUS_EXPIRED || $booking_status === self::BOOKING_STATUS_EXPIRED || $this->is_request_expired($request_row)) {
+                $offer_state = self::OFFER_STATE_EXPIRED;
+            } elseif ($this->is_request_status_active_offer($request_status) || $booking_status === self::BOOKING_STATUS_OFFERED) {
+                $offer_state = self::OFFER_STATE_OFFERED;
             }
             $chat_url = '';
-            if ($offer_state === 'accepted' && $booking_id > 0) {
+            if ($offer_state === self::OFFER_STATE_ACCEPTED && $booking_id > 0) {
                 $chat_url = add_query_arg([
                     'school' => 'requests',
                     'cmn_booking_chat' => $booking_id,
-                    'cmn_thread_type' => 'booking_details',
+                    'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
                 ], $this->get_portal_base_url());
             }
             $map[$candidate_id] = [
-                'state' => $offer_state,
+                'state' => $this->normalize_offer_state($offer_state),
                 'expires_at' => $expires_at,
                 'request_id' => $request_id,
                 'booking_id' => $booking_id,
@@ -56991,12 +57327,12 @@ final class CMN_One_Plugin {
         $idempotent = false;
         if (is_array($existing_request) && !empty($existing_request['id'])) {
             $request_id = (int) $existing_request['id'];
-            $existing_status = sanitize_key((string) ($existing_request['status'] ?? ''));
-            if ($existing_status === 'accepted') {
+            $existing_status = $this->normalize_request_status((string) ($existing_request['status'] ?? ''));
+            if ($existing_status === self::REQUEST_STATUS_ACCEPTED) {
                 return new WP_Error('cmn_offer_already_accepted', 'This candidate has already accepted this booking.');
             }
             $existing_expires_at = $this->get_request_expires_at($existing_request);
-            $is_active_offer = ($existing_status === 'requested' || $existing_status === 'pending')
+            $is_active_offer = $this->is_request_status_active_offer($existing_status)
                 && !$this->is_request_expired($existing_request)
                 && $existing_expires_at !== '';
 
@@ -57005,8 +57341,11 @@ final class CMN_One_Plugin {
                 $expires_at = $existing_expires_at;
             } else {
                 $updated_status = $existing_status;
-                if (!in_array($existing_status, ['requested', 'pending'], true)) {
-                    $updated_status = 'requested';
+                if (!$this->is_request_status_active_offer($existing_status)) {
+                    $updated_status = self::REQUEST_STATUS_REQUESTED;
+                }
+                if (!$this->can_transition_request_status($existing_status, $updated_status)) {
+                    return new WP_Error('cmn_offer_invalid_request_transition', 'Booking request cannot be reopened from current state.');
                 }
                 $wpdb->update($table, [
                     'status' => $updated_status,
@@ -57030,7 +57369,7 @@ final class CMN_One_Plugin {
                 'account_manager_user_id' => $account_manager_user_id ?: null,
                 'ready_response_id' => $ready_response_id,
                 'requested_date' => $requested_date,
-                'status' => 'requested',
+                'status' => self::REQUEST_STATUS_REQUESTED,
                 'request_sent_at' => $request_sent_at,
                 'expires_at' => $expires_at,
                 'candidate_pay_rate' => $candidate_pay_rate,
@@ -57060,12 +57399,16 @@ final class CMN_One_Plugin {
                 }
                 $request_id = (int) $existing_request['id'];
                 $this->maybe_mark_request_expired($existing_request);
-                if (!$this->is_request_expired($existing_request) && sanitize_key((string) ($existing_request['status'] ?? '')) === 'requested') {
+                if (!$this->is_request_expired($existing_request) && $this->normalize_request_status((string) ($existing_request['status'] ?? '')) === self::REQUEST_STATUS_REQUESTED) {
                     $idempotent = true;
                     $expires_at = $this->get_request_expires_at($existing_request);
                 } else {
+                    $existing_status = $this->normalize_request_status((string) ($existing_request['status'] ?? ''));
+                    if (!$this->can_transition_request_status($existing_status, self::REQUEST_STATUS_REQUESTED)) {
+                        return new WP_Error('cmn_offer_invalid_request_transition', 'Booking request cannot be reopened from current state.');
+                    }
                     $wpdb->update($table, [
-                        'status' => 'requested',
+                        'status' => self::REQUEST_STATUS_REQUESTED,
                         'request_sent_at' => $request_sent_at,
                         'expires_at' => $expires_at,
                         'candidate_pay_rate' => $candidate_pay_rate,
@@ -57099,7 +57442,7 @@ final class CMN_One_Plugin {
             return new WP_Error('cmn_offer_booking_failed', 'Unable to create booking offer.');
         }
 
-        update_post_meta($booking_id, 'cmn_status', 'offered');
+        $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_OFFERED);
         update_post_meta($booking_id, 'cmn_offer_active', '1');
         update_post_meta($booking_id, 'cmn_offer_expires_at', $expires_at);
         update_post_meta($booking_id, 'cmn_offer_candidate_id', $candidate_id);
@@ -57108,14 +57451,14 @@ final class CMN_One_Plugin {
         update_post_meta($booking_id, 'cmn_offer_updated_at', current_time('mysql'));
 
         if ($offer_created) {
-            $this->add_audit_log('offer_created', 'request', (string) $request_id, [
+            $this->add_audit_log(self::AUDIT_EVENT_OFFER_CREATED, 'request', (string) $request_id, [
                 'school_id' => $school_id,
                 'candidate_id' => $candidate_id,
                 'requested_date' => $requested_date,
                 'booking_id' => $booking_id,
             ], $school_user_id);
         }
-        $this->add_audit_log('offer_sent', 'request', (string) $request_id, [
+        $this->add_audit_log(self::AUDIT_EVENT_OFFER_SENT, 'request', (string) $request_id, [
             'school_id' => $school_id,
             'candidate_id' => $candidate_id,
             'requested_date' => $requested_date,
@@ -57151,7 +57494,7 @@ final class CMN_One_Plugin {
             'request_id' => $request_id,
             'booking_id' => $booking_id,
             'expires_at' => (string) ($state_row['expires_at'] ?? $expires_at),
-            'state' => sanitize_key((string) ($state_row['state'] ?? 'offered')),
+            'state' => $this->normalize_offer_state((string) ($state_row['state'] ?? self::OFFER_STATE_OFFERED), self::OFFER_STATE_OFFERED),
             'chat_url' => esc_url_raw((string) ($state_row['chat_url'] ?? '')),
             'idempotent' => $idempotent ? 1 : 0,
             'created' => $offer_created ? 1 : 0,
@@ -57250,8 +57593,8 @@ final class CMN_One_Plugin {
     }
 
     private function is_request_expired($request) {
-        $status = strtolower((string) ($request['status'] ?? ''));
-        if ($status !== 'requested' && $status !== 'pending') {
+        $status = $this->normalize_request_status((string) ($request['status'] ?? ''));
+        if (!$this->is_request_status_active_offer($status)) {
             return false;
         }
         $expires_at = $this->get_request_expires_at($request);
@@ -57271,26 +57614,30 @@ final class CMN_One_Plugin {
         if (!$request_id) {
             return false;
         }
+        $current_status = $this->normalize_request_status((string) ($request['status'] ?? ''));
+        if (!$this->can_transition_request_status($current_status, self::REQUEST_STATUS_EXPIRED)) {
+            return false;
+        }
         $updated = $wpdb->update($table, [
-            'status' => 'expired',
+            'status' => self::REQUEST_STATUS_EXPIRED,
             'updated_at' => current_time('mysql'),
         ], [
             'id' => $request_id,
-            'status' => $request['status'],
+            'status' => $current_status !== '' ? $current_status : sanitize_key((string) ($request['status'] ?? '')),
         ], ['%s', '%s'], ['%d', '%s']);
-        $request['status'] = 'expired';
+        $request['status'] = self::REQUEST_STATUS_EXPIRED;
         if ($updated === false) {
             return false;
         }
 
         $booking_id = (int) $this->get_booking_id_for_request($request_id);
         if ($booking_id > 0) {
-            update_post_meta($booking_id, 'cmn_status', 'expired');
+            $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_EXPIRED);
             update_post_meta($booking_id, 'cmn_offer_active', '0');
             update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
         }
         if ((int) $updated > 0) {
-            $this->add_audit_log('expired', 'request', (string) $request_id, [
+            $this->add_audit_log(self::AUDIT_EVENT_EXPIRED, 'request', (string) $request_id, [
                 'booking_id' => $booking_id,
                 'candidate_id' => (int) ($request['candidate_id'] ?? 0),
                 'school_id' => (int) ($request['school_id'] ?? 0),
@@ -57300,7 +57647,7 @@ final class CMN_One_Plugin {
         return true;
     }
 
-    private function create_or_get_booking_thread($booking_id, $thread_type = 'booking_details', $context = []) {
+    private function create_or_get_booking_thread($booking_id, $thread_type = self::BOOKING_THREAD_TYPE_BOOKING_DETAILS, $context = []) {
         $booking_id = (int) $booking_id;
         if (!$booking_id) {
             return 0;
@@ -57308,7 +57655,7 @@ final class CMN_One_Plugin {
         global $wpdb;
         $table = $this->get_booking_threads_table();
         $columns = $this->get_booking_thread_columns();
-        $thread_type = sanitize_key($thread_type);
+        $thread_type = $this->normalize_booking_thread_type($thread_type);
         $existing = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT id FROM {$table} WHERE booking_id = %d AND thread_type = %s LIMIT 1",
             $booking_id,
@@ -57331,7 +57678,7 @@ final class CMN_One_Plugin {
                     $formats[] = '%d';
                 }
                 if (in_array('status', $columns, true) && isset($context['status'])) {
-                    $updates['status'] = sanitize_key((string) $context['status']);
+                    $updates['status'] = $this->normalize_booking_thread_status((string) $context['status']);
                     $formats[] = '%s';
                 }
                 if ($updates) {
@@ -57359,7 +57706,9 @@ final class CMN_One_Plugin {
             $insert_formats[] = '%d';
         }
         if (in_array('status', $columns, true)) {
-            $insert_data['status'] = isset($context['status']) ? sanitize_key((string) $context['status']) : 'active';
+            $insert_data['status'] = isset($context['status'])
+                ? $this->normalize_booking_thread_status((string) $context['status'])
+                : self::BOOKING_THREAD_STATUS_ACTIVE;
             $insert_formats[] = '%s';
         }
         $wpdb->insert($table, $insert_data, $insert_formats);
@@ -57369,7 +57718,11 @@ final class CMN_One_Plugin {
     private function add_booking_thread_participant($thread_id, $user_id, $role_type) {
         $thread_id = (int) $thread_id;
         $user_id = (int) $user_id;
+        $role_type = $this->normalize_participant_role_type($role_type, '');
         if (!$thread_id || !$user_id) {
+            return;
+        }
+        if ($role_type === '') {
             return;
         }
         global $wpdb;
@@ -57377,7 +57730,7 @@ final class CMN_One_Plugin {
         $wpdb->replace($table, [
             'thread_id' => $thread_id,
             'user_id' => $user_id,
-            'role_type' => sanitize_key($role_type),
+            'role_type' => $role_type,
             'created_at' => current_time('mysql'),
         ], ['%d', '%d', '%s', '%s']);
     }
@@ -57387,13 +57740,14 @@ final class CMN_One_Plugin {
         if (!$thread_id || trim((string) $message) === '') {
             return;
         }
+        $sender_role_type = $this->normalize_participant_role_type($sender_role_type, self::PARTICIPANT_ROLE_SYSTEM);
         global $wpdb;
         $table = $this->get_booking_messages_table();
         $columns = $this->get_booking_message_columns();
         $insert_data = [
             'thread_id' => $thread_id,
             'sender_user_id' => (int) $sender_user_id ?: null,
-            'sender_role_type' => sanitize_key($sender_role_type),
+            'sender_role_type' => $sender_role_type,
             'message' => wp_kses_post((string) $message),
             'created_at' => current_time('mysql'),
         ];
@@ -57433,20 +57787,21 @@ final class CMN_One_Plugin {
         return $has > 0;
     }
 
-    private function get_booking_thread_by_booking($booking_id, $thread_type = 'booking_details') {
+    private function get_booking_thread_by_booking($booking_id, $thread_type = self::BOOKING_THREAD_TYPE_BOOKING_DETAILS) {
         global $wpdb;
         $table = $this->get_booking_threads_table();
+        $thread_type = $this->normalize_booking_thread_type($thread_type);
         return $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM {$table} WHERE booking_id = %d AND thread_type = %s LIMIT 1",
             (int) $booking_id,
-            sanitize_key($thread_type)
+            $thread_type
         ), ARRAY_A);
     }
 
-    private function ensure_booking_thread_for_view($booking_id, $thread_type = 'booking_details') {
+    private function ensure_booking_thread_for_view($booking_id, $thread_type = self::BOOKING_THREAD_TYPE_BOOKING_DETAILS) {
         $booking_id = (int) $booking_id;
-        $thread_type = sanitize_key((string) $thread_type);
-        if ($booking_id < 1 || !in_array($thread_type, ['booking_details', 'pay_negotiation', 'decline_followup', 'school_coordination', 'candidate_coordination'], true)) {
+        $thread_type = $this->normalize_booking_thread_type((string) $thread_type, '');
+        if ($booking_id < 1 || $thread_type === '') {
             return [];
         }
 
@@ -57477,29 +57832,29 @@ final class CMN_One_Plugin {
             'candidate_user_id' => $candidate_user_id,
             'school_user_id' => $school_user_id,
             'account_manager_user_id' => $am_user_id,
-            'status' => 'active',
+            'status' => self::BOOKING_THREAD_STATUS_ACTIVE,
         ]);
         if ($thread_id < 1) {
             return [];
         }
 
         if ($am_user_id > 0) {
-            $this->add_booking_thread_participant($thread_id, $am_user_id, 'account_manager');
+            $this->add_booking_thread_participant($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER);
         }
-        if ($thread_type === 'school_coordination') {
+        if ($thread_type === self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION) {
             if ($school_user_id > 0) {
-                $this->add_booking_thread_participant($thread_id, $school_user_id, 'school');
+                $this->add_booking_thread_participant($thread_id, $school_user_id, self::PARTICIPANT_ROLE_SCHOOL);
             }
-        } elseif ($thread_type === 'candidate_coordination' || $thread_type === 'pay_negotiation') {
+        } elseif ($thread_type === self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION || $thread_type === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION) {
             if ($candidate_user_id > 0) {
-                $this->add_booking_thread_participant($thread_id, $candidate_user_id, 'candidate');
+                $this->add_booking_thread_participant($thread_id, $candidate_user_id, self::PARTICIPANT_ROLE_CANDIDATE);
             }
         } else {
             if ($candidate_user_id > 0) {
-                $this->add_booking_thread_participant($thread_id, $candidate_user_id, 'candidate');
+                $this->add_booking_thread_participant($thread_id, $candidate_user_id, self::PARTICIPANT_ROLE_CANDIDATE);
             }
             if ($school_user_id > 0) {
-                $this->add_booking_thread_participant($thread_id, $school_user_id, 'school');
+                $this->add_booking_thread_participant($thread_id, $school_user_id, self::PARTICIPANT_ROLE_SCHOOL);
             }
         }
 
@@ -57514,14 +57869,13 @@ final class CMN_One_Plugin {
             "SELECT status FROM {$table} WHERE id = %d LIMIT 1",
             (int) $thread_id
         ));
-        $status = sanitize_key($status);
-        return $status !== '' ? $status : 'active';
+        return $this->normalize_booking_thread_status($status);
     }
 
     private function set_booking_thread_status($thread_id, $status) {
         $thread_id = (int) $thread_id;
-        $status = sanitize_key((string) $status);
-        if ($thread_id < 1 || !in_array($status, ['active', 'closed'], true)) {
+        $status = $this->normalize_booking_thread_status((string) $status, '');
+        if ($thread_id < 1 || $status === '') {
             return false;
         }
         global $wpdb;
@@ -57544,11 +57898,11 @@ final class CMN_One_Plugin {
     }
 
     private function get_no_show_cancelled_booking_statuses() {
-        return ['declined', 'cancelled', 'candidate_declined', 'expired'];
+        return [self::BOOKING_STATUS_DECLINED, self::BOOKING_STATUS_CANCELLED, self::BOOKING_STATUS_CANDIDATE_DECLINED, self::BOOKING_STATUS_EXPIRED];
     }
 
     private function get_no_show_expected_booking_statuses() {
-        return ['accepted', 'approved', 'confirmed', 'candidate_accepted', 'completed', 'completed_attended', 'no_show', 'noshow'];
+        return [self::BOOKING_STATUS_ACCEPTED, 'approved', self::BOOKING_STATUS_CONFIRMED, self::BOOKING_STATUS_CANDIDATE_ACCEPTED, self::BOOKING_STATUS_COMPLETED, 'completed_attended', 'no_show', 'noshow'];
     }
 
     private function get_booking_shift_date_window($booking_id) {
@@ -57632,13 +57986,13 @@ final class CMN_One_Plugin {
 
         $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
         foreach ($rows as $row) {
-            $sender_role = sanitize_key((string) ($row['sender_role_type'] ?? ''));
-            $thread_type = sanitize_key((string) ($row['thread_type'] ?? ''));
+            $sender_role = $this->normalize_participant_role_type((string) ($row['sender_role_type'] ?? ''), '');
+            $thread_type = $this->normalize_booking_thread_type((string) ($row['thread_type'] ?? ''), '');
             $sender_user_id = (int) ($row['sender_user_id'] ?? 0);
-            $is_candidate_direct = $sender_role === 'candidate' || ($candidate_user_id > 0 && $sender_user_id === $candidate_user_id);
+            $is_candidate_direct = $sender_role === self::PARTICIPANT_ROLE_CANDIDATE || ($candidate_user_id > 0 && $sender_user_id === $candidate_user_id);
             $is_on_behalf = !$is_candidate_direct
-                && $thread_type === 'candidate_coordination'
-                && in_array($sender_role, ['account_manager', 'admin'], true);
+                && $thread_type === self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION
+                && in_array($sender_role, [self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, self::PARTICIPANT_ROLE_ADMIN], true);
             if (!$is_candidate_direct && !$is_on_behalf) {
                 continue;
             }
@@ -58874,7 +59228,7 @@ final class CMN_One_Plugin {
         if ($viewer_role === 'staff') {
             return true;
         }
-        $details_thread = $this->get_booking_thread_by_booking($booking_id, 'booking_details');
+        $details_thread = $this->get_booking_thread_by_booking($booking_id, self::BOOKING_THREAD_TYPE_BOOKING_DETAILS);
         if ($details_thread && $this->user_can_access_booking_thread((int) ($details_thread['id'] ?? 0), $user_id)) {
             return true;
         }
@@ -58893,10 +59247,10 @@ final class CMN_One_Plugin {
             return false;
         }
         $status = $status !== '' ? sanitize_key($status) : sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
-        if ($status === 'completed') {
+        if ($status === self::BOOKING_STATUS_COMPLETED) {
             return true;
         }
-        if (in_array($status, ['declined', 'cancelled', 'expired', 'candidate_declined'], true)) {
+        if (in_array($status, [self::BOOKING_STATUS_DECLINED, self::BOOKING_STATUS_CANCELLED, self::BOOKING_STATUS_EXPIRED, self::BOOKING_STATUS_CANDIDATE_DECLINED], true)) {
             return false;
         }
         $booking_date = $this->get_booking_service_date($booking_id);
@@ -59259,7 +59613,7 @@ final class CMN_One_Plugin {
         $feedback_link = add_query_arg([
             'school' => 'requests',
             'cmn_booking_chat' => $booking_id,
-            'cmn_thread_type' => 'booking_details',
+            'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
             'cmn_feedback_prompt' => '1',
         ], $this->get_portal_base_url());
 
@@ -59304,7 +59658,7 @@ final class CMN_One_Plugin {
         }
         $params = [
             'cmn_booking_chat' => $booking_id,
-            'cmn_thread_type' => 'booking_details',
+            'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
             'cmn_feedback_prompt' => '1',
         ];
         if ($role === 'school') {
@@ -59719,8 +60073,8 @@ final class CMN_One_Plugin {
         $candidate_name = $candidate_id ? (string) get_the_title($candidate_id) : 'Candidate';
         $accept_msg = 'Candidate ' . $candidate_name . ' has accepted this booking.';
         $accept_sender_user_id = $am_user_id ?: $school_user_id;
-        $accept_sender_role = $am_user_id ? 'account_manager' : ($school_user_id ? 'school' : 'system');
-        $this->add_booking_thread_message($thread_id, 0, 'system', 'Booking accepted - please confirm details.');
+        $accept_sender_role = $am_user_id ? self::PARTICIPANT_ROLE_ACCOUNT_MANAGER : ($school_user_id ? self::PARTICIPANT_ROLE_SCHOOL : self::PARTICIPANT_ROLE_SYSTEM);
+        $this->add_booking_thread_message($thread_id, 0, self::PARTICIPANT_ROLE_SYSTEM, 'Booking accepted - please confirm details.');
         $this->add_booking_thread_message($thread_id, $accept_sender_user_id, $accept_sender_role, $accept_msg);
         $this->add_booking_thread_message($thread_id, $accept_sender_user_id, $accept_sender_role, 'Please use this chat to confirm start time, exact location, who to ask for on arrival, dress code, and any important on-site notes.');
         $this->add_booking_thread_message($thread_id, $accept_sender_user_id, $accept_sender_role, 'Important: do not discuss pay rates in this booking chat. Keep all booking communication documented here.');
@@ -59731,7 +60085,7 @@ final class CMN_One_Plugin {
             $template_message = $this->render_ready_response_template_message((string) $template_row['message_template'], $tokens);
             if ($template_message !== '') {
                 $template_sender_user_id = $school_user_id ?: $am_user_id;
-                $template_sender_role = $school_user_id ? 'school' : ($am_user_id ? 'account_manager' : 'system');
+                $template_sender_role = $school_user_id ? self::PARTICIPANT_ROLE_SCHOOL : ($am_user_id ? self::PARTICIPANT_ROLE_ACCOUNT_MANAGER : self::PARTICIPANT_ROLE_SYSTEM);
                 $this->add_booking_thread_message($thread_id, $template_sender_user_id, $template_sender_role, $template_message);
             }
         }
@@ -59817,7 +60171,7 @@ final class CMN_One_Plugin {
             $portal_link = add_query_arg([
                 'view' => 'requests',
                 'cmn_booking_chat' => (int) $booking_id,
-                'cmn_thread_type' => 'booking_details',
+                'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
             ], $this->get_portal_base_url());
         }
         foreach ($this->get_admin_users_for_support() as $admin_id) {
@@ -59886,7 +60240,7 @@ final class CMN_One_Plugin {
         $staff_link = add_query_arg([
             'view' => 'requests',
             'cmn_booking_chat' => $booking_id,
-            'cmn_thread_type' => 'booking_details',
+            'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
         ], $this->get_portal_base_url());
         $message = 'Low feedback alert (' . $stars_overall . '/5) for ' . $school_name . ' - ' . $candidate_name . '.';
         $notify_user_ids = [];
@@ -64706,7 +65060,7 @@ final class CMN_One_Plugin {
                                         $requested_date = $request['requested_date'] ?? '';
                                         $requested_label = $requested_date ? date_i18n('M j, Y', strtotime($requested_date)) : 'Tomorrow';
                                         $charge_rate = isset($request['school_charge_rate']) ? (float) $request['school_charge_rate'] : 0.0;
-                                        $request_status = strtolower((string) ($request['status'] ?? 'requested'));
+                                        $request_status = $this->normalize_request_status((string) ($request['status'] ?? self::REQUEST_STATUS_REQUESTED), self::REQUEST_STATUS_REQUESTED);
                                         $request_booking_id = $this->get_booking_id_for_request((int) ($request['id'] ?? 0));
                                         $is_completed_booking = $request_booking_id ? $this->is_school_candidate_feedback_eligible($request_booking_id) : false;
                                         $school_feedback_submitted = $is_completed_booking ? $this->school_has_submitted_candidate_feedback($request_booking_id, get_current_user_id()) : false;
@@ -64714,11 +65068,11 @@ final class CMN_One_Plugin {
                                         <div class="cmn-list-item">
                                             <strong><?php echo esc_html($candidate->post_title); ?></strong>
                                             <span><?php echo esc_html($requested_label . ' - ' . ucfirst($request_status)); ?> - Charge GBP <?php echo esc_html(number_format($charge_rate, 2)); ?></span>
-                                            <?php if ($request_booking_id && in_array($request_status, ['accepted', 'confirmed', 'tentative'], true)) : ?>
-                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => 'booking_details'], $portal_url)); ?>">Open booking chat</a>
+                                            <?php if ($request_booking_id && in_array($request_status, [self::REQUEST_STATUS_ACCEPTED, self::REQUEST_STATUS_CONFIRMED, self::REQUEST_STATUS_TENTATIVE], true)) : ?>
+                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS], $portal_url)); ?>">Open booking chat</a>
                                             <?php endif; ?>
                                             <?php if ($is_completed_booking && !$school_feedback_submitted) : ?>
-                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => 'booking_details', 'cmn_feedback_prompt' => '1'], $portal_url)); ?>">Rate Candidate</a>
+                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['school' => 'requests', 'cmn_booking_chat' => $request_booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS, 'cmn_feedback_prompt' => '1'], $portal_url)); ?>">Rate Candidate</a>
                                                 <span class="cmn-status-chip is-pending">Feedback pending</span>
                                             <?php elseif ($school_feedback_submitted) : ?>
                                                 <span class="cmn-status-chip is-approved">Feedback submitted</span>
@@ -64739,9 +65093,9 @@ final class CMN_One_Plugin {
                         </div>
                         <?php
                         $school_chat_booking_id = isset($_GET['cmn_booking_chat']) ? (int) $_GET['cmn_booking_chat'] : 0;
-                        $school_chat_thread_type = sanitize_key((string) ($_GET['cmn_thread_type'] ?? 'booking_details'));
-                        if (!in_array($school_chat_thread_type, ['booking_details', 'decline_followup', 'school_coordination'], true)) {
-                            $school_chat_thread_type = 'booking_details';
+                        $school_chat_thread_type = $this->normalize_booking_thread_type((string) ($_GET['cmn_thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS), self::BOOKING_THREAD_TYPE_BOOKING_DETAILS);
+                        if (!in_array($school_chat_thread_type, [self::BOOKING_THREAD_TYPE_BOOKING_DETAILS, self::BOOKING_THREAD_TYPE_DECLINE_FOLLOWUP, self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION], true)) {
+                            $school_chat_thread_type = self::BOOKING_THREAD_TYPE_BOOKING_DETAILS;
                         }
                         if ($school_chat_booking_id) :
                             $school_chat_thread = $this->get_booking_thread_by_booking($school_chat_booking_id, $school_chat_thread_type);
@@ -64757,18 +65111,18 @@ final class CMN_One_Plugin {
                                     <span class="cmn-muted"><?php echo esc_html($school_booking_ref); ?></span>
                                 </div>
                                     <label class="cmn-inline cmn-muted" style="gap:6px;align-items:center;">
-                                        <input type="checkbox" disabled <?php checked($school_chat_thread_type === 'pay_negotiation'); ?>>
+                                        <input type="checkbox" disabled <?php checked($school_chat_thread_type === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION); ?>>
                                         <span>Pay negotiation</span>
                                     </label>
                                 <div class="cmn-booking-feedback-summary" data-booking-feedback-summary></div>
                                 <div class="cmn-support-messages" data-booking-chat data-thread-id="<?php echo esc_attr((int) $school_chat_thread['id']); ?>" data-thread-role="school" data-booking-id="<?php echo esc_attr($school_chat_booking_id); ?>" data-feedback-role="school">
                                     <?php foreach ($this->get_booking_thread_messages((int) $school_chat_thread['id']) as $chat_msg) : ?>
                                         <?php
-                                        $chat_sender_role = sanitize_key((string) ($chat_msg['sender_role_type'] ?? 'system'));
+                                        $chat_sender_role = $this->normalize_participant_role_type((string) ($chat_msg['sender_role_type'] ?? self::PARTICIPANT_ROLE_SYSTEM), self::PARTICIPANT_ROLE_SYSTEM);
                                         $chat_class = 'is-system';
-                                        if ($chat_sender_role === 'school') {
+                                        if ($chat_sender_role === self::PARTICIPANT_ROLE_SCHOOL) {
                                             $chat_class = 'is-user is-school';
-                                        } elseif (in_array($chat_sender_role, ['candidate', 'account_manager', 'admin'], true)) {
+                                        } elseif (in_array($chat_sender_role, [self::PARTICIPANT_ROLE_CANDIDATE, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, self::PARTICIPANT_ROLE_ADMIN], true)) {
                                             $chat_class = 'is-admin is-' . $chat_sender_role;
                                         }
                                         ?>
@@ -68663,7 +69017,7 @@ final class CMN_One_Plugin {
                                                     <input type="hidden" name="cmn_request_action" value="negotiate">
                                                     <button class="cmn-ghost" type="submit">Negotiate rate</button>
                                                 </form>
-                                            <?php elseif ($request_status === 'expired') : ?>
+                                            <?php elseif ($request_status === self::REQUEST_STATUS_EXPIRED) : ?>
                                                 <small class="cmn-muted">Request expired.</small>
                                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
                                                     <?php wp_nonce_field('cmn_candidate_request_action', 'cmn_candidate_request_action_nonce'); ?>
@@ -68673,11 +69027,11 @@ final class CMN_One_Plugin {
                                                     <button class="cmn-ghost" type="submit">Request still needed?</button>
                                                 </form>
                                             <?php endif; ?>
-                                            <?php if ($booking_id_for_request && in_array($request_status, ['accepted', 'confirmed', 'tentative'], true)) : ?>
-                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id_for_request, 'cmn_thread_type' => 'booking_details'], $portal_url)); ?>">Open booking chat</a>
+                                            <?php if ($booking_id_for_request && in_array($request_status, [self::REQUEST_STATUS_ACCEPTED, self::REQUEST_STATUS_CONFIRMED, self::REQUEST_STATUS_TENTATIVE], true)) : ?>
+                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id_for_request, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS], $portal_url)); ?>">Open booking chat</a>
                                             <?php endif; ?>
                                             <?php if ($booking_id_for_request && $request_status === 'requested') : ?>
-                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id_for_request, 'cmn_thread_type' => 'pay_negotiation'], $portal_url)); ?>">Open pay negotiation chat</a>
+                                                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id_for_request, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION], $portal_url)); ?>">Open pay negotiation chat</a>
                                             <?php endif; ?>
                                         </div>
                                     <?php endforeach; ?>
@@ -68688,10 +69042,7 @@ final class CMN_One_Plugin {
                         </div>
                         <?php
                         $chat_booking_id = isset($_GET['cmn_booking_chat']) ? (int) $_GET['cmn_booking_chat'] : 0;
-                        $chat_thread_type = sanitize_key((string) ($_GET['cmn_thread_type'] ?? 'booking_details'));
-                        if (!in_array($chat_thread_type, ['booking_details', 'pay_negotiation', 'decline_followup', 'school_coordination', 'candidate_coordination'], true)) {
-                            $chat_thread_type = 'booking_details';
-                        }
+                        $chat_thread_type = $this->normalize_booking_thread_type((string) ($_GET['cmn_thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS));
                         if ($chat_booking_id) :
                             $chat_redirect_args = [
                                 'candidate' => 'bookings',
@@ -68712,14 +69063,14 @@ final class CMN_One_Plugin {
                         ?>
                             <div class="cmn-dashboard-card cmn-candidate-bookings-chat">
                                 <div class="cmn-card-header">
-                                    <h3><?php echo esc_html($chat_thread_type === 'pay_negotiation' ? 'Pay Negotiation Chat' : ($chat_thread_type === 'school_coordination' ? 'School Coordination Chat' : ($chat_thread_type === 'candidate_coordination' ? 'Candidate Coordination Chat' : 'Booking Chat'))); ?></h3>
+                                    <h3><?php echo esc_html($chat_thread_type === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION ? 'Pay Negotiation Chat' : ($chat_thread_type === self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION ? 'School Coordination Chat' : ($chat_thread_type === self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION ? 'Candidate Coordination Chat' : 'Booking Chat'))); ?></h3>
                                     <span class="cmn-muted"><?php echo esc_html($candidate_booking_ref); ?></span>
                                     <label class="cmn-inline cmn-muted" style="gap:6px;align-items:center;">
-                                        <input type="checkbox" disabled <?php checked($chat_thread_type === 'pay_negotiation'); ?>>
+                                        <input type="checkbox" disabled <?php checked($chat_thread_type === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION); ?>>
                                         <span>Pay negotiation</span>
                                     </label>
                                 </div>
-                                <?php if ($chat_thread_type === 'booking_details' && !$chat_ack) : ?>
+                                <?php if ($chat_thread_type === self::BOOKING_THREAD_TYPE_BOOKING_DETAILS && !$chat_ack) : ?>
                                     <div class="cmn-booking-disclaimer-modal" data-booking-disclaimer-modal>
                                         <div class="cmn-booking-disclaimer-modal__backdrop"></div>
                                         <div class="cmn-booking-disclaimer-modal__card">
@@ -68739,11 +69090,11 @@ final class CMN_One_Plugin {
                                     <div class="cmn-support-messages" data-booking-chat data-thread-id="<?php echo esc_attr((int) $chat_thread['id']); ?>" data-thread-role="candidate" data-booking-id="<?php echo esc_attr($chat_booking_id); ?>" data-feedback-role="candidate">
                                         <?php foreach ($this->get_booking_thread_messages((int) $chat_thread['id']) as $chat_msg) : ?>
                                             <?php
-                                            $chat_sender_role = sanitize_key((string) ($chat_msg['sender_role_type'] ?? 'system'));
+                                            $chat_sender_role = $this->normalize_participant_role_type((string) ($chat_msg['sender_role_type'] ?? self::PARTICIPANT_ROLE_SYSTEM), self::PARTICIPANT_ROLE_SYSTEM);
                                             $chat_class = 'is-system';
-                                            if ($chat_sender_role === 'candidate') {
+                                            if ($chat_sender_role === self::PARTICIPANT_ROLE_CANDIDATE) {
                                                 $chat_class = 'is-user is-candidate';
-                                            } elseif (in_array($chat_sender_role, ['school', 'account_manager', 'admin'], true)) {
+                                            } elseif (in_array($chat_sender_role, [self::PARTICIPANT_ROLE_SCHOOL, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, self::PARTICIPANT_ROLE_ADMIN], true)) {
                                                 $chat_class = 'is-admin is-' . $chat_sender_role;
                                             }
                                             ?>
@@ -68886,7 +69237,7 @@ final class CMN_One_Plugin {
                                         <div>
                                             <?php if ($feedback_eligible && !$feedback_submitted) : ?>
                                                 <span class="cmn-status-chip is-pending">Pending</span>
-                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => 'booking_details', 'cmn_feedback_prompt' => '1'], $portal_url)); ?>">Leave feedback</a>
+                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['candidate' => 'bookings', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS, 'cmn_feedback_prompt' => '1'], $portal_url)); ?>">Leave feedback</a>
                                             <?php elseif ($feedback_submitted) : ?>
                                                 <span class="cmn-status-chip is-approved">Submitted</span>
                                             <?php else : ?>
@@ -79591,7 +79942,7 @@ final class CMN_One_Plugin {
                 'is_physically_online' => $is_physically_online ? 1 : 0,
                 'presence_label' => $presence_label,
                 'target_date' => (string) ($item['availability_date'] ?? $target_date),
-                'offer_state' => sanitize_key((string) ($offer_state['state'] ?? '')),
+                'offer_state' => $this->normalize_offer_state((string) ($offer_state['state'] ?? '')),
                 'offer_expires_at' => sanitize_text_field((string) ($offer_state['expires_at'] ?? '')),
                 'offer_request_id' => (int) ($offer_state['request_id'] ?? 0),
                 'offer_booking_id' => (int) ($offer_state['booking_id'] ?? 0),
@@ -79729,13 +80080,13 @@ final class CMN_One_Plugin {
             $offer_chat_url = esc_url((string) ($item['offer_chat_url'] ?? ''));
             $offer_booking_id = (int) ($item['offer_booking_id'] ?? 0);
             $offer_initial_text = '';
-            if ($offer_state === 'offered') {
+            if ($offer_state === self::OFFER_STATE_OFFERED) {
                 $offer_initial_text = 'Offer sent - awaiting response.';
-            } elseif ($offer_state === 'accepted') {
+            } elseif ($offer_state === self::OFFER_STATE_ACCEPTED) {
                 $offer_initial_text = $offer_chat_url !== '' ? 'Accepted - open chat.' : 'Accepted.';
-            } elseif ($offer_state === 'declined') {
+            } elseif ($offer_state === self::OFFER_STATE_DECLINED) {
                 $offer_initial_text = 'Declined by candidate.';
-            } elseif ($offer_state === 'expired') {
+            } elseif ($offer_state === self::OFFER_STATE_EXPIRED) {
                 $offer_initial_text = 'No response in time.';
             }
             $banner_html = $status === 'available'
@@ -83109,10 +83460,10 @@ final class CMN_One_Plugin {
             if (!$this->user_can_access_school($school_domain)) {
                 wp_die('Unauthorized');
             }
-            $details_thread = $this->get_booking_thread_by_booking((int) $booking_id_for_rates, 'booking_details');
+            $details_thread = $this->get_booking_thread_by_booking((int) $booking_id_for_rates, self::BOOKING_THREAD_TYPE_BOOKING_DETAILS);
             if (!empty($details_thread['id'])) {
-                $this->set_booking_thread_status((int) $details_thread['id'], 'closed');
-                $this->add_booking_thread_message((int) $details_thread['id'], get_current_user_id(), $this->is_admin_user() ? 'admin' : 'account_manager', 'Booking details finalized. Thread closed by CoverMeNow. Post a message any time to reopen.');
+                $this->set_booking_thread_status((int) $details_thread['id'], self::BOOKING_THREAD_STATUS_CLOSED);
+                $this->add_booking_thread_message((int) $details_thread['id'], get_current_user_id(), $this->is_admin_user() ? self::PARTICIPANT_ROLE_ADMIN : self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, 'Booking details finalized. Thread closed by CoverMeNow. Post a message any time to reopen.');
             }
 
             $this->insert_activity_row([
@@ -92036,7 +92387,7 @@ p{margin:0;line-height:1.5}
             if (is_wp_error($offer_result)) {
                 wp_send_json_error(['message' => $offer_result->get_error_message()], 400);
             }
-            $this->add_audit_log('school_live_match_book_now_clicked', 'candidate', (string) $candidate_id, [
+            $this->add_audit_log(self::AUDIT_EVENT_SCHOOL_BOOK_NOW_CLICKED, 'candidate', (string) $candidate_id, [
                 'school_id' => (int) $school_id,
                 'request_id' => (int) ($offer_result['request_id'] ?? 0),
                 'booking_id' => (int) ($offer_result['booking_id'] ?? 0),
@@ -92046,7 +92397,7 @@ p{margin:0;line-height:1.5}
                 'request_id' => (int) ($offer_result['request_id'] ?? 0),
                 'booking_id' => (int) ($offer_result['booking_id'] ?? 0),
                 'expires_at' => sanitize_text_field((string) ($offer_result['expires_at'] ?? '')),
-                'offer_state' => sanitize_key((string) ($offer_result['state'] ?? 'offered')),
+                'offer_state' => $this->normalize_offer_state((string) ($offer_result['state'] ?? self::OFFER_STATE_OFFERED), self::OFFER_STATE_OFFERED),
                 'chat_url' => esc_url_raw((string) ($offer_result['chat_url'] ?? '')),
                 'idempotent' => !empty($offer_result['idempotent']) ? 1 : 0,
             ]);
@@ -92103,7 +92454,7 @@ p{margin:0;line-height:1.5}
                 ];
                 $offer_row = (array) ($offer_state_map[$candidate_id] ?? []);
                 $offers[(string) $candidate_id] = [
-                    'state' => sanitize_key((string) ($offer_row['state'] ?? '')),
+                    'state' => $this->normalize_offer_state((string) ($offer_row['state'] ?? '')),
                     'expires_at' => sanitize_text_field((string) ($offer_row['expires_at'] ?? '')),
                     'request_id' => (int) ($offer_row['request_id'] ?? 0),
                     'booking_id' => (int) ($offer_row['booking_id'] ?? 0),
@@ -92118,7 +92469,7 @@ p{margin:0;line-height:1.5}
             ];
             $offer_row = (array) ($offer_state_map[$candidate_id] ?? []);
             $offers[(string) $candidate_id] = [
-                'state' => sanitize_key((string) ($offer_row['state'] ?? '')),
+                'state' => $this->normalize_offer_state((string) ($offer_row['state'] ?? '')),
                 'expires_at' => sanitize_text_field((string) ($offer_row['expires_at'] ?? '')),
                 'request_id' => (int) ($offer_row['request_id'] ?? 0),
                 'booking_id' => (int) ($offer_row['booking_id'] ?? 0),
@@ -92218,7 +92569,7 @@ p{margin:0;line-height:1.5}
             'account_manager_user_id' => $account_manager_user_id ?: null,
             'ready_response_id' => $ready_response_id,
             'requested_date' => $target_date,
-            'status' => 'requested',
+            'status' => self::REQUEST_STATUS_REQUESTED,
             'request_sent_at' => $request_sent_at,
             'expires_at' => $expires_at,
             'candidate_pay_rate' => $candidate_pay_rate,
@@ -92400,7 +92751,7 @@ p{margin:0;line-height:1.5}
             'account_manager_user_id' => $account_manager_user_id ?: null,
             'ready_response_id' => $ready_response_id,
             'requested_date' => $requested_date,
-            'status' => 'requested',
+            'status' => self::REQUEST_STATUS_REQUESTED,
             'request_sent_at' => $now_mysql,
             'expires_at' => $expires_at,
             'candidate_pay_rate' => $candidate_pay_rate,
@@ -92575,7 +92926,7 @@ p{margin:0;line-height:1.5}
         update_post_meta($booking_id, 'cmn_end_time', $end_time);
         update_post_meta($booking_id, 'cmn_role', $role);
         update_post_meta($booking_id, 'cmn_notes', $notes);
-        update_post_meta($booking_id, 'cmn_status', 'requested');
+        update_post_meta($booking_id, 'cmn_status', self::BOOKING_STATUS_REQUESTED);
         update_post_meta($booking_id, 'cmn_booking_type', 'long_term');
         update_post_meta($booking_id, 'cmn_source', 'school_long_booking');
         update_post_meta($booking_id, 'cmn_school_id', $school_id);
@@ -92717,14 +93068,14 @@ p{margin:0;line-height:1.5}
         global $wpdb;
         $table = $this->get_candidate_requests_table();
         $now = current_time('mysql');
-        $current_status = strtolower((string) ($request['status'] ?? 'requested'));
+        $current_status = $this->normalize_request_status((string) ($request['status'] ?? self::REQUEST_STATUS_REQUESTED), self::REQUEST_STATUS_REQUESTED);
 
         if ($action === 'still_needed') {
-            if ($current_status === 'requested') {
+            if ($current_status === self::REQUEST_STATUS_REQUESTED) {
                 $this->maybe_mark_request_expired($request);
-                $current_status = strtolower((string) ($request['status'] ?? 'expired'));
+                $current_status = $this->normalize_request_status((string) ($request['status'] ?? self::REQUEST_STATUS_EXPIRED), self::REQUEST_STATUS_EXPIRED);
             }
-            if ($current_status !== 'expired') {
+            if ($current_status !== self::REQUEST_STATUS_EXPIRED) {
                 wp_redirect(add_query_arg(['candidate' => 'bookings', 'cmn_notice' => rawurlencode('This request is still active.')], $this->get_portal_base_url()));
                 exit;
             }
@@ -92757,7 +93108,7 @@ p{margin:0;line-height:1.5}
             exit;
         }
 
-        if (!in_array($current_status, ['requested'], true)) {
+        if ($current_status !== self::REQUEST_STATUS_REQUESTED) {
             wp_redirect(add_query_arg(['candidate' => 'bookings', 'cmn_notice' => rawurlencode('This request can no longer be updated.')], $this->get_portal_base_url()));
             exit;
         }
@@ -92772,7 +93123,7 @@ p{margin:0;line-height:1.5}
             if (!$booking_id) {
                 $booking_id = $this->create_booking_from_request($request, $school_id, get_current_user_id());
                 if ($booking_id) {
-                    update_post_meta($booking_id, 'cmn_status', 'requested');
+                    $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_REQUESTED);
                     update_post_meta($booking_id, 'cmn_request_id', $request_id);
                     update_post_meta($request_id, 'cmn_booking_id', $booking_id);
                 }
@@ -92780,22 +93131,22 @@ p{margin:0;line-height:1.5}
             if ($booking_id) {
                 $candidate_user_id = get_current_user_id();
                 $school_user_id = $this->get_school_user_id_for_request($request, $school_id);
-                $thread_id = $this->create_or_get_booking_thread($booking_id, 'pay_negotiation', [
+                $thread_id = $this->create_or_get_booking_thread($booking_id, self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION, [
                     'candidate_user_id' => $candidate_user_id,
                     'school_user_id' => $school_user_id,
                     'account_manager_user_id' => $am_user_id,
-                    'status' => 'active',
+                    'status' => self::BOOKING_THREAD_STATUS_ACTIVE,
                 ]);
                 if ($thread_id) {
-                    $this->add_booking_thread_participant($thread_id, $candidate_user_id, 'candidate');
+                    $this->add_booking_thread_participant($thread_id, $candidate_user_id, self::PARTICIPANT_ROLE_CANDIDATE);
                     if ($am_user_id) {
-                        $this->add_booking_thread_participant($thread_id, $am_user_id, 'account_manager');
+                        $this->add_booking_thread_participant($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER);
                     }
                     $existing_messages = $this->get_booking_thread_messages($thread_id);
                     if (!$existing_messages) {
-                        $this->add_booking_thread_message($thread_id, $am_user_id, 'account_manager', 'Pay negotiation only. This chat is between you and the account manager.');
+                        $this->add_booking_thread_message($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, 'Pay negotiation only. This chat is between you and the account manager.');
                     }
-                    update_post_meta($booking_id, 'cmn_active_thread', 'pay_negotiation');
+                    update_post_meta($booking_id, 'cmn_active_thread', self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION);
                 }
                 $candidate_name = get_the_title($candidate_id);
                 $requested_label = !empty($request['requested_date']) ? date_i18n('M j, Y', strtotime($request['requested_date'])) : 'tomorrow';
@@ -92831,8 +93182,12 @@ p{margin:0;line-height:1.5}
 
         if ($action === 'tentative') {
             $tentative_note = sanitize_textarea_field((string) ($_POST['cmn_tentative_note'] ?? ''));
+            if (!$this->can_transition_request_status($current_status, self::REQUEST_STATUS_TENTATIVE)) {
+                wp_redirect(add_query_arg(['candidate' => 'bookings', 'cmn_notice' => rawurlencode('This request can no longer be updated.')], $this->get_portal_base_url()));
+                exit;
+            }
             $wpdb->update($table, [
-                'status' => 'tentative',
+                'status' => self::REQUEST_STATUS_TENTATIVE,
                 'internal_note' => $tentative_note,
                 'updated_at' => $now,
             ], ['id' => $request_id], ['%s', '%s', '%s'], ['%d']);
@@ -92843,27 +93198,27 @@ p{margin:0;line-height:1.5}
                 if ($booking_id) {
                     update_post_meta($booking_id, 'cmn_request_id', $request_id);
                     update_post_meta($request_id, 'cmn_booking_id', $booking_id);
-                    update_post_meta($booking_id, 'cmn_status', 'requested');
+                    $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_REQUESTED);
                 }
             }
             if ($booking_id) {
-                update_post_meta($booking_id, 'cmn_status', 'requested');
+                $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_REQUESTED);
                 $school_user_id = $this->get_school_user_id_for_request($request, $school_id);
-                $thread_id = $this->create_or_get_booking_thread($booking_id, 'candidate_coordination', [
+                $thread_id = $this->create_or_get_booking_thread($booking_id, self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION, [
                     'candidate_user_id' => get_current_user_id(),
                     'school_user_id' => $school_user_id,
                     'account_manager_user_id' => $am_user_id,
-                    'status' => 'active',
+                    'status' => self::BOOKING_THREAD_STATUS_ACTIVE,
                 ]);
                 if ($thread_id) {
-                    $this->add_booking_thread_participant($thread_id, get_current_user_id(), 'candidate');
+                    $this->add_booking_thread_participant($thread_id, get_current_user_id(), self::PARTICIPANT_ROLE_CANDIDATE);
                     if ($am_user_id) {
-                        $this->add_booking_thread_participant($thread_id, $am_user_id, 'account_manager');
+                        $this->add_booking_thread_participant($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER);
                     }
                     if ($tentative_note !== '') {
-                        $this->add_booking_thread_message($thread_id, get_current_user_id(), 'candidate', 'Candidate marked tentative: ' . $tentative_note);
+                        $this->add_booking_thread_message($thread_id, get_current_user_id(), self::PARTICIPANT_ROLE_CANDIDATE, 'Candidate marked tentative: ' . $tentative_note);
                     } else {
-                        $this->add_booking_thread_message($thread_id, get_current_user_id(), 'candidate', 'Candidate marked tentative - please coordinate details before final acceptance.');
+                        $this->add_booking_thread_message($thread_id, get_current_user_id(), self::PARTICIPANT_ROLE_CANDIDATE, 'Candidate marked tentative - please coordinate details before final acceptance.');
                     }
                 }
             }
@@ -92903,8 +93258,12 @@ p{margin:0;line-height:1.5}
 
         if ($action === 'decline') {
             $reason = sanitize_textarea_field($_POST['cmn_decline_reason'] ?? '');
+            if (!$this->can_transition_request_status($current_status, self::REQUEST_STATUS_DECLINED)) {
+                wp_redirect(add_query_arg(['candidate' => 'bookings', 'cmn_notice' => rawurlencode('This request can no longer be updated.')], $this->get_portal_base_url()));
+                exit;
+            }
             $wpdb->update($table, [
-                'status' => 'declined',
+                'status' => self::REQUEST_STATUS_DECLINED,
                 'internal_note' => $reason,
                 'updated_at' => $now,
             ], ['id' => $request_id], ['%s', '%s', '%s'], ['%d']);
@@ -92917,24 +93276,24 @@ p{margin:0;line-height:1.5}
                 }
             }
             if ($booking_id) {
-                update_post_meta($booking_id, 'cmn_status', 'declined');
+                $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_DECLINED);
                 update_post_meta($booking_id, 'cmn_offer_active', '0');
                 update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
                 $school_user_id = $this->get_school_user_id_for_request($request, $school_id);
-                $thread_id = $this->create_or_get_booking_thread($booking_id, 'decline_followup', [
+                $thread_id = $this->create_or_get_booking_thread($booking_id, self::BOOKING_THREAD_TYPE_DECLINE_FOLLOWUP, [
                     'candidate_user_id' => get_current_user_id(),
                     'school_user_id' => $school_user_id,
                     'account_manager_user_id' => $am_user_id,
-                    'status' => 'active',
+                    'status' => self::BOOKING_THREAD_STATUS_ACTIVE,
                 ]);
                 if ($thread_id) {
-                    $this->add_booking_thread_participant($thread_id, get_current_user_id(), 'candidate');
+                    $this->add_booking_thread_participant($thread_id, get_current_user_id(), self::PARTICIPANT_ROLE_CANDIDATE);
                     if ($am_user_id) {
-                        $this->add_booking_thread_participant($thread_id, $am_user_id, 'account_manager');
+                        $this->add_booking_thread_participant($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER);
                     }
-                    $this->add_booking_thread_message($thread_id, $am_user_id, 'account_manager', 'No problem - can you share why you declined? (e.g. distance, time, pay, already booked, other)');
+                    $this->add_booking_thread_message($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, 'No problem - can you share why you declined? (e.g. distance, time, pay, already booked, other)');
                     if ($reason !== '') {
-                        $this->add_booking_thread_message($thread_id, get_current_user_id(), 'candidate', 'Decline reason: ' . $reason);
+                        $this->add_booking_thread_message($thread_id, get_current_user_id(), self::PARTICIPANT_ROLE_CANDIDATE, 'Decline reason: ' . $reason);
                     }
                 }
             }
@@ -92954,7 +93313,7 @@ p{margin:0;line-height:1.5}
                 'booking_id' => (int) $booking_id,
                 'reason' => $reason,
             ]);
-            $this->add_audit_log('declined', 'request', (string) $request_id, [
+            $this->add_audit_log(self::AUDIT_EVENT_DECLINED, 'request', (string) $request_id, [
                 'candidate_id' => (int) $candidate_id,
                 'booking_id' => (int) $booking_id,
                 'reason' => $reason,
@@ -92964,6 +93323,10 @@ p{margin:0;line-height:1.5}
         }
 
         if ($action === 'accept') {
+            if (!$this->can_transition_request_status($current_status, self::REQUEST_STATUS_ACCEPTED)) {
+                wp_redirect(add_query_arg(['candidate' => 'bookings', 'cmn_notice' => rawurlencode('This request can no longer be updated.')], $this->get_portal_base_url()));
+                exit;
+            }
             $context = $this->resolve_rate_context((int) $candidate_id, (int) $school_id, (array) $request, 0);
             $candidate_pay = !empty($request['candidate_pay_rate']) ? (float) $request['candidate_pay_rate'] : 0.0;
             $school_rate = !empty($request['school_charge_rate']) ? (float) $request['school_charge_rate'] : 0.0;
@@ -92984,7 +93347,7 @@ p{margin:0;line-height:1.5}
                 wp_redirect(add_query_arg(['candidate' => 'bookings', 'cmn_notice' => rawurlencode('Unable to accept request.')], $this->get_portal_base_url()));
                 exit;
             }
-            update_post_meta($booking_id, 'cmn_status', 'accepted');
+            $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_ACCEPTED);
             update_post_meta($booking_id, 'cmn_offer_active', '0');
             update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
             $request_candidate_pay = $this->get_request_candidate_pay_rate($candidate_id, $school_id, $request);
@@ -93002,28 +93365,28 @@ p{margin:0;line-height:1.5}
                 'Candidate accepted booking request'
             );
             $wpdb->update($table, [
-                'status' => 'accepted',
+                'status' => self::REQUEST_STATUS_ACCEPTED,
                 'updated_at' => $now,
             ], ['id' => $request_id], ['%s', '%s'], ['%d']);
             $school_user_id = $this->get_school_user_id_for_request($request, $school_id);
-            $thread_id = $this->create_or_get_booking_thread($booking_id, 'booking_details', [
+            $thread_id = $this->create_or_get_booking_thread($booking_id, self::BOOKING_THREAD_TYPE_BOOKING_DETAILS, [
                 'candidate_user_id' => get_current_user_id(),
                 'school_user_id' => $school_user_id,
                 'account_manager_user_id' => $am_user_id,
-                'status' => 'active',
+                'status' => self::BOOKING_THREAD_STATUS_ACTIVE,
             ]);
             if ($thread_id) {
-                $this->add_booking_thread_participant($thread_id, get_current_user_id(), 'candidate');
+                $this->add_booking_thread_participant($thread_id, get_current_user_id(), self::PARTICIPANT_ROLE_CANDIDATE);
                 if ($am_user_id) {
-                    $this->add_booking_thread_participant($thread_id, $am_user_id, 'account_manager');
+                    $this->add_booking_thread_participant($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER);
                 }
                 if ($school_user_id) {
-                    $this->add_booking_thread_participant($thread_id, $school_user_id, 'school');
+                    $this->add_booking_thread_participant($thread_id, $school_user_id, self::PARTICIPANT_ROLE_SCHOOL);
                 }
                 $this->post_booking_acceptance_auto_messages($thread_id, $booking_id, $request, $school_id, $candidate_id, $school_user_id, $am_user_id);
-                $this->add_audit_log('chat_created_opened', 'booking', (string) $booking_id, [
+                $this->add_audit_log(self::AUDIT_EVENT_CHAT_CREATED_OPENED, 'booking', (string) $booking_id, [
                     'thread_id' => (int) $thread_id,
-                    'thread_type' => 'booking_details',
+                    'thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
                     'request_id' => (int) $request_id,
                 ]);
             }
@@ -93033,7 +93396,7 @@ p{margin:0;line-height:1.5}
                 $school_chat_url = add_query_arg([
                     'school' => 'requests',
                     'cmn_booking_chat' => $booking_id,
-                    'cmn_thread_type' => 'booking_details',
+                    'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
                 ], $portal_url);
                 $this->add_notification(
                     $school_user_id,
@@ -93069,7 +93432,7 @@ p{margin:0;line-height:1.5}
                 'booking_id' => (int) $booking_id,
                 'school_domain' => (string) ($request['school_email_domain'] ?? ''),
             ]);
-            $this->add_audit_log('accepted', 'request', (string) $request_id, [
+            $this->add_audit_log(self::AUDIT_EVENT_ACCEPTED, 'request', (string) $request_id, [
                 'candidate_id' => (int) $candidate_id,
                 'booking_id' => (int) $booking_id,
                 'school_domain' => (string) ($request['school_email_domain'] ?? ''),
@@ -93090,8 +93453,8 @@ p{margin:0;line-height:1.5}
             wp_die('Invalid request');
         }
         $request_id = isset($_POST['cmn_request_id']) ? (int) $_POST['cmn_request_id'] : 0;
-        $thread_type = sanitize_key((string) ($_POST['cmn_thread_type'] ?? 'booking_details'));
-        if (!in_array($thread_type, ['booking_details', 'pay_negotiation', 'decline_followup', 'school_coordination', 'candidate_coordination'], true)) {
+        $thread_type = $this->normalize_booking_thread_type((string) ($_POST['cmn_thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS), '');
+        if ($thread_type === '') {
             wp_die('Invalid thread type');
         }
         $request = $this->get_candidate_request_by_id($request_id);
@@ -93113,7 +93476,7 @@ p{margin:0;line-height:1.5}
             if ($booking_id) {
                 update_post_meta($booking_id, 'cmn_request_id', $request_id);
                 update_post_meta($request_id, 'cmn_booking_id', $booking_id);
-                update_post_meta($booking_id, 'cmn_status', 'requested');
+                $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_REQUESTED);
             }
         }
         if (!$booking_id) {
@@ -93129,7 +93492,7 @@ p{margin:0;line-height:1.5}
             'candidate_user_id' => $candidate_user_id,
             'school_user_id' => $school_user_id,
             'account_manager_user_id' => $am_user_id,
-            'status' => 'active',
+            'status' => self::BOOKING_THREAD_STATUS_ACTIVE,
         ];
         $thread_id = (int) $this->create_or_get_booking_thread($booking_id, $thread_type, $context);
         if ($thread_id < 1) {
@@ -93137,31 +93500,31 @@ p{margin:0;line-height:1.5}
         }
 
         if ($am_user_id) {
-            $this->add_booking_thread_participant($thread_id, $am_user_id, 'account_manager');
+            $this->add_booking_thread_participant($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER);
         }
-        if ($thread_type === 'school_coordination') {
+        if ($thread_type === self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION) {
             if ($school_user_id) {
-                $this->add_booking_thread_participant($thread_id, $school_user_id, 'school');
+                $this->add_booking_thread_participant($thread_id, $school_user_id, self::PARTICIPANT_ROLE_SCHOOL);
             }
-        } elseif ($thread_type === 'candidate_coordination' || $thread_type === 'pay_negotiation') {
+        } elseif ($thread_type === self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION || $thread_type === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION) {
             if ($candidate_user_id) {
-                $this->add_booking_thread_participant($thread_id, $candidate_user_id, 'candidate');
+                $this->add_booking_thread_participant($thread_id, $candidate_user_id, self::PARTICIPANT_ROLE_CANDIDATE);
             }
         } else {
             if ($candidate_user_id) {
-                $this->add_booking_thread_participant($thread_id, $candidate_user_id, 'candidate');
+                $this->add_booking_thread_participant($thread_id, $candidate_user_id, self::PARTICIPANT_ROLE_CANDIDATE);
             }
             if ($school_user_id) {
-                $this->add_booking_thread_participant($thread_id, $school_user_id, 'school');
+                $this->add_booking_thread_participant($thread_id, $school_user_id, self::PARTICIPANT_ROLE_SCHOOL);
             }
         }
 
         $messages = (array) $this->get_booking_thread_messages($thread_id);
         if (empty($messages)) {
-            if ($thread_type === 'school_coordination') {
-                $this->add_booking_thread_message($thread_id, get_current_user_id(), $this->is_admin_user() ? 'admin' : 'account_manager', 'School/account-manager coordination chat opened. Please keep all booking communication documented here.');
-            } elseif ($thread_type === 'candidate_coordination') {
-                $this->add_booking_thread_message($thread_id, get_current_user_id(), $this->is_admin_user() ? 'admin' : 'account_manager', 'Candidate/account-manager coordination chat opened. Please keep all booking communication documented here.');
+            if ($thread_type === self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION) {
+                $this->add_booking_thread_message($thread_id, get_current_user_id(), $this->is_admin_user() ? self::PARTICIPANT_ROLE_ADMIN : self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, 'School/account-manager coordination chat opened. Please keep all booking communication documented here.');
+            } elseif ($thread_type === self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION) {
+                $this->add_booking_thread_message($thread_id, get_current_user_id(), $this->is_admin_user() ? self::PARTICIPANT_ROLE_ADMIN : self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, 'Candidate/account-manager coordination chat opened. Please keep all booking communication documented here.');
             }
         }
 
@@ -93182,15 +93545,15 @@ p{margin:0;line-height:1.5}
             wp_die('Invalid request');
         }
         $thread_id = isset($_POST['cmn_thread_id']) ? (int) $_POST['cmn_thread_id'] : 0;
-        $status = sanitize_key((string) ($_POST['cmn_thread_status'] ?? 'active'));
-        if (!in_array($status, ['active', 'closed'], true)) {
+        $status = sanitize_key((string) ($_POST['cmn_thread_status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE));
+        if (!in_array($status, self::BOOKING_THREAD_STATUS_SET, true)) {
             wp_die('Invalid status');
         }
         if (!$this->user_can_access_booking_thread($thread_id, get_current_user_id())) {
             wp_die('Unauthorized');
         }
         $this->set_booking_thread_status($thread_id, $status);
-        $this->add_booking_thread_message($thread_id, get_current_user_id(), $this->is_admin_user() ? 'admin' : 'account_manager', $status === 'closed' ? 'Thread closed by staff. If needed, post a message to reopen.' : 'Thread reopened by staff. Please keep all communication in this thread.');
+        $this->add_booking_thread_message($thread_id, get_current_user_id(), $this->is_admin_user() ? self::PARTICIPANT_ROLE_ADMIN : self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, $status === self::BOOKING_THREAD_STATUS_CLOSED ? 'Thread closed by staff. If needed, post a message to reopen.' : 'Thread reopened by staff. Please keep all communication in this thread.');
         wp_safe_redirect(wp_get_referer() ?: add_query_arg(['view' => 'requests'], $this->get_portal_base_url()));
         exit;
     }
@@ -93358,25 +93721,28 @@ p{margin:0;line-height:1.5}
                 wp_die('Booking chat is blocked until rate guardrails are resolved or overridden by admin.');
             }
         }
-        $thread_status = sanitize_key((string) ($thread['status'] ?? 'active'));
-        $thread_type = sanitize_key((string) ($thread['thread_type'] ?? 'booking_details'));
-        $role_type = 'candidate';
+        $thread_status = sanitize_key((string) ($thread['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE));
+        if (!in_array($thread_status, self::BOOKING_THREAD_STATUS_SET, true)) {
+            $thread_status = self::BOOKING_THREAD_STATUS_ACTIVE;
+        }
+        $thread_type = $this->normalize_booking_thread_type((string) ($thread['thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS));
+        $role_type = self::PARTICIPANT_ROLE_CANDIDATE;
         if ($this->is_school_user()) {
-            $role_type = 'school';
+            $role_type = self::PARTICIPANT_ROLE_SCHOOL;
         } elseif ($this->is_staff_user()) {
-            $role_type = $this->is_admin_user() ? 'admin' : 'account_manager';
+            $role_type = $this->is_admin_user() ? self::PARTICIPANT_ROLE_ADMIN : self::PARTICIPANT_ROLE_ACCOUNT_MANAGER;
         }
 
-        if ($thread_type !== 'pay_negotiation' && preg_match('/(\bpay\b|\brate\b|\bfee\b|\bmoney\b|£|\$|\beur\b)/i', (string) $message)) {
+        if ($thread_type !== self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION && preg_match('/(\bpay\b|\brate\b|\bfee\b|\bmoney\b|£|\$|\beur\b)/i', (string) $message)) {
             wp_die('Please keep pay/rate discussion in the pay negotiation chat only.');
         }
-        if ($role_type === 'school' && $thread_type === 'pay_negotiation') {
+        if ($role_type === self::PARTICIPANT_ROLE_SCHOOL && $thread_type === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION) {
             wp_die('Schools cannot use the pay negotiation chat.');
         }
 
 
-        if ($thread_status === 'closed' && !$this->is_staff_user()) {
-            $this->set_booking_thread_status($thread_id, 'active');
+        if ($thread_status === self::BOOKING_THREAD_STATUS_CLOSED && !$this->is_staff_user()) {
+            $this->set_booking_thread_status($thread_id, self::BOOKING_THREAD_STATUS_ACTIVE);
             $this->add_booking_thread_message($thread_id, get_current_user_id(), $role_type, 'Thread reopened by participant. Please keep all booking communication documented here.');
         }
 
@@ -93406,7 +93772,7 @@ p{margin:0;line-height:1.5}
         if (!$thread) {
             wp_send_json_error(['message' => 'Thread not found.'], 404);
         }
-        if ($this->is_school_user() && sanitize_key((string) ($thread['thread_type'] ?? 'booking_details')) === 'pay_negotiation') {
+        if ($this->is_school_user() && $this->normalize_booking_thread_type((string) ($thread['thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS)) === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION) {
             wp_send_json_error(['message' => 'Unauthorized.'], 403);
         }
         $booking_id_for_thread = (int) ($thread['booking_id'] ?? 0);
@@ -93444,7 +93810,8 @@ p{margin:0;line-height:1.5}
         $messages = $this->get_booking_thread_messages($thread_id);
         $payload = [];
         foreach ($messages as $message_row) {
-            $sender_name = ucfirst(str_replace('_', ' ', (string) ($message_row['sender_role_type'] ?? 'system')));
+            $sender_role = $this->normalize_participant_role_type((string) ($message_row['sender_role_type'] ?? self::PARTICIPANT_ROLE_SYSTEM), self::PARTICIPANT_ROLE_SYSTEM);
+            $sender_name = ucfirst(str_replace('_', ' ', $sender_role));
             if (!empty($message_row['sender_user_id'])) {
                 $sender_user = get_user_by('id', (int) $message_row['sender_user_id']);
                 if ($sender_user) {
@@ -93454,7 +93821,7 @@ p{margin:0;line-height:1.5}
             $payload[] = [
                 'id' => (int) ($message_row['id'] ?? 0),
                 'sender_user_id' => (int) ($message_row['sender_user_id'] ?? 0),
-                'sender_role_type' => (string) ($message_row['sender_role_type'] ?? 'system'),
+                'sender_role_type' => $sender_role,
                 'sender_name' => $sender_name,
                 'message' => (string) ($message_row['message'] ?? ''),
                 'created_at' => (string) ($message_row['created_at'] ?? ''),
@@ -93465,8 +93832,8 @@ p{margin:0;line-height:1.5}
             'thread' => [
                 'id' => (int) ($thread['id'] ?? 0),
                 'booking_id' => (int) ($thread['booking_id'] ?? 0),
-                'thread_type' => (string) ($thread['thread_type'] ?? 'booking_details'),
-                'status' => (string) ($thread['status'] ?? 'active'),
+                'thread_type' => $this->normalize_booking_thread_type((string) ($thread['thread_type'] ?? self::BOOKING_THREAD_TYPE_BOOKING_DETAILS)),
+                'status' => $this->normalize_booking_thread_status((string) ($thread['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE)),
             ],
             'messages' => $payload,
         ]);
@@ -93794,14 +94161,14 @@ p{margin:0;line-height:1.5}
         if ($booking_id) {
             $candidate_user_id = (int) $this->get_candidate_user_id((int) ($request['candidate_id'] ?? 0));
             $school_user_id = $this->get_school_user_id_for_request($request, $school_id);
-            $thread_id = $this->create_or_get_booking_thread($booking_id, 'pay_negotiation', [
+            $thread_id = $this->create_or_get_booking_thread($booking_id, self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION, [
                 'candidate_user_id' => $candidate_user_id,
                 'school_user_id' => $school_user_id,
                 'account_manager_user_id' => get_current_user_id(),
-                'status' => 'active',
+                'status' => self::BOOKING_THREAD_STATUS_ACTIVE,
             ]);
             if ($thread_id) {
-                $this->add_booking_thread_message($thread_id, get_current_user_id(), 'account_manager', 'Account manager updated candidate pay to GBP ' . number_format($pay_rate, 2) . '.');
+                $this->add_booking_thread_message($thread_id, get_current_user_id(), self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, 'Account manager updated candidate pay to GBP ' . number_format($pay_rate, 2) . '.');
             }
         }
         $this->add_audit_log('rate_edited', 'request', (string) $request_id, [
@@ -93875,6 +94242,7 @@ p{margin:0;line-height:1.5}
             wp_die('Request not found.');
         }
         $request = $this->ensure_request_has_guardrail_rates($request);
+        $current_status = $this->normalize_request_status((string) ($request['status'] ?? self::REQUEST_STATUS_REQUESTED), self::REQUEST_STATUS_REQUESTED);
         $school_domain = $request['school_email_domain'] ?? '';
         if (!$this->user_can_access_school($school_domain)) {
             wp_die('Unauthorized');
@@ -93932,17 +94300,22 @@ p{margin:0;line-height:1.5}
             exit;
         }
 
-        $status = 'requested';
+        $status = self::REQUEST_STATUS_REQUESTED;
         if ($action === 'decline' || $confirmed === 'no') {
-            $status = 'declined';
+            $status = self::REQUEST_STATUS_DECLINED;
         } elseif ($action === 'no_longer_needed') {
-            $status = 'cancelled';
+            $status = self::REQUEST_STATUS_CANCELLED;
         } elseif ($action === 'save_rates') {
-            $status = 'requested';
+            $status = self::REQUEST_STATUS_REQUESTED;
         } elseif ($action === 'refresh') {
-            $status = 'requested';
+            $status = self::REQUEST_STATUS_REQUESTED;
         } else {
-            $status = 'confirmed';
+            $status = self::REQUEST_STATUS_CONFIRMED;
+        }
+        if (!$this->can_transition_request_status($current_status, $status)) {
+            $redirect = wp_get_referer() ?: home_url('/portal');
+            wp_redirect(add_query_arg(['cmn_request_msg' => rawurlencode('This request cannot be updated from its current state.')], $redirect));
+            exit;
         }
 
         $effective_candidate_pay = $candidate_pay_rate_input > 0 ? round($candidate_pay_rate_input, 2) : (float) ($request['candidate_pay_rate'] ?? 0.0);
@@ -93972,7 +94345,7 @@ p{margin:0;line-height:1.5}
             exit;
         }
 
-        if ($status === 'confirmed') {
+        if ($status === self::REQUEST_STATUS_CONFIRMED) {
             if (empty($rate_validation['pass']) && !$override_allowed) {
                 $redirect = wp_get_referer() ?: home_url('/portal');
                 $status_label = (string) ($rate_validation['status'] ?? 'LOW');
@@ -94002,7 +94375,7 @@ p{margin:0;line-height:1.5}
             global $wpdb;
             $table = $this->get_candidate_requests_table();
             $wpdb->update($table, [
-                'status' => 'requested',
+                'status' => self::REQUEST_STATUS_REQUESTED,
                 'request_sent_at' => $new_sent,
                 'expires_at' => $new_expires,
                 'updated_at' => $new_sent,
@@ -94043,7 +94416,7 @@ p{margin:0;line-height:1.5}
         $school_requests_url = add_query_arg(['school' => 'requests'], $portal_url);
         $candidate_bookings_url = add_query_arg(['candidate' => 'bookings'], $portal_url);
 
-        if ($status === 'confirmed') {
+        if ($status === self::REQUEST_STATUS_CONFIRMED) {
             $booking_id = $this->create_booking_from_request($request, $school_id, get_current_user_id());
             if (!$booking_id) {
                 $redirect = wp_get_referer() ?: home_url('/portal');
@@ -94099,7 +94472,7 @@ p{margin:0;line-height:1.5}
             exit;
         }
 
-        if ($status === 'confirmed') {
+        if ($status === self::REQUEST_STATUS_CONFIRMED) {
             $booking_id_for_rates = (int) $this->get_booking_id_for_request($request_id);
             if ($booking_id_for_rates > 0) {
                 $this->upsert_booking_rates(
@@ -94166,7 +94539,7 @@ p{margin:0;line-height:1.5}
                 'notes' => 'Confirmed for ' . $requested_date . '.',
                 'created_by' => get_current_user_id(),
             ]);
-        } elseif ($status === 'declined') {
+        } elseif ($status === self::REQUEST_STATUS_DECLINED) {
             $school_email = $this->get_school_primary_contact_email($school_id);
             if ($school_email) {
                 $subject = 'Candidate unavailable';
@@ -94395,7 +94768,14 @@ p{margin:0;line-height:1.5}
             if (!$this->user_can_view_candidate($entity_id)) {
                 wp_die('Unauthorized');
             }
-            update_post_meta($entity_id, 'cmn_status', $status);
+            $normalized_booking_status = $this->normalize_booking_status($status_key, '');
+            if ($normalized_booking_status !== '') {
+                if (!$this->update_booking_status_if_allowed((int) $entity_id, $normalized_booking_status)) {
+                    wp_die('Invalid booking status transition.');
+                }
+            } else {
+                update_post_meta($entity_id, 'cmn_status', $status);
+            }
             $email = get_post_meta($entity_id, 'cmn_email', true);
             if ($email) {
                 $subject = 'Candidate Account Update';
@@ -94502,7 +94882,7 @@ p{margin:0;line-height:1.5}
             $booking_event = '';
             if (in_array($status_key, ['approved', 'accepted'], true)) {
                 $booking_event = 'booking_accepted';
-            } elseif ($status_key === 'declined') {
+            } elseif ($status_key === self::BOOKING_STATUS_DECLINED) {
                 $booking_event = 'booking_declined';
             }
             if ($booking_event !== '') {
@@ -104286,7 +104666,7 @@ class CmnSystemHealthScanner {
             "SELECT booking_id, status
              FROM {$this->tables['booking_threads']}
              WHERE thread_type = %s",
-            'booking_details'
+            self::BOOKING_THREAD_TYPE_BOOKING_DETAILS
         ), ARRAY_A);
         $threads_by_booking = [];
         $active_thread_booking_ids = [];
@@ -104296,13 +104676,13 @@ class CmnSystemHealthScanner {
                 continue;
             }
             $threads_by_booking[$bid] = true;
-            $thread_status = strtolower(trim((string) ($thread_row['status'] ?? 'active')));
-            if ($thread_status === '' || $thread_status === 'active') {
+            $thread_status = sanitize_key((string) ($thread_row['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE));
+            if ($thread_status === '' || $thread_status === self::BOOKING_THREAD_STATUS_ACTIVE) {
                 $active_thread_booking_ids[$bid] = true;
             }
         }
 
-        $accepted_statuses = ['accepted', 'approved', 'confirmed', 'candidate_accepted'];
+        $accepted_statuses = [self::BOOKING_STATUS_ACCEPTED, 'approved', self::BOOKING_STATUS_CONFIRMED, self::BOOKING_STATUS_CANDIDATE_ACCEPTED];
         $last_id = 0;
         $meta_keys = ['cmn_status', 'cmn_candidate_id', 'cmn_date', 'cmn_candidate_pay_rate', 'cmn_school_charge_rate'];
         while (true) {
@@ -104370,7 +104750,7 @@ class CmnSystemHealthScanner {
                         ['booking_id' => $booking_id, 'candidate_pay_rate' => $candidate_pay_rate, 'school_charge_rate' => $school_charge_rate, 'margin' => $school_charge_rate - $candidate_pay_rate]
                     );
                 }
-                if ($status === 'expired' && isset($active_thread_booking_ids[$booking_id])) {
+                if ($status === self::BOOKING_STATUS_EXPIRED && isset($active_thread_booking_ids[$booking_id])) {
                     $this->add_issue(
                         $run_id,
                         'booking',
