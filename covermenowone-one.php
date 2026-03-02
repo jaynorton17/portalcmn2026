@@ -71105,6 +71105,9 @@ global $wpdb;
             );
         }
         $contact_card_display_name = $first_name !== '' ? $first_name : $profile_name;
+        // Defaults prevent notices before feedback payload is resolved later in this render flow.
+        $feedback_has_reviews = false;
+        $feedback_score_raw = 0;
         $contact_card_feedback_percent = $feedback_has_reviews ? max(0.0, min(100.0, ($feedback_score_raw / 5) * 100)) : 0.0;
         $contact_card_feedback_text = number_format((float) $feedback_score_raw, 2) . ' out of 5 stars';
         $contact_card_primary_role = trim((string) $role_label) !== '' ? trim((string) $role_label) : 'Not set';
