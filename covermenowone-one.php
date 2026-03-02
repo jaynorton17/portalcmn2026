@@ -884,6 +884,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_notifications_delete_selected', [$this, 'handle_notifications_delete_selected']);
         add_action('wp_ajax_cmn_notifications_poll', [$this, 'handle_notifications_poll']);
         add_action('wp_ajax_cmn_portal_heartbeat', [$this, 'handle_portal_heartbeat']);
+        add_action('wp_ajax_cmn_after_booking_support_snapshot', [$this, 'handle_after_booking_support_snapshot']);
         add_action('wp_ajax_cmn_thread_get', [$this, 'handle_thread_get']);
         add_action('wp_ajax_nopriv_cmn_thread_get', [$this, 'handle_thread_get']);
         add_action('wp_ajax_cmn_thread_post_message', [$this, 'handle_thread_post_message']);
@@ -7572,6 +7573,7 @@ global $wpdb;
             'isCandidateUser' => $this->is_candidate_user() ? 1 : 0,
             'systemHealthNonce' => wp_create_nonce('cmn_system_health'),
             'portalHeartbeatNonce' => wp_create_nonce('cmn_portal_heartbeat'),
+            'afterBookingSupportNonce' => wp_create_nonce('cmn_after_booking_support_snapshot'),
             'heartbeatEnabled' => $this->is_feature_enabled('heartbeat', true) ? 1 : 0,
             'heartbeatShadowEnabled' => $this->is_feature_enabled('heartbeat_shadow', false) ? 1 : 0,
             'offerExpirySeconds' => $this->get_offer_expiry_seconds(),
@@ -31215,7 +31217,7 @@ global $wpdb;
         exit;
     }
 
-    private function get_after_booking_support_column_key($request) {
+    private function get_after_booking_support_column_key($request, array $request_booking_map = [], array $booking_thread_map = []) {
         $status = $this->normalize_request_status((string) ($request['status'] ?? self::REQUEST_STATUS_REQUESTED), self::REQUEST_STATUS_REQUESTED);
         if ($status === self::REQUEST_STATUS_PENDING) {
             $status = self::REQUEST_STATUS_REQUESTED;
@@ -31238,9 +31240,17 @@ global $wpdb;
         if ($status === self::REQUEST_STATUS_REQUESTED) {
             $request_id = (int) ($request['id'] ?? 0);
             if ($request_id > 0) {
-                $booking_id = $this->get_booking_id_for_request($request_id);
+                $booking_id = isset($request_booking_map[$request_id]) ? (int) $request_booking_map[$request_id] : 0;
+                if ($booking_id < 1) {
+                    $booking_id = (int) $this->get_booking_id_for_request($request_id);
+                }
                 if ($booking_id > 0) {
-                    $active_thread = $this->normalize_booking_thread_type((string) get_post_meta($booking_id, 'cmn_active_thread', true), '');
+                    $active_thread = '';
+                    if (isset($booking_thread_map[$booking_id])) {
+                        $active_thread = $this->normalize_booking_thread_type((string) $booking_thread_map[$booking_id], '');
+                    } else {
+                        $active_thread = $this->normalize_booking_thread_type((string) get_post_meta($booking_id, 'cmn_active_thread', true), '');
+                    }
                     if ($active_thread === self::BOOKING_THREAD_TYPE_PAY_NEGOTIATION) {
                         return 'negotiations';
                     }
@@ -31251,16 +31261,219 @@ global $wpdb;
         return 'pending';
     }
 
-    public function render_staff_after_booking_support_shortcode() {
-        if (!is_user_logged_in()) {
-            return $this->render_login_shortcode();
+    private function get_school_lookup_map_by_domains_read_only(array $domains) {
+        global $wpdb;
+        $normalized_domains = [];
+        foreach ($domains as $domain) {
+            $value = strtolower(trim((string) $domain));
+            if ($value !== '') {
+                $normalized_domains[$value] = $value;
+            }
         }
-        if (!$this->is_admin_user()) {
-            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>After Booking Support Team is available to admins only.</p></div></section>';
+        $normalized_domains = array_values($normalized_domains);
+        if (!$normalized_domains) {
+            return [];
         }
 
-        $portal_url = $this->get_portal_base_url();
-        $requests = $this->get_candidate_requests_for_status('all', 100);
+        $lookup = [];
+        foreach ($normalized_domains as $domain) {
+            $lookup[$domain] = [
+                'school_id' => 0,
+                'school_name' => '',
+            ];
+        }
+
+        $index_table = $this->get_school_index_table();
+        if ($this->table_exists($index_table)) {
+            $domain_placeholders = implode(',', array_fill(0, count($normalized_domains), '%s'));
+            $index_sql = $wpdb->prepare(
+                "SELECT school_email_domain, post_id FROM {$index_table} WHERE school_email_domain IN ({$domain_placeholders})",
+                $normalized_domains
+            );
+            $index_rows = (array) $wpdb->get_results($index_sql, ARRAY_A);
+            foreach ($index_rows as $row) {
+                $domain = strtolower(trim((string) ($row['school_email_domain'] ?? '')));
+                $school_id = (int) ($row['post_id'] ?? 0);
+                if ($domain !== '' && $school_id > 0 && isset($lookup[$domain])) {
+                    $lookup[$domain]['school_id'] = $school_id;
+                }
+            }
+        }
+
+        $missing_domains = [];
+        foreach ($lookup as $domain => $info) {
+            if ((int) ($info['school_id'] ?? 0) < 1) {
+                $missing_domains[] = $domain;
+            }
+        }
+        if ($missing_domains) {
+            $missing_placeholders = implode(',', array_fill(0, count($missing_domains), '%s'));
+            $fallback_sql = $wpdb->prepare(
+                "SELECT LOWER(pm.meta_value) AS school_email_domain, p.ID AS post_id
+                 FROM {$wpdb->postmeta} pm
+                 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+                 WHERE pm.meta_key = 'cmn_school_email_domain'
+                   AND p.post_type = 'cmn_school'
+                   AND LOWER(pm.meta_value) IN ({$missing_placeholders})",
+                $missing_domains
+            );
+            $fallback_rows = (array) $wpdb->get_results($fallback_sql, ARRAY_A);
+            foreach ($fallback_rows as $row) {
+                $domain = strtolower(trim((string) ($row['school_email_domain'] ?? '')));
+                $school_id = (int) ($row['post_id'] ?? 0);
+                if ($domain === '' || $school_id < 1 || !isset($lookup[$domain])) {
+                    continue;
+                }
+                if ((int) $lookup[$domain]['school_id'] < 1) {
+                    $lookup[$domain]['school_id'] = $school_id;
+                }
+            }
+        }
+
+        $school_ids = [];
+        foreach ($lookup as $info) {
+            $school_id = (int) ($info['school_id'] ?? 0);
+            if ($school_id > 0) {
+                $school_ids[$school_id] = $school_id;
+            }
+        }
+        if ($school_ids) {
+            $school_ids = array_values($school_ids);
+            $id_placeholders = implode(',', array_fill(0, count($school_ids), '%d'));
+            $title_sql = $wpdb->prepare(
+                "SELECT ID, post_title FROM {$wpdb->posts} WHERE ID IN ({$id_placeholders})",
+                $school_ids
+            );
+            $title_rows = (array) $wpdb->get_results($title_sql, ARRAY_A);
+            $title_map = [];
+            foreach ($title_rows as $row) {
+                $title_map[(int) ($row['ID'] ?? 0)] = (string) ($row['post_title'] ?? '');
+            }
+            foreach ($lookup as $domain => $info) {
+                $school_id = (int) ($info['school_id'] ?? 0);
+                if ($school_id > 0 && isset($title_map[$school_id])) {
+                    $lookup[$domain]['school_name'] = (string) $title_map[$school_id];
+                }
+            }
+        }
+
+        return $lookup;
+    }
+
+    private function get_candidate_name_map_by_ids(array $candidate_ids) {
+        global $wpdb;
+        $candidate_ids = array_values(array_unique(array_filter(array_map('intval', $candidate_ids), static function ($id) {
+            return $id > 0;
+        })));
+        if (!$candidate_ids) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($candidate_ids), '%d'));
+        $sql = $wpdb->prepare(
+            "SELECT ID, post_title FROM {$wpdb->posts} WHERE post_type = 'cmn_candidate' AND ID IN ({$placeholders})",
+            $candidate_ids
+        );
+        $rows = (array) $wpdb->get_results($sql, ARRAY_A);
+        $map = [];
+        foreach ($rows as $row) {
+            $map[(int) ($row['ID'] ?? 0)] = (string) ($row['post_title'] ?? '');
+        }
+        return $map;
+    }
+
+    private function get_request_booking_map_bulk(array $request_ids) {
+        global $wpdb;
+        $request_ids = array_values(array_unique(array_filter(array_map('intval', $request_ids), static function ($id) {
+            return $id > 0;
+        })));
+        if (!$request_ids) {
+            return [];
+        }
+        $request_values = array_map('strval', $request_ids);
+        $placeholders = implode(',', array_fill(0, count($request_values), '%s'));
+        $sql = $wpdb->prepare(
+            "SELECT CAST(pm.meta_value AS UNSIGNED) AS request_id, p.ID AS booking_id
+             FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             WHERE pm.meta_key = 'cmn_request_id'
+               AND p.post_type = 'cmn_booking'
+               AND pm.meta_value IN ({$placeholders})",
+            $request_values
+        );
+        $rows = (array) $wpdb->get_results($sql, ARRAY_A);
+        $map = [];
+        foreach ($rows as $row) {
+            $request_id = (int) ($row['request_id'] ?? 0);
+            $booking_id = (int) ($row['booking_id'] ?? 0);
+            if ($request_id < 1 || $booking_id < 1) {
+                continue;
+            }
+            if (!isset($map[$request_id]) || $booking_id > (int) $map[$request_id]) {
+                $map[$request_id] = $booking_id;
+            }
+        }
+        return $map;
+    }
+
+    private function get_booking_active_thread_map_bulk(array $booking_ids) {
+        global $wpdb;
+        $booking_ids = array_values(array_unique(array_filter(array_map('intval', $booking_ids), static function ($id) {
+            return $id > 0;
+        })));
+        if (!$booking_ids) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($booking_ids), '%d'));
+        $sql = $wpdb->prepare(
+            "SELECT post_id, meta_value
+             FROM {$wpdb->postmeta}
+             WHERE meta_key = 'cmn_active_thread'
+               AND post_id IN ({$placeholders})",
+            $booking_ids
+        );
+        $rows = (array) $wpdb->get_results($sql, ARRAY_A);
+        $map = [];
+        foreach ($rows as $row) {
+            $booking_id = (int) ($row['post_id'] ?? 0);
+            if ($booking_id < 1) {
+                continue;
+            }
+            $map[$booking_id] = $this->normalize_booking_thread_type((string) ($row['meta_value'] ?? ''), '');
+        }
+        return $map;
+    }
+
+    private function build_after_booking_support_columns($limit = 100) {
+        $limit = max(1, (int) $limit);
+        $requests = $this->get_candidate_requests_for_status('all', $limit, [], false);
+        $request_ids = [];
+        $candidate_ids = [];
+        $school_domains = [];
+        foreach ($requests as &$request) {
+            if ($this->is_request_expired($request)) {
+                $request['status'] = self::REQUEST_STATUS_EXPIRED;
+            }
+            $request_id = (int) ($request['id'] ?? 0);
+            $candidate_id = (int) ($request['candidate_id'] ?? 0);
+            $school_domain = strtolower(trim((string) ($request['school_email_domain'] ?? '')));
+            if ($request_id > 0) {
+                $request_ids[] = $request_id;
+            }
+            if ($candidate_id > 0) {
+                $candidate_ids[] = $candidate_id;
+            }
+            if ($school_domain !== '') {
+                $school_domains[] = $school_domain;
+            }
+        }
+        unset($request);
+
+        $request_booking_map = $this->get_request_booking_map_bulk($request_ids);
+        $booking_thread_map = $this->get_booking_active_thread_map_bulk(array_values($request_booking_map));
+        $candidate_name_map = $this->get_candidate_name_map_by_ids($candidate_ids);
+        $school_lookup = $this->get_school_lookup_map_by_domains_read_only($school_domains);
+        $rate_cache = [];
+
         $columns = [
             'pending' => ['label' => 'Pending Requests', 'items' => []],
             'negotiations' => ['label' => 'Negotiations', 'items' => []],
@@ -31270,56 +31483,96 @@ global $wpdb;
         ];
 
         foreach ($requests as $request) {
-            $key = $this->get_after_booking_support_column_key($request);
+            $request_id = (int) ($request['id'] ?? 0);
+            $candidate_id = (int) ($request['candidate_id'] ?? 0);
+            $school_domain = strtolower(trim((string) ($request['school_email_domain'] ?? '')));
+            $school_info = ($school_domain !== '' && isset($school_lookup[$school_domain])) ? (array) $school_lookup[$school_domain] : [];
+            $resolved_school_id = (int) ($request['school_id'] ?? 0);
+            if ($resolved_school_id < 1) {
+                $resolved_school_id = (int) ($school_info['school_id'] ?? 0);
+            }
+
+            $key = $this->get_after_booking_support_column_key($request, $request_booking_map, $booking_thread_map);
             if (!isset($columns[$key])) {
                 $key = 'pending';
             }
-            $columns[$key]['items'][] = $request;
+
+            $charge_rate = 0.0;
+            if (isset($request['school_charge_rate']) && (float) $request['school_charge_rate'] > 0) {
+                $charge_rate = (float) $request['school_charge_rate'];
+            } else {
+                $rate_key = implode('|', [
+                    (string) $candidate_id,
+                    (string) $resolved_school_id,
+                    sanitize_key((string) ($request['role_key'] ?? '')),
+                    (string) ($request['candidate_pay_rate'] ?? ''),
+                    (string) ($request['school_charge_rate'] ?? ''),
+                ]);
+                if (isset($rate_cache[$rate_key])) {
+                    $charge_rate = (float) $rate_cache[$rate_key];
+                } else {
+                    $rate_request = $request;
+                    $rate_request['school_id'] = $resolved_school_id;
+                    if ($resolved_school_id < 1) {
+                        // Read-only render path: prevent fallback index upsert calls from domain resolution.
+                        $rate_request['school_email_domain'] = '';
+                    }
+                    $candidate_pay_rate = $this->get_request_candidate_pay_rate($candidate_id, $resolved_school_id, $rate_request);
+                    $charge_rate = (float) $this->get_request_school_charge_rate($candidate_pay_rate, $rate_request);
+                    $rate_cache[$rate_key] = $charge_rate;
+                }
+            }
+
+            $expires_at = $this->get_request_expires_at($request);
+            $expires_ts = $expires_at ? strtotime($expires_at) : 0;
+            $view_status = sanitize_key((string) ($request['status'] ?? 'requested'));
+            if ($view_status === 'pending') {
+                $view_status = 'requested';
+            }
+
+            $columns[$key]['items'][] = [
+                'request_id' => $request_id,
+                'school_name' => (string) ($school_info['school_name'] ?? '') ?: 'School',
+                'candidate_name' => (string) ($candidate_name_map[$candidate_id] ?? '') ?: 'Candidate',
+                'charge_rate' => (float) $charge_rate,
+                'expires_ts' => $expires_ts > 0 ? (int) $expires_ts : 0,
+                'view_status' => $view_status,
+            ];
         }
 
+        return $columns;
+    }
+
+    private function render_after_booking_support_board($columns, $portal_url) {
+        $columns = is_array($columns) ? $columns : [];
         ob_start();
         ?>
-        <header class="cmn-school-header cmn-dashboard-header">
-            <div class="cmn-header-row">
-                <div>
-                    <h2>After Booking Support Team</h2>
-                    <p>Live booking operations board. Refreshes every 10 seconds.</p>
-                </div>
-                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Open Requests</a>
-            </div>
-        </header>
         <section class="cmn-after-booking-support" data-after-booking-support-root data-refresh-seconds="10">
             <?php foreach ($columns as $column_key => $column) : ?>
-                <div class="cmn-after-booking-support-column" data-after-booking-support-column="<?php echo esc_attr($column_key); ?>">
+                <?php $items = (array) ($column['items'] ?? []); ?>
+                <div class="cmn-after-booking-support-column" data-after-booking-support-column="<?php echo esc_attr((string) $column_key); ?>">
                     <div class="cmn-after-booking-support-column-head">
-                        <h3><?php echo esc_html($column['label']); ?></h3>
-                        <span class="cmn-status-chip"><?php echo esc_html((string) count($column['items'])); ?></span>
+                        <h3><?php echo esc_html((string) ($column['label'] ?? 'Requests')); ?></h3>
+                        <span class="cmn-status-chip"><?php echo esc_html((string) count($items)); ?></span>
                     </div>
                     <div class="cmn-after-booking-support-cards">
-                        <?php if (!$column['items']) : ?>
+                        <?php if (!$items) : ?>
                             <div class="cmn-empty">No items.</div>
                         <?php else : ?>
-                            <?php foreach ($column['items'] as $request) : ?>
+                            <?php foreach ($items as $item) : ?>
                                 <?php
-                                $request_id = (int) ($request['id'] ?? 0);
-                                $school_name = $this->get_school_name_by_domain((string) ($request['school_email_domain'] ?? '')) ?: 'School';
-                                $candidate = get_post((int) ($request['candidate_id'] ?? 0));
-                                $candidate_name = $candidate ? $candidate->post_title : 'Candidate';
-                                $charge_rate = isset($request['school_charge_rate']) && (float) $request['school_charge_rate'] > 0
-                                    ? (float) $request['school_charge_rate']
-                                    : $this->get_request_school_charge_rate($this->get_request_candidate_pay_rate((int) ($request['candidate_id'] ?? 0), (int) ($request['school_id'] ?? 0), $request), $request);
-                                $expires_at = $this->get_request_expires_at($request);
-                                $expires_ts = $expires_at ? strtotime($expires_at) : 0;
-                                $view_status = sanitize_key((string) ($request['status'] ?? 'requested'));
+                                $request_id = (int) ($item['request_id'] ?? 0);
+                                $view_status = sanitize_key((string) ($item['view_status'] ?? 'requested'));
                                 if ($view_status === 'pending') {
                                     $view_status = 'requested';
                                 }
                                 $view_url = add_query_arg(['view' => 'requests', 'cmn_status' => $view_status], $portal_url);
+                                $expires_ts = (int) ($item['expires_ts'] ?? 0);
                                 ?>
                                 <article class="cmn-after-booking-support-card">
-                                    <div class="cmn-after-booking-support-line"><strong><?php echo esc_html($school_name); ?></strong></div>
-                                    <div class="cmn-after-booking-support-line"><?php echo esc_html($candidate_name); ?></div>
-                                    <div class="cmn-after-booking-support-line">Day rate: <strong>GBP <?php echo esc_html(number_format((float) $charge_rate, 2)); ?></strong></div>
+                                    <div class="cmn-after-booking-support-line"><strong><?php echo esc_html((string) ($item['school_name'] ?? 'School')); ?></strong></div>
+                                    <div class="cmn-after-booking-support-line"><?php echo esc_html((string) ($item['candidate_name'] ?? 'Candidate')); ?></div>
+                                    <div class="cmn-after-booking-support-line">Day rate: <strong>GBP <?php echo esc_html(number_format((float) ($item['charge_rate'] ?? 0), 2)); ?></strong></div>
                                     <?php if ($column_key === 'pending') : ?>
                                         <div class="cmn-after-booking-support-line cmn-after-booking-support-countdown" data-after-booking-support-countdown<?php echo $expires_ts > 0 ? ' data-expires-ts="' . esc_attr((string) $expires_ts) . '"' : ''; ?>>
                                             <?php echo esc_html($expires_ts > 0 ? 'Calculating...' : 'No timer'); ?>
@@ -31351,6 +31604,60 @@ global $wpdb;
                 </div>
             <?php endforeach; ?>
         </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    public function handle_after_booking_support_snapshot() {
+        $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_after_booking_support_snapshot',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+        ], function () {
+            if (!$this->is_admin_user()) {
+                wp_send_json([
+                    'ok' => false,
+                    'error' => [
+                        'code' => 'cmn_forbidden',
+                        'message' => 'Access denied.',
+                    ],
+                ], 403);
+            }
+            $portal_url = $this->get_portal_base_url();
+            $columns = $this->build_after_booking_support_columns(100);
+            wp_send_json_success([
+                'html' => $this->render_after_booking_support_board($columns, $portal_url),
+                'generated_at' => current_time('mysql'),
+            ]);
+        });
+    }
+
+    public function render_staff_after_booking_support_shortcode() {
+        if (!is_user_logged_in()) {
+            return $this->render_login_shortcode();
+        }
+        if (!$this->is_admin_user()) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>After Booking Support Team is available to admins only.</p></div></section>';
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $columns = $this->build_after_booking_support_columns(100);
+
+        ob_start();
+        ?>
+        <header class="cmn-school-header cmn-dashboard-header">
+            <div class="cmn-header-row">
+                <div>
+                    <h2>After Booking Support Team</h2>
+                    <p>Live booking operations board. Refreshes every 10 seconds.</p>
+                </div>
+                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Open Requests</a>
+            </div>
+        </header>
+        <?php echo $this->render_after_booking_support_board($columns, $portal_url); ?>
         <?php
         return $this->render_staff_shell('after_booking_support', ob_get_clean());
     }
@@ -64909,7 +65216,7 @@ global $wpdb;
         return $rows;
     }
 
-    private function get_candidate_requests_for_status($status, $limit = 50, $school_domains = []) {
+    private function get_candidate_requests_for_status($status, $limit = 50, $school_domains = [], $mark_expired = true) {
         global $wpdb;
         $table = $this->get_candidate_requests_table();
         $limit = (int) $limit;
@@ -64938,7 +65245,11 @@ global $wpdb;
         }
         $rows = $wpdb->get_results($sql, ARRAY_A);
         foreach ($rows as &$row) {
-            $this->maybe_mark_request_expired($row);
+            if ($mark_expired) {
+                $this->maybe_mark_request_expired($row);
+            } elseif ($this->is_request_expired($row)) {
+                $row['status'] = self::REQUEST_STATUS_EXPIRED;
+            }
         }
         return $rows;
     }

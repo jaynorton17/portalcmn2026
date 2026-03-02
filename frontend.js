@@ -3606,7 +3606,18 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!refreshEvery || refreshEvery < 5) {
       refreshEvery = 10;
     }
-    var countdownEls = Array.prototype.slice.call(afterBookingSupportRoot.querySelectorAll('[data-after-booking-support-countdown], [data-war-room-countdown]'));
+    var afterBookingSupportPortal = window.cmnPortal || {};
+    var snapshotNonce = String(afterBookingSupportPortal.afterBookingSupportNonce || '').trim();
+    var refreshInFlight = false;
+    var lastSnapshotFetchMs = 0;
+    var countdownEls = [];
+    var collectCountdownEls = function () {
+      if (!afterBookingSupportRoot) {
+        countdownEls = [];
+        return;
+      }
+      countdownEls = Array.prototype.slice.call(afterBookingSupportRoot.querySelectorAll('[data-after-booking-support-countdown], [data-war-room-countdown]'));
+    };
     var renderCountdown = function () {
       var nowTs = Math.floor(Date.now() / 1000);
       countdownEls.forEach(function (el) {
@@ -3631,13 +3642,66 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
     };
+    collectCountdownEls();
     renderCountdown();
     window.setInterval(renderCountdown, 1000);
-    window.setInterval(function () {
-      if (document.visibilityState === 'visible') {
-        window.location.reload();
+    var refreshAfterBookingSupportSnapshot = function (force) {
+      if (!afterBookingSupportRoot || !afterBookingSupportPortal.ajaxUrl || !snapshotNonce || refreshInFlight) {
+        return;
       }
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      var nowMs = Date.now();
+      if (!force && (nowMs - lastSnapshotFetchMs) < 4000) {
+        return;
+      }
+      refreshInFlight = true;
+      lastSnapshotFetchMs = nowMs;
+      var formData = new FormData();
+      formData.append('action', 'cmn_after_booking_support_snapshot');
+      formData.append('nonce', snapshotNonce);
+      fetch(afterBookingSupportPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData
+      })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (payload) {
+          if (!payload || !payload.success || !payload.data || typeof payload.data.html !== 'string') {
+            return;
+          }
+          var wrapper = document.createElement('div');
+          wrapper.innerHTML = payload.data.html;
+          var replacement = wrapper.querySelector('[data-after-booking-support-root], [data-war-room-root]');
+          if (!replacement || !afterBookingSupportRoot.parentNode) {
+            return;
+          }
+          afterBookingSupportRoot.parentNode.replaceChild(replacement, afterBookingSupportRoot);
+          afterBookingSupportRoot = replacement;
+          collectCountdownEls();
+          renderCountdown();
+        })
+        .catch(function () {
+          // Silent fail; next poll will retry.
+        })
+        .finally(function () {
+          refreshInFlight = false;
+        });
+    };
+    window.setInterval(function () {
+      refreshAfterBookingSupportSnapshot(false);
     }, refreshEvery * 1000);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') {
+        refreshAfterBookingSupportSnapshot(true);
+      }
+    });
+    window.addEventListener('cmn:portal-heartbeat', function () {
+      refreshAfterBookingSupportSnapshot(false);
+    });
   }
 
   var acceptWarningForms = document.querySelectorAll('[data-cmn-accept-warning]');
