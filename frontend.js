@@ -4367,7 +4367,29 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
 
-    if (notificationsApiReady) {
+    var heartbeatSharedNotifications = false;
+    if (
+      notificationsApiReady
+      && window.cmnPortal
+      && Number(window.cmnPortal.heartbeatEnabled || 0) === 1
+      && window.cmnPortal.portalHeartbeatNonce
+      && document.querySelector('[data-live-matches-root]')
+    ) {
+      heartbeatSharedNotifications = true;
+      window.addEventListener('cmn:portal-heartbeat', function (event) {
+        var detail = event && event.detail ? event.detail : {};
+        var deltas = detail && detail.deltas ? detail.deltas : {};
+        var notificationsPayload = deltas && deltas.notifications ? deltas.notifications : null;
+        if (!notificationsPayload) {
+          return;
+        }
+        bellContainers.forEach(function (bell) {
+          refreshBellState(bell, notificationsPayload);
+        });
+      });
+    }
+
+    if (notificationsApiReady && !heartbeatSharedNotifications) {
       var pollNotifications = function () {
         return runBellAction('cmn_notifications_poll')
           .then(function (data) {
@@ -12907,7 +12929,7 @@ document.addEventListener('DOMContentLoaded', function () {
     LIVE_OFFER_STATES.DECLINED,
     LIVE_OFFER_STATES.EXPIRED
   ];
-  roots.forEach(function(root){
+  roots.forEach(function(root, rootIndex){
     var payloadRaw = root.getAttribute('data-live-matches') || '{}';
     var payload = {};
     try { payload = JSON.parse(payloadRaw); } catch (e) { payload = {}; }
@@ -12937,6 +12959,15 @@ document.addEventListener('DOMContentLoaded', function () {
       timerId: null,
       isSending: false
     };
+    var offerExpirySeconds = Math.max(60, parseInt((window.cmnPortal && window.cmnPortal.offerExpirySeconds) || '900', 10) || 900);
+    var heartbeatCursor = 0;
+    var heartbeatContext = String((root && root.getAttribute('data-live-heartbeat-context')) || 'school_dashboard').trim() || 'school_dashboard';
+    var heartbeatEnabled = !!(
+      window.cmnPortal
+      && Number(window.cmnPortal.heartbeatEnabled || 0) === 1
+      && window.cmnPortal.ajaxUrl
+      && window.cmnPortal.portalHeartbeatNonce
+    );
     var offerTickerId = null;
     if (drawer) {
       drawer.hidden = true;
@@ -13195,9 +13226,9 @@ document.addEventListener('DOMContentLoaded', function () {
       offerModalState.candidateId = parseInt(String(item.candidate_id || '0'), 10) || 0;
       offerModalState.targetDate = String(item.target_date || '').trim();
       offerModalState.roleLine = String(item.role_line || '').trim();
-      offerModalState.timerDeadlineMs = Date.now() + (15 * 60 * 1000);
+      offerModalState.timerDeadlineMs = Date.now() + (offerExpirySeconds * 1000);
       if (offerModalTimer) {
-        offerModalTimer.textContent = '15:00';
+        offerModalTimer.textContent = formatCountdown(offerExpirySeconds);
       }
       if (offerModalName) {
         offerModalName.textContent = String(item.first_name || 'Candidate');
@@ -13266,8 +13297,55 @@ document.addEventListener('DOMContentLoaded', function () {
       return changed;
     };
 
+    var applyPresenceAndOffers = function(presenceMap, offerMap){
+      var presence = (presenceMap && typeof presenceMap === 'object') ? presenceMap : {};
+      var offers = (offerMap && typeof offerMap === 'object') ? offerMap : {};
+      var changed = false;
+      datasetAll = datasetAll.map(function(item){
+        var key = String((item && item.candidate_id) || '');
+        if (!key || !Object.prototype.hasOwnProperty.call(presence, key)) {
+          return item;
+        }
+        var row = presence[key] || {};
+        var isOnline = String(row.is_online || '0') === '1' ? 1 : 0;
+        var label = String(row.label || 'Last seen at --:--');
+        if ((item.is_physically_online || 0) !== isOnline || String(item.presence_label || '') !== label) {
+          changed = true;
+        }
+        item.is_physically_online = isOnline;
+        item.presence_label = label;
+        return item;
+      });
+      if (syncOfferRowsFromMap(offers)) {
+        changed = true;
+      }
+      if (changed) {
+        render();
+      }
+      return changed;
+    };
+
+    var emitHeartbeatDeltas = function(payload){
+      if (typeof window.CustomEvent !== 'function') {
+        return;
+      }
+      var safePayload = payload && typeof payload === 'object' ? payload : {};
+      try {
+        window.dispatchEvent(new window.CustomEvent('cmn:portal-heartbeat', { detail: safePayload }));
+      } catch (error) {
+        // Ignore event-dispatch failures in older browsers.
+      }
+    };
+
     var pollPresence = function(){
-      if (!datasetAll.length || !window.cmnPortal || !window.cmnPortal.ajaxUrl || !window.cmnPortal.liveMatchNonce) {
+      if (!datasetAll.length || !window.cmnPortal || !window.cmnPortal.ajaxUrl) {
+        return;
+      }
+      if (heartbeatEnabled) {
+        if (!window.cmnPortal.portalHeartbeatNonce) {
+          return;
+        }
+      } else if (!window.cmnPortal.liveMatchNonce) {
         return;
       }
       var ids = datasetAll.map(function(item){
@@ -13277,8 +13355,15 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       var form = new FormData();
-      form.append('action', 'cmn_school_live_match_presence');
-      form.append('nonce', window.cmnPortal.liveMatchNonce);
+      if (heartbeatEnabled) {
+        form.append('action', 'cmn_portal_heartbeat');
+        form.append('nonce', window.cmnPortal.portalHeartbeatNonce);
+        form.append('view_context', heartbeatContext);
+        form.append('since_event_id', String(heartbeatCursor || 0));
+      } else {
+        form.append('action', 'cmn_school_live_match_presence');
+        form.append('nonce', window.cmnPortal.liveMatchNonce);
+      }
       ids.forEach(function(id){
         form.append('candidate_ids[]', String(id));
       });
@@ -13289,33 +13374,34 @@ document.addEventListener('DOMContentLoaded', function () {
       }).then(function(response){
         return response.json();
       }).then(function(data){
-        if (!data || !data.success || !data.data || typeof data.data.presence !== 'object') {
+        if (!data || !data.success || !data.data) {
+          return;
+        }
+        if (heartbeatEnabled) {
+          var payload = data.data || {};
+          var eventIdLatest = parseInt(String(payload.event_id_latest || '0'), 10) || 0;
+          if (eventIdLatest > 0) {
+            heartbeatCursor = eventIdLatest;
+          }
+          var deltas = payload && payload.deltas && typeof payload.deltas === 'object' ? payload.deltas : {};
+          var hbPresence = deltas && typeof deltas.live_match_presence === 'object' ? deltas.live_match_presence : {};
+          var hbOffers = deltas && typeof deltas.live_match_offers === 'object' ? deltas.live_match_offers : {};
+          applyPresenceAndOffers(hbPresence, hbOffers);
+          emitHeartbeatDeltas({
+            event_id_latest: heartbeatCursor,
+            since_event_id: parseInt(String(payload.since_event_id || '0'), 10) || 0,
+            view_context: String(payload.view_context || heartbeatContext),
+            deltas: deltas
+          });
+          return;
+        }
+
+        if (typeof data.data.presence !== 'object') {
           return;
         }
         var presence = data.data.presence || {};
-        var offers = (data.data && typeof data.data.offers === 'object') ? data.data.offers : {};
-        var changed = false;
-        datasetAll = datasetAll.map(function(item){
-          var key = String((item && item.candidate_id) || '');
-          if (!key || !Object.prototype.hasOwnProperty.call(presence, key)) {
-            return item;
-          }
-          var row = presence[key] || {};
-          var isOnline = String(row.is_online || '0') === '1' ? 1 : 0;
-          var label = String(row.label || 'Last seen at --:--');
-          if ((item.is_physically_online || 0) !== isOnline || String(item.presence_label || '') !== label) {
-            changed = true;
-          }
-          item.is_physically_online = isOnline;
-          item.presence_label = label;
-          return item;
-        });
-        if (syncOfferRowsFromMap(offers)) {
-          changed = true;
-        }
-        if (changed) {
-          render();
-        }
+        var offers = (typeof data.data.offers === 'object') ? data.data.offers : {};
+        applyPresenceAndOffers(presence, offers);
       }).catch(function(){
         // Ignore transient network failures.
       });
@@ -13599,8 +13685,30 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     render();
-    pollPresence();
-    window.setInterval(pollPresence, 20000);
+    if (cmnPollManager) {
+      cmnPollManager.register({
+        key: 'cmn-live-match-presence-' + String(rootIndex || 0),
+        intervalMs: 20000,
+        maxIntervalMs: 60000,
+        callback: pollPresence,
+        visibleOnly: true,
+        triggerOnFocus: true,
+        triggerOnVisibility: true,
+        backoffOnError: true,
+        immediate: true
+      });
+    } else {
+      pollPresence();
+      window.setInterval(pollPresence, 20000);
+      document.addEventListener('visibilitychange', function(){
+        if (!document.hidden) {
+          pollPresence();
+        }
+      });
+      window.addEventListener('focus', function(){
+        pollPresence();
+      });
+    }
   });
 })();
 if (typeof themeSelect !== 'undefined' && themeSelect && themeSelect.options && themeSelect.options.length <= 1) {

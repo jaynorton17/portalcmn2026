@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.22
+ * Version: 0.1.24
  * Author: CoverMeNow
  */
 
@@ -603,9 +603,10 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.22';
+    const VERSION = '0.1.24';
     const SCHEMA_BASE_VERSION = 38;
-    const SCHEMA_VERSION = 73;
+    const SCHEMA_VERSION = 74;
+    const OFFER_EXPIRY_SECONDS = 900;
     const EMAIL_CANDIDATE_DECLINED = false;
     const AUTOMATION_DEFAULT_COOLDOWN_HOURS = 24;
     const AUTOMATION_MAX_RECURSION_DEPTH = 3;
@@ -874,6 +875,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_notifications_mark_selected_read', [$this, 'handle_notifications_mark_selected_read']);
         add_action('wp_ajax_cmn_notifications_delete_selected', [$this, 'handle_notifications_delete_selected']);
         add_action('wp_ajax_cmn_notifications_poll', [$this, 'handle_notifications_poll']);
+        add_action('wp_ajax_cmn_portal_heartbeat', [$this, 'handle_portal_heartbeat']);
         add_action('wp_ajax_cmn_thread_get', [$this, 'handle_thread_get']);
         add_action('wp_ajax_nopriv_cmn_thread_get', [$this, 'handle_thread_get']);
         add_action('wp_ajax_cmn_thread_post_message', [$this, 'handle_thread_post_message']);
@@ -1004,6 +1006,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_portal_forgot_password', [$this, 'handle_portal_forgot_password']);
         add_action('admin_post_nopriv_cmn_portal_reset_password', [$this, 'handle_portal_reset_password']);
         add_action('admin_post_cmn_portal_reset_password', [$this, 'handle_portal_reset_password']);
+        add_action('admin_post_cmn_run_upgrade_runner', [$this, 'handle_run_upgrade_runner']);
         add_action('wp_ajax_cmn_add_staff_user', [$this, 'handle_add_staff_user_ajax']);
         add_action('wp_ajax_cmn_update_staff_user', [$this, 'handle_update_staff_user_ajax']);
         add_action('wp_ajax_cmn_send_staff_reset_password', [$this, 'handle_send_staff_reset_password_ajax']);
@@ -1514,6 +1517,11 @@ final class CMN_One_Plugin {
     }
 
     public function maybe_upgrade_schema() {
+        // Default to upgrade-runner controlled migrations. Auto-upgrade can be enabled
+        // explicitly for legacy environments.
+        if (!defined('CMN_ENABLE_REQUEST_SCHEMA_MIGRATIONS') || !CMN_ENABLE_REQUEST_SCHEMA_MIGRATIONS) {
+            return;
+        }
         $installed = (int) get_option('cmn_schema_version', 0);
         if ($installed < self::SCHEMA_VERSION) {
             self::run_schema_migrations($installed);
@@ -1721,6 +1729,11 @@ final class CMN_One_Plugin {
         if ($installed < 73) {
             self::migrate_schema_v73_support_feedback_request_lifecycle();
             $installed = 73;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 74) {
+            self::migrate_schema_v74_job_locks_and_hot_indexes();
+            $installed = 74;
             update_option('cmn_schema_version', $installed, false);
         }
         if ($installed < self::SCHEMA_VERSION) {
@@ -5332,6 +5345,79 @@ final class CMN_One_Plugin {
         $wpdb->query("UPDATE {$table_sql} SET feedback_request_status = 'none' WHERE feedback_request_status IS NULL OR feedback_request_status = ''");
     }
 
+    /*
+     * Job lock + hotspot index migration acceptance checks:
+     * 1) Critical cron jobs can acquire DB-backed locks independent of transient cache.
+     * 2) Migration is idempotent on existing installs.
+     * 3) Hotspot indexes are added only when missing.
+     */
+    private static function migrate_schema_v74_job_locks_and_hot_indexes() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $job_locks_table = self::get_job_locks_table_name();
+        $charset = $wpdb->get_charset_collate();
+        $sql = "CREATE TABLE {$job_locks_table} (
+            job_name varchar(120) NOT NULL,
+            locked_until datetime NOT NULL,
+            locked_by varchar(191) NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (job_name),
+            KEY locked_until (locked_until),
+            KEY updated_at (updated_at)
+        ) {$charset};";
+        dbDelta($sql);
+        self::maybe_add_missing_column($job_locks_table, 'job_name', "varchar(120) NOT NULL");
+        self::maybe_add_missing_column($job_locks_table, 'locked_until', "datetime NOT NULL");
+        self::maybe_add_missing_column($job_locks_table, 'locked_by', "varchar(191) NOT NULL");
+        self::maybe_add_missing_column($job_locks_table, 'updated_at', "datetime NOT NULL");
+        self::maybe_add_missing_index($job_locks_table, 'locked_until', "KEY locked_until (locked_until)");
+        self::maybe_add_missing_index($job_locks_table, 'updated_at', "KEY updated_at (updated_at)");
+
+        $notifications_table = $wpdb->prefix . 'cmn_notifications';
+        if (self::table_exists($notifications_table)) {
+            self::maybe_add_missing_index(
+                $notifications_table,
+                'idx_user_available_read_created',
+                "KEY idx_user_available_read_created (user_id, available_at, is_read, created_at)"
+            );
+        }
+
+        $support_tickets_table = $wpdb->prefix . 'cmn_support_tickets';
+        if (self::table_exists($support_tickets_table)) {
+            self::maybe_add_missing_index(
+                $support_tickets_table,
+                'idx_scope_updated',
+                "KEY idx_scope_updated (created_by_user_id, user_id, updated_at)"
+            );
+            self::maybe_add_missing_index(
+                $support_tickets_table,
+                'idx_status_updated',
+                "KEY idx_status_updated (status, updated_at)"
+            );
+        }
+
+        $support_messages_table = $wpdb->prefix . 'cmn_support_messages';
+        if (self::table_exists($support_messages_table)) {
+            self::maybe_add_missing_index(
+                $support_messages_table,
+                'idx_ticket_created',
+                "KEY idx_ticket_created (ticket_id, created_at, id)"
+            );
+        }
+
+        $candidate_requests_table = $wpdb->prefix . 'cmn_candidate_requests';
+        if (self::table_exists($candidate_requests_table)) {
+            self::maybe_add_missing_index(
+                $candidate_requests_table,
+                'idx_school_candidate_date',
+                "KEY idx_school_candidate_date (school_id, candidate_id, requested_date)"
+            );
+        }
+    }
+
     private static function table_exists($table_name) {
         global $wpdb;
         $table_name = trim((string) $table_name);
@@ -5958,6 +6044,11 @@ final class CMN_One_Plugin {
         return $wpdb->prefix . 'cmn_livechat_threads';
     }
 
+    private static function get_job_locks_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_job_locks';
+    }
+
     private static function get_payroll_period_locks_table_name() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_payroll_period_locks';
@@ -6553,7 +6644,537 @@ final class CMN_One_Plugin {
             'isStaffUser' => $this->is_staff_user() ? 1 : 0,
             'isCandidateUser' => $this->is_candidate_user() ? 1 : 0,
             'systemHealthNonce' => wp_create_nonce('cmn_system_health'),
+            'portalHeartbeatNonce' => wp_create_nonce('cmn_portal_heartbeat'),
+            'heartbeatEnabled' => $this->is_feature_enabled('heartbeat', true) ? 1 : 0,
+            'offerExpirySeconds' => $this->get_offer_expiry_seconds(),
         ]);
+    }
+
+    private function is_feature_enabled($feature_key, $default = true) {
+        $feature_key = sanitize_key((string) $feature_key);
+        if ($feature_key === '') {
+            return (bool) $default;
+        }
+        $const_map = [
+            'heartbeat' => 'CMN_FEATURE_HEARTBEAT',
+            'db_locks' => 'CMN_FEATURE_DB_LOCKS',
+            'status_normalizer' => 'CMN_FEATURE_STATUS_NORMALIZER',
+        ];
+        $constant_name = isset($const_map[$feature_key]) ? (string) $const_map[$feature_key] : '';
+        if ($constant_name !== '' && defined($constant_name)) {
+            return (bool) constant($constant_name);
+        }
+        $option_key = 'cmn_feature_' . $feature_key;
+        $stored = get_option($option_key, null);
+        if ($stored === null) {
+            return (bool) $default;
+        }
+        $normalized = strtolower(trim((string) $stored));
+        if ($normalized === '') {
+            return (bool) $default;
+        }
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private function get_job_locks_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_job_locks';
+    }
+
+    private function is_job_locks_table_ready() {
+        static $is_ready = null;
+        if ($is_ready !== null) {
+            return (bool) $is_ready;
+        }
+        global $wpdb;
+        $table = $this->get_job_locks_table();
+        $exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        $is_ready = ($exists === $table);
+        return (bool) $is_ready;
+    }
+
+    private function get_job_lock_runner_id($prefix = 'cmn-runner') {
+        $prefix = sanitize_key((string) $prefix);
+        if ($prefix === '') {
+            $prefix = 'cmn-runner';
+        }
+        $suffix = function_exists('wp_generate_uuid4')
+            ? (string) wp_generate_uuid4()
+            : uniqid('runner-', true);
+        return $prefix . ':' . $suffix;
+    }
+
+    private function cmn_acquire_job_lock($job_name, $ttl_seconds = 600, $runner_id = '') {
+        $job_name = substr(sanitize_key((string) $job_name), 0, 120);
+        $ttl_seconds = max(15, (int) $ttl_seconds);
+        $runner_id = sanitize_text_field((string) $runner_id);
+        if ($job_name === '') {
+            return false;
+        }
+        if ($runner_id === '') {
+            $runner_id = $this->get_job_lock_runner_id($job_name);
+        }
+
+        // Fallback lock strategy for environments that do not support DB locks yet.
+        if (!$this->is_feature_enabled('db_locks', true) || !$this->is_job_locks_table_ready()) {
+            $lock_key = 'cmn_job_lock_' . md5($job_name);
+            if (get_transient($lock_key)) {
+                return false;
+            }
+            set_transient($lock_key, $runner_id, $ttl_seconds);
+            return $runner_id;
+        }
+
+        global $wpdb;
+        $table = $this->get_job_locks_table();
+        $now = gmdate('Y-m-d H:i:s', current_time('timestamp', true));
+        $locked_until = gmdate('Y-m-d H:i:s', current_time('timestamp', true) + $ttl_seconds);
+
+        $updated = $wpdb->query($wpdb->prepare(
+            "UPDATE {$table}
+             SET locked_until = %s,
+                 locked_by = %s,
+                 updated_at = %s
+             WHERE job_name = %s
+               AND locked_until <= %s",
+            $locked_until,
+            $runner_id,
+            $now,
+            $job_name,
+            $now
+        ));
+        if ($updated !== false && (int) $updated > 0) {
+            return $runner_id;
+        }
+
+        $inserted = $wpdb->insert(
+            $table,
+            [
+                'job_name' => $job_name,
+                'locked_until' => $locked_until,
+                'locked_by' => $runner_id,
+                'updated_at' => $now,
+            ],
+            ['%s', '%s', '%s', '%s']
+        );
+        if ($inserted !== false) {
+            return $runner_id;
+        }
+
+        $current_owner = (string) $wpdb->get_var($wpdb->prepare(
+            "SELECT locked_by
+             FROM {$table}
+             WHERE job_name = %s
+               AND locked_until > %s
+             LIMIT 1",
+            $job_name,
+            $now
+        ));
+        if ($current_owner !== '' && hash_equals($current_owner, $runner_id)) {
+            return $runner_id;
+        }
+
+        return false;
+    }
+
+    private function cmn_release_job_lock($job_name, $runner_id = '') {
+        $job_name = substr(sanitize_key((string) $job_name), 0, 120);
+        $runner_id = sanitize_text_field((string) $runner_id);
+        if ($job_name === '') {
+            return false;
+        }
+
+        if (!$this->is_feature_enabled('db_locks', true) || !$this->is_job_locks_table_ready()) {
+            $lock_key = 'cmn_job_lock_' . md5($job_name);
+            delete_transient($lock_key);
+            return true;
+        }
+
+        global $wpdb;
+        $table = $this->get_job_locks_table();
+        if ($runner_id !== '') {
+            $deleted = $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$table}
+                 WHERE job_name = %s
+                   AND locked_by = %s",
+                $job_name,
+                $runner_id
+            ));
+        } else {
+            $deleted = $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$table}
+                 WHERE job_name = %s",
+                $job_name
+            ));
+        }
+
+        return $deleted !== false;
+    }
+
+    private function get_staff_only_views_allowlist() {
+        return [
+            'clients',
+            'leads',
+            'schools',
+            'candidates',
+            'compliance-review',
+            'compliance_review',
+            'cv-converter',
+            'cv_converter',
+            'cv_converter_app',
+            'marketing',
+            'requests',
+            'school-requests',
+            'school_requests',
+            'automation',
+            'rate-guardrails',
+            'rate_guardrails',
+            'war-room',
+            'war_room',
+            'broadcast',
+            'audit',
+            'bookings',
+            'analytics',
+            'system-health',
+            'system_health',
+            'data-integrity',
+            'data_integrity',
+            'contacts',
+            'settings',
+            'email-centre',
+            'email_centre',
+            'finance-overview',
+            'finance_overview',
+            'partner-credit-ledger',
+            'partner_credit_ledger',
+            'school-partner-admin',
+            'school_partner_admin',
+            'invoicing',
+            'partner-programme',
+            'partner_programme',
+            'feedback-insights',
+            'feedback_insights',
+            'staff-lounge',
+            'staff_lounge',
+            'chat',
+            'internal-chat',
+            'messages',
+            'staff',
+        ];
+    }
+
+    private function is_staff_only_view($view) {
+        $view = sanitize_key((string) $view);
+        if ($view === '') {
+            return false;
+        }
+        return in_array($view, $this->get_staff_only_views_allowlist(), true);
+    }
+
+    private function get_offer_expiry_seconds() {
+        return max(60, (int) self::OFFER_EXPIRY_SECONDS);
+    }
+
+    private function get_offer_expiry_mysql_from_now() {
+        return gmdate('Y-m-d H:i:s', current_time('timestamp', true) + $this->get_offer_expiry_seconds());
+    }
+
+    private function hash_offer_response_token($token) {
+        $token = trim((string) $token);
+        if ($token === '') {
+            return '';
+        }
+        return hash_hmac('sha256', $token, (string) wp_salt('auth'));
+    }
+
+    private function normalize_offer_response_action($response) {
+        $response = sanitize_key((string) $response);
+        if (!in_array($response, ['accept', 'decline'], true)) {
+            return '';
+        }
+        return $response;
+    }
+
+    private function render_offer_link_expired_page() {
+        $portal_url = $this->get_portal_base_url();
+        $support_url = add_query_arg(['view' => 'support'], $portal_url);
+        return '<section class="cmn-portal"><div class="cmn-panel-card" style="border:1px solid #ef4444;"><h3>Link expired</h3><p>This action link is no longer valid. Please return to your portal.</p><p><a class="cmn-primary" href="' . esc_url($portal_url) . '">Go to Portal</a> <a class="cmn-ghost" href="' . esc_url($support_url) . '">Contact Support</a></p></div></section>';
+    }
+
+    private function cmn_rate_limit($bucket, $limit, $window_seconds) {
+        $bucket = sanitize_key((string) $bucket);
+        $limit = max(1, (int) $limit);
+        $window_seconds = max(1, (int) $window_seconds);
+        if ($bucket === '') {
+            return true;
+        }
+
+        $transient_key = 'cmn_rate_' . md5($bucket);
+        $now = time();
+        $state = get_transient($transient_key);
+        if (!is_array($state)) {
+            $state = [
+                'count' => 0,
+                'started_at' => $now,
+            ];
+        }
+        $started_at = max(0, (int) ($state['started_at'] ?? $now));
+        if ($started_at < 1 || ($now - $started_at) >= $window_seconds) {
+            $state = [
+                'count' => 0,
+                'started_at' => $now,
+            ];
+        }
+
+        $current_count = max(0, (int) ($state['count'] ?? 0));
+        if ($current_count >= $limit) {
+            $retry_after = max(1, $window_seconds - max(0, $now - (int) $state['started_at']));
+            return new WP_Error('cmn_rate_limited', 'Too many requests. Please try again shortly.', [
+                'status' => 429,
+                'retry_after' => $retry_after,
+            ]);
+        }
+
+        $state['count'] = $current_count + 1;
+        $state['started_at'] = max(1, (int) ($state['started_at'] ?? $now));
+        set_transient($transient_key, $state, $window_seconds);
+        return true;
+    }
+
+    private function cmn_policy_error_response(array $policy, $code, $message, $status = 403) {
+        $status = max(400, (int) $status);
+        $code = sanitize_key((string) $code);
+        if ($code === '') {
+            $code = 'cmn_policy_error';
+        }
+        $message = sanitize_text_field((string) $message);
+        $payload = [
+            'ok' => false,
+            'error' => [
+                'code' => $code,
+                'message' => $message,
+            ],
+        ];
+
+        $transport = sanitize_key((string) ($policy['transport'] ?? ''));
+        if (wp_doing_ajax() || $transport === 'ajax') {
+            wp_send_json($payload, $status);
+        }
+        if ($transport === 'admin_post') {
+            $redirect = wp_get_referer();
+            if (!is_string($redirect) || $redirect === '') {
+                $redirect = $this->get_portal_base_url();
+            }
+            $redirect = add_query_arg([
+                'cmn_error' => rawurlencode($message),
+                'cmn_error_code' => $code,
+            ], $redirect);
+            wp_safe_redirect($redirect, $status);
+            exit;
+        }
+        wp_die(esc_html($message), esc_html__('Access denied', 'covermenowone-one'), ['response' => $status]);
+    }
+
+    private function cmn_policy_require_nonce($nonce_action, $nonce_field = 'nonce') {
+        $nonce_action = sanitize_key((string) $nonce_action);
+        $nonce_field = sanitize_key((string) $nonce_field);
+        if ($nonce_action === '' || $nonce_field === '') {
+            return new WP_Error('cmn_nonce_policy_invalid', 'Invalid nonce policy.', ['status' => 500]);
+        }
+        $nonce_value = '';
+        if (isset($_REQUEST[$nonce_field])) {
+            $nonce_value = sanitize_text_field(wp_unslash((string) $_REQUEST[$nonce_field]));
+        }
+        if ($nonce_value === '' || !wp_verify_nonce($nonce_value, $nonce_action)) {
+            return new WP_Error('cmn_invalid_nonce', 'Invalid request.', ['status' => 403]);
+        }
+        return true;
+    }
+
+    private function cmn_policy_require_ability($ability, $context = []) {
+        $ability = trim((string) $ability);
+        $context = is_array($context) ? $context : [];
+        if ($ability === '') {
+            return true;
+        }
+
+        if (function_exists('cmn_require_ability')) {
+            $ability_result = cmn_require_ability($ability, $context);
+            if (is_wp_error($ability_result)) {
+                return $ability_result;
+            }
+        }
+
+        $actor_user_id = (int) ($context['actor_user_id'] ?? get_current_user_id());
+        if ($ability === 'portal.logged_in') {
+            if (!is_user_logged_in()) {
+                return new WP_Error('cmn_unauthorized', 'Unauthorized.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'portal.staff.view') {
+            if ($actor_user_id < 1 || !$this->is_staff_user($actor_user_id)) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'partner.admin.mutate') {
+            if ($actor_user_id < 1 || (!$this->is_admin_user($actor_user_id) && !$this->is_staff_role($actor_user_id))) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'system.upgrade.run') {
+            if ($actor_user_id < 1 || !$this->is_admin_user($actor_user_id)) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+
+        if ($actor_user_id < 1 || (!current_user_can('manage_options') && !$this->is_admin_user($actor_user_id))) {
+            return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+        }
+        return true;
+    }
+
+    private function cmn_policy_require_entity_binding($entity_binding, $context = []) {
+        if (!is_array($entity_binding) || empty($entity_binding)) {
+            return true;
+        }
+        $context = is_array($context) ? $context : [];
+        $actor_user_id = (int) ($context['actor_user_id'] ?? get_current_user_id());
+        if ($actor_user_id < 1) {
+            return new WP_Error('cmn_unauthorized', 'Unauthorized.', ['status' => 403]);
+        }
+        if ($this->is_staff_user($actor_user_id)) {
+            return true;
+        }
+
+        if (isset($entity_binding['school_id'])) {
+            $school_id = (int) $entity_binding['school_id'];
+            if ($school_id > 0 && !$this->user_can_access_school($school_id, $actor_user_id)) {
+                return new WP_Error('cmn_forbidden_school', 'Access denied.', ['status' => 403]);
+            }
+        }
+
+        if (isset($entity_binding['candidate_id'])) {
+            $candidate_id = (int) $entity_binding['candidate_id'];
+            if ($candidate_id > 0) {
+                $owned_candidate_id = (int) $this->get_candidate_id_for_user($actor_user_id);
+                if ($owned_candidate_id !== $candidate_id) {
+                    return new WP_Error('cmn_forbidden_candidate', 'Access denied.', ['status' => 403]);
+                }
+            }
+        }
+
+        if (isset($entity_binding['booking_id'])) {
+            $booking_id = (int) $entity_binding['booking_id'];
+            if ($booking_id > 0) {
+                $candidate_user_id = (int) $this->get_booking_candidate_user_id($booking_id);
+                $school_user_id = (int) $this->get_booking_school_user_id($booking_id);
+                $is_owner = ($candidate_user_id > 0 && $candidate_user_id === $actor_user_id)
+                    || ($school_user_id > 0 && $school_user_id === $actor_user_id);
+                if (!$is_owner) {
+                    return new WP_Error('cmn_forbidden_booking', 'Access denied.', ['status' => 403]);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private function cmn_endpoint_guard(array $policy, callable $fn) {
+        $policy = wp_parse_args($policy, [
+            'ability_required' => '',
+            'nonce_mode' => 'not_applicable',
+            'nonce_action' => '',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => wp_doing_ajax() ? 'ajax' : 'admin_post',
+            'rate_limit_bucket' => '',
+            'rate_limit_max' => 0,
+            'rate_limit_window' => 0,
+            'entity_binding' => [],
+            'context' => [],
+        ]);
+
+        $context = is_array($policy['context']) ? $policy['context'] : [];
+        if (!isset($context['actor_user_id'])) {
+            $context['actor_user_id'] = (int) get_current_user_id();
+        }
+
+        $rate_bucket = sanitize_key((string) $policy['rate_limit_bucket']);
+        $rate_max = max(0, (int) $policy['rate_limit_max']);
+        $rate_window = max(0, (int) $policy['rate_limit_window']);
+        if ($rate_bucket !== '' && $rate_max > 0 && $rate_window > 0) {
+            $rate_check = $this->cmn_rate_limit($rate_bucket, $rate_max, $rate_window);
+            if (is_wp_error($rate_check)) {
+                return $this->cmn_policy_error_response(
+                    $policy,
+                    (string) $rate_check->get_error_code(),
+                    (string) $rate_check->get_error_message(),
+                    (int) ($rate_check->get_error_data()['status'] ?? 429)
+                );
+            }
+        }
+
+        $ability = trim((string) $policy['ability_required']);
+        if ($ability !== '') {
+            $ability_check = $this->cmn_policy_require_ability($ability, $context);
+            if (is_wp_error($ability_check)) {
+                return $this->cmn_policy_error_response(
+                    $policy,
+                    (string) $ability_check->get_error_code(),
+                    (string) $ability_check->get_error_message(),
+                    (int) ($ability_check->get_error_data()['status'] ?? 403)
+                );
+            }
+        }
+
+        $nonce_mode = sanitize_key((string) $policy['nonce_mode']);
+        if ($nonce_mode === 'required') {
+            $nonce_check = $this->cmn_policy_require_nonce(
+                (string) $policy['nonce_action'],
+                (string) $policy['nonce_field']
+            );
+            if (is_wp_error($nonce_check)) {
+                return $this->cmn_policy_error_response(
+                    $policy,
+                    (string) $nonce_check->get_error_code(),
+                    (string) $nonce_check->get_error_message(),
+                    (int) ($nonce_check->get_error_data()['status'] ?? 403)
+                );
+            }
+        }
+
+        $entity_binding = is_array($policy['entity_binding']) ? $policy['entity_binding'] : [];
+        if (!empty($entity_binding)) {
+            $entity_check = $this->cmn_policy_require_entity_binding($entity_binding, $context);
+            if (is_wp_error($entity_check)) {
+                return $this->cmn_policy_error_response(
+                    $policy,
+                    (string) $entity_check->get_error_code(),
+                    (string) $entity_check->get_error_message(),
+                    (int) ($entity_check->get_error_data()['status'] ?? 403)
+                );
+            }
+        }
+
+        return call_user_func($fn, $context, $policy);
+    }
+
+    private function render_safe_portal_home_with_access_denied() {
+        $banner_html = '<section class="cmn-portal"><div class="cmn-panel-card" style="border:1px solid #ef4444;"><h3>Access denied</h3><p>You do not have permission to access that view.</p><p><a class="cmn-primary" href="' . esc_url($this->get_portal_base_url()) . '">Go to Portal</a> <a class="cmn-ghost" href="' . esc_url(add_query_arg(['view' => 'support'], $this->get_portal_base_url())) . '">Contact Support</a></p></div></section>';
+        if ($this->is_staff_user()) {
+            return $banner_html . $this->render_staff_dashboard_shortcode();
+        }
+        if ($this->is_school_user()) {
+            return $banner_html . $this->render_school_dashboard_shortcode();
+        }
+        if ($this->is_candidate_user()) {
+            return $banner_html . $this->render_candidate_dashboard_shortcode();
+        }
+        return $banner_html . $this->render_login_shortcode(true);
     }
 
     private function is_public_contact_page() {
@@ -7582,13 +8203,13 @@ final class CMN_One_Plugin {
     }
 
     public function run_automation_runner() {
-        if (get_transient('cmn_automation_runner_lock')) {
+        $lock_runner = $this->cmn_acquire_job_lock('automation_runner', 600, $this->get_job_lock_runner_id('automation'));
+        if (!$lock_runner) {
             return [
                 'ok' => false,
                 'message' => 'Automation runner is already in progress.',
             ];
         }
-        set_transient('cmn_automation_runner_lock', 1, 600);
         $result = [
             'ok' => false,
             'message' => 'Automation runner did not execute.',
@@ -7610,7 +8231,7 @@ final class CMN_One_Plugin {
                 'message' => 'Automation runner failed: ' . $e->getMessage(),
             ];
         } finally {
-            delete_transient('cmn_automation_runner_lock');
+            $this->cmn_release_job_lock('automation_runner', (string) $lock_runner);
         }
         return $result;
     }
@@ -7721,6 +8342,68 @@ final class CMN_One_Plugin {
             'ok' => true,
             'version' => $version,
         ], 200);
+    }
+
+    public function handle_run_upgrade_runner() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.upgrade.run',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_run_upgrade_runner',
+            'nonce_field' => 'cmn_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $redirect = wp_get_referer();
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = add_query_arg(['view' => 'system-health'], $this->get_portal_base_url());
+        }
+
+        $lock_runner = $this->cmn_acquire_job_lock('schema_upgrade_runner', 900, $this->get_job_lock_runner_id('schema-upgrade'));
+        if (!$lock_runner) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_upgrade_status' => 'busy',
+                'cmn_upgrade_msg' => rawurlencode('Upgrade runner is already in progress.'),
+            ], $redirect));
+            exit;
+        }
+
+        $status = 'success';
+        $message = 'Upgrade runner completed successfully.';
+        $installed_version = (int) get_option('cmn_schema_version', self::SCHEMA_BASE_VERSION);
+        try {
+            self::run_schema_migrations($installed_version);
+            update_option('cmn_plugin_version', self::VERSION, false);
+            $new_version = (int) get_option('cmn_schema_version', $installed_version);
+            $this->add_audit_log('schema_upgrade_runner_completed', 'system', 'schema', [
+                'from_schema_version' => $installed_version,
+                'to_schema_version' => $new_version,
+            ], $actor_user_id);
+        } catch (Throwable $e) {
+            $status = 'error';
+            $message = 'Upgrade runner failed: ' . $e->getMessage();
+            $this->add_audit_log('schema_upgrade_runner_failed', 'system', 'schema', [
+                'from_schema_version' => $installed_version,
+                'error' => $e->getMessage(),
+            ], $actor_user_id);
+        } finally {
+            $this->cmn_release_job_lock('schema_upgrade_runner', (string) $lock_runner);
+        }
+
+        wp_safe_redirect(add_query_arg([
+            'cmn_upgrade_status' => $status,
+            'cmn_upgrade_msg' => rawurlencode($message),
+        ], $redirect));
+        exit;
     }
 
     public function handle_automation_realtime($trigger_event, $entity_context = [], $options = []) {
@@ -8725,6 +9408,13 @@ final class CMN_One_Plugin {
     }
 
     private function render_staff_shell($active, $inner_html) {
+        $ability_check = $this->cmn_policy_require_ability('portal.staff.view', [
+            'actor_user_id' => (int) get_current_user_id(),
+        ]);
+        if (is_wp_error($ability_check)) {
+            return $this->render_safe_portal_home_with_access_denied();
+        }
+
         $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
         $wordpress_dashboard_url = add_query_arg(['cmn_admin' => '1'], wp_login_url(admin_url('/')));
@@ -22028,6 +22718,117 @@ final class CMN_One_Plugin {
         wp_send_json_success($this->get_notifications_payload($user_id));
     }
 
+    public function handle_portal_heartbeat() {
+        $actor_user_id = (int) get_current_user_id();
+        $ip_hash = substr(md5((string) $this->get_request_ip_address()), 0, 12);
+        $rate_bucket = 'heartbeat_' . $actor_user_id . '_' . $ip_hash;
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.logged_in',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_portal_heartbeat',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+            'rate_limit_bucket' => $rate_bucket,
+            'rate_limit_max' => 180,
+            'rate_limit_window' => 60,
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $view_context = sanitize_key((string) ($_POST['view_context'] ?? 'dashboard'));
+        if ($view_context === '') {
+            $view_context = 'dashboard';
+        }
+        $since_event_id = max(0, (int) ($_POST['since_event_id'] ?? 0));
+        $raw_candidate_ids = $_POST['candidate_ids'] ?? [];
+        if (!is_array($raw_candidate_ids)) {
+            $raw_candidate_ids = explode(',', (string) $raw_candidate_ids);
+        }
+        $candidate_ids = [];
+        foreach ((array) $raw_candidate_ids as $candidate_id_raw) {
+            $candidate_id = (int) $candidate_id_raw;
+            if ($candidate_id > 0) {
+                $candidate_ids[$candidate_id] = $candidate_id;
+            }
+            if (count($candidate_ids) >= 120) {
+                break;
+            }
+        }
+        $candidate_ids = array_values($candidate_ids);
+
+        $cache_scope = [
+            'user_id' => $actor_user_id,
+            'view_context' => $view_context,
+            'since_event_id' => $since_event_id,
+            'candidate_ids' => $candidate_ids,
+        ];
+        $cache_key = 'cmn_hb_' . md5(wp_json_encode($cache_scope));
+        $cached = get_transient($cache_key);
+        if (is_array($cached) && !empty($cached['event_id_latest'])) {
+            wp_send_json_success($cached);
+        }
+
+        $deltas = [
+            'notifications' => $this->get_notifications_payload($actor_user_id),
+        ];
+        $event_id_latest = (int) current_time('timestamp', true);
+
+        if ($this->is_school_user($actor_user_id) && !empty($candidate_ids)) {
+            $school_id = (int) $this->resolve_school_id_for_user($actor_user_id);
+            if ($school_id > 0) {
+                $offer_state_map = $this->get_school_live_offer_state_map($school_id, array_fill_keys($candidate_ids, ''));
+                $presence = [];
+                $offers = [];
+                foreach ($candidate_ids as $candidate_id) {
+                    if ($this->is_candidate_hidden_for_school_live_matches((int) $school_id, (int) $candidate_id)) {
+                        continue;
+                    }
+                    $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+                    if ($candidate_user_id > 0) {
+                        $snapshot = $this->get_candidate_presence_snapshot($candidate_user_id);
+                        $presence[(string) $candidate_id] = [
+                            'is_online' => !empty($snapshot['is_online']) ? 1 : 0,
+                            'label' => sanitize_text_field((string) ($snapshot['last_online_label'] ?? 'Last seen at --:--')),
+                        ];
+                    } else {
+                        $presence[(string) $candidate_id] = [
+                            'is_online' => 0,
+                            'label' => 'Last seen at --:--',
+                        ];
+                    }
+
+                    $offer_row = (array) ($offer_state_map[$candidate_id] ?? []);
+                    $offers[(string) $candidate_id] = [
+                        'state' => $this->normalize_offer_state((string) ($offer_row['state'] ?? '')),
+                        'expires_at' => sanitize_text_field((string) ($offer_row['expires_at'] ?? '')),
+                        'request_id' => (int) ($offer_row['request_id'] ?? 0),
+                        'booking_id' => (int) ($offer_row['booking_id'] ?? 0),
+                        'chat_url' => esc_url_raw((string) ($offer_row['chat_url'] ?? '')),
+                    ];
+                }
+                $deltas['live_match_presence'] = $presence;
+                $deltas['live_match_offers'] = $offers;
+            }
+        }
+
+        $payload = [
+            'event_id_latest' => $event_id_latest,
+            'since_event_id' => $since_event_id,
+            'view_context' => $view_context,
+            'deltas' => $deltas,
+        ];
+        set_transient($cache_key, $payload, 3);
+
+        wp_send_json_success($payload);
+    }
+
     public function handle_school_contact_search_ajax() {
         if (!check_ajax_referer('cmn_school_contact_search', 'nonce', false)) {
             wp_send_json_error(['message' => 'Invalid request.'], 403);
@@ -23210,6 +24011,350 @@ final class CMN_One_Plugin {
         ]);
     }
 
+    public function handle_system_health_preview() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_system_health',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $issue_type = sanitize_key((string) ($_POST['issue_type'] ?? ''));
+        if ($issue_type === '') {
+            wp_send_json_error(['message' => 'Issue type is required.'], 400);
+        }
+        $scan = $this->run_system_health_scan(150);
+        if (!is_array($scan) || !isset($scan[$issue_type])) {
+            wp_send_json_error(['message' => 'Issue type is not supported.'], 400);
+        }
+        $bucket = is_array($scan[$issue_type]) ? $scan[$issue_type] : [];
+        $items = is_array($bucket['items'] ?? null) ? (array) $bucket['items'] : [];
+        wp_send_json_success([
+            'issue_type' => $issue_type,
+            'severity' => sanitize_key((string) ($bucket['severity'] ?? '')),
+            'count' => max(0, (int) ($bucket['count'] ?? count($items))),
+            'sample' => array_slice($items, 0, 25),
+        ]);
+    }
+
+    public function handle_system_health_apply() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_system_health',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+        if (!$this->is_admin_user()) {
+            wp_send_json_error(['message' => 'Admin only.'], 403);
+        }
+
+        $issue_type = sanitize_key((string) ($_POST['issue_type'] ?? ''));
+        if ($issue_type === '') {
+            wp_send_json_error(['message' => 'Issue type is required.'], 400);
+        }
+
+        try {
+            $result = $this->apply_system_health_safe_issue($issue_type);
+        } catch (Throwable $e) {
+            wp_send_json_error(['message' => $e->getMessage()], 500);
+        }
+
+        $this->add_audit_log('system_health_safe_fix_applied', 'system_health', $issue_type, [
+            'result' => $result,
+        ], (int) get_current_user_id());
+        wp_send_json_success([
+            'issue_type' => $issue_type,
+            'result' => $result,
+        ]);
+    }
+
+    public function handle_system_health_export_csv() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_system_health',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $scan = $this->run_system_health_scan(500);
+        $rows = [];
+        foreach ((array) $scan as $issue_type => $bucket) {
+            $bucket = is_array($bucket) ? $bucket : [];
+            $items = is_array($bucket['items'] ?? null) ? (array) $bucket['items'] : [];
+            if (!$items) {
+                $rows[] = [
+                    'issue_type' => $issue_type,
+                    'severity' => (string) ($bucket['severity'] ?? ''),
+                    'entity_id' => 0,
+                    'details_json' => '',
+                ];
+                continue;
+            }
+            foreach ($items as $item) {
+                $item = is_array($item) ? $item : [];
+                $rows[] = [
+                    'issue_type' => $issue_type,
+                    'severity' => (string) ($bucket['severity'] ?? ''),
+                    'entity_id' => (int) ($item['entity_id'] ?? 0),
+                    'details_json' => wp_json_encode($item),
+                ];
+            }
+        }
+
+        nocache_headers();
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="cmn-system-health-' . gmdate('Ymd-His') . '.csv"');
+        $out = fopen('php://output', 'w');
+        if ($out) {
+            fputcsv($out, ['issue_type', 'severity', 'entity_id', 'details_json']);
+            foreach ($rows as $row) {
+                fputcsv($out, [
+                    (string) ($row['issue_type'] ?? ''),
+                    (string) ($row['severity'] ?? ''),
+                    (int) ($row['entity_id'] ?? 0),
+                    (string) ($row['details_json'] ?? ''),
+                ]);
+            }
+            fclose($out);
+        }
+        exit;
+    }
+
+    private function normalize_match_weights_payload($raw_weights) {
+        if (is_string($raw_weights)) {
+            $decoded = json_decode(wp_unslash($raw_weights), true);
+            $raw_weights = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($raw_weights)) {
+            $raw_weights = [];
+        }
+        $normalized = [];
+        foreach ($raw_weights as $key => $value) {
+            $weight_key = sanitize_key((string) $key);
+            if ($weight_key === '') {
+                continue;
+            }
+            $normalized[$weight_key] = round((float) $value, 4);
+        }
+        ksort($normalized);
+        return $normalized;
+    }
+
+    public function handle_match_get_context() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_staff_manage',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $context = [
+            'schools_total' => (int) $this->count_total_posts('cmn_school'),
+            'candidates_total' => (int) $this->count_total_posts('cmn_candidate'),
+            'active_weights' => $this->normalize_match_weights_payload(get_option('cmn_match_weights_active', [])),
+            'draft_weights' => $this->normalize_match_weights_payload(get_option('cmn_match_weights_draft', [])),
+        ];
+        wp_send_json_success($context);
+    }
+
+    public function handle_match_run_simulation() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_staff_manage',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $weights = $this->normalize_match_weights_payload($_POST['weights'] ?? []);
+        wp_send_json_success([
+            'weights' => $weights,
+            'summary' => [
+                'message' => 'Simulation endpoint is available. Matching simulation output is currently limited to context metadata.',
+                'candidate_pool_size' => (int) $this->count_total_posts('cmn_candidate'),
+            ],
+            'results' => [],
+        ]);
+    }
+
+    public function handle_match_save_weights() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_staff_manage',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $weights = $this->normalize_match_weights_payload($_POST['weights'] ?? []);
+        update_option('cmn_match_weights_draft', $weights, false);
+        $this->add_audit_log('match_weights_saved', 'match', 'draft', ['weights' => $weights], (int) get_current_user_id());
+        wp_send_json_success(['weights' => $weights]);
+    }
+
+    public function handle_match_set_active_weights() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_staff_manage',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $current_active = $this->normalize_match_weights_payload(get_option('cmn_match_weights_active', []));
+        $weights = $this->normalize_match_weights_payload($_POST['weights'] ?? get_option('cmn_match_weights_draft', []));
+        $history = get_option('cmn_match_weights_history', []);
+        if (!is_array($history)) {
+            $history = [];
+        }
+        $history[] = [
+            'weights' => $current_active,
+            'activated_at' => current_time('mysql'),
+            'activated_by' => (int) get_current_user_id(),
+        ];
+        $history = array_slice($history, -50);
+        update_option('cmn_match_weights_history', $history, false);
+        update_option('cmn_match_weights_active', $weights, false);
+        update_option('cmn_match_weights_draft', $weights, false);
+        $this->add_audit_log('match_weights_activated', 'match', 'active', ['weights' => $weights], (int) get_current_user_id());
+        wp_send_json_success(['weights' => $weights, 'history_count' => count($history)]);
+    }
+
+    public function handle_match_rollback_weights() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_staff_manage',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $history = get_option('cmn_match_weights_history', []);
+        if (!is_array($history) || empty($history)) {
+            wp_send_json_error(['message' => 'No historical weights available.'], 400);
+        }
+        $last = array_pop($history);
+        $weights = $this->normalize_match_weights_payload(is_array($last) ? ($last['weights'] ?? []) : []);
+        if (empty($weights)) {
+            wp_send_json_error(['message' => 'No rollback weights available.'], 400);
+        }
+        update_option('cmn_match_weights_history', $history, false);
+        update_option('cmn_match_weights_active', $weights, false);
+        update_option('cmn_match_weights_draft', $weights, false);
+        $this->add_audit_log('match_weights_rolled_back', 'match', 'active', ['weights' => $weights], (int) get_current_user_id());
+        wp_send_json_success(['weights' => $weights, 'history_count' => count($history)]);
+    }
+
+    public function handle_email_log_resend() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_email_log_resend',
+            'nonce_field' => 'cmn_email_log_resend_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $email_log_id = (int) ($_POST['cmn_email_log_id'] ?? 0);
+        $redirect = wp_get_referer();
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = add_query_arg(['view' => 'email-centre'], $this->get_portal_base_url());
+        }
+
+        $this->add_audit_log('email_log_resend_requested', 'email_log', (string) $email_log_id, [
+            'status' => 'not_implemented',
+        ], $actor_user_id);
+        wp_safe_redirect(add_query_arg([
+            'cmn_notice' => rawurlencode('Email resend is not yet available for this entry.'),
+        ], $redirect));
+        exit;
+    }
+
     private function get_email_templates_by_type($type) {
         $type = sanitize_key((string) $type);
         $templates = [];
@@ -23814,7 +24959,17 @@ final class CMN_One_Plugin {
             }
             return $this->render_staff_payroll_tab();
         }
-        $this->touch_staff_presence();
+        if ($this->is_staff_only_view($view)) {
+            $staff_guard = $this->cmn_policy_require_ability('portal.staff.view', [
+                'actor_user_id' => (int) get_current_user_id(),
+            ]);
+            if (is_wp_error($staff_guard)) {
+                return $this->render_safe_portal_home_with_access_denied();
+            }
+        }
+        if ($this->is_staff_user()) {
+            $this->touch_staff_presence();
+        }
         if ($view === 'clients') {
             $_GET['cmn_status'] = 'client';
             return $this->render_staff_schools_shortcode();
@@ -34309,9 +35464,8 @@ final class CMN_One_Plugin {
         $month_key = (string) ($bounds['month_key'] ?? '');
         $job_name = 'monthly_invoice_generation';
         $started_at = current_time('mysql');
-        $lock_key = self::MONTHLY_INVOICE_LOCK_KEY;
-
-        if (get_transient($lock_key)) {
+        $lock_runner = $this->cmn_acquire_job_lock($job_name, self::MONTHLY_INVOICE_LOCK_TTL, $this->get_job_lock_runner_id('invoice-monthly'));
+        if (!$lock_runner) {
             $lock_message = 'Skipped due to lock: monthly invoice generation is already in progress.';
             $this->insert_invoice_job_log_row([
                 'job_name' => $job_name,
@@ -34343,9 +35497,6 @@ final class CMN_One_Plugin {
                 'error_message' => $lock_message,
             ];
         }
-
-        $lock_token = function_exists('wp_generate_uuid4') ? (string) wp_generate_uuid4() : uniqid('cmn-invoice-job-', true);
-        set_transient($lock_key, $lock_token, self::MONTHLY_INVOICE_LOCK_TTL);
 
         $log_id = $this->insert_invoice_job_log_row([
             'job_name' => $job_name,
@@ -34407,7 +35558,7 @@ final class CMN_One_Plugin {
             ]));
         }
 
-        delete_transient($lock_key);
+        $this->cmn_release_job_lock($job_name, (string) $lock_runner);
         $this->schedule_monthly_invoice_generation();
 
         $this->add_audit_log('invoice_monthly_job_run', 'invoice_period', $month_key, [
@@ -36182,6 +37333,23 @@ final class CMN_One_Plugin {
     }
 
     public function handle_school_partner_admin_recalculate_days() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_partner_admin_recalculate_days',
+            'nonce_field' => 'cmn_school_partner_admin_recalculate_days_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
         $school_user_id = max(0, (int) ($_POST['school_user_id'] ?? 0));
         $reason = sanitize_textarea_field((string) ($_POST['reason'] ?? ''));
         $search_filter = isset($_POST['cmn_sp_admin_search']) ? sanitize_text_field(wp_unslash((string) $_POST['cmn_sp_admin_search'])) : '';
@@ -36215,6 +37383,23 @@ final class CMN_One_Plugin {
     }
 
     public function handle_school_partner_admin_set_tier() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_partner_admin_set_tier',
+            'nonce_field' => 'cmn_school_partner_admin_set_tier_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
         $school_user_id = max(0, (int) ($_POST['school_user_id'] ?? 0));
         $target_tier = sanitize_key((string) ($_POST['target_tier'] ?? 'standard'));
         $reason = sanitize_textarea_field((string) ($_POST['reason'] ?? ''));
@@ -36249,6 +37434,23 @@ final class CMN_One_Plugin {
     }
 
     public function handle_school_partner_admin_adjust_days() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_partner_admin_adjust_days',
+            'nonce_field' => 'cmn_school_partner_admin_adjust_days_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
         $school_user_id = max(0, (int) ($_POST['school_user_id'] ?? 0));
         $delta = (int) ($_POST['delta'] ?? 0);
         $reason = sanitize_textarea_field((string) ($_POST['reason'] ?? ''));
@@ -36283,6 +37485,23 @@ final class CMN_One_Plugin {
     }
 
     public function handle_school_partner_admin_create_credit() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_partner_admin_create_credit',
+            'nonce_field' => 'cmn_school_partner_admin_create_credit_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
         $school_user_id = max(0, (int) ($_POST['school_user_id'] ?? 0));
         $credit_amount = round((float) ($_POST['credit_amount'] ?? 0), 2);
         $reference = sanitize_text_field((string) ($_POST['reference'] ?? ''));
@@ -36328,6 +37547,23 @@ final class CMN_One_Plugin {
     }
 
     public function handle_school_partner_admin_void_credit() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_partner_admin_void_credit',
+            'nonce_field' => 'cmn_school_partner_admin_void_credit_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
         $school_user_id = max(0, (int) ($_POST['school_user_id'] ?? 0));
         $credit_id = max(0, (int) ($_POST['credit_id'] ?? 0));
         $reason = sanitize_textarea_field((string) ($_POST['reason'] ?? ''));
@@ -49555,13 +50791,12 @@ final class CMN_One_Plugin {
             'error_message' => '',
         ];
 
-        $lock_key = self::PAYROLL_PERIOD_AUTO_LOCK_LOCK_KEY;
-        if (get_transient($lock_key)) {
+        $lock_runner = $this->cmn_acquire_job_lock('payroll_period_auto_lock', self::PAYROLL_PERIOD_AUTO_LOCK_LOCK_TTL, $this->get_job_lock_runner_id('payroll-auto-lock'));
+        if (!$lock_runner) {
             $summary['status'] = 'skipped';
             $summary['error_message'] = 'Skipped due to lock: payroll auto-lock job is already in progress.';
             return $summary;
         }
-        set_transient($lock_key, 1, self::PAYROLL_PERIOD_AUTO_LOCK_LOCK_TTL);
 
         try {
             $period = function_exists('cmn_payroll_get_current_period')
@@ -49723,7 +50958,7 @@ final class CMN_One_Plugin {
             $summary['error_message'] = 'Unhandled error: ' . $e->getMessage();
             return $summary;
         } finally {
-            delete_transient($lock_key);
+            $this->cmn_release_job_lock('payroll_period_auto_lock', (string) $lock_runner);
         }
     }
 
@@ -57300,7 +58535,7 @@ final class CMN_One_Plugin {
                 'school_email_domain' => $school_domain,
             ]);
         $request_sent_at = current_time('mysql');
-        $expires_at = gmdate('Y-m-d H:i:s', current_time('timestamp', true) + (15 * MINUTE_IN_SECONDS));
+        $expires_at = $this->get_offer_expiry_mysql_from_now();
         $account_manager_user_id = (int) $this->get_request_account_manager_user_id($school_id);
         $ready_response_id = $this->normalize_ready_response_selection_for_request($options['ready_response_id'] ?? '', $school_user_id);
 
@@ -57589,7 +58824,11 @@ final class CMN_One_Plugin {
         if ($sent_at === '') {
             return '';
         }
-        return gmdate('Y-m-d H:i:s', strtotime($sent_at . ' +15 minutes'));
+        $sent_ts = strtotime($sent_at);
+        if ($sent_ts === false) {
+            return '';
+        }
+        return gmdate('Y-m-d H:i:s', $sent_ts + $this->get_offer_expiry_seconds());
     }
 
     private function is_request_expired($request) {
@@ -94371,7 +95610,7 @@ p{margin:0;line-height:1.5}
 
         if ($action === 'refresh') {
             $new_sent = current_time('mysql');
-            $new_expires = gmdate('Y-m-d H:i:s', strtotime(gmdate('Y-m-d H:i:s') . ' +15 minutes'));
+            $new_expires = $this->get_offer_expiry_mysql_from_now();
             global $wpdb;
             $table = $this->get_candidate_requests_table();
             $wpdb->update($table, [
@@ -96100,12 +97339,16 @@ p{margin:0;line-height:1.5}
         }
         $school_id = get_post_meta($booking_id, 'cmn_school_id', true);
         update_post_meta($booking_id, 'cmn_candidate_id', $candidate_id);
-        update_post_meta($booking_id, 'cmn_status', 'candidate_invited');
+        update_post_meta($booking_id, 'cmn_status', self::BOOKING_STATUS_OFFERED);
         update_post_meta($booking_id, 'cmn_candidate_invited_at', time());
-        $deadline = time() + (15 * 60);
+        $deadline = time() + $this->get_offer_expiry_seconds();
         update_post_meta($booking_id, 'cmn_candidate_deadline', $deadline);
         $token = wp_generate_password(20, false, false);
-        update_post_meta($booking_id, 'cmn_candidate_token', $token);
+        $token_hash = $this->hash_offer_response_token($token);
+        update_post_meta($booking_id, 'cmn_offer_token_hash', $token_hash);
+        update_post_meta($booking_id, 'cmn_offer_token_expires_at', gmdate('Y-m-d H:i:s', $deadline));
+        delete_post_meta($booking_id, 'cmn_offer_token_consumed_at');
+        delete_post_meta($booking_id, 'cmn_candidate_token');
 
         $candidate_email = get_post_meta($candidate_id, 'cmn_email', true);
         $role = get_post_meta($booking_id, 'cmn_role', true);
@@ -96143,71 +97386,319 @@ p{margin:0;line-height:1.5}
     }
 
     public function handle_candidate_response() {
-        $booking_id = intval($_REQUEST['booking_id'] ?? 0);
-        $response = sanitize_text_field($_REQUEST['response'] ?? '');
-        $token = sanitize_text_field($_REQUEST['token'] ?? '');
-        if (!$booking_id || !$token) {
-            wp_die('Invalid response.');
+        $booking_id = max(0, (int) ($_REQUEST['booking_id'] ?? 0));
+        $response = $this->normalize_offer_response_action($_REQUEST['response'] ?? '');
+        $token = sanitize_text_field((string) ($_REQUEST['token'] ?? ''));
+        $expired_markup = $this->render_offer_link_expired_page();
+        if ($booking_id < 1 || $token === '' || $response === '') {
+            status_header(410);
+            echo $expired_markup;
+            exit;
         }
-        $saved_token = get_post_meta($booking_id, 'cmn_candidate_token', true);
-        $deadline = (int) get_post_meta($booking_id, 'cmn_candidate_deadline', true);
-        if ($saved_token !== $token) {
-            wp_die('Invalid token.');
-        }
-        if ($deadline && time() > $deadline) {
-            update_post_meta($booking_id, 'cmn_status', 'expired');
-            wp_die('This request has expired.');
-        }
-        if ($response === 'accept') {
-            update_post_meta($booking_id, 'cmn_status', 'candidate_accepted');
-        } else {
-            update_post_meta($booking_id, 'cmn_status', 'candidate_declined');
+        if (get_post_type($booking_id) !== 'cmn_booking') {
+            status_header(404);
+            echo $expired_markup;
+            exit;
         }
 
-        $school_id = get_post_meta($booking_id, 'cmn_school_id', true);
+        $provided_hash = $this->hash_offer_response_token($token);
+        $ip_hash = substr(md5((string) $this->get_request_ip_address()), 0, 12);
+        $rate_bucket = 'offerresp_' . $booking_id . '_' . $ip_hash . '_' . substr($provided_hash, 0, 8);
+        $rate_check = $this->cmn_rate_limit($rate_bucket, 40, 300);
+        if (is_wp_error($rate_check)) {
+            status_header(429);
+            echo $expired_markup;
+            exit;
+        }
+
+        $stored_hash = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_offer_token_hash', true));
+        $legacy_token = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_candidate_token', true));
+        if ($stored_hash === '' && $legacy_token !== '') {
+            $legacy_hash = $this->hash_offer_response_token($legacy_token);
+            if ($legacy_hash !== '') {
+                $stored_hash = $legacy_hash;
+                update_post_meta($booking_id, 'cmn_offer_token_hash', $legacy_hash);
+                delete_post_meta($booking_id, 'cmn_candidate_token');
+            }
+        }
+        if ($stored_hash === '' || $provided_hash === '' || !hash_equals($stored_hash, $provided_hash)) {
+            status_header(410);
+            echo $expired_markup;
+            exit;
+        }
+
+        $expires_at = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_offer_token_expires_at', true));
+        $legacy_deadline = (int) get_post_meta($booking_id, 'cmn_candidate_deadline', true);
+        if ($expires_at === '' && $legacy_deadline > 0) {
+            $expires_at = gmdate('Y-m-d H:i:s', $legacy_deadline);
+            update_post_meta($booking_id, 'cmn_offer_token_expires_at', $expires_at);
+        }
+        $expires_ts = $expires_at !== '' ? (int) strtotime($expires_at) : 0;
+        $now_ts = (int) current_time('timestamp', true);
+        if ($expires_ts > 0 && $now_ts > $expires_ts) {
+            $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_EXPIRED);
+            update_post_meta($booking_id, 'cmn_offer_active', '0');
+            update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
+            if ((int) get_post_meta($booking_id, 'cmn_request_id', true) > 0) {
+                global $wpdb;
+                $request_table = $this->get_candidate_requests_table();
+                $request_id = (int) get_post_meta($booking_id, 'cmn_request_id', true);
+                $wpdb->query($wpdb->prepare(
+                    "UPDATE {$request_table}
+                     SET status = %s,
+                         updated_at = %s
+                     WHERE id = %d
+                       AND status IN (%s, %s, %s)",
+                    self::REQUEST_STATUS_EXPIRED,
+                    current_time('mysql'),
+                    $request_id,
+                    self::REQUEST_STATUS_REQUESTED,
+                    self::REQUEST_STATUS_PENDING,
+                    self::REQUEST_STATUS_TENTATIVE
+                ));
+            }
+            status_header(410);
+            echo $expired_markup;
+            exit;
+        }
+
+        $consumed_at = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_offer_token_consumed_at', true));
+        if ($consumed_at !== '') {
+            status_header(410);
+            echo $expired_markup;
+            exit;
+        }
+        $consume_now = current_time('mysql');
+        $consumed = add_post_meta($booking_id, 'cmn_offer_token_consumed_at', $consume_now, true);
+        if (!$consumed) {
+            status_header(410);
+            echo $expired_markup;
+            exit;
+        }
+
+        $target_request_status = ($response === 'accept') ? self::REQUEST_STATUS_ACCEPTED : self::REQUEST_STATUS_DECLINED;
+        $target_booking_status = ($response === 'accept') ? self::BOOKING_STATUS_ACCEPTED : self::BOOKING_STATUS_DECLINED;
+        $request_id = (int) get_post_meta($booking_id, 'cmn_request_id', true);
+        $transitioned_request = false;
+        $resolved_request_status = '';
+        if ($request_id > 0) {
+            global $wpdb;
+            $request_table = $this->get_candidate_requests_table();
+            $updated = $wpdb->query($wpdb->prepare(
+                "UPDATE {$request_table}
+                 SET status = %s,
+                     updated_at = %s
+                 WHERE id = %d
+                   AND status IN (%s, %s, %s)",
+                $target_request_status,
+                $consume_now,
+                $request_id,
+                self::REQUEST_STATUS_REQUESTED,
+                self::REQUEST_STATUS_PENDING,
+                self::REQUEST_STATUS_TENTATIVE
+            ));
+            $transitioned_request = ($updated !== false && (int) $updated > 0);
+            $resolved_request_status = sanitize_key((string) $wpdb->get_var($wpdb->prepare(
+                "SELECT status FROM {$request_table} WHERE id = %d LIMIT 1",
+                $request_id
+            )));
+        }
+
+        $current_booking_status = $this->normalize_booking_status((string) get_post_meta($booking_id, 'cmn_status', true), self::BOOKING_STATUS_OFFERED);
+        $allowed_booking_from = [self::BOOKING_STATUS_OFFERED, self::BOOKING_STATUS_REQUESTED, 'candidate_invited'];
+        if (in_array($current_booking_status, $allowed_booking_from, true)) {
+            $this->update_booking_status_if_allowed($booking_id, $target_booking_status);
+        } elseif (in_array($current_booking_status, [self::BOOKING_STATUS_ACCEPTED, self::BOOKING_STATUS_DECLINED, self::BOOKING_STATUS_EXPIRED], true)) {
+            status_header(410);
+            echo $expired_markup;
+            exit;
+        }
+        update_post_meta($booking_id, 'cmn_offer_active', '0');
+        update_post_meta($booking_id, 'cmn_offer_resolved_at', $consume_now);
+
+        if ($response === 'accept') {
+            $request_row = $request_id > 0 ? (array) $this->get_candidate_request_by_id($request_id) : [];
+            $candidate_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $school_user_id = (int) $this->get_booking_school_user_id($booking_id);
+            if ($school_user_id < 1) {
+                $school_user_id = (int) $this->get_school_user_id_for_request($request_row, (int) get_post_meta($booking_id, 'cmn_school_id', true));
+            }
+            $am_user_id = (int) $this->get_request_account_manager_user_id((int) get_post_meta($booking_id, 'cmn_school_id', true), $request_row);
+            $thread_id = $this->create_or_get_booking_thread($booking_id, self::BOOKING_THREAD_TYPE_BOOKING_DETAILS, [
+                'candidate_user_id' => $candidate_user_id,
+                'school_user_id' => $school_user_id,
+                'account_manager_user_id' => $am_user_id,
+                'status' => self::BOOKING_THREAD_STATUS_ACTIVE,
+            ]);
+            if ($thread_id > 0) {
+                if ($candidate_user_id > 0) {
+                    $this->add_booking_thread_participant($thread_id, $candidate_user_id, self::PARTICIPANT_ROLE_CANDIDATE);
+                }
+                if ($school_user_id > 0) {
+                    $this->add_booking_thread_participant($thread_id, $school_user_id, self::PARTICIPANT_ROLE_SCHOOL);
+                }
+                if ($am_user_id > 0) {
+                    $this->add_booking_thread_participant($thread_id, $am_user_id, self::PARTICIPANT_ROLE_ACCOUNT_MANAGER);
+                }
+                $this->add_booking_thread_message($thread_id, $am_user_id, self::PARTICIPANT_ROLE_SYSTEM, 'Booking accepted - please confirm details.');
+                $this->add_audit_log(self::AUDIT_EVENT_CHAT_CREATED_OPENED, 'booking', (string) $booking_id, [
+                    'thread_id' => (int) $thread_id,
+                    'thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS,
+                    'request_id' => $request_id,
+                ]);
+            }
+        }
+
+        $school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
         $account = $school_id ? $this->get_account_manager($school_id) : ['email' => get_option('admin_email'), 'name' => 'CoverMeNow ONE'];
         $subject = 'Candidate Response';
         $message = "Candidate response received: {$response}. Booking ID: {$booking_id}.";
         $this->send_cmn_mail($account['email'], $subject, $message, 'candidate@covermenow.co.uk', 'CoverMeNow ONE');
 
+        $this->add_audit_log('offer_response_submitted', 'booking', (string) $booking_id, [
+            'response' => $response,
+            'request_id' => $request_id,
+            'request_transitioned' => $transitioned_request ? 1 : 0,
+            'resolved_request_status' => $resolved_request_status,
+        ]);
+        $this->add_audit_log(
+            $response === 'accept' ? self::AUDIT_EVENT_ACCEPTED : self::AUDIT_EVENT_DECLINED,
+            'booking',
+            (string) $booking_id,
+            ['request_id' => $request_id]
+        );
+
         $portal_page = cmn_get_page_by_title('Portal');
         $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
-        wp_redirect(add_query_arg('candidate_response', $response, $portal_url));
+        wp_safe_redirect(add_query_arg([
+            'candidate_response' => $response,
+            'booking_id' => $booking_id,
+        ], $portal_url));
         exit;
     }
 
     public function expire_booking_requests() {
-        $args = [
-            'post_type' => 'cmn_booking',
-            'posts_per_page' => 20,
-            'meta_query' => [
-                [
-                    'key' => 'cmn_status',
-                    'value' => 'candidate_invited',
-                ],
-                [
-                    'key' => 'cmn_candidate_deadline',
-                    'value' => time(),
-                    'compare' => '<',
-                    'type' => 'NUMERIC',
-                ],
-            ],
-        ];
-        $items = get_posts($args);
-        foreach ($items as $booking) {
-            update_post_meta($booking->ID, 'cmn_status', 'expired');
-            $school_id = get_post_meta($booking->ID, 'cmn_school_id', true);
-            $account = $school_id ? $this->get_account_manager($school_id) : ['email' => get_option('admin_email'), 'name' => 'CoverMeNow ONE'];
-            $subject = 'Booking Invite Expired';
-            $message = 'A candidate did not respond in time. Booking ID: ' . $booking->ID . '.';
-            $this->send_cmn_mail($account['email'], $subject, $message, 'candidate@covermenow.co.uk', 'CoverMeNow ONE');
+        $lock_runner = $this->cmn_acquire_job_lock('booking_expiry', 300, $this->get_job_lock_runner_id('booking-expiry'));
+        if (!$lock_runner) {
+            return;
         }
+
+        try {
+            global $wpdb;
+            $now_mysql = gmdate('Y-m-d H:i:s', current_time('timestamp', true));
+            $request_table = $this->get_candidate_requests_table();
+            $request_rows = (array) $wpdb->get_results($wpdb->prepare(
+                "SELECT id, status, candidate_id, school_id, requested_date
+                 FROM {$request_table}
+                 WHERE status IN (%s, %s, %s)
+                   AND expires_at IS NOT NULL
+                   AND expires_at <> ''
+                   AND expires_at <= %s
+                 ORDER BY id ASC
+                 LIMIT %d",
+                self::REQUEST_STATUS_REQUESTED,
+                self::REQUEST_STATUS_PENDING,
+                self::REQUEST_STATUS_TENTATIVE,
+                $now_mysql,
+                300
+            ), ARRAY_A);
+            foreach ($request_rows as $request_row) {
+                if (!is_array($request_row)) {
+                    continue;
+                }
+                $request_id = (int) ($request_row['id'] ?? 0);
+                $from_status = $this->normalize_request_status((string) ($request_row['status'] ?? ''));
+                if ($request_id < 1 || $from_status === '') {
+                    continue;
+                }
+
+                $updated = $wpdb->update(
+                    $request_table,
+                    [
+                        'status' => self::REQUEST_STATUS_EXPIRED,
+                        'updated_at' => current_time('mysql'),
+                    ],
+                    [
+                        'id' => $request_id,
+                        'status' => $from_status,
+                    ],
+                    ['%s', '%s'],
+                    ['%d', '%s']
+                );
+                if ($updated === false || (int) $updated < 1) {
+                    continue;
+                }
+
+                $booking_id = (int) $this->get_booking_id_for_request($request_id);
+                if ($booking_id > 0) {
+                    $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_EXPIRED);
+                    update_post_meta($booking_id, 'cmn_offer_active', '0');
+                    update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
+                }
+                $this->add_audit_log(self::AUDIT_EVENT_EXPIRED, 'request', (string) $request_id, [
+                    'booking_id' => $booking_id,
+                    'candidate_id' => (int) ($request_row['candidate_id'] ?? 0),
+                    'school_id' => (int) ($request_row['school_id'] ?? 0),
+                    'requested_date' => sanitize_text_field((string) ($request_row['requested_date'] ?? '')),
+                    'source' => 'cron_expiry',
+                ]);
+            }
+
+            $args = [
+                'post_type' => 'cmn_booking',
+                'posts_per_page' => 60,
+                'meta_query' => [
+                    [
+                        'key' => 'cmn_status',
+                        'value' => ['candidate_invited', self::BOOKING_STATUS_OFFERED],
+                        'compare' => 'IN',
+                    ],
+                    [
+                        'key' => 'cmn_candidate_deadline',
+                        'value' => time(),
+                        'compare' => '<',
+                        'type' => 'NUMERIC',
+                    ],
+                ],
+            ];
+            $items = get_posts($args);
+            foreach ($items as $booking) {
+                $booking_id = (int) ($booking->ID ?? 0);
+                if ($booking_id < 1) {
+                    continue;
+                }
+                $this->update_booking_status_if_allowed($booking_id, self::BOOKING_STATUS_EXPIRED);
+                update_post_meta($booking_id, 'cmn_offer_active', '0');
+                update_post_meta($booking_id, 'cmn_offer_resolved_at', current_time('mysql'));
+                if ((string) get_post_meta($booking_id, 'cmn_offer_token_consumed_at', true) === '') {
+                    update_post_meta($booking_id, 'cmn_offer_token_consumed_at', current_time('mysql'));
+                }
+                $school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
+                $account = $school_id ? $this->get_account_manager($school_id) : ['email' => get_option('admin_email'), 'name' => 'CoverMeNow ONE'];
+                $subject = 'Booking Invite Expired';
+                $message = 'A candidate did not respond in time. Booking ID: ' . $booking_id . '.';
+                $this->send_cmn_mail($account['email'], $subject, $message, 'candidate@covermenow.co.uk', 'CoverMeNow ONE');
+            }
+        } finally {
+            $this->cmn_release_job_lock('booking_expiry', (string) $lock_runner);
+        }
+
         $this->maybe_request_feedback_for_past_bookings();
     }
 
     public function handle_update_school_assignments() {
         if (!current_user_can('manage_options')) {
             wp_die('Unauthorized');
+        }
+        $nonce = sanitize_text_field((string) ($_POST['cmn_nonce'] ?? ''));
+        $nonce_valid = ($nonce !== '' && wp_verify_nonce($nonce, 'cmn_admin_post_write'));
+        if (!$nonce_valid) {
+            $legacy_nonce = sanitize_text_field((string) ($_POST['cmn_update_school_assignments_nonce'] ?? ''));
+            $nonce_valid = ($legacy_nonce !== '' && wp_verify_nonce($legacy_nonce, 'cmn_update_school_assignments'));
+        }
+        if (!$nonce_valid) {
+            wp_die('Invalid request');
         }
         $school_id = intval($_POST['cmn_school_id'] ?? 0);
         $assigned = isset($_POST['cmn_assigned_candidates']) ? sanitize_text_field($_POST['cmn_assigned_candidates']) : '';
@@ -96579,6 +98070,15 @@ p{margin:0;line-height:1.5}
     public function handle_update_candidate_rate() {
         if (!current_user_can('manage_options')) {
             wp_die('Unauthorized');
+        }
+        $nonce = sanitize_text_field((string) ($_POST['cmn_nonce'] ?? ''));
+        $nonce_valid = ($nonce !== '' && wp_verify_nonce($nonce, 'cmn_admin_post_write'));
+        if (!$nonce_valid) {
+            $legacy_nonce = sanitize_text_field((string) ($_POST['cmn_update_candidate_rate_nonce'] ?? ''));
+            $nonce_valid = ($legacy_nonce !== '' && wp_verify_nonce($legacy_nonce, 'cmn_update_candidate_rate'));
+        }
+        if (!$nonce_valid) {
+            wp_die('Invalid request');
         }
         $candidate_id = intval($_POST['cmn_candidate_id'] ?? 0);
         $rate = sanitize_text_field($_POST['cmn_default_rate'] ?? '');
