@@ -24,3 +24,14 @@ build/
 # WordPress / runtime
 wp-config.php
 wp-content/uploads/
+
+# Audit outputs (generated)
+artifacts/
+docs/audits/*.csv
+docs/audits/*.json
+docs/audits/*.md
+docs/audits/auth-config.json
+
+# Keep audit docs/templates versioned
+!docs/audits/README.md
+!docs/audits/auth-config.example.json

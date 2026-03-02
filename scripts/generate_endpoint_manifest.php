@@ -347,8 +347,8 @@ usort($entries, static function (array $a, array $b): int {
 });
 
 $payload = [
-    'generated_at_utc' => gmdate('c'),
     'source_file' => 'covermenowone-one.php',
+    'source_sha256' => hash('sha256', $source),
     'count' => count($entries),
     'entrypoints' => array_values($entries),
 ];

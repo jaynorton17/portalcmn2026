@@ -1,0 +1,18 @@
+{
+  "_notes": [
+    "Do NOT commit real credentials or cookies.",
+    "Use this file as a local template and keep real values out of git."
+  ],
+  "admin": {
+    "cookie_file": "/secure/path/admin.cookies"
+  },
+  "staff": {
+    "cookie_file": "/secure/path/staff.cookies"
+  },
+  "school": {
+    "cookie_file": "/secure/path/school.cookies"
+  },
+  "candidate": {
+    "cookie_file": "/secure/path/candidate.cookies"
+  }
+}
