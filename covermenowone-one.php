@@ -772,8 +772,16 @@ final class CMN_One_Plugin {
     private $email_log_runtime_bypass = false;
     private $current_school_view_req_id = '';
     private $endpoint_policy_manifest_cache = null;
+    private $cmn_perf_enabled = null;
+    private $cmn_perf_request_started_at = 0.0;
+    private $cmn_perf_auth_started_at = 0.0;
+    private $cmn_perf_auth_elapsed_ms = null;
+    private $cmn_perf_span_ms = [];
+    private $cmn_perf_http_start_stack = [];
+    private $cmn_perf_http_calls = [];
 
     public function __construct() {
+        $this->cmn_bootstrap_perf_trace();
         add_filter('deprecated_function_trigger_error', [$this, 'filter_deprecated_function_trigger_error'], 10, 4);
         add_action('init', [$this, 'register_post_types']);
         add_action('init', [$this, 'register_roles']);
@@ -1098,6 +1106,10 @@ final class CMN_One_Plugin {
         add_filter('upload_size_limit', [$this, 'filter_candidate_upload_size_limit'], 20);
         add_filter('wp_handle_upload_prefilter', [$this, 'prefilter_candidate_doc_upload']);
         add_filter('authenticate', [$this, 'block_deactivated_staff_login'], 30, 3);
+        add_filter('http_request_args', [$this, 'filter_admin_bootstrap_http_args'], 10, 2);
+        add_filter('pre_http_request', [$this, 'filter_admin_bootstrap_http_preempt'], 5, 3);
+        add_filter('http_response', [$this, 'cache_admin_bootstrap_http_response'], 10, 3);
+        add_filter('cron_request', [$this, 'filter_admin_bootstrap_cron_request']);
         add_action('phpmailer_init', [$this, 'configure_candidate_smtp']);
         add_action('wp_mail_failed', [$this, 'handle_candidate_mail_failed']);
         add_action('wp_mail_succeeded', [$this, 'handle_candidate_mail_succeeded']);
@@ -1289,17 +1301,25 @@ final class CMN_One_Plugin {
     }
 
     public function ensure_required_pages() {
-        $portal_route_changed = $this->ensure_portal_page_route();
-        $covermenow_one_route_changed = $this->ensure_covermenow_one_portal_page_route();
-        $registration_routes_changed = $this->ensure_registration_pages_routes();
-        self::create_page_if_missing('Login', '[cmn_login]');
-        self::create_page_if_missing('School Registration', '[cmn_register_school]');
-        self::create_page_if_missing('Candidate Registration', '[cmn_register_candidate]');
-        self::create_page_if_missing('Request Received', '[cmn_request_received]');
-        self::create_page_if_missing('CoverMeNow ONE for Schools', '[cmn_school_landing]');
-        self::create_page_if_missing('CoverMeNow ONE for Candidates', '[cmn_candidate_landing]');
-        if ($portal_route_changed || $covermenow_one_route_changed || $registration_routes_changed) {
-            flush_rewrite_rules(false);
+        $span = $this->cmn_perf_begin_span('init.ensure_required_pages');
+        try {
+            if ($this->should_skip_noncritical_init_work()) {
+                return;
+            }
+            $portal_route_changed = $this->ensure_portal_page_route();
+            $covermenow_one_route_changed = $this->ensure_covermenow_one_portal_page_route();
+            $registration_routes_changed = $this->ensure_registration_pages_routes();
+            self::create_page_if_missing('Login', '[cmn_login]');
+            self::create_page_if_missing('School Registration', '[cmn_register_school]');
+            self::create_page_if_missing('Candidate Registration', '[cmn_register_candidate]');
+            self::create_page_if_missing('Request Received', '[cmn_request_received]');
+            self::create_page_if_missing('CoverMeNow ONE for Schools', '[cmn_school_landing]');
+            self::create_page_if_missing('CoverMeNow ONE for Candidates', '[cmn_candidate_landing]');
+            if ($portal_route_changed || $covermenow_one_route_changed || $registration_routes_changed) {
+                flush_rewrite_rules(false);
+            }
+        } finally {
+            $this->cmn_perf_end_span('init.ensure_required_pages', $span);
         }
     }
 
@@ -1580,6 +1600,351 @@ final class CMN_One_Plugin {
         // migrations are intentionally executed via admin_post_cmn_run_upgrade_runner.
         // This keeps schema upgrades explicit and auditable.
         return;
+    }
+
+    private function cmn_is_perf_trace_enabled() {
+        if ($this->cmn_perf_enabled !== null) {
+            return (bool) $this->cmn_perf_enabled;
+        }
+        $enabled = isset($_REQUEST['cmn_perf']) && (string) wp_unslash($_REQUEST['cmn_perf']) === '1';
+        $this->cmn_perf_enabled = $enabled;
+        return $enabled;
+    }
+
+    private function cmn_bootstrap_perf_trace() {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return;
+        }
+        $this->cmn_perf_request_started_at = microtime(true);
+        global $wpdb;
+        if (isset($wpdb) && is_object($wpdb)) {
+            $wpdb->save_queries = true;
+        }
+
+        add_action('init', [$this, 'cmn_perf_init_span_start'], -99999);
+        add_action('init', [$this, 'cmn_perf_init_span_end'], PHP_INT_MAX);
+        add_action('admin_init', [$this, 'cmn_perf_admin_init_span_start'], -99999);
+        add_action('admin_init', [$this, 'cmn_perf_admin_init_span_end'], PHP_INT_MAX);
+        add_filter('authenticate', [$this, 'cmn_perf_authenticate_start'], 1, 3);
+        add_filter('authenticate', [$this, 'cmn_perf_authenticate_end'], PHP_INT_MAX, 3);
+        add_filter('pre_http_request', [$this, 'cmn_perf_pre_http_request'], 10, 3);
+        add_action('http_api_debug', [$this, 'cmn_perf_http_api_debug'], 10, 5);
+        add_action('shutdown', [$this, 'cmn_perf_shutdown_log'], PHP_INT_MAX);
+    }
+
+    private function cmn_perf_begin_span($span_name) {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return 0.0;
+        }
+        $span_name = sanitize_key(str_replace('.', '_', (string) $span_name));
+        if ($span_name === '') {
+            return 0.0;
+        }
+        return microtime(true);
+    }
+
+    private function cmn_perf_end_span($span_name, $started_at) {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return;
+        }
+        $started_at = (float) $started_at;
+        if ($started_at <= 0) {
+            return;
+        }
+        $span_name = sanitize_key(str_replace('.', '_', (string) $span_name));
+        if ($span_name === '') {
+            return;
+        }
+        $elapsed_ms = round((microtime(true) - $started_at) * 1000, 2);
+        if ($elapsed_ms < 0) {
+            $elapsed_ms = 0.0;
+        }
+        if (!isset($this->cmn_perf_span_ms[$span_name])) {
+            $this->cmn_perf_span_ms[$span_name] = 0.0;
+        }
+        $this->cmn_perf_span_ms[$span_name] += (float) $elapsed_ms;
+    }
+
+    public function cmn_perf_init_span_start() {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return;
+        }
+        if (!isset($this->cmn_perf_http_start_stack['__init'])) {
+            $this->cmn_perf_http_start_stack['__init'] = microtime(true);
+        }
+    }
+
+    public function cmn_perf_init_span_end() {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return;
+        }
+        if (!isset($this->cmn_perf_http_start_stack['__init'])) {
+            return;
+        }
+        $started_at = (float) $this->cmn_perf_http_start_stack['__init'];
+        unset($this->cmn_perf_http_start_stack['__init']);
+        $this->cmn_perf_end_span('hook_init', $started_at);
+    }
+
+    public function cmn_perf_admin_init_span_start() {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return;
+        }
+        if (!isset($this->cmn_perf_http_start_stack['__admin_init'])) {
+            $this->cmn_perf_http_start_stack['__admin_init'] = microtime(true);
+        }
+    }
+
+    public function cmn_perf_admin_init_span_end() {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return;
+        }
+        if (!isset($this->cmn_perf_http_start_stack['__admin_init'])) {
+            return;
+        }
+        $started_at = (float) $this->cmn_perf_http_start_stack['__admin_init'];
+        unset($this->cmn_perf_http_start_stack['__admin_init']);
+        $this->cmn_perf_end_span('hook_admin_init', $started_at);
+    }
+
+    public function cmn_perf_authenticate_start($user, $username, $password) {
+        if ($this->cmn_is_perf_trace_enabled() && $this->cmn_perf_auth_started_at <= 0.0) {
+            $this->cmn_perf_auth_started_at = microtime(true);
+        }
+        return $user;
+    }
+
+    public function cmn_perf_authenticate_end($user, $username, $password) {
+        if ($this->cmn_is_perf_trace_enabled() && $this->cmn_perf_auth_started_at > 0.0 && $this->cmn_perf_auth_elapsed_ms === null) {
+            $this->cmn_perf_auth_elapsed_ms = round((microtime(true) - $this->cmn_perf_auth_started_at) * 1000, 2);
+        }
+        return $user;
+    }
+
+    private function cmn_perf_http_fingerprint($url, $parsed_args = []) {
+        $method = strtoupper((string) ($parsed_args['method'] ?? 'GET'));
+        $timeout = (string) ($parsed_args['timeout'] ?? '');
+        return md5($method . '|' . (string) $url . '|' . $timeout);
+    }
+
+    public function cmn_perf_pre_http_request($preempt, $parsed_args, $url) {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return $preempt;
+        }
+        if ($preempt !== false) {
+            return $preempt;
+        }
+        $fingerprint = $this->cmn_perf_http_fingerprint((string) $url, is_array($parsed_args) ? $parsed_args : []);
+        if (!isset($this->cmn_perf_http_start_stack[$fingerprint]) || !is_array($this->cmn_perf_http_start_stack[$fingerprint])) {
+            $this->cmn_perf_http_start_stack[$fingerprint] = [];
+        }
+        $this->cmn_perf_http_start_stack[$fingerprint][] = microtime(true);
+        return $preempt;
+    }
+
+    public function cmn_perf_http_api_debug($response, $context, $class, $parsed_args, $url) {
+        if (!$this->cmn_is_perf_trace_enabled() || $context !== 'response') {
+            return;
+        }
+        $parsed_args = is_array($parsed_args) ? $parsed_args : [];
+        $fingerprint = $this->cmn_perf_http_fingerprint((string) $url, $parsed_args);
+        $started_at = 0.0;
+        if (isset($this->cmn_perf_http_start_stack[$fingerprint]) && is_array($this->cmn_perf_http_start_stack[$fingerprint]) && !empty($this->cmn_perf_http_start_stack[$fingerprint])) {
+            $started_at = (float) array_shift($this->cmn_perf_http_start_stack[$fingerprint]);
+            if (empty($this->cmn_perf_http_start_stack[$fingerprint])) {
+                unset($this->cmn_perf_http_start_stack[$fingerprint]);
+            }
+        }
+        $elapsed_ms = $started_at > 0 ? round((microtime(true) - $started_at) * 1000, 2) : 0.0;
+        $status_code = 0;
+        if (is_wp_error($response)) {
+            $status_code = 0;
+        } elseif (is_array($response)) {
+            $status_code = (int) wp_remote_retrieve_response_code($response);
+        }
+        $this->cmn_perf_http_calls[] = [
+            'method' => strtoupper((string) ($parsed_args['method'] ?? 'GET')),
+            'url' => esc_url_raw((string) $url),
+            'code' => $status_code,
+            'duration_ms' => $elapsed_ms,
+        ];
+    }
+
+    public function cmn_perf_shutdown_log() {
+        if (!$this->cmn_is_perf_trace_enabled()) {
+            return;
+        }
+        $started_at = (float) $this->cmn_perf_request_started_at;
+        if ($started_at <= 0.0) {
+            return;
+        }
+        $total_ms = round((microtime(true) - $started_at) * 1000, 2);
+        global $wpdb;
+        $query_count = 0;
+        $query_total_ms = 0.0;
+        $slow_queries = [];
+        if (isset($wpdb) && is_object($wpdb) && isset($wpdb->queries) && is_array($wpdb->queries)) {
+            $query_count = count($wpdb->queries);
+            foreach ($wpdb->queries as $query_row) {
+                if (!is_array($query_row)) {
+                    continue;
+                }
+                $sql = (string) ($query_row[0] ?? '');
+                $elapsed_ms = round(((float) ($query_row[1] ?? 0)) * 1000, 2);
+                $query_total_ms += $elapsed_ms;
+                if ($elapsed_ms >= 100.0) {
+                    $slow_queries[] = [
+                        'ms' => $elapsed_ms,
+                        'sql' => substr(preg_replace('/\s+/', ' ', $sql), 0, 280),
+                    ];
+                }
+            }
+        } elseif (isset($wpdb) && is_object($wpdb) && isset($wpdb->num_queries)) {
+            $query_count = (int) $wpdb->num_queries;
+        }
+        usort($slow_queries, static function ($a, $b) {
+            return ((float) ($b['ms'] ?? 0)) <=> ((float) ($a['ms'] ?? 0));
+        });
+        $http_calls = $this->cmn_perf_http_calls;
+        usort($http_calls, static function ($a, $b) {
+            return ((float) ($b['duration_ms'] ?? 0)) <=> ((float) ($a['duration_ms'] ?? 0));
+        });
+        $http_total_ms = 0.0;
+        foreach ($http_calls as $http_call) {
+            $http_total_ms += (float) ($http_call['duration_ms'] ?? 0.0);
+        }
+
+        $payload = [
+            'request_id' => substr(md5(uniqid('cmn-perf', true)), 0, 12),
+            'uri' => (string) ($_SERVER['REQUEST_URI'] ?? ''),
+            'method' => (string) ($_SERVER['REQUEST_METHOD'] ?? ''),
+            'is_admin' => is_admin() ? 1 : 0,
+            'user_id' => (int) get_current_user_id(),
+            'total_ms' => $total_ms,
+            'auth_ms' => $this->cmn_perf_auth_elapsed_ms,
+            'hook_ms' => $this->cmn_perf_span_ms,
+            'db' => [
+                'query_count' => $query_count,
+                'query_total_ms' => round($query_total_ms, 2),
+                'slow_queries' => array_slice($slow_queries, 0, 10),
+            ],
+            'http' => [
+                'count' => count($http_calls),
+                'total_ms' => round($http_total_ms, 2),
+                'calls' => array_slice($http_calls, 0, 10),
+            ],
+        ];
+        error_log('CMN_PERF ' . wp_json_encode($payload));
+    }
+
+    private function should_skip_noncritical_init_work() {
+        if (defined('WP_CLI') && WP_CLI) {
+            return false;
+        }
+        if (function_exists('wp_doing_cron') && wp_doing_cron()) {
+            return false;
+        }
+        if (wp_doing_ajax()) {
+            return false;
+        }
+        global $pagenow;
+        if (is_string($pagenow) && $pagenow === 'wp-login.php') {
+            return true;
+        }
+        $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) wp_unslash($_SERVER['REQUEST_URI']) : '';
+        if ($request_uri !== '' && stripos($request_uri, 'wp-login.php') !== false) {
+            return true;
+        }
+        if (is_admin()) {
+            return true;
+        }
+        return false;
+    }
+
+    private function is_admin_login_bootstrap_request() {
+        global $pagenow;
+        if (is_string($pagenow) && $pagenow === 'wp-login.php') {
+            return true;
+        }
+        $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) wp_unslash($_SERVER['REQUEST_URI']) : '';
+        if ($request_uri !== '' && stripos($request_uri, 'wp-login.php') !== false) {
+            return true;
+        }
+        if (is_admin()) {
+            return true;
+        }
+        if ($request_uri !== '' && stripos($request_uri, '/wp-admin/') !== false) {
+            return true;
+        }
+        return false;
+    }
+
+    public function filter_admin_bootstrap_http_args($args, $url) {
+        if (!$this->is_admin_login_bootstrap_request()) {
+            return $args;
+        }
+        $url = (string) $url;
+        if (strpos($url, 'https://api.wordpress.org/core/browse-happy/1.1/') === 0) {
+            if (!is_array($args)) {
+                $args = [];
+            }
+            $timeout = isset($args['timeout']) ? (float) $args['timeout'] : 5.0;
+            $args['timeout'] = min(max($timeout, 0.25), 1.5);
+            $args['redirection'] = min((int) ($args['redirection'] ?? 5), 1);
+        }
+        return $args;
+    }
+
+    public function filter_admin_bootstrap_http_preempt($preempt, $parsed_args, $url) {
+        if ($preempt !== false) {
+            return $preempt;
+        }
+        if (!$this->is_admin_login_bootstrap_request()) {
+            return $preempt;
+        }
+        $url = (string) $url;
+        if (strpos($url, 'https://api.wordpress.org/core/browse-happy/1.1/') !== 0) {
+            return $preempt;
+        }
+        $cached = get_transient('cmn_browse_happy_http_cache_v1');
+        if (!is_array($cached)) {
+            return $preempt;
+        }
+        return $cached;
+    }
+
+    public function cache_admin_bootstrap_http_response($response, $parsed_args, $url) {
+        if (!$this->is_admin_login_bootstrap_request()) {
+            return $response;
+        }
+        $url = (string) $url;
+        if (strpos($url, 'https://api.wordpress.org/core/browse-happy/1.1/') !== 0) {
+            return $response;
+        }
+        if (is_wp_error($response)) {
+            return $response;
+        }
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code >= 200 && $code < 300) {
+            set_transient('cmn_browse_happy_http_cache_v1', $response, 6 * HOUR_IN_SECONDS);
+        }
+        return $response;
+    }
+
+    public function filter_admin_bootstrap_cron_request($cron_request) {
+        if (!$this->is_admin_login_bootstrap_request()) {
+            return $cron_request;
+        }
+        if (!is_array($cron_request)) {
+            return $cron_request;
+        }
+        if (!isset($cron_request['args']) || !is_array($cron_request['args'])) {
+            $cron_request['args'] = [];
+        }
+        // Keep admin/login paths non-blocking if loopback cron is unhealthy.
+        $cron_request['args']['blocking'] = false;
+        $cron_request['args']['timeout'] = 0.01;
+        return $cron_request;
     }
 
     private static function get_schema_migration_audit_logger() {
@@ -2082,83 +2447,107 @@ final class CMN_One_Plugin {
     }
 
     public function migrate_candidate_statuses_to_approved() {
-        if (get_option('cmn_candidate_status_migrated_v1') === '1') {
-            return;
-        }
-        $candidate_ids = get_posts([
-            'post_type' => 'cmn_candidate',
-            'posts_per_page' => -1,
-            'fields' => 'ids',
-        ]);
-        foreach ((array) $candidate_ids as $candidate_id) {
-            $current = strtolower((string) get_post_meta((int) $candidate_id, 'cmn_status', true));
-            if ($current === '' || $current === 'pending') {
-                update_post_meta((int) $candidate_id, 'cmn_status', 'approved');
+        $span = $this->cmn_perf_begin_span('init.migrate_candidate_statuses');
+        try {
+            if ($this->should_skip_noncritical_init_work()) {
+                return;
             }
-            $user_id = (int) get_post_meta((int) $candidate_id, 'cmn_user_id', true);
-            if ($user_id) {
-                $user = get_user_by('id', $user_id);
-                if ($user) {
-                    $roles = (array) $user->roles;
-                    if (in_array('cmn_candidate_pending', $roles, true) || !in_array('cmn_candidate', $roles, true)) {
-                        $user_obj = new WP_User($user_id);
-                        $user_obj->set_role('cmn_candidate');
+            if (get_option('cmn_candidate_status_migrated_v1') === '1') {
+                return;
+            }
+            $candidate_ids = get_posts([
+                'post_type' => 'cmn_candidate',
+                'posts_per_page' => -1,
+                'fields' => 'ids',
+            ]);
+            foreach ((array) $candidate_ids as $candidate_id) {
+                $current = strtolower((string) get_post_meta((int) $candidate_id, 'cmn_status', true));
+                if ($current === '' || $current === 'pending') {
+                    update_post_meta((int) $candidate_id, 'cmn_status', 'approved');
+                }
+                $user_id = (int) get_post_meta((int) $candidate_id, 'cmn_user_id', true);
+                if ($user_id) {
+                    $user = get_user_by('id', $user_id);
+                    if ($user) {
+                        $roles = (array) $user->roles;
+                        if (in_array('cmn_candidate_pending', $roles, true) || !in_array('cmn_candidate', $roles, true)) {
+                            $user_obj = new WP_User($user_id);
+                            $user_obj->set_role('cmn_candidate');
+                        }
                     }
                 }
             }
+            update_option('cmn_candidate_status_migrated_v1', '1', false);
+        } finally {
+            $this->cmn_perf_end_span('init.migrate_candidate_statuses', $span);
         }
-        update_option('cmn_candidate_status_migrated_v1', '1', false);
     }
 
     public function migrate_registration_profile_meta_backfill() {
-        if ((string) get_option('cmn_profile_meta_backfill_v1', '') === '1') {
-            return;
-        }
-        $candidate_ids = get_posts([
-            'post_type' => 'cmn_candidate',
-            'post_status' => ['publish', 'pending', 'draft', 'private'],
-            'fields' => 'ids',
-            'posts_per_page' => 1200,
-        ]);
-        foreach ((array) $candidate_ids as $candidate_id) {
-            $candidate_id = (int) $candidate_id;
-            if ($candidate_id < 1) {
-                continue;
+        $span = $this->cmn_perf_begin_span('init.profile_meta_backfill');
+        try {
+            if ($this->should_skip_noncritical_init_work()) {
+                return;
             }
-            $driving = trim((string) get_post_meta($candidate_id, 'cmn_driving_licence', true));
-            $car_owner = trim((string) get_post_meta($candidate_id, 'cmn_car_owner', true));
-            if ($driving === '') {
-                $legacy = $this->normalize_yes_no_value((string) get_post_meta($candidate_id, 'cmn_drives', true));
-                if ($legacy !== '') {
-                    update_post_meta($candidate_id, 'cmn_driving_licence', $legacy);
+            if ((string) get_option('cmn_profile_meta_backfill_v1', '') === '1') {
+                return;
+            }
+            $candidate_ids = get_posts([
+                'post_type' => 'cmn_candidate',
+                'post_status' => ['publish', 'pending', 'draft', 'private'],
+                'fields' => 'ids',
+                'posts_per_page' => 1200,
+            ]);
+            foreach ((array) $candidate_ids as $candidate_id) {
+                $candidate_id = (int) $candidate_id;
+                if ($candidate_id < 1) {
+                    continue;
+                }
+                $driving = trim((string) get_post_meta($candidate_id, 'cmn_driving_licence', true));
+                $car_owner = trim((string) get_post_meta($candidate_id, 'cmn_car_owner', true));
+                if ($driving === '') {
+                    $legacy = $this->normalize_yes_no_value((string) get_post_meta($candidate_id, 'cmn_drives', true));
+                    if ($legacy !== '') {
+                        update_post_meta($candidate_id, 'cmn_driving_licence', $legacy);
+                    }
+                }
+                if ($car_owner === '') {
+                    $legacy = $this->normalize_yes_no_value((string) get_post_meta($candidate_id, 'cmn_has_car', true));
+                    if ($legacy !== '') {
+                        update_post_meta($candidate_id, 'cmn_car_owner', $legacy);
+                    }
                 }
             }
-            if ($car_owner === '') {
-                $legacy = $this->normalize_yes_no_value((string) get_post_meta($candidate_id, 'cmn_has_car', true));
-                if ($legacy !== '') {
-                    update_post_meta($candidate_id, 'cmn_car_owner', $legacy);
-                }
-            }
+            update_option('cmn_profile_meta_backfill_v1', '1', false);
+        } finally {
+            $this->cmn_perf_end_span('init.profile_meta_backfill', $span);
         }
-        update_option('cmn_profile_meta_backfill_v1', '1', false);
     }
 
     public function maybe_backfill_candidate_referral_codes() {
-        if ((string) get_option('cmn_referral_codes_backfilled_v1', '') === '1') {
-            return;
-        }
-        $users = get_users([
-            'fields' => ['ID'],
-            'number' => 10000,
-            'role__in' => ['cmn_candidate', 'cmn_candidate_pending', 'candidate'],
-        ]);
-        foreach ((array) $users as $user_row) {
-            $user_id = (int) (is_object($user_row) ? ($user_row->ID ?? 0) : (is_array($user_row) ? ($user_row['ID'] ?? 0) : 0));
-            if ($user_id > 0) {
-                $this->ensure_candidate_referral_code($user_id);
+        $span = $this->cmn_perf_begin_span('init.referral_backfill');
+        try {
+            if ($this->should_skip_noncritical_init_work()) {
+                return;
             }
+            if ((string) get_option('cmn_referral_codes_backfilled_v1', '') === '1') {
+                return;
+            }
+            $users = get_users([
+                'fields' => ['ID'],
+                'number' => 10000,
+                'role__in' => ['cmn_candidate', 'cmn_candidate_pending', 'candidate'],
+            ]);
+            foreach ((array) $users as $user_row) {
+                $user_id = (int) (is_object($user_row) ? ($user_row->ID ?? 0) : (is_array($user_row) ? ($user_row['ID'] ?? 0) : 0));
+                if ($user_id > 0) {
+                    $this->ensure_candidate_referral_code($user_id);
+                }
+            }
+            update_option('cmn_referral_codes_backfilled_v1', '1', false);
+        } finally {
+            $this->cmn_perf_end_span('init.referral_backfill', $span);
         }
-        update_option('cmn_referral_codes_backfilled_v1', '1', false);
     }
 
     private static function install_schema($activation_baseline_only = false) {
@@ -8200,86 +8589,91 @@ global $wpdb;
     }
 
     public function enforce_endpoint_policy_for_request() {
-        $context = $this->cmn_get_current_endpoint_request_context();
-        if (!$context) {
-            return;
-        }
-        $manifest = $this->cmn_get_runtime_endpoint_policy_manifest();
-        $hook = (string) ($context['hook'] ?? '');
-        $entry = is_array($manifest) && isset($manifest[$hook]) && is_array($manifest[$hook]) ? $manifest[$hook] : null;
-        if (!$entry) {
-            $action = sanitize_key((string) ($context['action'] ?? ''));
-            $is_ajax = !empty($context['is_ajax']);
-            $logged_in = !empty($context['logged_in']);
-            $alt_hook = $is_ajax
-                ? (($logged_in ? 'wp_ajax_nopriv_' : 'wp_ajax_') . $action)
-                : (($logged_in ? 'admin_post_nopriv_' : 'admin_post_') . $action);
-            $alt_hook = sanitize_key($alt_hook);
-            $entry = isset($manifest[$alt_hook]) && is_array($manifest[$alt_hook]) ? $manifest[$alt_hook] : null;
-            if (!$entry) {
+        $span = $this->cmn_perf_begin_span('admin_init.endpoint_policy');
+        try {
+            $context = $this->cmn_get_current_endpoint_request_context();
+            if (!$context) {
                 return;
             }
+            $manifest = $this->cmn_get_runtime_endpoint_policy_manifest();
+            $hook = (string) ($context['hook'] ?? '');
+            $entry = is_array($manifest) && isset($manifest[$hook]) && is_array($manifest[$hook]) ? $manifest[$hook] : null;
+            if (!$entry) {
+                $action = sanitize_key((string) ($context['action'] ?? ''));
+                $is_ajax = !empty($context['is_ajax']);
+                $logged_in = !empty($context['logged_in']);
+                $alt_hook = $is_ajax
+                    ? (($logged_in ? 'wp_ajax_nopriv_' : 'wp_ajax_') . $action)
+                    : (($logged_in ? 'admin_post_nopriv_' : 'admin_post_') . $action);
+                $alt_hook = sanitize_key($alt_hook);
+                $entry = isset($manifest[$alt_hook]) && is_array($manifest[$alt_hook]) ? $manifest[$alt_hook] : null;
+                if (!$entry) {
+                    return;
+                }
+            }
+
+            $requires_policy = !empty($entry['writes_state']) || !empty($entry['nopriv']);
+            if (!$requires_policy) {
+                return;
+            }
+
+            $nonce_action_candidates = (array) ($entry['nonce_action_candidates'] ?? []);
+            $nonce_templates = (array) ($entry['nonce_action_templates'] ?? []);
+            foreach ($nonce_templates as $template) {
+                if (!is_array($template)) {
+                    continue;
+                }
+                $prefix = sanitize_key((string) ($template['prefix'] ?? ''));
+                $id_key = sanitize_key((string) ($template['id_key'] ?? ''));
+                if ($prefix === '' || $id_key === '' || !isset($_REQUEST[$id_key])) {
+                    continue;
+                }
+                $id_raw = wp_unslash($_REQUEST[$id_key]);
+                if (is_array($id_raw)) {
+                    continue;
+                }
+                $id_value = sanitize_text_field((string) $id_raw);
+                if ($id_value === '') {
+                    continue;
+                }
+                $nonce_action_candidates[] = sanitize_key($prefix . $id_value);
+            }
+            $nonce_action_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', $nonce_action_candidates))));
+            $nonce_field_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', (array) ($entry['nonce_field_candidates'] ?? [])))));
+
+            $policy = [
+                'ability_required' => (string) ($entry['ability_required'] ?? ''),
+                'nonce_mode' => (string) ($entry['nonce_mode'] ?? 'not_applicable'),
+                'nonce_action' => (string) ($entry['nonce_action'] ?? ''),
+                'nonce_field' => (string) ($entry['nonce_field'] ?? 'nonce'),
+                'nonce_action_candidates' => $nonce_action_candidates,
+                'nonce_field_candidates' => $nonce_field_candidates,
+                'writes_state' => !empty($entry['writes_state']),
+                'transport' => (string) ($context['transport'] ?? (wp_doing_ajax() ? 'ajax' : 'admin_post')),
+                'context' => [
+                    'actor_user_id' => (int) get_current_user_id(),
+                ],
+            ];
+
+            if (!empty($entry['nopriv'])) {
+                $action_fragment = sanitize_key((string) ($context['action'] ?? 'endpoint'));
+                if ($action_fragment === '') {
+                    $action_fragment = 'endpoint';
+                }
+                $ip_hash = substr(md5((string) $this->get_request_ip_address()), 0, 12);
+                $entity_fragment = $this->cmn_get_nopriv_endpoint_entity_rate_fragment();
+                $token_fragment = $this->cmn_get_nopriv_endpoint_token_rate_fragment();
+                $policy['rate_limit_bucket'] = sanitize_key('pub_ep_' . $action_fragment . '_' . $ip_hash . '_' . $entity_fragment . '_' . $token_fragment);
+                $policy['rate_limit_max'] = in_array($action_fragment, ['cmn_candidate_response', 'cmn_marketing_runner'], true) ? 60 : 120;
+                $policy['rate_limit_window'] = 300;
+            }
+
+            $this->cmn_endpoint_guard($policy, static function () {
+                return true;
+            });
+        } finally {
+            $this->cmn_perf_end_span('admin_init.endpoint_policy', $span);
         }
-
-        $requires_policy = !empty($entry['writes_state']) || !empty($entry['nopriv']);
-        if (!$requires_policy) {
-            return;
-        }
-
-        $nonce_action_candidates = (array) ($entry['nonce_action_candidates'] ?? []);
-        $nonce_templates = (array) ($entry['nonce_action_templates'] ?? []);
-        foreach ($nonce_templates as $template) {
-            if (!is_array($template)) {
-                continue;
-            }
-            $prefix = sanitize_key((string) ($template['prefix'] ?? ''));
-            $id_key = sanitize_key((string) ($template['id_key'] ?? ''));
-            if ($prefix === '' || $id_key === '' || !isset($_REQUEST[$id_key])) {
-                continue;
-            }
-            $id_raw = wp_unslash($_REQUEST[$id_key]);
-            if (is_array($id_raw)) {
-                continue;
-            }
-            $id_value = sanitize_text_field((string) $id_raw);
-            if ($id_value === '') {
-                continue;
-            }
-            $nonce_action_candidates[] = sanitize_key($prefix . $id_value);
-        }
-        $nonce_action_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', $nonce_action_candidates))));
-        $nonce_field_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', (array) ($entry['nonce_field_candidates'] ?? [])))));
-
-        $policy = [
-            'ability_required' => (string) ($entry['ability_required'] ?? ''),
-            'nonce_mode' => (string) ($entry['nonce_mode'] ?? 'not_applicable'),
-            'nonce_action' => (string) ($entry['nonce_action'] ?? ''),
-            'nonce_field' => (string) ($entry['nonce_field'] ?? 'nonce'),
-            'nonce_action_candidates' => $nonce_action_candidates,
-            'nonce_field_candidates' => $nonce_field_candidates,
-            'writes_state' => !empty($entry['writes_state']),
-            'transport' => (string) ($context['transport'] ?? (wp_doing_ajax() ? 'ajax' : 'admin_post')),
-            'context' => [
-                'actor_user_id' => (int) get_current_user_id(),
-            ],
-        ];
-
-        if (!empty($entry['nopriv'])) {
-            $action_fragment = sanitize_key((string) ($context['action'] ?? 'endpoint'));
-            if ($action_fragment === '') {
-                $action_fragment = 'endpoint';
-            }
-            $ip_hash = substr(md5((string) $this->get_request_ip_address()), 0, 12);
-            $entity_fragment = $this->cmn_get_nopriv_endpoint_entity_rate_fragment();
-            $token_fragment = $this->cmn_get_nopriv_endpoint_token_rate_fragment();
-            $policy['rate_limit_bucket'] = sanitize_key('pub_ep_' . $action_fragment . '_' . $ip_hash . '_' . $entity_fragment . '_' . $token_fragment);
-            $policy['rate_limit_max'] = in_array($action_fragment, ['cmn_candidate_response', 'cmn_marketing_runner'], true) ? 60 : 120;
-            $policy['rate_limit_window'] = 300;
-        }
-
-        $this->cmn_endpoint_guard($policy, static function () {
-            return true;
-        });
     }
 
     private function render_safe_portal_home_with_access_denied() {
@@ -8608,29 +9002,43 @@ global $wpdb;
     }
 
     public function schedule_booking_expiry() {
-        if (!wp_next_scheduled('cmn_expire_bookings')) {
-            wp_schedule_event(time() + 300, 'cmn_five_minutes', 'cmn_expire_bookings');
-        }
-        $last_feedback_scan = (int) get_transient('cmn_feedback_scan_ts');
-        $now_ts = (int) current_time('timestamp');
-        if ($last_feedback_scan < 1 || ($now_ts - $last_feedback_scan) >= 300) {
-            $this->maybe_request_feedback_for_past_bookings();
-            set_transient('cmn_feedback_scan_ts', $now_ts, 300);
-        }
-        $last_support_feedback_expiry_scan = (int) get_transient('cmn_support_feedback_request_expiry_scan_ts');
-        if ($last_support_feedback_expiry_scan < 1 || ($now_ts - $last_support_feedback_expiry_scan) >= 300) {
-            $this->maybe_expire_support_feedback_requests();
-            set_transient('cmn_support_feedback_request_expiry_scan_ts', $now_ts, 300);
+        $span = $this->cmn_perf_begin_span('init.schedule_booking_expiry');
+        try {
+            if ($this->should_skip_noncritical_init_work()) {
+                return;
+            }
+            if (!wp_next_scheduled('cmn_expire_bookings')) {
+                wp_schedule_event(time() + 300, 'cmn_five_minutes', 'cmn_expire_bookings');
+            }
+            $last_feedback_scan = (int) get_transient('cmn_feedback_scan_ts');
+            $now_ts = (int) current_time('timestamp');
+            if ($last_feedback_scan < 1 || ($now_ts - $last_feedback_scan) >= 300) {
+                $this->maybe_request_feedback_for_past_bookings();
+                set_transient('cmn_feedback_scan_ts', $now_ts, 300);
+            }
+            $last_support_feedback_expiry_scan = (int) get_transient('cmn_support_feedback_request_expiry_scan_ts');
+            if ($last_support_feedback_expiry_scan < 1 || ($now_ts - $last_support_feedback_expiry_scan) >= 300) {
+                $this->maybe_expire_support_feedback_requests();
+                set_transient('cmn_support_feedback_request_expiry_scan_ts', $now_ts, 300);
+            }
+        } finally {
+            $this->cmn_perf_end_span('init.schedule_booking_expiry', $span);
         }
     }
 
     public function schedule_compliance_reminders() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         if (!wp_next_scheduled('cmn_compliance_reminders')) {
             wp_schedule_event(time() + 900, 'cmn_hourly', 'cmn_compliance_reminders');
         }
     }
 
     public function schedule_availability_nudges() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         if (!wp_next_scheduled('cmn_availability_nudges')) {
             wp_schedule_event(time() + 1200, 'cmn_hourly', 'cmn_availability_nudges');
         }
@@ -8711,12 +9119,18 @@ global $wpdb;
     }
 
     public function schedule_automation_runner() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         if (!wp_next_scheduled('cmn_automation_runner')) {
             wp_schedule_event(time() + 1800, 'cmn_hourly', 'cmn_automation_runner');
         }
     }
 
     public function schedule_monthly_invoice_generation() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         $hook = self::MONTHLY_INVOICE_CRON_HOOK;
         if (wp_next_scheduled($hook)) {
             return;
@@ -8729,6 +9143,9 @@ global $wpdb;
     }
 
     public function schedule_invoice_overdue_reminders() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         $hook = self::INVOICE_OVERDUE_REMINDER_CRON_HOOK;
         if (wp_next_scheduled($hook)) {
             return;
@@ -8741,6 +9158,9 @@ global $wpdb;
     }
 
     public function schedule_candidate_rewards_annual_reset() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         $hook = self::CANDIDATE_REWARDS_ANNUAL_RESET_CRON_HOOK;
         if (wp_next_scheduled($hook)) {
             return;
@@ -8753,6 +9173,9 @@ global $wpdb;
     }
 
     public function schedule_candidate_rewards_academic_year_rollover() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         $hook = self::CANDIDATE_REWARDS_ACADEMIC_YEAR_ROLLOVER_CRON_HOOK;
         if (wp_next_scheduled($hook)) {
             return;
@@ -8765,6 +9188,9 @@ global $wpdb;
     }
 
     public function schedule_candidate_rewards_payroll_addon_processor() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         $hook = self::CANDIDATE_REWARDS_PAYROLL_ADDON_CRON_HOOK;
         if (wp_next_scheduled($hook)) {
             return;
@@ -8777,6 +9203,9 @@ global $wpdb;
     }
 
     public function schedule_payroll_period_auto_lock_processor() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         $hook = self::PAYROLL_PERIOD_AUTO_LOCK_CRON_HOOK;
         if (wp_next_scheduled($hook)) {
             return;
@@ -8789,6 +9218,9 @@ global $wpdb;
     }
 
     public function schedule_school_partner_confirmation_email_cron() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         $hook = self::SCHOOL_PARTNER_CONFIRMATION_EMAIL_CRON_HOOK;
         if (wp_next_scheduled($hook)) {
             return;
@@ -8801,6 +9233,9 @@ global $wpdb;
     }
 
     public function schedule_school_partner_confirmation_reminder_cron() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
         $hook = self::SCHOOL_PARTNER_CONFIRMATION_REMINDER_CRON_HOOK;
         if (wp_next_scheduled($hook)) {
             return;
@@ -9063,13 +9498,27 @@ global $wpdb;
     }
 
     public function ensure_rewards_academic_year_configs() {
+        $span = $this->cmn_perf_begin_span('init.ensure_rewards_configs');
         static $ran = false;
-        if ($ran) {
-            return;
+        try {
+            if ($ran) {
+                return;
+            }
+            $ran = true;
+            if ($this->should_skip_noncritical_init_work()) {
+                return;
+            }
+            $now = time();
+            $last_run = (int) get_option('cmn_rewards_config_init_last_run_ts', 0);
+            // Keep init path lightweight: this maintenance check runs at most every 6h.
+            if ($last_run > 0 && ($now - $last_run) < (6 * HOUR_IN_SECONDS)) {
+                return;
+            }
+            $this->run_candidate_rewards_academic_year_rollover_job('init', 0);
+            update_option('cmn_rewards_config_init_last_run_ts', $now, false);
+        } finally {
+            $this->cmn_perf_end_span('init.ensure_rewards_configs', $span);
         }
-        $ran = true;
-
-        $this->run_candidate_rewards_academic_year_rollover_job('init', 0);
     }
 
     /*
@@ -15363,34 +15812,39 @@ global $wpdb;
     }
 
     public function block_wp_admin_for_non_admins() {
-        if (!is_user_logged_in()) {
-            return;
-        }
-        if (defined('DOING_AJAX') && DOING_AJAX) {
-            return;
-        }
-        if (defined('DOING_CRON') && DOING_CRON) {
-            return;
-        }
-        if ($this->is_admin_user()) {
-            return;
-        }
-        if (is_admin()) {
-            global $pagenow;
-            if (is_string($pagenow) && $pagenow === 'admin-post.php') {
-                // Allow secured form handlers (nonce/capability checked in each handler).
+        $span = $this->cmn_perf_begin_span('admin_init.block_wp_admin');
+        try {
+            if (!is_user_logged_in()) {
                 return;
             }
-            $page = sanitize_key((string) ($_GET['page'] ?? ''));
-            if ($page === 'cmn-automation' && $this->can_manage_automation(get_current_user_id())) {
+            if (defined('DOING_AJAX') && DOING_AJAX) {
                 return;
             }
-            $action = sanitize_key((string) ($_REQUEST['action'] ?? ''));
-            if ($action !== '' && in_array($action, ['cmn_save_automation_rule', 'cmn_toggle_automation_rule', 'cmn_export_automation_logs', 'cmn_run_automation_smoke_test'], true) && $this->can_manage_automation(get_current_user_id())) {
+            if (defined('DOING_CRON') && DOING_CRON) {
                 return;
             }
-            wp_redirect($this->get_portal_base_url());
-            exit;
+            if ($this->is_admin_user()) {
+                return;
+            }
+            if (is_admin()) {
+                global $pagenow;
+                if (is_string($pagenow) && $pagenow === 'admin-post.php') {
+                    // Allow secured form handlers (nonce/capability checked in each handler).
+                    return;
+                }
+                $page = sanitize_key((string) ($_GET['page'] ?? ''));
+                if ($page === 'cmn-automation' && $this->can_manage_automation(get_current_user_id())) {
+                    return;
+                }
+                $action = sanitize_key((string) ($_REQUEST['action'] ?? ''));
+                if ($action !== '' && in_array($action, ['cmn_save_automation_rule', 'cmn_toggle_automation_rule', 'cmn_export_automation_logs', 'cmn_run_automation_smoke_test'], true) && $this->can_manage_automation(get_current_user_id())) {
+                    return;
+                }
+                wp_redirect($this->get_portal_base_url());
+                exit;
+            }
+        } finally {
+            $this->cmn_perf_end_span('admin_init.block_wp_admin', $span);
         }
     }
 
