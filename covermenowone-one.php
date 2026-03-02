@@ -1167,10 +1167,11 @@ final class CMN_One_Plugin {
         self::create_page_if_missing('Candidate Dashboard', '[cmn_candidate_dashboard]');
         self::create_page_if_missing('Available Tomorrow', '[cmn_available_wall]');
         $installed_schema_version = (int) get_option('cmn_schema_version', 0);
-        if ($installed_schema_version < self::SCHEMA_BASE_VERSION) {
-            // Fresh installs still need baseline tables at activation time.
-            // Incremental upgrades run via the explicit upgrade runner only.
-            self::install_schema();
+        if (self::should_install_baseline_schema_on_activation($installed_schema_version)) {
+            // Activation bootstrap is intentionally limited to baseline table creation
+            // for fresh installs only. Version-to-version migrations are exclusive to
+            // admin_post_cmn_run_upgrade_runner.
+            self::install_schema(true);
         }
         if (!wp_next_scheduled(self::MONTHLY_INVOICE_CRON_HOOK)) {
             $tz = wp_timezone();
@@ -1257,6 +1258,34 @@ final class CMN_One_Plugin {
             'post_status' => 'publish',
             'post_content' => $shortcode,
         ]);
+    }
+
+    private static function get_activation_baseline_probe_tables() {
+        global $wpdb;
+        return [
+            $wpdb->prefix . 'cmn_candidate_requests',
+            $wpdb->prefix . 'cmn_notifications',
+            $wpdb->prefix . 'cmn_support_tickets',
+            $wpdb->prefix . 'cmn_booking_threads',
+        ];
+    }
+
+    private static function activation_has_existing_schema_tables() {
+        foreach (self::get_activation_baseline_probe_tables() as $table_name) {
+            if (self::table_exists((string) $table_name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function should_install_baseline_schema_on_activation($installed_schema_version = 0) {
+        $installed_schema_version = (int) $installed_schema_version;
+        if ($installed_schema_version > 0) {
+            return false;
+        }
+        // Fresh install path only: no prior schema version and no existing core tables.
+        return !self::activation_has_existing_schema_tables();
     }
 
     public function ensure_required_pages() {
@@ -2132,8 +2161,9 @@ final class CMN_One_Plugin {
         update_option('cmn_referral_codes_backfilled_v1', '1', false);
     }
 
-    private static function install_schema() {
+    private static function install_schema($activation_baseline_only = false) {
         global $wpdb;
+        $activation_baseline_only = (bool) $activation_baseline_only;
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
@@ -3491,10 +3521,14 @@ final class CMN_One_Plugin {
         ) {$charset};";
 
         dbDelta($sql);
-        self::seed_default_rate_rule_if_missing();
+        if (!$activation_baseline_only) {
+            self::seed_default_rate_rule_if_missing();
+        }
         update_option('cmn_schema_version', self::SCHEMA_BASE_VERSION);
-        self::migrate_school_index();
-        self::migrate_contact_links();
+        if (!$activation_baseline_only) {
+            self::migrate_school_index();
+            self::migrate_contact_links();
+        }
     }
 
     /*
@@ -7634,6 +7668,7 @@ global $wpdb;
             return true;
         }
         if ($ability === 'system.upgrade.run') {
+            // Upgrade runner is intentionally admin-only (no staff access).
             if ($actor_user_id < 1 || !$this->is_admin_user($actor_user_id)) {
                 return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
             }

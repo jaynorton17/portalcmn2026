@@ -31,6 +31,16 @@ grep -nE 'const VERSION = ' covermenowone-one.php
 grep -nE 'const SCHEMA_VERSION = ' covermenowone-one.php
 ```
 
+## 1b) Migration policy check (strict)
+
+Activation behavior vs upgrade behavior:
+- Activation (`register_activation_hook`) is limited to **fresh-install baseline table bootstrap only**.
+- Incremental schema upgrades/migrations are run **only** via `admin_post_cmn_run_upgrade_runner`.
+- Request-time migrations remain disabled by default (`CMN_ENABLE_REQUEST_SCHEMA_MIGRATIONS` off unless explicitly defined true).
+
+Source reference:
+- `docs/migration-policy.md`
+
 ## 2) PHP syntax check (`php -l`)
 
 ```bash

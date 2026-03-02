@@ -4,12 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REMOTE_PLUGIN_DIR="/home/www/public/wp-content/plugins/covermenow-one"
 
-# Primary env vars
 CMN_HOST_VALUE="${CMN_HOST:-${CMN_SFTP_HOST:-}}"
 CMN_USER_VALUE="${CMN_USER:-${CMN_SFTP_USER:-}}"
 CMN_PATH_VALUE="${CMN_PATH:-${CMN_REMOTE_PLUGIN_DIR:-$DEFAULT_REMOTE_PLUGIN_DIR}}"
 CMN_PORT_VALUE="${CMN_PORT:-${CMN_SFTP_PORT:-22}}"
-CMN_KEY_VALUE="${CMN_KEY:-}"
+CMN_IDENTITY_VALUE="${CMN_IDENTITY:-${CMN_KEY:-}}"
 CMN_VERSION_VALUE="${CMN_VERSION:-}"
 CMN_TOKEN_VALUE="${CMN_TOKEN:-}"
 VERIFY_MODE="${CMN_VERIFY:-1}"
@@ -22,16 +21,16 @@ usage() {
 Usage: ./deploy_portal.sh [options]
 
 Options:
-  --host <host>            SSH/SFTP host (default: CMN_HOST)
-  --user <user>            SSH/SFTP user (default: CMN_USER)
+  --host <host>            SSH host (default: CMN_HOST)
+  --user <user>            SSH user (default: CMN_USER)
   --path <path>            Remote plugin path (default: CMN_PATH or $DEFAULT_REMOTE_PLUGIN_DIR)
-  --port <port>            SSH/SFTP port (default: CMN_PORT or 22)
-  --key <path>             SSH private key path (default: CMN_KEY)
-  --dry-run                Print local/remote versions + transfer plan, no upload
-  --verify                 Run post-deploy verification checks
+  --port <port>            SSH port (default: CMN_PORT or 22)
+  --identity <path>        SSH private key path (default: CMN_IDENTITY or CMN_KEY)
+  --dry-run                Print local/remote versions + rsync diff, no upload
+  --verify                 Run post-deploy verification checks (default enabled)
 
 Backwards-compatible legacy flags still supported:
-  --sftp-host <host>, --remote-path <path>, --verify-only
+  --sftp-host <host>, --remote-path <path>, --key <path>, --verify-only
 
 Optional release endpoint flags:
   --version <x.y.z>        Release version to set via endpoint (default: CMN_VERSION or local plugin header)
@@ -41,6 +40,18 @@ Examples:
   ./deploy_portal.sh --host access-5018438942.webspace-host.com --user su19353 --path /home/www/public/wp-content/plugins/covermenow-one --dry-run
   ./deploy_portal.sh --host access-5018438942.webspace-host.com --user su19353 --path /home/www/public/wp-content/plugins/covermenow-one --verify
 USAGE
+}
+
+require_cmd() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    echo "Missing required command: $name" >&2
+    exit 1
+  fi
+}
+
+read_local_plugin_version() {
+  grep -m1 -E '^\s*\*\s*Version:\s*' "$SCRIPT_DIR/covermenowone-one.php" | sed -E 's/^\s*\*\s*Version:\s*//;s/[[:space:]]+$//'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -61,8 +72,8 @@ while [[ $# -gt 0 ]]; do
       CMN_PORT_VALUE="${2:-}"
       shift 2
       ;;
-    --key)
-      CMN_KEY_VALUE="${2:-}"
+    --identity|--key)
+      CMN_IDENTITY_VALUE="${2:-}"
       shift 2
       ;;
     --version)
@@ -98,6 +109,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$DRY_RUN" == "1" && "$VERIFY_ONLY" == "1" ]]; then
+  echo "Cannot combine --dry-run and --verify-only." >&2
+  exit 1
+fi
+
 if [[ -z "$CMN_HOST_VALUE" ]]; then
   echo "Missing required host. Provide --host (or CMN_HOST)." >&2
   exit 1
@@ -114,12 +130,20 @@ if ! [[ "$CMN_PORT_VALUE" =~ ^[0-9]+$ ]]; then
   echo "Invalid port: $CMN_PORT_VALUE" >&2
   exit 1
 fi
-if [[ -n "$CMN_KEY_VALUE" && ! -f "$CMN_KEY_VALUE" ]]; then
-  echo "SSH key not found: $CMN_KEY_VALUE" >&2
+if [[ -n "$CMN_IDENTITY_VALUE" && ! -f "$CMN_IDENTITY_VALUE" ]]; then
+  echo "Identity file not found: $CMN_IDENTITY_VALUE" >&2
   exit 1
 fi
 
-local_version="$(grep -m1 -E '^\s*\*\s*Version:\s*' "$SCRIPT_DIR/covermenowone-one.php" | sed -E 's/^\s*\*\s*Version:\s*//;s/[[:space:]]+$//')"
+require_cmd ssh
+require_cmd rsync
+require_cmd sha256sum
+require_cmd grep
+require_cmd sed
+require_cmd awk
+require_cmd find
+
+local_version="$(read_local_plugin_version)"
 if [[ -z "$local_version" ]]; then
   echo "Unable to read local plugin version from covermenowone-one.php" >&2
   exit 1
@@ -133,50 +157,78 @@ if ! [[ "$CMN_VERSION_VALUE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-required_local_paths=(
-  "$SCRIPT_DIR/covermenowone-one.php"
-  "$SCRIPT_DIR/frontend.css"
-  "$SCRIPT_DIR/frontend.js"
-  "$SCRIPT_DIR/livechat-widget.css"
-  "$SCRIPT_DIR/livechat-widget.js"
-  "$SCRIPT_DIR/admin.css"
-  "$SCRIPT_DIR/login.css"
-  "$SCRIPT_DIR/assets"
-  "$SCRIPT_DIR/cv-converter"
+deploy_items=(
+  "covermenowone-one.php"
+  "frontend.css"
+  "frontend.js"
+  "livechat-widget.css"
+  "livechat-widget.js"
+  "admin.css"
+  "login.css"
+  "assets"
+  "cv-converter"
 )
-for path in "${required_local_paths[@]}"; do
-  if [[ ! -e "$path" ]]; then
-    echo "Missing local deploy path: $path" >&2
+
+for item in "${deploy_items[@]}"; do
+  if [[ ! -e "$SCRIPT_DIR/$item" ]]; then
+    echo "Missing local deploy path: $SCRIPT_DIR/$item" >&2
     exit 1
   fi
 done
 
-SSH_BASE=(ssh -p "$CMN_PORT_VALUE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
-SFTP_BASE=(sftp -P "$CMN_PORT_VALUE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -oBatchMode=no)
-if [[ -n "$CMN_KEY_VALUE" ]]; then
-  SSH_BASE+=(-i "$CMN_KEY_VALUE")
-  SFTP_BASE+=(-i "$CMN_KEY_VALUE")
-fi
+stage_dir="$(mktemp -d)"
+cleanup() {
+  rm -rf "$stage_dir"
+}
+trap cleanup EXIT
 
-if command -v sshpass >/dev/null 2>&1; then
-  if [[ -n "${SFTP_PASS:-}" ]]; then
-    export SSHPASS="$SFTP_PASS"
-    SSH_BASE=(sshpass -e "${SSH_BASE[@]}")
-    SFTP_BASE=(sshpass -e "${SFTP_BASE[@]}")
-  elif [[ -f "$HOME/.covermenowone_sftp_pass" ]]; then
-    SSH_BASE=(sshpass -f "$HOME/.covermenowone_sftp_pass" "${SSH_BASE[@]}")
-    SFTP_BASE=(sshpass -f "$HOME/.covermenowone_sftp_pass" "${SFTP_BASE[@]}")
-  fi
-fi
+for item in "${deploy_items[@]}"; do
+  cp -a "$SCRIPT_DIR/$item" "$stage_dir/$item"
+done
 
 SSH_TARGET="$CMN_USER_VALUE@$CMN_HOST_VALUE"
 
+sshpass_prefix=()
+if [[ -z "$CMN_IDENTITY_VALUE" ]] && command -v sshpass >/dev/null 2>&1; then
+  if [[ -n "${SFTP_PASS:-}" ]]; then
+    export SSHPASS="$SFTP_PASS"
+    sshpass_prefix=(sshpass -e)
+  elif [[ -f "$HOME/.covermenowone_sftp_pass" ]]; then
+    sshpass_prefix=(sshpass -f "$HOME/.covermenowone_sftp_pass")
+  fi
+fi
+
+ssh_args=(
+  -p "$CMN_PORT_VALUE"
+  -o StrictHostKeyChecking=no
+  -o UserKnownHostsFile=/dev/null
+)
+if [[ -n "$CMN_IDENTITY_VALUE" ]]; then
+  ssh_args+=(-i "$CMN_IDENTITY_VALUE")
+fi
+
+rsync_ssh_cmd=(ssh "${ssh_args[@]}")
+RSYNC_RSH="$(printf '%q ' "${rsync_ssh_cmd[@]}")"
+
+run_ssh() {
+  "${sshpass_prefix[@]}" ssh "${ssh_args[@]}" "$SSH_TARGET" "$@"
+}
+
+run_rsync() {
+  "${sshpass_prefix[@]}" rsync -e "$RSYNC_RSH" "$@"
+}
+
 remote_probe() {
   local remote_path="$1"
-  "${SSH_BASE[@]}" "$SSH_TARGET" "
+  run_ssh "
     set -e
+    if [ -d '$remote_path' ]; then
+      path_exists='1'
+    else
+      path_exists='0'
+    fi
     if [ -f '$remote_path/covermenowone-one.php' ]; then
-      remote_version=\$(grep -m1 -E '^\s*\*\s*Version:\s*' '$remote_path/covermenowone-one.php' | sed -E 's/^\s*\*\s*Version:\s*//;s/[[:space:]]+$//')
+      remote_version=\$(grep -m1 -E '^\\s*\\*\\s*Version:\\s*' '$remote_path/covermenowone-one.php' | sed -E 's/^\\s*\\*\\s*Version:\\s*//;s/[[:space:]]+\$//')
     else
       remote_version='(missing)'
     fi
@@ -185,28 +237,14 @@ remote_probe() {
     else
       remote_js_sha='(missing)'
     fi
-    printf '%s\n' "\$remote_version" "\$remote_js_sha"
+    printf '%s\n' \"\$remote_version\" \"\$remote_js_sha\" \"\$path_exists\"
   "
-}
-
-print_transfer_list() {
-  echo "Files to upload:"
-  echo "  - covermenowone-one.php"
-  echo "  - frontend.css"
-  echo "  - frontend.js"
-  echo "  - livechat-widget.css"
-  echo "  - livechat-widget.js"
-  echo "  - admin.css"
-  echo "  - login.css"
-  echo "  - assets/ (recursive)"
-  echo "  - cv-converter/ (recursive)"
 }
 
 print_plan() {
   local remote_before_version="$1"
   local remote_before_sha="$2"
-  local local_js_sha
-  local_js_sha="$(sha256sum "$SCRIPT_DIR/frontend.js" | awk '{print $1}')"
+  local local_js_sha="$3"
 
   echo "=== Deploy Plan ==="
   echo "Local plugin dir:   $SCRIPT_DIR"
@@ -217,14 +255,36 @@ print_plan() {
   echo "Remote version:     $remote_before_version"
   echo "Local frontend.js:  $local_js_sha"
   echo "Remote frontend.js: $remote_before_sha"
-  print_transfer_list
+}
+
+print_diff_list() {
+  local remote_exists="$1"
+  local rsync_output="$2"
+
+  echo "Files that would be transferred:"
+  if [[ "$remote_exists" != "1" ]]; then
+    (cd "$stage_dir" && find . -type f | sed 's|^\./|  - |' | sort)
+    return
+  fi
+
+  local filtered
+  filtered="$(printf '%s\n' "$rsync_output" | sed '/^sending incremental file list$/d;/^created directory /d;/^sent /d;/^total size is /d;/^$/d')"
+  if [[ -z "$filtered" ]]; then
+    echo "  (no changes detected)"
+    return
+  fi
+  printf '%s\n' "$filtered" | sed 's/^/  /'
 }
 
 mapfile -t before_probe < <(remote_probe "$CMN_PATH_VALUE")
 remote_before_version="${before_probe[0]:-(missing)}"
 remote_before_sha="${before_probe[1]:-(missing)}"
+remote_path_exists="${before_probe[2]:-0}"
+local_frontend_sha="$(sha256sum "$SCRIPT_DIR/frontend.js" | awk '{print $1}')"
 
-print_plan "$remote_before_version" "$remote_before_sha"
+rsync_preview_output="$(run_rsync -az --itemize-changes --dry-run "$stage_dir/" "$SSH_TARGET:$CMN_PATH_VALUE/")"
+print_plan "$remote_before_version" "$remote_before_sha" "$local_frontend_sha"
+print_diff_list "$remote_path_exists" "$rsync_preview_output"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "Dry run complete. No files uploaded."
@@ -232,30 +292,20 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 if [[ "$VERIFY_ONLY" != "1" ]]; then
-  batch_file="$(mktemp)"
-  trap 'rm -f "$batch_file"' EXIT
+  echo "Ensuring remote plugin path exists..."
+  run_ssh "mkdir -p '$CMN_PATH_VALUE'"
 
-  cat > "$batch_file" <<SFTP_CMDS
--mkdir $CMN_PATH_VALUE
-lcd $SCRIPT_DIR
-put covermenowone-one.php $CMN_PATH_VALUE/covermenowone-one.php
-put frontend.css $CMN_PATH_VALUE/frontend.css
-put frontend.js $CMN_PATH_VALUE/frontend.js
-put livechat-widget.css $CMN_PATH_VALUE/livechat-widget.css
-put livechat-widget.js $CMN_PATH_VALUE/livechat-widget.js
-put admin.css $CMN_PATH_VALUE/admin.css
-put login.css $CMN_PATH_VALUE/login.css
-put -r assets $CMN_PATH_VALUE
-put -r cv-converter $CMN_PATH_VALUE
-SFTP_CMDS
+  echo "Uploading plugin files via rsync..."
+  run_rsync -az --itemize-changes "$stage_dir/" "$SSH_TARGET:$CMN_PATH_VALUE/"
 
-  echo "Uploading plugin files..."
-  "${SFTP_BASE[@]}" -b "$batch_file" "$SSH_TARGET"
-
-  if [[ -n "$CMN_TOKEN_VALUE" && -n "$CMN_HOST_VALUE" ]]; then
-    echo "Setting release version via endpoint..."
-    release_response="$(curl -s "https://${CMN_HOST_VALUE}/?cmn_set_release_version=1&v=${CMN_VERSION_VALUE}&token=${CMN_TOKEN_VALUE}")"
-    echo "$release_response"
+  if [[ -n "$CMN_TOKEN_VALUE" ]]; then
+    if command -v curl >/dev/null 2>&1; then
+      echo "Setting release version via endpoint..."
+      release_response="$(curl -s "https://${CMN_HOST_VALUE}/?cmn_set_release_version=1&v=${CMN_VERSION_VALUE}&token=${CMN_TOKEN_VALUE}")"
+      echo "$release_response"
+    else
+      echo "curl not found; skipped release endpoint update."
+    fi
   else
     echo "Release token not supplied; skipped release endpoint update."
   fi
@@ -269,37 +319,36 @@ fi
 mapfile -t after_probe < <(remote_probe "$CMN_PATH_VALUE")
 remote_after_version="${after_probe[0]:-(missing)}"
 remote_after_sha="${after_probe[1]:-(missing)}"
-local_after_sha="$(sha256sum "$SCRIPT_DIR/frontend.js" | awk '{print $1}')"
 
 frontend_changed_expected=0
-if [[ "$local_after_sha" != "$remote_before_sha" ]]; then
+if [[ "$local_frontend_sha" != "$remote_before_sha" ]]; then
   frontend_changed_expected=1
 fi
 
 echo "=== Post-Deploy Verify ==="
-echo "Remote version after:    $remote_after_version"
-echo "Expected local version:  $local_version"
-echo "Remote frontend.js SHA:  $remote_after_sha"
-echo "Local frontend.js SHA:   $local_after_sha"
-echo "Remote SHA before deploy:$remote_before_sha"
+echo "Remote version after:     $remote_after_version"
+echo "Expected local version:   $local_version"
+echo "Remote frontend.js SHA:   $remote_after_sha"
+echo "Local frontend.js SHA:    $local_frontend_sha"
+echo "Remote SHA before deploy: $remote_before_sha"
 
 if [[ "$remote_after_version" != "$local_version" ]]; then
   echo "ERROR: Remote plugin version does not match local version." >&2
   exit 1
 fi
-if [[ "$remote_after_sha" != "$local_after_sha" ]]; then
+if [[ "$remote_after_sha" != "$local_frontend_sha" ]]; then
   echo "ERROR: Remote frontend.js hash does not match local frontend.js." >&2
   exit 1
 fi
 if [[ "$frontend_changed_expected" == "1" && "$remote_after_sha" == "$remote_before_sha" ]]; then
-  echo "ERROR: frontend.js changed locally but remote hash did not change." >&2
+  echo "ERROR: Local frontend.js differs from remote-before, but remote hash did not change." >&2
   exit 1
 fi
 
 if [[ "$frontend_changed_expected" == "1" ]]; then
-  echo "frontend.js hash updated on remote (expected)."
+  echo "PASS: frontend.js hash changed on remote because local hash differed before deploy."
 else
-  echo "frontend.js hash unchanged (no local frontend.js delta detected pre-deploy)."
+  echo "PASS: frontend.js hash unchanged (local and remote were already identical before deploy)."
 fi
 
-echo "Deploy verification succeeded."
+echo "PASS: Deploy verification succeeded."
