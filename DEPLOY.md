@@ -7,6 +7,7 @@
   --host access-5018438942.webspace-host.com \
   --user su19353 \
   --path /home/www/public/wp-content/plugins/covermenow-one \
+  --key ~/.ssh/id_ed25519 \
   --verify
 ```
 
@@ -17,6 +18,7 @@
   --host access-5018438942.webspace-host.com \
   --user su19353 \
   --path /home/www/public/wp-content/plugins/covermenow-one \
+  --key ~/.ssh/id_ed25519 \
   --dry-run
 ```
 
@@ -33,11 +35,11 @@ Dry-run prints:
   --host access-5018438942.webspace-host.com \
   --user su19353 \
   --path /home/www/public/wp-content/plugins/covermenow-one \
-  --identity ~/.ssh/id_ed25519 \
+  --key ~/.ssh/id_ed25519 \
   --verify
 ```
 
-`--key` is still accepted as a backward-compatible alias.
+`--identity` is still accepted as a backward-compatible alias.
 
 ## Env-based deploy (optional)
 
@@ -61,7 +63,7 @@ Primary env vars:
 - `CMN_USER`
 - `CMN_PATH`
 - `CMN_PORT`
-- `CMN_IDENTITY` (or legacy `CMN_KEY`)
+- `CMN_KEY` (or legacy `CMN_IDENTITY`)
 - `CMN_VERIFY`
 - `CMN_VERSION`
 - `CMN_TOKEN`
@@ -72,5 +74,6 @@ Legacy env vars remain supported:
 - `CMN_SFTP_USER`
 - `CMN_SFTP_PORT`
 - `CMN_REMOTE_PLUGIN_DIR`
+- `CMN_IDENTITY`
 
 No deploy secrets should be committed.

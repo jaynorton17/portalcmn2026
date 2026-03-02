@@ -8,7 +8,7 @@ CMN_HOST_VALUE="${CMN_HOST:-${CMN_SFTP_HOST:-}}"
 CMN_USER_VALUE="${CMN_USER:-${CMN_SFTP_USER:-}}"
 CMN_PATH_VALUE="${CMN_PATH:-${CMN_REMOTE_PLUGIN_DIR:-$DEFAULT_REMOTE_PLUGIN_DIR}}"
 CMN_PORT_VALUE="${CMN_PORT:-${CMN_SFTP_PORT:-22}}"
-CMN_IDENTITY_VALUE="${CMN_IDENTITY:-${CMN_KEY:-}}"
+CMN_IDENTITY_VALUE="${CMN_KEY:-${CMN_IDENTITY:-}}"
 CMN_VERSION_VALUE="${CMN_VERSION:-}"
 CMN_TOKEN_VALUE="${CMN_TOKEN:-}"
 VERIFY_MODE="${CMN_VERIFY:-1}"
@@ -25,20 +25,20 @@ Options:
   --user <user>            SSH user (default: CMN_USER)
   --path <path>            Remote plugin path (default: CMN_PATH or $DEFAULT_REMOTE_PLUGIN_DIR)
   --port <port>            SSH port (default: CMN_PORT or 22)
-  --identity <path>        SSH private key path (default: CMN_IDENTITY or CMN_KEY)
+  --key <path>             SSH private key path (default: CMN_KEY or CMN_IDENTITY)
   --dry-run                Print local/remote versions + rsync diff, no upload
   --verify                 Run post-deploy verification checks (default enabled)
 
 Backwards-compatible legacy flags still supported:
-  --sftp-host <host>, --remote-path <path>, --key <path>, --verify-only
+  --sftp-host <host>, --remote-path <path>, --identity <path>, --verify-only
 
 Optional release endpoint flags:
   --version <x.y.z>        Release version to set via endpoint (default: CMN_VERSION or local plugin header)
   --token <token>          Release endpoint token (default: CMN_TOKEN)
 
 Examples:
-  ./deploy_portal.sh --host access-5018438942.webspace-host.com --user su19353 --path /home/www/public/wp-content/plugins/covermenow-one --dry-run
-  ./deploy_portal.sh --host access-5018438942.webspace-host.com --user su19353 --path /home/www/public/wp-content/plugins/covermenow-one --verify
+  ./deploy_portal.sh --host access-5018438942.webspace-host.com --user su19353 --path /home/www/public/wp-content/plugins/covermenow-one --key ~/.ssh/id_ed25519 --dry-run
+  ./deploy_portal.sh --host access-5018438942.webspace-host.com --user su19353 --path /home/www/public/wp-content/plugins/covermenow-one --key ~/.ssh/id_ed25519 --verify
 USAGE
 }
 
@@ -72,7 +72,7 @@ while [[ $# -gt 0 ]]; do
       CMN_PORT_VALUE="${2:-}"
       shift 2
       ;;
-    --identity|--key)
+    --key|--identity)
       CMN_IDENTITY_VALUE="${2:-}"
       shift 2
       ;;
@@ -131,7 +131,7 @@ if ! [[ "$CMN_PORT_VALUE" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 if [[ -n "$CMN_IDENTITY_VALUE" && ! -f "$CMN_IDENTITY_VALUE" ]]; then
-  echo "Identity file not found: $CMN_IDENTITY_VALUE" >&2
+  echo "SSH key file not found: $CMN_IDENTITY_VALUE" >&2
   exit 1
 fi
 
