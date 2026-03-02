@@ -771,6 +771,7 @@ final class CMN_One_Plugin {
     private $email_log_runtime_token_map = [];
     private $email_log_runtime_bypass = false;
     private $current_school_view_req_id = '';
+    private $endpoint_policy_manifest_cache = null;
 
     public function __construct() {
         add_filter('deprecated_function_trigger_error', [$this, 'filter_deprecated_function_trigger_error'], 10, 4);
@@ -990,6 +991,7 @@ final class CMN_One_Plugin {
         add_filter('login_redirect', [$this, 'handle_login_redirect'], 10, 3);
         add_filter('logout_redirect', [$this, 'handle_logout_redirect'], 10, 3);
         add_action('admin_init', [$this, 'block_wp_admin_for_non_admins']);
+        add_action('admin_init', [$this, 'enforce_endpoint_policy_for_request'], -1000);
         add_action('login_init', [$this, 'redirect_wp_login_for_portal_users']);
         add_filter('show_admin_bar', [$this, 'maybe_hide_admin_bar']);
         add_action('login_enqueue_scripts', [$this, 'enqueue_login_branding']);
@@ -7255,6 +7257,109 @@ global $wpdb;
         return true;
     }
 
+    private function cmn_normalize_endpoint_nonce_field_list($fields = []) {
+        $defaults = ['cmn_nonce', 'nonce', '_ajax_nonce', '_wpnonce'];
+        $fields = is_array($fields) ? $fields : [];
+        $resolved = [];
+        foreach (array_merge($fields, $defaults) as $field) {
+            $key = sanitize_key((string) $field);
+            if ($key === '') {
+                continue;
+            }
+            $resolved[$key] = $key;
+        }
+        foreach ((array) $_REQUEST as $key => $value) {
+            if (!is_string($key)) {
+                continue;
+            }
+            $candidate = sanitize_key($key);
+            if ($candidate === '' || strpos($candidate, 'nonce') === false) {
+                continue;
+            }
+            $resolved[$candidate] = $candidate;
+        }
+        return array_values($resolved);
+    }
+
+    private function cmn_normalize_endpoint_nonce_action_list($actions = []) {
+        $actions = is_array($actions) ? $actions : [];
+        $resolved = [];
+        foreach ($actions as $action) {
+            $action = sanitize_key((string) $action);
+            if ($action === '') {
+                continue;
+            }
+            $resolved[$action] = $action;
+        }
+        $request_action = sanitize_key((string) ($_REQUEST['action'] ?? ''));
+        if ($request_action !== '') {
+            $resolved[$request_action] = $request_action;
+        }
+        return array_values($resolved);
+    }
+
+    private function cmn_policy_require_auto_nonce(array $policy = []) {
+        $policy = is_array($policy) ? $policy : [];
+        $fields = $this->cmn_normalize_endpoint_nonce_field_list((array) ($policy['nonce_field_candidates'] ?? []));
+        $actions = $this->cmn_normalize_endpoint_nonce_action_list((array) ($policy['nonce_action_candidates'] ?? []));
+
+        if (!$fields || !$actions) {
+            return new WP_Error('cmn_invalid_nonce', 'Invalid request.', ['status' => 403]);
+        }
+
+        $nonce_values = [];
+        foreach ($fields as $field) {
+            if (!isset($_REQUEST[$field])) {
+                continue;
+            }
+            $raw = wp_unslash($_REQUEST[$field]);
+            if (is_array($raw)) {
+                continue;
+            }
+            $value = sanitize_text_field((string) $raw);
+            if ($value === '') {
+                continue;
+            }
+            $nonce_values[$field] = $value;
+        }
+        if (!$nonce_values) {
+            return new WP_Error('cmn_invalid_nonce', 'Invalid request.', ['status' => 403]);
+        }
+
+        $id_suffix_keys = ['school_id', 'candidate_id', 'booking_id', 'ticket_id', 'rule_id', 'sender_id', 'template_key', 'id'];
+        $expanded_actions = [];
+        foreach ($actions as $action) {
+            $expanded_actions[$action] = $action;
+            foreach ($id_suffix_keys as $id_key) {
+                if (!isset($_REQUEST[$id_key])) {
+                    continue;
+                }
+                $id_raw = wp_unslash($_REQUEST[$id_key]);
+                if (is_array($id_raw)) {
+                    continue;
+                }
+                $id_value = sanitize_text_field((string) $id_raw);
+                if ($id_value === '') {
+                    continue;
+                }
+                $expanded_actions[sanitize_key($action . '_' . $id_value)] = sanitize_key($action . '_' . $id_value);
+            }
+        }
+
+        foreach ($nonce_values as $nonce_value) {
+            foreach ($expanded_actions as $action) {
+                if ($action === '') {
+                    continue;
+                }
+                if (wp_verify_nonce($nonce_value, $action)) {
+                    return true;
+                }
+            }
+        }
+
+        return new WP_Error('cmn_invalid_nonce', 'Invalid request.', ['status' => 403]);
+    }
+
     private function cmn_policy_require_ability($ability, $context = []) {
         $ability = trim((string) $ability);
         $context = is_array($context) ? $context : [];
@@ -7353,6 +7458,8 @@ global $wpdb;
             'nonce_mode' => 'not_applicable',
             'nonce_action' => '',
             'nonce_field' => 'nonce',
+            'nonce_action_candidates' => [],
+            'nonce_field_candidates' => [],
             'writes_state' => false,
             'transport' => wp_doing_ajax() ? 'ajax' : 'admin_post',
             'rate_limit_bucket' => '',
@@ -7397,10 +7504,16 @@ global $wpdb;
 
         $nonce_mode = sanitize_key((string) $policy['nonce_mode']);
         if ($nonce_mode === 'required') {
-            $nonce_check = $this->cmn_policy_require_nonce(
-                (string) $policy['nonce_action'],
-                (string) $policy['nonce_field']
-            );
+            $nonce_action = (string) $policy['nonce_action'];
+            $nonce_field = (string) $policy['nonce_field'];
+            if ($nonce_action === '__cmn_auto__' || $nonce_field === '__any__') {
+                $nonce_check = $this->cmn_policy_require_auto_nonce($policy);
+            } else {
+                $nonce_check = $this->cmn_policy_require_nonce($nonce_action, $nonce_field);
+                if (is_wp_error($nonce_check) && (!empty($policy['nonce_action_candidates']) || !empty($policy['nonce_field_candidates']))) {
+                    $nonce_check = $this->cmn_policy_require_auto_nonce($policy);
+                }
+            }
             if (is_wp_error($nonce_check)) {
                 return $this->cmn_policy_error_response(
                     $policy,
@@ -7425,6 +7538,416 @@ global $wpdb;
         }
 
         return call_user_func($fn, $context, $policy);
+    }
+
+    private function cmn_parse_endpoint_method_index($source) {
+        $source = (string) $source;
+        if ($source === '') {
+            return [];
+        }
+        $methods = [];
+        if (!preg_match_all('/^\s*(?:public|protected|private)\s+function\s+([a-zA-Z0-9_]+)\s*\(/m', $source, $matches, PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+        $count = count((array) $matches[0]);
+        for ($i = 0; $i < $count; $i++) {
+            $name = (string) ($matches[1][$i][0] ?? '');
+            $start = (int) ($matches[0][$i][1] ?? 0);
+            if ($name === '' || $start < 0) {
+                continue;
+            }
+            $end = ($i + 1 < $count) ? (int) ($matches[0][$i + 1][1] ?? strlen($source)) : strlen($source);
+            if ($end <= $start) {
+                $end = strlen($source);
+            }
+            $methods[$name] = [
+                'body' => (string) substr($source, $start, max(0, $end - $start)),
+            ];
+        }
+        return $methods;
+    }
+
+    private function cmn_is_public_token_no_nonce_endpoint($hook_name) {
+        $hook_name = sanitize_key((string) $hook_name);
+        if ($hook_name === '') {
+            return false;
+        }
+        $allow = [
+            'admin_post_nopriv_cmn_candidate_response',
+            'admin_post_cmn_candidate_response',
+            'admin_post_nopriv_cmn_marketing_runner',
+            'admin_post_cmn_marketing_runner',
+        ];
+        return in_array($hook_name, $allow, true);
+    }
+
+    private function cmn_infer_endpoint_ability_requirement($hook_name, $handler_name, $nopriv, $explicit_ability = '') {
+        $explicit_ability = trim((string) $explicit_ability);
+        if ($explicit_ability !== '') {
+            return $explicit_ability;
+        }
+        if ($this->cmn_is_public_token_no_nonce_endpoint($hook_name)) {
+            return '';
+        }
+        $target = strtolower((string) $hook_name . ' ' . (string) $handler_name);
+        if ((bool) preg_match('/school_partner_admin|partner_programme_(recalculate|adjust)|partner_admin/', $target)) {
+            return 'partner.admin.mutate';
+        }
+        if ((bool) preg_match('/cmn_staff_|system_health|cmn_match_|cmn_marketing_|run_upgrade_runner|support_list_tickets_unfiltered_admin|cmn_send_test_emails|cmn_email_log_resend/', $target)) {
+            return 'portal.staff.view';
+        }
+        if (!empty($nopriv)) {
+            return '';
+        }
+        return 'portal.logged_in';
+    }
+
+    private function cmn_analyze_endpoint_handler_method($body, $hook_name, $handler_name, $nopriv = false) {
+        $body = (string) $body;
+        $policy = [
+            'writes_state' => false,
+            'has_guard_wrapper' => strpos($body, 'cmn_endpoint_guard(') !== false,
+            'ability_required' => '',
+            'nonce_action' => '',
+            'nonce_field' => '',
+            'nonce_action_candidates' => [],
+            'nonce_field_candidates' => [],
+            'nonce_action_templates' => [],
+            'rate_limited' => false,
+            'token_validation' => false,
+            'public_token_no_nonce' => $this->cmn_is_public_token_no_nonce_endpoint($hook_name),
+        ];
+
+        if (preg_match('/\'ability_required\'\s*=>\s*\'([^\']+)\'/', $body, $m)) {
+            $policy['ability_required'] = sanitize_key((string) $m[1]);
+        }
+
+        $write_patterns = [
+            '/->insert\s*\(/',
+            '/->update\s*\(/',
+            '/->delete\s*\(/',
+            '/->replace\s*\(/',
+            '/update_post_meta\s*\(/',
+            '/add_post_meta\s*\(/',
+            '/delete_post_meta\s*\(/',
+            '/update_user_meta\s*\(/',
+            '/add_user_meta\s*\(/',
+            '/delete_user_meta\s*\(/',
+            '/update_option\s*\(/',
+            '/add_option\s*\(/',
+            '/delete_option\s*\(/',
+            '/wp_insert_post\s*\(/',
+            '/wp_update_post\s*\(/',
+            '/wp_delete_post\s*\(/',
+            '/wp_insert_user\s*\(/',
+            '/wp_update_user\s*\(/',
+            '/wp_set_password\s*\(/',
+            '/reset_password\s*\(/',
+            '/set_transient\s*\(/',
+            '/delete_transient\s*\(/',
+        ];
+        foreach ($write_patterns as $pattern) {
+            if (preg_match($pattern, $body)) {
+                $policy['writes_state'] = true;
+                break;
+            }
+        }
+
+        $policy['rate_limited'] = (bool) preg_match(
+            '/cmn_rate_limit\s*\(|is_livechat_rate_limited\s*\(|assert_candidate_payroll_query_rate_limit\s*\(|enforce_school_partner_admin_action_throttle\s*\(/',
+            $body
+        );
+        $policy['token_validation'] = (bool) preg_match(
+            '/hash_offer_response_token|get_livechat_thread_by_token|thread_token_hash|token_hash|cmn_runner_token|validate_cv_converter_token|check_password_reset_key|cmn_email_verify_hash/',
+            $body
+        );
+
+        $var_request_key_map = [];
+        if (preg_match_all('/\$([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*[^;]*\$_(?:POST|GET|REQUEST)\s*\[\s*[\'"]([a-zA-Z0-9_]+)[\'"]\s*\]/s', $body, $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $var_name = sanitize_key((string) ($match[1] ?? ''));
+                $request_key = sanitize_key((string) ($match[2] ?? ''));
+                if ($var_name === '' || $request_key === '') {
+                    continue;
+                }
+                $var_request_key_map[$var_name] = $request_key;
+            }
+        }
+
+        if (preg_match_all('/check_ajax_referer\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]/', $body, $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $action = sanitize_key((string) ($match[1] ?? ''));
+                $field = sanitize_key((string) ($match[2] ?? ''));
+                if ($action !== '') {
+                    $policy['nonce_action_candidates'][$action] = $action;
+                    if ($policy['nonce_action'] === '') {
+                        $policy['nonce_action'] = $action;
+                    }
+                }
+                if ($field !== '') {
+                    $policy['nonce_field_candidates'][$field] = $field;
+                    if ($policy['nonce_field'] === '') {
+                        $policy['nonce_field'] = $field;
+                    }
+                }
+            }
+        }
+
+        if (preg_match_all('/wp_verify_nonce\(\s*[^,]+,\s*[\'"]([^\'"]+)[\'"]\s*\)/', $body, $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $action = sanitize_key((string) ($match[1] ?? ''));
+                if ($action === '') {
+                    continue;
+                }
+                $policy['nonce_action_candidates'][$action] = $action;
+                if ($policy['nonce_action'] === '') {
+                    $policy['nonce_action'] = $action;
+                }
+            }
+        }
+
+        if (preg_match_all('/wp_verify_nonce\(\s*[^,]+,\s*[\'"]([^\'"]+)[\'"]\s*\.\s*\$([a-zA-Z_][a-zA-Z0-9_]*)\s*\)/', $body, $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $prefix = sanitize_key((string) ($match[1] ?? ''));
+                $var_name = sanitize_key((string) ($match[2] ?? ''));
+                if ($prefix === '' || $var_name === '') {
+                    continue;
+                }
+                $id_key = (string) ($var_request_key_map[$var_name] ?? '');
+                if ($id_key === '') {
+                    continue;
+                }
+                $policy['nonce_action_templates'][] = [
+                    'prefix' => $prefix,
+                    'id_key' => $id_key,
+                ];
+            }
+        }
+
+        if (preg_match_all('/wp_verify_nonce\(\s*\$_(?:POST|GET|REQUEST)\s*\[\s*[\'"]([a-zA-Z0-9_]+)[\'"]\s*\]/', $body, $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $field = sanitize_key((string) ($match[1] ?? ''));
+                if ($field === '') {
+                    continue;
+                }
+                $policy['nonce_field_candidates'][$field] = $field;
+                if ($policy['nonce_field'] === '') {
+                    $policy['nonce_field'] = $field;
+                }
+            }
+        }
+        if (preg_match_all('/wp_verify_nonce\(\s*\$([a-zA-Z_][a-zA-Z0-9_]*)\s*,/', $body, $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $var_name = sanitize_key((string) ($match[1] ?? ''));
+                if ($var_name === '') {
+                    continue;
+                }
+                $field = (string) ($var_request_key_map[$var_name] ?? '');
+                if ($field === '') {
+                    continue;
+                }
+                $policy['nonce_field_candidates'][$field] = $field;
+                if ($policy['nonce_field'] === '') {
+                    $policy['nonce_field'] = $field;
+                }
+            }
+        }
+
+        if (preg_match_all('/\$_(?:POST|GET|REQUEST)\s*\[\s*[\'"]([a-zA-Z0-9_]*nonce[a-zA-Z0-9_]*)[\'"]\s*\]/i', $body, $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $field = sanitize_key((string) ($match[1] ?? ''));
+                if ($field === '') {
+                    continue;
+                }
+                $policy['nonce_field_candidates'][$field] = $field;
+                if ($policy['nonce_field'] === '') {
+                    $policy['nonce_field'] = $field;
+                }
+            }
+        }
+
+        $policy['ability_required'] = $this->cmn_infer_endpoint_ability_requirement(
+            $hook_name,
+            $handler_name,
+            $nopriv,
+            (string) $policy['ability_required']
+        );
+        $policy['nonce_action_candidates'] = array_values((array) $policy['nonce_action_candidates']);
+        $policy['nonce_field_candidates'] = array_values((array) $policy['nonce_field_candidates']);
+        return $policy;
+    }
+
+    private function cmn_get_runtime_endpoint_policy_manifest() {
+        if (is_array($this->endpoint_policy_manifest_cache)) {
+            return $this->endpoint_policy_manifest_cache;
+        }
+        $source = (string) @file_get_contents(__FILE__);
+        if ($source === '') {
+            $this->endpoint_policy_manifest_cache = [];
+            return [];
+        }
+
+        $method_index = $this->cmn_parse_endpoint_method_index($source);
+        $manifest = [];
+        if (preg_match_all('/add_action\(\s*[\'"]((?:wp_ajax(?:_nopriv)?|admin_post(?:_nopriv)?)_[^\'"]+)[\'"]\s*,\s*\[\$this\s*,\s*[\'"]([^\'"]+)[\'"]\s*\]/', $source, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $hook = sanitize_key((string) ($match[1] ?? ''));
+                $handler = sanitize_key((string) ($match[2] ?? ''));
+                if ($hook === '' || $handler === '') {
+                    continue;
+                }
+                $nopriv = (strpos($hook, 'wp_ajax_nopriv_') === 0 || strpos($hook, 'admin_post_nopriv_') === 0);
+                $action = preg_replace('/^(wp_ajax_nopriv_|wp_ajax_|admin_post_nopriv_|admin_post_)/', '', $hook);
+                $action = sanitize_key((string) $action);
+                $method_body = (string) (($method_index[$handler]['body'] ?? ''));
+                $analysis = $this->cmn_analyze_endpoint_handler_method($method_body, $hook, $handler, $nopriv);
+
+                $nonce_mode = 'not_applicable';
+                $nonce_action = '';
+                $nonce_field = '';
+                if (!empty($analysis['writes_state']) && empty($analysis['public_token_no_nonce'])) {
+                    $nonce_mode = 'required';
+                    $nonce_action = (string) ($analysis['nonce_action'] ?? '');
+                    $nonce_field = (string) ($analysis['nonce_field'] ?? '');
+                    if ($nonce_action === '' || $nonce_field === '') {
+                        $nonce_action = '__cmn_auto__';
+                        $nonce_field = '__any__';
+                    }
+                }
+
+                $nonce_action_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', (array) ($analysis['nonce_action_candidates'] ?? [])))));
+                if ($action !== '') {
+                    $nonce_action_candidates[] = $action;
+                }
+                $nonce_action_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', $nonce_action_candidates))));
+                $nonce_field_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', (array) ($analysis['nonce_field_candidates'] ?? [])))));
+
+                $manifest[$hook] = [
+                    'hook' => $hook,
+                    'handler' => $handler,
+                    'nopriv' => !empty($nopriv),
+                    'writes_state' => !empty($analysis['writes_state']),
+                    'ability_required' => (string) ($analysis['ability_required'] ?? ''),
+                    'nonce_mode' => $nonce_mode,
+                    'nonce_action' => $nonce_action,
+                    'nonce_field' => $nonce_field,
+                    'nonce_action_candidates' => $nonce_action_candidates,
+                    'nonce_field_candidates' => $nonce_field_candidates,
+                    'nonce_action_templates' => (array) ($analysis['nonce_action_templates'] ?? []),
+                    'public_token_no_nonce' => !empty($analysis['public_token_no_nonce']),
+                    'rate_limited' => !empty($analysis['rate_limited']),
+                    'token_validation' => !empty($analysis['token_validation']),
+                ];
+            }
+        }
+        $this->endpoint_policy_manifest_cache = $manifest;
+        return $manifest;
+    }
+
+    private function cmn_get_current_endpoint_request_context() {
+        $action = sanitize_key((string) ($_REQUEST['action'] ?? ''));
+        if ($action === '') {
+            return [];
+        }
+        $is_ajax = wp_doing_ajax();
+        if (!$is_ajax) {
+            $script = strtolower((string) basename((string) ($_SERVER['SCRIPT_NAME'] ?? ($_SERVER['PHP_SELF'] ?? ''))));
+            if ($script !== 'admin-post.php') {
+                return [];
+            }
+        }
+        $logged_in = is_user_logged_in();
+        $hook = $is_ajax
+            ? (($logged_in ? 'wp_ajax_' : 'wp_ajax_nopriv_') . $action)
+            : (($logged_in ? 'admin_post_' : 'admin_post_nopriv_') . $action);
+        return [
+            'action' => $action,
+            'is_ajax' => $is_ajax,
+            'logged_in' => $logged_in,
+            'hook' => sanitize_key($hook),
+            'transport' => $is_ajax ? 'ajax' : 'admin_post',
+        ];
+    }
+
+    public function enforce_endpoint_policy_for_request() {
+        $context = $this->cmn_get_current_endpoint_request_context();
+        if (!$context) {
+            return;
+        }
+        $manifest = $this->cmn_get_runtime_endpoint_policy_manifest();
+        $hook = (string) ($context['hook'] ?? '');
+        $entry = is_array($manifest) && isset($manifest[$hook]) && is_array($manifest[$hook]) ? $manifest[$hook] : null;
+        if (!$entry) {
+            $action = sanitize_key((string) ($context['action'] ?? ''));
+            $is_ajax = !empty($context['is_ajax']);
+            $logged_in = !empty($context['logged_in']);
+            $alt_hook = $is_ajax
+                ? (($logged_in ? 'wp_ajax_nopriv_' : 'wp_ajax_') . $action)
+                : (($logged_in ? 'admin_post_nopriv_' : 'admin_post_') . $action);
+            $alt_hook = sanitize_key($alt_hook);
+            $entry = isset($manifest[$alt_hook]) && is_array($manifest[$alt_hook]) ? $manifest[$alt_hook] : null;
+            if (!$entry) {
+                return;
+            }
+        }
+
+        if (empty($entry['writes_state'])) {
+            return;
+        }
+
+        $nonce_action_candidates = (array) ($entry['nonce_action_candidates'] ?? []);
+        $nonce_templates = (array) ($entry['nonce_action_templates'] ?? []);
+        foreach ($nonce_templates as $template) {
+            if (!is_array($template)) {
+                continue;
+            }
+            $prefix = sanitize_key((string) ($template['prefix'] ?? ''));
+            $id_key = sanitize_key((string) ($template['id_key'] ?? ''));
+            if ($prefix === '' || $id_key === '' || !isset($_REQUEST[$id_key])) {
+                continue;
+            }
+            $id_raw = wp_unslash($_REQUEST[$id_key]);
+            if (is_array($id_raw)) {
+                continue;
+            }
+            $id_value = sanitize_text_field((string) $id_raw);
+            if ($id_value === '') {
+                continue;
+            }
+            $nonce_action_candidates[] = sanitize_key($prefix . $id_value);
+        }
+        $nonce_action_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', $nonce_action_candidates))));
+        $nonce_field_candidates = array_values(array_unique(array_filter(array_map('sanitize_key', (array) ($entry['nonce_field_candidates'] ?? [])))));
+
+        $policy = [
+            'ability_required' => (string) ($entry['ability_required'] ?? ''),
+            'nonce_mode' => (string) ($entry['nonce_mode'] ?? 'not_applicable'),
+            'nonce_action' => (string) ($entry['nonce_action'] ?? ''),
+            'nonce_field' => (string) ($entry['nonce_field'] ?? 'nonce'),
+            'nonce_action_candidates' => $nonce_action_candidates,
+            'nonce_field_candidates' => $nonce_field_candidates,
+            'writes_state' => true,
+            'transport' => (string) ($context['transport'] ?? (wp_doing_ajax() ? 'ajax' : 'admin_post')),
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ];
+
+        if (!empty($entry['public_token_no_nonce']) && empty($entry['rate_limited'])) {
+            $token_value = sanitize_text_field((string) ($_REQUEST['token'] ?? ($_REQUEST['cmn_runner_token'] ?? '')));
+            if ($token_value === '' && isset($_REQUEST['thread_token'])) {
+                $token_value = sanitize_text_field((string) $_REQUEST['thread_token']);
+            }
+            $ip_hash = substr(md5((string) $this->get_request_ip_address()), 0, 12);
+            $token_prefix = substr(md5((string) $token_value), 0, 8);
+            $policy['rate_limit_bucket'] = sanitize_key('ep_' . ((string) ($context['action'] ?? '')) . '_' . $ip_hash . '_' . $token_prefix);
+            $policy['rate_limit_max'] = 80;
+            $policy['rate_limit_window'] = 300;
+        }
+
+        $this->cmn_endpoint_guard($policy, static function () {
+            return true;
+        });
     }
 
     private function render_safe_portal_home_with_access_denied() {
@@ -12203,7 +12726,37 @@ global $wpdb;
             $token = wp_generate_password(48, false, false);
             update_option('cmn_marketing_runner_token', $token, false);
         }
+        $hash = $this->hash_marketing_runner_token($token);
+        if ($hash !== '') {
+            $existing_hash = sanitize_text_field((string) get_option('cmn_marketing_runner_token_hash', ''));
+            if ($existing_hash !== $hash) {
+                update_option('cmn_marketing_runner_token_hash', $hash, false);
+            }
+        }
         return $token;
+    }
+
+    private function hash_marketing_runner_token($token) {
+        $token = trim((string) $token);
+        if ($token === '') {
+            return '';
+        }
+        return hash_hmac('sha256', $token, (string) wp_salt('auth'));
+    }
+
+    private function get_marketing_runner_token_hash() {
+        if (defined('CMN_MARKETING_RUNNER_TOKEN')) {
+            $const_token = trim((string) CMN_MARKETING_RUNNER_TOKEN);
+            if ($const_token !== '') {
+                return $this->hash_marketing_runner_token($const_token);
+            }
+        }
+        $stored_hash = sanitize_text_field((string) get_option('cmn_marketing_runner_token_hash', ''));
+        if ($stored_hash !== '') {
+            return $stored_hash;
+        }
+        $token = $this->get_marketing_runner_token();
+        return $this->hash_marketing_runner_token($token);
     }
 
     private function build_marketing_runner_url($token = '') {
@@ -16379,6 +16932,11 @@ global $wpdb;
         $thread_token = sanitize_text_field((string) ($_POST['thread_token'] ?? ''));
         if ($thread_token === '') {
             wp_send_json_error(['message' => 'Not authorized.'], 403);
+        }
+        $ip_hash = substr(md5((string) $this->get_request_ip_address()), 0, 12);
+        $token_prefix = substr(md5($thread_token), 0, 8);
+        if ($this->is_livechat_rate_limited('feedback_ip_token', $ip_hash . '_' . $token_prefix, 20, 3600)) {
+            wp_send_json_error(['message' => 'Too many requests. Please try again shortly.'], 429);
         }
 
         $thread = $this->get_livechat_thread_by_token($thread_token);
@@ -42474,21 +43032,40 @@ global $wpdb;
         }
         $token = wp_generate_password(48, false, false);
         update_option('cmn_marketing_runner_token', $token, false);
+        update_option('cmn_marketing_runner_token_hash', $this->hash_marketing_runner_token($token), false);
+        delete_option('cmn_marketing_runner_token_expires_at');
         wp_safe_redirect(add_query_arg(['cmn_marketing_runner_msg' => rawurlencode('Marketing runner token regenerated.')], $redirect));
         exit;
     }
 
     public function handle_marketing_runner() {
         $provided = trim((string) ($_REQUEST['cmn_runner_token'] ?? ($_REQUEST['token'] ?? '')));
-        $expected = $this->get_marketing_runner_token();
         $as_json = strtolower(trim((string) ($_REQUEST['format'] ?? 'json'))) === 'json';
-        if ($provided === '' || !hash_equals($expected, $provided)) {
-            status_header(403);
+        $provided_hash = $this->hash_marketing_runner_token($provided);
+        $ip_hash = substr(md5((string) $this->get_request_ip_address()), 0, 12);
+        $token_prefix = substr((string) ($provided_hash !== '' ? $provided_hash : md5($provided)), 0, 8);
+        $rate_bucket = sanitize_key('mktrun_' . $ip_hash . '_' . $token_prefix);
+        $rate_check = $this->cmn_rate_limit($rate_bucket, 40, 300);
+        if (is_wp_error($rate_check)) {
+            status_header(429);
             if ($as_json) {
-                wp_send_json_error(['message' => 'Invalid runner token.'], 403);
+                wp_send_json_error(['message' => 'Too many requests. Please try again shortly.'], 429);
             }
             header('Content-Type: text/plain; charset=utf-8');
-            echo 'Invalid runner token.';
+            echo 'Too many requests.';
+            exit;
+        }
+
+        $expected_hash = $this->get_marketing_runner_token_hash();
+        $expires_at = trim((string) get_option('cmn_marketing_runner_token_expires_at', ''));
+        $token_expired = ($expires_at !== '' && strtotime($expires_at) !== false && strtotime($expires_at) <= current_time('timestamp', true));
+        if ($provided_hash === '' || $expected_hash === '' || !hash_equals($expected_hash, $provided_hash) || $token_expired) {
+            status_header(403);
+            if ($as_json) {
+                wp_send_json_error(['message' => $token_expired ? 'Runner token expired.' : 'Invalid runner token.'], 403);
+            }
+            header('Content-Type: text/plain; charset=utf-8');
+            echo $token_expired ? 'Runner token expired.' : 'Invalid runner token.';
             exit;
         }
         $queue_limit = max(1, min(300, (int) ($_REQUEST['queue_limit'] ?? 30)));
