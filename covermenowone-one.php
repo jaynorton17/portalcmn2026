@@ -10261,6 +10261,11 @@ global $wpdb;
     }
 
     private function count_school_leads_for_navigation($include_needs_attention = true) {
+        $cache_key = 'cmn_nav_leads_' . ($include_needs_attention ? 'with_attention' : 'lead_only');
+        $cached = get_transient($cache_key);
+        if ($cached !== false) {
+            return (int) $cached;
+        }
         $lead_meta_query = [
             [
                 'key' => 'cmn_status',
@@ -10288,13 +10293,20 @@ global $wpdb;
             'no_found_rows' => false,
             'meta_query' => [$lead_meta_query],
         ]);
-        return (int) $query->found_posts;
+        $count = (int) $query->found_posts;
+        set_transient($cache_key, $count, 60);
+        return $count;
     }
 
     private function count_school_status_for_navigation($status) {
         $status = sanitize_key((string) $status);
         if ($status === '') {
             return 0;
+        }
+        $cache_key = 'cmn_nav_status_' . $status;
+        $cached = get_transient($cache_key);
+        if ($cached !== false) {
+            return (int) $cached;
         }
         $query = new WP_Query([
             'post_type' => 'cmn_school',
@@ -10309,7 +10321,9 @@ global $wpdb;
                 ],
             ],
         ]);
-        return (int) $query->found_posts;
+        $count = (int) $query->found_posts;
+        set_transient($cache_key, $count, 60);
+        return $count;
     }
 
     private function get_school_primary_contact_summary($school_id) {
@@ -15332,7 +15346,8 @@ global $wpdb;
             }
         }
         if ($this->is_admin_user($user_id) || $this->is_staff_role($user_id) || $this->is_account_manager_user($user_id)) {
-            return add_query_arg(['view' => 'dashboard'], $portal_base);
+            // Keep staff login fast by landing on lightweight home first.
+            return add_query_arg(['view' => 'home'], $portal_base);
         }
         if ($this->is_candidate_user($user_id)) {
             return add_query_arg(['view' => 'candidate-dashboard'], $portal_base);
@@ -27514,6 +27529,12 @@ global $wpdb;
         if ($view === 'settings') {
             return $this->render_staff_settings_shortcode();
         }
+        if ($view === 'home') {
+            if (!$this->is_staff_user()) {
+                return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to staff users only.</p></div></section>';
+            }
+            return $this->render_staff_home_shortcode();
+        }
         if ($view === 'email-centre' || $view === 'email_centre') {
             return $this->render_staff_email_centre_shortcode();
         }
@@ -27600,6 +27621,46 @@ global $wpdb;
         $this->render_automation_page();
         $inner_html = ob_get_clean();
         return $this->render_staff_shell($tab_to_active[$tab], $inner_html);
+    }
+
+    public function render_staff_home_shortcode() {
+        if (!is_user_logged_in()) {
+            return $this->render_login_shortcode();
+        }
+        if (!$this->is_staff_user()) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access denied</h3><p>You do not have permission to access this page.</p></div></section>';
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $user = wp_get_current_user();
+        $display_name = $user ? trim((string) $user->display_name) : '';
+        if ($display_name === '') {
+            $display_name = 'there';
+        }
+        $is_admin = $this->is_admin_user((int) get_current_user_id());
+
+        ob_start();
+        ?>
+        <div class="cmn-dashboard-row">
+            <section class="cmn-dashboard-card">
+                <div class="cmn-card-header">
+                    <h3>Welcome back, <?php echo esc_html($display_name); ?></h3>
+                </div>
+                <p class="cmn-muted">You are now logged in. Open the full dashboard when you need analytics and totals.</p>
+                <div class="cmn-actions-row">
+                    <a class="cmn-primary" href="<?php echo esc_url(add_query_arg(['view' => 'dashboard'], $portal_url)); ?>">Open Full Dashboard</a>
+                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'support'], $portal_url)); ?>">Open Support</a>
+                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Open Bookings</a>
+                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'schools'], $portal_url)); ?>">Open Schools</a>
+                    <?php if ($is_admin) : ?>
+                        <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'system-health'], $portal_url)); ?>">System Health</a>
+                    <?php endif; ?>
+                </div>
+            </section>
+        </div>
+        <?php
+        $inner_html = (string) ob_get_clean();
+        return $this->render_staff_shell('dashboard', $inner_html);
     }
 
     public function render_staff_dashboard_shortcode() {
