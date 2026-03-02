@@ -110068,13 +110068,19 @@ if (!function_exists('cmn_require_ability')) {
         cmn_log_permission_denied_event($user_id, $ability, $context, $resolved_role);
 
         if ($resolved_role === 'admin' || $resolved_role === 'staff') {
-            error_log(sprintf(
-                'CMN permission denied: user_id=%d role=%s ability=%s context=%s',
-                $user_id,
-                $resolved_role,
-                $ability,
-                wp_json_encode($context)
-            ));
+            // Prevent error-log storms from repeatedly denied admin/staff checks.
+            $context_fingerprint = substr(hash('sha256', wp_json_encode($context)), 0, 12);
+            $throttle_key = 'cmn_perm_denied_log_' . md5($user_id . '|' . $resolved_role . '|' . $ability . '|' . $context_fingerprint);
+            if (!get_transient($throttle_key)) {
+                set_transient($throttle_key, 1, 60);
+                error_log(sprintf(
+                    'CMN permission denied: user_id=%d role=%s ability=%s context=%s',
+                    $user_id,
+                    $resolved_role,
+                    $ability,
+                    wp_json_encode($context)
+                ));
+            }
         }
 
         // Portal-safe message for candidate/school users and generic fallback.
