@@ -1336,14 +1336,14 @@ body.cmn-portal-page img[src*="fasthosts"] {
 }
 
 .cmn-learning-module-tile-icon {
-  width: min(100%, 220px);
-  height: 84px;
+  width: min(100%, 260px);
+  height: 110px;
   border-radius: 12px;
   object-fit: contain;
   object-position: center;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.04);
-  padding: 6px 10px;
+  padding: 4px 8px;
 }
 
 .cmn-learning-module-recommend .cmn-learning-module-tile-icon {
