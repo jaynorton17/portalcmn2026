@@ -9,6 +9,7 @@ CMN_USER_VALUE="${CMN_USER:-${CMN_SFTP_USER:-}}"
 CMN_PATH_VALUE="${CMN_PATH:-${CMN_REMOTE_PLUGIN_DIR:-$DEFAULT_REMOTE_PLUGIN_DIR}}"
 CMN_PORT_VALUE="${CMN_PORT:-${CMN_SFTP_PORT:-22}}"
 CMN_IDENTITY_VALUE="${CMN_KEY:-${CMN_IDENTITY:-}}"
+CMN_PASSFILE_VALUE="${CMN_PASSWORD_FILE:-${CMN_PASSFILE:-}}"
 CMN_VERSION_VALUE="${CMN_VERSION:-}"
 CMN_TOKEN_VALUE="${CMN_TOKEN:-}"
 CMN_SITE_URL_VALUE="${CMN_SITE_URL:-https://covermenow.co.uk}"
@@ -28,6 +29,7 @@ Options:
   --path <path>            Remote plugin path (default: CMN_PATH or $DEFAULT_REMOTE_PLUGIN_DIR)
   --port <port>            SSH port (default: CMN_PORT or 22)
   --key <path>             SSH private key path (default: CMN_KEY or CMN_IDENTITY)
+  --password-file <path>   Password file for sshpass (default: CMN_PASSWORD_FILE/CMN_PASSFILE, then local fallbacks)
   --site-url <url>         Site URL for asset HTTP verification (default: CMN_SITE_URL or https://covermenow.co.uk)
   --dry-run                Print local/remote versions + rsync diff, no upload
   --fix-perms              Apply remote permission fix + verification only (no upload)
@@ -79,6 +81,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --key|--identity)
       CMN_IDENTITY_VALUE="${2:-}"
+      shift 2
+      ;;
+    --password-file)
+      CMN_PASSFILE_VALUE="${2:-}"
       shift 2
       ;;
     --site-url)
@@ -156,6 +162,10 @@ if [[ -n "$CMN_IDENTITY_VALUE" && ! -f "$CMN_IDENTITY_VALUE" ]]; then
   echo "SSH key file not found: $CMN_IDENTITY_VALUE" >&2
   exit 1
 fi
+if [[ -n "$CMN_PASSFILE_VALUE" && ! -f "$CMN_PASSFILE_VALUE" ]]; then
+  echo "Password file not found: $CMN_PASSFILE_VALUE" >&2
+  exit 1
+fi
 if [[ ! "$CMN_SITE_URL_VALUE" =~ ^https?:// ]]; then
   echo "Invalid --site-url value: $CMN_SITE_URL_VALUE" >&2
   exit 1
@@ -221,12 +231,68 @@ fi
 SSH_TARGET="$CMN_USER_VALUE@$CMN_HOST_VALUE"
 
 sshpass_prefix=()
-if [[ -z "$CMN_IDENTITY_VALUE" ]] && command -v sshpass >/dev/null 2>&1; then
+auth_mode="none"
+auth_detail="(using local ssh defaults)"
+if [[ -n "$CMN_IDENTITY_VALUE" ]]; then
+  auth_mode="identity"
+  auth_detail="$CMN_IDENTITY_VALUE"
+elif command -v sshpass >/dev/null 2>&1; then
   if [[ -n "${SFTP_PASS:-}" ]]; then
     export SSHPASS="$SFTP_PASS"
     sshpass_prefix=(sshpass -e)
+    auth_mode="password-env"
+    auth_detail="SFTP_PASS"
+  elif [[ -n "$CMN_PASSFILE_VALUE" ]]; then
+    sshpass_prefix=(sshpass -f "$CMN_PASSFILE_VALUE")
+    auth_mode="password-file"
+    auth_detail="$CMN_PASSFILE_VALUE"
+  elif [[ -f "$SCRIPT_DIR/.covermenowone_sftp_pass" ]]; then
+    sshpass_prefix=(sshpass -f "$SCRIPT_DIR/.covermenowone_sftp_pass")
+    auth_mode="password-file"
+    auth_detail="$SCRIPT_DIR/.covermenowone_sftp_pass"
   elif [[ -f "$HOME/.covermenowone_sftp_pass" ]]; then
     sshpass_prefix=(sshpass -f "$HOME/.covermenowone_sftp_pass")
+    auth_mode="password-file"
+    auth_detail="$HOME/.covermenowone_sftp_pass"
+  else
+    for netrc_file in "$SCRIPT_DIR/.netrc" "$HOME/.netrc"; do
+      [[ -f "$netrc_file" ]] || continue
+      netrc_pass="$(
+        awk -v host="$CMN_HOST_VALUE" -v user="$CMN_USER_VALUE" '
+          BEGIN { in_host=0; login=""; password=""; found=0 }
+          $1=="machine" {
+            if (in_host && login==user && password!="") {
+              print password
+              found=1
+              exit
+            }
+            in_host = ($2==host)
+            login=""
+            password=""
+            next
+          }
+          in_host && $1=="login" { login=$2; next }
+          in_host && $1=="password" { password=$2; next }
+          END {
+            if (!found && in_host && login==user && password!="") {
+              print password
+            }
+          }
+        ' "$netrc_file"
+      )"
+      if [[ -n "$netrc_pass" ]]; then
+        export SSHPASS="$netrc_pass"
+        sshpass_prefix=(sshpass -e)
+        auth_mode="netrc"
+        auth_detail="$netrc_file"
+        break
+      fi
+    done
+  fi
+fi
+if [[ "$auth_mode" == "none" ]]; then
+  if command -v sshpass >/dev/null 2>&1; then
+    auth_detail="no key/password source configured"
   fi
 fi
 
@@ -386,6 +452,7 @@ RSYNC_COMMON_ARGS=(
 )
 
 print_plan "$remote_before_version" "$remote_before_sha" "$local_frontend_sha"
+echo "Auth mode:          $auth_mode ($auth_detail)"
 rsync_preview_output=""
 skip_upload=0
 
