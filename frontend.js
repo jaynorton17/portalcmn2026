@@ -3600,13 +3600,13 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  var warRoomRoot = document.querySelector('[data-war-room-root]');
-  if (warRoomRoot) {
-    var refreshEvery = parseInt(warRoomRoot.getAttribute('data-refresh-seconds') || '10', 10);
+  var afterBookingSupportRoot = document.querySelector('[data-after-booking-support-root], [data-war-room-root]');
+  if (afterBookingSupportRoot) {
+    var refreshEvery = parseInt(afterBookingSupportRoot.getAttribute('data-refresh-seconds') || '10', 10);
     if (!refreshEvery || refreshEvery < 5) {
       refreshEvery = 10;
     }
-    var countdownEls = Array.prototype.slice.call(warRoomRoot.querySelectorAll('[data-war-room-countdown]'));
+    var countdownEls = Array.prototype.slice.call(afterBookingSupportRoot.querySelectorAll('[data-after-booking-support-countdown], [data-war-room-countdown]'));
     var renderCountdown = function () {
       var nowTs = Math.floor(Date.now() / 1000);
       countdownEls.forEach(function (el) {

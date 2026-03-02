@@ -7758,6 +7758,8 @@ global $wpdb;
             'automation',
             'rate-guardrails',
             'rate_guardrails',
+            'after-booking-support',
+            'after_booking_support',
             'war-room',
             'war_room',
             'broadcast',
@@ -11170,7 +11172,7 @@ global $wpdb;
                     ['key' => 'requests', 'label' => 'New Booking', 'icon' => 'bookings', 'url' => add_query_arg(['view' => 'requests'], $portal_url), 'active_keys' => ['requests']],
                     ['key' => 'bookings', 'label' => 'Live / Upcoming', 'icon' => 'active_bookings', 'url' => add_query_arg(['view' => 'bookings', 'cmn_status' => false], $portal_url), 'active_keys' => ['bookings', 'active_bookings']],
                     ['key' => 'bookings_completed', 'label' => 'Completed', 'icon' => 'completion_rates', 'url' => add_query_arg(['view' => 'bookings', 'cmn_status' => 'completed'], $portal_url), 'active_when' => ['view' => 'bookings', 'query' => ['cmn_status' => 'completed']]],
-                    $is_admin ? ['key' => 'war_room', 'label' => 'Cancellations / Issues', 'icon' => 'escalations', 'url' => add_query_arg(['view' => 'war-room'], $portal_url)] : ['key' => 'feedback_insights', 'label' => 'Cancellations / Issues', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url)],
+                    $is_admin ? ['key' => 'after_booking_support', 'label' => 'After Booking Support Team', 'icon' => 'escalations', 'url' => add_query_arg(['view' => 'after-booking-support'], $portal_url)] : ['key' => 'feedback_insights', 'label' => 'After Booking Support Team', 'icon' => 'feedback', 'url' => add_query_arg(['view' => 'feedback-insights'], $portal_url)],
                 ])),
             ],
             'commercial' => [
@@ -27956,8 +27958,8 @@ global $wpdb;
         if ($view === 'rate-guardrails' || $view === 'rate_guardrails') {
             return $this->render_staff_rate_guardrails_shortcode();
         }
-        if ($view === 'war-room' || $view === 'war_room') {
-            return $this->render_staff_war_room_shortcode();
+        if (in_array($view, ['after-booking-support', 'after_booking_support', 'war-room', 'war_room'], true)) {
+            return $this->render_staff_after_booking_support_shortcode();
         }
         if ($view === 'broadcast') {
             return $this->render_staff_broadcast_shortcode();
@@ -31213,7 +31215,7 @@ global $wpdb;
         exit;
     }
 
-    private function get_war_room_column_key($request) {
+    private function get_after_booking_support_column_key($request) {
         $status = $this->normalize_request_status((string) ($request['status'] ?? self::REQUEST_STATUS_REQUESTED), self::REQUEST_STATUS_REQUESTED);
         if ($status === self::REQUEST_STATUS_PENDING) {
             $status = self::REQUEST_STATUS_REQUESTED;
@@ -31249,12 +31251,12 @@ global $wpdb;
         return 'pending';
     }
 
-    public function render_staff_war_room_shortcode() {
+    public function render_staff_after_booking_support_shortcode() {
         if (!is_user_logged_in()) {
             return $this->render_login_shortcode();
         }
         if (!$this->is_admin_user()) {
-            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>War Room is available to admins only.</p></div></section>';
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>After Booking Support Team is available to admins only.</p></div></section>';
         }
 
         $portal_url = $this->get_portal_base_url();
@@ -31268,7 +31270,7 @@ global $wpdb;
         ];
 
         foreach ($requests as $request) {
-            $key = $this->get_war_room_column_key($request);
+            $key = $this->get_after_booking_support_column_key($request);
             if (!isset($columns[$key])) {
                 $key = 'pending';
             }
@@ -31280,20 +31282,20 @@ global $wpdb;
         <header class="cmn-school-header cmn-dashboard-header">
             <div class="cmn-header-row">
                 <div>
-                    <h2>Booking War Room</h2>
+                    <h2>After Booking Support Team</h2>
                     <p>Live booking operations board. Refreshes every 10 seconds.</p>
                 </div>
                 <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'requests'], $portal_url)); ?>">Open Requests</a>
             </div>
         </header>
-        <section class="cmn-war-room" data-war-room-root data-refresh-seconds="10">
+        <section class="cmn-after-booking-support" data-after-booking-support-root data-refresh-seconds="10">
             <?php foreach ($columns as $column_key => $column) : ?>
-                <div class="cmn-war-room-column" data-war-room-column="<?php echo esc_attr($column_key); ?>">
-                    <div class="cmn-war-room-column-head">
+                <div class="cmn-after-booking-support-column" data-after-booking-support-column="<?php echo esc_attr($column_key); ?>">
+                    <div class="cmn-after-booking-support-column-head">
                         <h3><?php echo esc_html($column['label']); ?></h3>
                         <span class="cmn-status-chip"><?php echo esc_html((string) count($column['items'])); ?></span>
                     </div>
-                    <div class="cmn-war-room-cards">
+                    <div class="cmn-after-booking-support-cards">
                         <?php if (!$column['items']) : ?>
                             <div class="cmn-empty">No items.</div>
                         <?php else : ?>
@@ -31314,16 +31316,16 @@ global $wpdb;
                                 }
                                 $view_url = add_query_arg(['view' => 'requests', 'cmn_status' => $view_status], $portal_url);
                                 ?>
-                                <article class="cmn-war-room-card">
-                                    <div class="cmn-war-room-line"><strong><?php echo esc_html($school_name); ?></strong></div>
-                                    <div class="cmn-war-room-line"><?php echo esc_html($candidate_name); ?></div>
-                                    <div class="cmn-war-room-line">Day rate: <strong>GBP <?php echo esc_html(number_format((float) $charge_rate, 2)); ?></strong></div>
+                                <article class="cmn-after-booking-support-card">
+                                    <div class="cmn-after-booking-support-line"><strong><?php echo esc_html($school_name); ?></strong></div>
+                                    <div class="cmn-after-booking-support-line"><?php echo esc_html($candidate_name); ?></div>
+                                    <div class="cmn-after-booking-support-line">Day rate: <strong>GBP <?php echo esc_html(number_format((float) $charge_rate, 2)); ?></strong></div>
                                     <?php if ($column_key === 'pending') : ?>
-                                        <div class="cmn-war-room-line cmn-war-room-countdown" data-war-room-countdown<?php echo $expires_ts > 0 ? ' data-expires-ts="' . esc_attr((string) $expires_ts) . '"' : ''; ?>>
+                                        <div class="cmn-after-booking-support-line cmn-after-booking-support-countdown" data-after-booking-support-countdown<?php echo $expires_ts > 0 ? ' data-expires-ts="' . esc_attr((string) $expires_ts) . '"' : ''; ?>>
                                             <?php echo esc_html($expires_ts > 0 ? 'Calculating...' : 'No timer'); ?>
                                         </div>
                                     <?php endif; ?>
-                                    <div class="cmn-war-room-actions">
+                                    <div class="cmn-after-booking-support-actions">
                                         <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($view_url); ?>">View</a>
                                         <?php if (in_array($column_key, ['pending', 'expired'], true) && $request_id > 0) : ?>
                                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
@@ -31350,7 +31352,7 @@ global $wpdb;
             <?php endforeach; ?>
         </section>
         <?php
-        return $this->render_staff_shell('war_room', ob_get_clean());
+        return $this->render_staff_shell('after_booking_support', ob_get_clean());
     }
 
     private function get_client_school_options() {

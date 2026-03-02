@@ -10006,12 +10006,14 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   }
 }
 
+.cmn-after-booking-support,
 .cmn-war-room {
   display: grid;
   grid-template-columns: repeat(5, minmax(220px, 1fr));
   gap: 12px;
 }
 
+.cmn-after-booking-support-column,
 .cmn-war-room-column {
   border: 1px solid var(--cmn-border);
   border-radius: 14px;
@@ -10021,6 +10023,7 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   flex-direction: column;
 }
 
+.cmn-after-booking-support-column-head,
 .cmn-war-room-column-head {
   display: flex;
   align-items: center;
@@ -10030,11 +10033,13 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   border-bottom: 1px solid var(--cmn-border);
 }
 
+.cmn-after-booking-support-column-head h3,
 .cmn-war-room-column-head h3 {
   margin: 0;
   font-size: 15px;
 }
 
+.cmn-after-booking-support-cards,
 .cmn-war-room-cards {
   padding: 10px;
   display: grid;
@@ -10042,6 +10047,7 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   align-content: start;
 }
 
+.cmn-after-booking-support-card,
 .cmn-war-room-card {
   border: 1px solid var(--cmn-border);
   border-radius: 10px;
@@ -10051,19 +10057,23 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   gap: 6px;
 }
 
+.cmn-after-booking-support-line,
 .cmn-war-room-line {
   font-size: 12px;
   color: var(--cmn-text);
 }
 
+.cmn-after-booking-support-countdown,
 .cmn-war-room-countdown {
   color: #f3be8b;
 }
 
+.cmn-after-booking-support-countdown.is-expired,
 .cmn-war-room-countdown.is-expired {
   color: #f19b9b;
 }
 
+.cmn-after-booking-support-actions,
 .cmn-war-room-actions {
   display: flex;
   flex-wrap: wrap;
@@ -10072,18 +10082,21 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 }
 
 @media (max-width: 1400px) {
+  .cmn-after-booking-support,
   .cmn-war-room {
     grid-template-columns: repeat(3, minmax(220px, 1fr));
   }
 }
 
 @media (max-width: 980px) {
+  .cmn-after-booking-support,
   .cmn-war-room {
     grid-template-columns: repeat(2, minmax(220px, 1fr));
   }
 }
 
 @media (max-width: 680px) {
+  .cmn-after-booking-support,
   .cmn-war-room {
     grid-template-columns: 1fr;
   }
