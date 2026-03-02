@@ -1336,8 +1336,8 @@ body.cmn-portal-page img[src*="fasthosts"] {
 }
 
 .cmn-learning-module-tile-icon {
-  width: min(100%, 260px);
-  height: 110px;
+  width: 100%;
+  height: 220px;
   border-radius: 12px;
   object-fit: contain;
   object-position: center;
