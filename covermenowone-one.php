@@ -605,7 +605,7 @@ final class CmnFeedbackInsights {
 final class CMN_One_Plugin {
     const VERSION = '0.1.25';
     const SCHEMA_BASE_VERSION = 38;
-    const SCHEMA_VERSION = 74;
+    const SCHEMA_VERSION = 75;
     const OFFER_EXPIRY_SECONDS = 900;
     const EMAIL_CANDIDATE_DECLINED = false;
     const AUTOMATION_DEFAULT_COOLDOWN_HOURS = 24;
@@ -1755,6 +1755,11 @@ final class CMN_One_Plugin {
         if ($installed < 74) {
             self::migrate_schema_v74_job_locks_and_hot_indexes();
             $installed = 74;
+            update_option('cmn_schema_version', $installed, false);
+        }
+        if ($installed < 75) {
+            self::migrate_schema_v75_heartbeat_hotspot_indexes();
+            $installed = 75;
             update_option('cmn_schema_version', $installed, false);
         }
             if ($installed < self::SCHEMA_VERSION) {
@@ -5546,6 +5551,133 @@ global $wpdb;
                 $candidate_requests_table,
                 'idx_school_candidate_date',
                 "KEY idx_school_candidate_date (school_id, candidate_id, requested_date)"
+            );
+        }
+    }
+
+    /*
+     * v75 heartbeat/list query hotspot index checks:
+     * 1) Chat timeline fetches avoid filesorts by using thread/date composite indexes.
+     * 2) Candidate request list/status feeds use status+requested_at and scope+requested_at composites.
+     * 3) Migration remains idempotent and safe with add-if-missing index guards.
+     */
+    private static function migrate_schema_v75_heartbeat_hotspot_indexes() {
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+        global $wpdb;
+
+        $booking_messages_table = $wpdb->prefix . 'cmn_booking_messages';
+        if (
+            self::table_exists($booking_messages_table)
+            && self::table_has_column($booking_messages_table, 'thread_id')
+            && self::table_has_column($booking_messages_table, 'created_at')
+            && self::table_has_column($booking_messages_table, 'id')
+        ) {
+            self::maybe_add_missing_index(
+                $booking_messages_table,
+                'idx_thread_created_id',
+                "KEY idx_thread_created_id (thread_id, created_at, id)"
+            );
+        }
+
+        $staff_lounge_table = $wpdb->prefix . 'cmn_staff_lounge_messages';
+        if (
+            self::table_exists($staff_lounge_table)
+            && self::table_has_column($staff_lounge_table, 'thread_type')
+            && self::table_has_column($staff_lounge_table, 'created_at')
+            && self::table_has_column($staff_lounge_table, 'id')
+        ) {
+            self::maybe_add_missing_index(
+                $staff_lounge_table,
+                'idx_thread_created_id',
+                "KEY idx_thread_created_id (thread_type, created_at, id)"
+            );
+        }
+
+        $candidate_requests_table = $wpdb->prefix . 'cmn_candidate_requests';
+        if (self::table_exists($candidate_requests_table)) {
+            if (
+                self::table_has_column($candidate_requests_table, 'status')
+                && self::table_has_column($candidate_requests_table, 'requested_at')
+                && self::table_has_column($candidate_requests_table, 'id')
+            ) {
+                self::maybe_add_missing_index(
+                    $candidate_requests_table,
+                    'idx_status_requested_at',
+                    "KEY idx_status_requested_at (status, requested_at, id)"
+                );
+            }
+            if (
+                self::table_has_column($candidate_requests_table, 'school_email_domain')
+                && self::table_has_column($candidate_requests_table, 'requested_at')
+                && self::table_has_column($candidate_requests_table, 'id')
+            ) {
+                self::maybe_add_missing_index(
+                    $candidate_requests_table,
+                    'idx_school_domain_requested_at',
+                    "KEY idx_school_domain_requested_at (school_email_domain, requested_at, id)"
+                );
+            }
+            if (
+                self::table_has_column($candidate_requests_table, 'candidate_id')
+                && self::table_has_column($candidate_requests_table, 'requested_at')
+                && self::table_has_column($candidate_requests_table, 'id')
+            ) {
+                self::maybe_add_missing_index(
+                    $candidate_requests_table,
+                    'idx_candidate_requested_at',
+                    "KEY idx_candidate_requested_at (candidate_id, requested_at, id)"
+                );
+            }
+            if (
+                self::table_has_column($candidate_requests_table, 'school_id')
+                && self::table_has_column($candidate_requests_table, 'status')
+                && self::table_has_column($candidate_requests_table, 'requested_at')
+                && self::table_has_column($candidate_requests_table, 'id')
+            ) {
+                self::maybe_add_missing_index(
+                    $candidate_requests_table,
+                    'idx_school_status_requested_at',
+                    "KEY idx_school_status_requested_at (school_id, status, requested_at, id)"
+                );
+            }
+            if (
+                self::table_has_column($candidate_requests_table, 'school_user_id')
+                && self::table_has_column($candidate_requests_table, 'status')
+                && self::table_has_column($candidate_requests_table, 'requested_at')
+                && self::table_has_column($candidate_requests_table, 'id')
+            ) {
+                self::maybe_add_missing_index(
+                    $candidate_requests_table,
+                    'idx_school_user_status_requested_at',
+                    "KEY idx_school_user_status_requested_at (school_user_id, status, requested_at, id)"
+                );
+            }
+            if (
+                self::table_has_column($candidate_requests_table, 'status')
+                && self::table_has_column($candidate_requests_table, 'expires_at')
+                && self::table_has_column($candidate_requests_table, 'id')
+            ) {
+                self::maybe_add_missing_index(
+                    $candidate_requests_table,
+                    'idx_status_expires_at',
+                    "KEY idx_status_expires_at (status, expires_at, id)"
+                );
+            }
+        }
+
+        $booking_threads_table = $wpdb->prefix . 'cmn_booking_threads';
+        if (
+            self::table_exists($booking_threads_table)
+            && self::table_has_column($booking_threads_table, 'status')
+            && self::table_has_column($booking_threads_table, 'created_at')
+            && self::table_has_column($booking_threads_table, 'id')
+        ) {
+            self::maybe_add_missing_index(
+                $booking_threads_table,
+                'idx_status_created_id',
+                "KEY idx_status_created_id (status, created_at, id)"
             );
         }
     }
@@ -22920,15 +23052,30 @@ global $wpdb;
         $allowed = [
             'notifications',
             'live_matches',
+            'support_ticket',
             'support_tickets',
+            'booking_chat',
             'booking_chats',
             'staff_lounge',
+            'account_manager_badge',
             'account_manager_chat_status',
+            'presence_touch',
+        ];
+        $canonical_map = [
+            'support_tickets' => 'support_ticket',
+            'support_ticket' => 'support_ticket',
+            'booking_chats' => 'booking_chat',
+            'booking_chat' => 'booking_chat',
+            'account_manager_chat_status' => 'account_manager_badge',
+            'account_manager_badge' => 'account_manager_badge',
         ];
         $requested = $this->cmn_heartbeat_parse_request_string_list($raw_channels, 20);
         $channels = [];
         foreach ($requested as $requested_channel) {
             if (in_array($requested_channel, $allowed, true)) {
+                if (isset($canonical_map[$requested_channel])) {
+                    $requested_channel = $canonical_map[$requested_channel];
+                }
                 $channels[$requested_channel] = $requested_channel;
             }
         }
@@ -22940,16 +23087,16 @@ global $wpdb;
             $channels['live_matches'] = 'live_matches';
         }
         if (!empty($context['support_ticket_ids'])) {
-            $channels['support_tickets'] = 'support_tickets';
+            $channels['support_ticket'] = 'support_ticket';
         }
         if (!empty($context['booking_thread_ids'])) {
-            $channels['booking_chats'] = 'booking_chats';
+            $channels['booking_chat'] = 'booking_chat';
         }
         if (!empty($context['staff_lounge_thread_types'])) {
             $channels['staff_lounge'] = 'staff_lounge';
         }
-        if (!empty($context['include_account_manager_chat_status'])) {
-            $channels['account_manager_chat_status'] = 'account_manager_chat_status';
+        if (!empty($context['include_account_manager_badge'])) {
+            $channels['account_manager_badge'] = 'account_manager_badge';
         }
 
         return array_values($channels);
@@ -23160,23 +23307,38 @@ global $wpdb;
     private function cmn_heartbeat_touch_presence_coalesced($actor_user_id) {
         $actor_user_id = (int) $actor_user_id;
         if ($actor_user_id < 1) {
-            return;
+            return [
+                'touched' => 0,
+                'role' => '',
+                'touched_at' => 0,
+            ];
         }
+        $payload = [
+            'touched' => 0,
+            'role' => '',
+            'touched_at' => (int) current_time('timestamp', true),
+        ];
         if ($this->is_staff_user($actor_user_id)) {
             $touch_key = 'cmn_hb_touch_staff_' . $actor_user_id;
+            $payload['role'] = 'staff';
             if (!get_transient($touch_key)) {
                 $this->touch_staff_presence($actor_user_id, false);
                 set_transient($touch_key, 1, 30);
+                $payload['touched'] = 1;
             }
-            return;
+            return $payload;
         }
         if ($this->is_candidate_user($actor_user_id)) {
             $touch_key = 'cmn_hb_touch_candidate_' . $actor_user_id;
+            $payload['role'] = 'candidate';
             if (!get_transient($touch_key)) {
                 $this->touch_candidate_presence($actor_user_id, false);
                 set_transient($touch_key, 1, 20);
+                $payload['touched'] = 1;
             }
+            return $payload;
         }
+        return $payload;
     }
 
     public function handle_portal_heartbeat() {
@@ -23203,7 +23365,7 @@ global $wpdb;
             return;
         }
 
-        $this->cmn_heartbeat_touch_presence_coalesced($actor_user_id);
+        $presence_touch_payload = $this->cmn_heartbeat_touch_presence_coalesced($actor_user_id);
 
         $view_context = sanitize_key((string) ($_POST['view_context'] ?? 'dashboard'));
         if ($view_context === '') {
@@ -23214,7 +23376,10 @@ global $wpdb;
         $support_ticket_ids = $this->cmn_heartbeat_parse_request_int_list($_POST['support_ticket_ids'] ?? ($_POST['support_ticket_id'] ?? []), 25);
         $booking_thread_ids = $this->cmn_heartbeat_parse_request_int_list($_POST['booking_thread_ids'] ?? ($_POST['booking_thread_id'] ?? []), 25);
         $staff_lounge_thread_types = $this->cmn_heartbeat_parse_request_string_list($_POST['staff_lounge_thread_types'] ?? ($_POST['staff_lounge_thread_type'] ?? []), 10);
-        $include_account_manager_chat_status = !empty($_POST['include_account_manager_chat_status']) && (string) $_POST['include_account_manager_chat_status'] !== '0';
+        $include_account_manager_badge = (
+            (!empty($_POST['include_account_manager_chat_status']) && (string) $_POST['include_account_manager_chat_status'] !== '0')
+            || (!empty($_POST['include_account_manager_badge']) && (string) $_POST['include_account_manager_badge'] !== '0')
+        );
         $support_since_message_id = max(0, (int) ($_POST['support_since_message_id'] ?? 0));
         $booking_chat_since_message_id = max(0, (int) ($_POST['booking_chat_since_message_id'] ?? 0));
         $staff_lounge_since_message_id = max(0, (int) ($_POST['staff_lounge_since_message_id'] ?? 0));
@@ -23224,7 +23389,7 @@ global $wpdb;
             'support_ticket_ids' => $support_ticket_ids,
             'booking_thread_ids' => $booking_thread_ids,
             'staff_lounge_thread_types' => $staff_lounge_thread_types,
-            'include_account_manager_chat_status' => $include_account_manager_chat_status,
+            'include_account_manager_badge' => $include_account_manager_badge,
         ]);
 
         $deltas = [];
@@ -23289,8 +23454,8 @@ global $wpdb;
             $deltas['live_match_offers'] = (array) ($live_match_payload['offers'] ?? []);
         }
 
-        if (in_array('support_tickets', $channels, true) && !empty($support_ticket_ids)) {
-            $deltas['support_tickets'] = $this->cmn_heartbeat_get_cached_channel_payload('support_tickets', [
+        if (in_array('support_ticket', $channels, true) && !empty($support_ticket_ids)) {
+            $support_delta = $this->cmn_heartbeat_get_cached_channel_payload('support_ticket', [
                 'user_id' => $actor_user_id,
                 'ticket_ids' => $support_ticket_ids,
                 'since_message_id' => $support_since_message_id,
@@ -23304,10 +23469,12 @@ global $wpdb;
                 }
                 return $ticket_map;
             }, 3);
+            $deltas['support_ticket'] = $support_delta;
+            $deltas['support_tickets'] = $support_delta;
         }
 
-        if (in_array('booking_chats', $channels, true) && !empty($booking_thread_ids)) {
-            $deltas['booking_chats'] = $this->cmn_heartbeat_get_cached_channel_payload('booking_chats', [
+        if (in_array('booking_chat', $channels, true) && !empty($booking_thread_ids)) {
+            $booking_chat_delta = $this->cmn_heartbeat_get_cached_channel_payload('booking_chat', [
                 'user_id' => $actor_user_id,
                 'thread_ids' => $booking_thread_ids,
                 'since_message_id' => $booking_chat_since_message_id,
@@ -23321,6 +23488,8 @@ global $wpdb;
                 }
                 return $thread_map;
             }, 3);
+            $deltas['booking_chat'] = $booking_chat_delta;
+            $deltas['booking_chats'] = $booking_chat_delta;
         }
 
         if (in_array('staff_lounge', $channels, true) && !empty($staff_lounge_thread_types)) {
@@ -23340,25 +23509,31 @@ global $wpdb;
             }, 3);
         }
 
-        if (in_array('account_manager_chat_status', $channels, true) && $this->is_school_user($actor_user_id)) {
-            $deltas['account_manager_chat_status'] = $this->cmn_heartbeat_get_cached_channel_payload('account_manager_chat_status', [
+        if (in_array('account_manager_badge', $channels, true) && $this->is_school_user($actor_user_id)) {
+            $badge_delta = $this->cmn_heartbeat_get_cached_channel_payload('account_manager_badge', [
                 'user_id' => $actor_user_id,
                 'since_event_id' => $since_event_id,
             ], function () use ($actor_user_id) {
                 return $this->cmn_get_account_manager_chat_heartbeat_payload($actor_user_id) ?: [];
             }, 3);
+            $deltas['account_manager_badge'] = $badge_delta;
+            $deltas['account_manager_chat_status'] = $badge_delta;
         }
 
-        if (!empty($deltas['support_tickets']) && is_array($deltas['support_tickets'])) {
-            foreach ($deltas['support_tickets'] as $ticket_payload) {
+        if (in_array('presence_touch', $channels, true)) {
+            $deltas['presence_touch'] = $presence_touch_payload;
+        }
+
+        if (!empty($deltas['support_ticket']) && is_array($deltas['support_ticket'])) {
+            foreach ($deltas['support_ticket'] as $ticket_payload) {
                 $latest_message_id = (int) ($ticket_payload['latest_message_id'] ?? 0);
                 if ($latest_message_id > $event_id_latest) {
                     $event_id_latest = $latest_message_id;
                 }
             }
         }
-        if (!empty($deltas['booking_chats']) && is_array($deltas['booking_chats'])) {
-            foreach ($deltas['booking_chats'] as $thread_payload) {
+        if (!empty($deltas['booking_chat']) && is_array($deltas['booking_chat'])) {
+            foreach ($deltas['booking_chat'] as $thread_payload) {
                 $latest_message_id = (int) ($thread_payload['latest_message_id'] ?? 0);
                 if ($latest_message_id > $event_id_latest) {
                     $event_id_latest = $latest_message_id;

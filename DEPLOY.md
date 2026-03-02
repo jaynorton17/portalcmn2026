@@ -41,4 +41,6 @@ Verification checks:
 - `CMN_TOKEN`
 - `SFTP_PASS`
 
+Copy `.env.example` to your local env file format if you prefer env-based deploys.
+
 No deploy secrets should be committed to git.

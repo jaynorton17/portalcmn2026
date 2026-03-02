@@ -607,7 +607,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var supportTicketIds = [];
       var bookingThreadIds = [];
       var staffLoungeThreadTypes = [];
-      var includeAccountManagerChatStatus = false;
+      var includeAccountManagerBadge = false;
       var supportSinceMessageId = 0;
       var bookingChatSinceMessageId = 0;
       var staffLoungeSinceMessageId = 0;
@@ -651,8 +651,8 @@ document.addEventListener('DOMContentLoaded', function () {
         supportTicketIds = supportTicketIds.concat(normalizeIntList(req.support_ticket_ids, 25));
         bookingThreadIds = bookingThreadIds.concat(normalizeIntList(req.booking_thread_ids, 25));
         staffLoungeThreadTypes = staffLoungeThreadTypes.concat(normalizeStringList(req.staff_lounge_thread_types, 10));
-        if (req.include_account_manager_chat_status) {
-          includeAccountManagerChatStatus = true;
+        if (req.include_account_manager_chat_status || req.include_account_manager_badge) {
+          includeAccountManagerBadge = true;
         }
         supportSinceMessageId = Math.max(supportSinceMessageId, parseInt(String(req.support_since_message_id || '0'), 10) || 0);
         bookingChatSinceMessageId = Math.max(bookingChatSinceMessageId, parseInt(String(req.booking_chat_since_message_id || '0'), 10) || 0);
@@ -675,7 +675,8 @@ document.addEventListener('DOMContentLoaded', function () {
         support_ticket_ids: supportTicketIds,
         booking_thread_ids: bookingThreadIds,
         staff_lounge_thread_types: staffLoungeThreadTypes,
-        include_account_manager_chat_status: includeAccountManagerChatStatus ? 1 : 0,
+        include_account_manager_chat_status: includeAccountManagerBadge ? 1 : 0,
+        include_account_manager_badge: includeAccountManagerBadge ? 1 : 0,
         support_since_message_id: supportSinceMessageId,
         booking_chat_since_message_id: bookingChatSinceMessageId,
         staff_lounge_since_message_id: staffLoungeSinceMessageId,
@@ -727,6 +728,9 @@ document.addEventListener('DOMContentLoaded', function () {
       });
       if (payload.include_account_manager_chat_status) {
         formData.append('include_account_manager_chat_status', '1');
+      }
+      if (payload.include_account_manager_badge) {
+        formData.append('include_account_manager_badge', '1');
       }
       if (payload.support_since_message_id > 0) {
         formData.append('support_since_message_id', String(payload.support_since_message_id));
@@ -6521,7 +6525,7 @@ document.addEventListener('DOMContentLoaded', function () {
       };
       if (cmnHeartbeatManager && cmnHeartbeatManager.enabled) {
         cmnHeartbeatManager.register('cmn-support-realtime-' + String(supportRootIndex || 0), {
-          channels: ['support_tickets'],
+          channels: ['support_ticket'],
           view_context: 'support',
           buildRequest: function () {
             var ticketIds = activeTicketId ? [activeTicketId] : [];
@@ -6534,9 +6538,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!activeTicketId || isInsightsModalOpen) {
               return;
             }
-            var supportMap = deltas && deltas.support_tickets && typeof deltas.support_tickets === 'object'
-              ? deltas.support_tickets
-              : {};
+            var supportMap = deltas && deltas.support_ticket && typeof deltas.support_ticket === 'object'
+              ? deltas.support_ticket
+              : (deltas && deltas.support_tickets && typeof deltas.support_tickets === 'object'
+                ? deltas.support_tickets
+                : {});
             var payload = supportMap[String(activeTicketId)] || null;
             if (!payload || !payload.ticket) {
               return;
@@ -6661,15 +6667,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
       if (cmnHeartbeatManager && cmnHeartbeatManager.enabled) {
         cmnHeartbeatManager.register('cmn-school-account-manager-chat-' + String(launcherIndex || 0), {
-          channels: ['account_manager_chat_status'],
+          channels: ['account_manager_badge'],
           view_context: 'support',
           buildRequest: function () {
             return {
-              include_account_manager_chat_status: 1,
+              include_account_manager_badge: 1,
             };
           },
           onDelta: function (deltas) {
-            var statusPayload = deltas && deltas.account_manager_chat_status ? deltas.account_manager_chat_status : null;
+            var statusPayload = deltas && deltas.account_manager_badge
+              ? deltas.account_manager_badge
+              : (deltas && deltas.account_manager_chat_status ? deltas.account_manager_chat_status : null);
             if (!statusPayload || typeof statusPayload !== 'object') {
               return;
             }
@@ -8616,7 +8624,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       if (cmnHeartbeatManager && cmnHeartbeatManager.enabled) {
         cmnHeartbeatManager.register('cmn-booking-chat-' + String(threadId) + '-' + String(bookingChatIndex || 0), {
-          channels: ['booking_chats'],
+          channels: ['booking_chat'],
           view_context: 'bookings',
           buildRequest: function () {
             return {
@@ -8625,9 +8633,11 @@ document.addEventListener('DOMContentLoaded', function () {
             };
           },
           onDelta: function (deltas) {
-            var threadMap = deltas && deltas.booking_chats && typeof deltas.booking_chats === 'object'
-              ? deltas.booking_chats
-              : {};
+            var threadMap = deltas && deltas.booking_chat && typeof deltas.booking_chat === 'object'
+              ? deltas.booking_chat
+              : (deltas && deltas.booking_chats && typeof deltas.booking_chats === 'object'
+                ? deltas.booking_chats
+                : {});
             var payload = threadMap[String(threadId)] || null;
             if (!payload) {
               return;
