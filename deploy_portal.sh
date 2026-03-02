@@ -387,13 +387,18 @@ RSYNC_COMMON_ARGS=(
 
 print_plan "$remote_before_version" "$remote_before_sha" "$local_frontend_sha"
 rsync_preview_output=""
+skip_upload=0
 
 if [[ "$FIX_PERMS_ONLY" == "1" ]]; then
+  skip_upload=1
   echo "Mode: fix-perms (no upload)."
+  echo "UPLOAD SKIPPED (fix-perms mode)"
   echo "Applying remote permission fix..."
   remote_fix_permissions "$CMN_PATH_VALUE"
 elif [[ "$VERIFY_ONLY" == "1" ]]; then
+  skip_upload=1
   echo "Mode: verify-only (no upload)."
+  echo "UPLOAD SKIPPED (verify-only mode)"
 else
   rsync_preview_output="$(run_rsync "${RSYNC_COMMON_ARGS[@]}" --dry-run "$stage_dir/" "$SSH_TARGET:$CMN_PATH_VALUE/")"
   print_diff_list "$remote_path_exists" "$rsync_preview_output"
@@ -404,7 +409,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-if [[ "$VERIFY_ONLY" != "1" && "$FIX_PERMS_ONLY" != "1" ]]; then
+if [[ "$skip_upload" == "0" ]]; then
   echo "Ensuring remote plugin path exists..."
   run_ssh "mkdir -p '$CMN_PATH_VALUE'"
 
@@ -425,6 +430,8 @@ if [[ "$VERIFY_ONLY" != "1" && "$FIX_PERMS_ONLY" != "1" ]]; then
   else
     echo "Release token not supplied; skipped release endpoint update."
   fi
+else
+  echo "Upload phase bypassed."
 fi
 
 if [[ "$VERIFY_MODE" != "1" ]]; then
