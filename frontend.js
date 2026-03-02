@@ -390,12 +390,30 @@ document.addEventListener('DOMContentLoaded', function () {
       task.timer = null;
     };
 
+    var getTaskBaseDelay = function (task) {
+      if (!task) {
+        return 5000;
+      }
+      var raw = document.hidden ? task.hiddenIntervalMs : task.intervalMs;
+      var parsed = parseInt(raw || 0, 10) || 0;
+      if (parsed < 500) {
+        parsed = 5000;
+      }
+      return parsed;
+    };
+
     var getTaskDelay = function (task) {
+      var baseDelay = task && task.nextDelayMs
+        ? Math.max(500, parseInt(task.nextDelayMs, 10) || 0)
+        : getTaskBaseDelay(task);
+      if (task) {
+        task.nextDelayMs = 0;
+      }
       if (!task || !task.backoffOnError || task.errorCount < 1) {
-        return task && task.intervalMs ? task.intervalMs : 5000;
+        return baseDelay;
       }
       var factor = Math.pow(2, Math.max(0, task.errorCount - 1));
-      return Math.min(task.maxIntervalMs || 120000, Math.round(task.intervalMs * factor));
+      return Math.min(task.maxIntervalMs || 120000, Math.round(baseDelay * factor));
     };
 
     var scheduleTask = function (task) {
@@ -431,8 +449,14 @@ document.addEventListener('DOMContentLoaded', function () {
         runResult = Promise.reject(error);
       }
       return Promise.resolve(runResult)
-        .then(function () {
+        .then(function (result) {
           task.errorCount = 0;
+          if (result && typeof result === 'object') {
+            var hintedDelay = parseInt(String(result.next_poll_ms || result.nextPollMs || '0'), 10) || 0;
+            if (hintedDelay > 0) {
+              task.nextDelayMs = Math.min(task.maxIntervalMs || 120000, Math.max(500, hintedDelay));
+            }
+          }
           return true;
         })
         .catch(function () {
@@ -461,12 +485,14 @@ document.addEventListener('DOMContentLoaded', function () {
         key: key,
         callback: options.callback,
         intervalMs: Math.max(500, parseInt(options.intervalMs || 5000, 10) || 5000),
+        hiddenIntervalMs: Math.max(500, parseInt(options.hiddenIntervalMs || options.intervalMs || 5000, 10) || 5000),
         maxIntervalMs: Math.max(1000, parseInt(options.maxIntervalMs || 120000, 10) || 120000),
         visibleOnly: options.visibleOnly !== false,
         triggerOnFocus: options.triggerOnFocus !== false,
         triggerOnVisibility: options.triggerOnVisibility !== false,
         backoffOnError: options.backoffOnError !== false,
         immediate: options.immediate !== false,
+        nextDelayMs: 0,
         timer: null,
         inFlight: false,
         errorCount: 0,
@@ -515,7 +541,9 @@ document.addEventListener('DOMContentLoaded', function () {
           if (isHidden) {
             if (task.visibleOnly) {
               clearTaskTimer(task);
+              return;
             }
+            scheduleTask(task);
             return;
           }
           if (task.triggerOnVisibility) {
@@ -553,6 +581,10 @@ document.addEventListener('DOMContentLoaded', function () {
       && window.cmnPortal.ajaxUrl
       && window.cmnPortal.portalHeartbeatNonce
     );
+    var heartbeatShadowMode = !!(
+      window.cmnPortal
+      && Number(window.cmnPortal.heartbeatShadowEnabled || 0) === 1
+    );
     if (!heartbeatEnabled) {
       return null;
     }
@@ -561,6 +593,212 @@ document.addEventListener('DOMContentLoaded', function () {
     var taskRegistered = false;
     var cursor = 0;
     var inFlight = false;
+    var heartbeatRequestTimestamps = [];
+    var runtimeDisabled = false;
+    var disableMeta = {
+      code: '',
+      message: '',
+    };
+    var publicApi = null;
+
+    var isHeartbeatDebugEnabled = function () {
+      var portalDebug = (
+        window.cmnPortal
+        && typeof window.cmnPortal === 'object'
+        && Object.prototype.hasOwnProperty.call(window.cmnPortal, 'debugHeartbeat')
+      ) ? window.cmnPortal.debugHeartbeat : 0;
+      if (portalDebug === true || portalDebug === 1) {
+        return true;
+      }
+      var normalizedPortal = String(portalDebug == null ? '' : portalDebug).trim().toLowerCase();
+      if (normalizedPortal === '1' || normalizedPortal === 'true' || normalizedPortal === 'yes' || normalizedPortal === 'on') {
+        return true;
+      }
+
+      var raw = (typeof window !== 'undefined') ? window.CMN_DEBUG_HEARTBEAT : 0;
+      if (raw === true || raw === 1) {
+        return true;
+      }
+      var normalized = String(raw == null ? '' : raw).trim().toLowerCase();
+      return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+    };
+
+    var recordHeartbeatRpmDebug = function (debugMeta) {
+      if (!isHeartbeatDebugEnabled()) {
+        return;
+      }
+      var now = Date.now();
+      var phase = (debugMeta && debugMeta.phase) ? String(debugMeta.phase) : '';
+      if (phase === 'request') {
+        heartbeatRequestTimestamps.push(now);
+      }
+      while (heartbeatRequestTimestamps.length && (now - heartbeatRequestTimestamps[0]) > 60000) {
+        heartbeatRequestTimestamps.shift();
+      }
+      var rpm = heartbeatRequestTimestamps.length;
+      var output = Object.assign({
+        rpm: rpm,
+        at: new Date(now).toISOString(),
+      }, (debugMeta && typeof debugMeta === 'object') ? debugMeta : {});
+      if (window.console && typeof window.console.info === 'function') {
+        window.console.info('[CMN Heartbeat]', output);
+      }
+    };
+
+    var runSubscriberDisableFallbacks = function (meta) {
+      Object.keys(subscribers).forEach(function (key) {
+        var sub = subscribers[key];
+        if (!sub || typeof sub !== 'object') {
+          return;
+        }
+        if (sub.__legacyFallbackTriggered) {
+          return;
+        }
+        if (typeof sub.onDisable !== 'function') {
+          return;
+        }
+        sub.__legacyFallbackTriggered = true;
+        try {
+          sub.onDisable(meta || {});
+        } catch (error) {
+          // Fallback callback failures should never break other subscribers.
+        }
+      });
+    };
+
+    var disableHeartbeatForLegacyFallback = function (code, message) {
+      if (runtimeDisabled) {
+        return;
+      }
+      runtimeDisabled = true;
+      disableMeta = {
+        code: String(code || 'heartbeat_disabled'),
+        message: String(message || 'Portal heartbeat disabled; switching to legacy polling.'),
+      };
+      if (window.cmnPortal && typeof window.cmnPortal === 'object') {
+        window.cmnPortal.heartbeatEnabled = 0;
+      }
+      if (publicApi && typeof publicApi === 'object') {
+        publicApi.enabled = false;
+      }
+
+      runSubscriberDisableFallbacks(disableMeta);
+      if (typeof window.CustomEvent === 'function') {
+        try {
+          window.dispatchEvent(new window.CustomEvent('cmn:portal-heartbeat-disabled', {
+            detail: disableMeta,
+          }));
+        } catch (error) {
+          // Ignore custom event dispatch failures.
+        }
+      }
+      recordHeartbeatRpmDebug({
+        phase: 'disabled',
+        code: disableMeta.code,
+        message: disableMeta.message,
+      });
+      if (window.console && typeof window.console.warn === 'function') {
+        window.console.warn('[CMN Heartbeat] disabled; using legacy polling', disableMeta);
+      }
+    };
+
+    var extractHeartbeatDisabledMeta = function (responsePayload) {
+      if (!responsePayload || typeof responsePayload !== 'object') {
+        return null;
+      }
+
+      if (responsePayload.ok === false && responsePayload.error && typeof responsePayload.error === 'object') {
+        var directCode = String(responsePayload.error.code || '').trim().toLowerCase();
+        if (directCode === 'heartbeat_disabled') {
+          return {
+            code: directCode,
+            message: String(responsePayload.error.message || 'Portal heartbeat disabled.'),
+          };
+        }
+      }
+
+      if (responsePayload.success === false) {
+        var source = null;
+        if (responsePayload.data && typeof responsePayload.data === 'object') {
+          if (responsePayload.data.error && typeof responsePayload.data.error === 'object') {
+            source = responsePayload.data.error;
+          } else {
+            source = responsePayload.data;
+          }
+        }
+        if (source && typeof source === 'object') {
+          var wrappedCode = String(source.code || '').trim().toLowerCase();
+          if (wrappedCode === 'heartbeat_disabled') {
+            return {
+              code: wrappedCode,
+              message: String(source.message || 'Portal heartbeat disabled.'),
+            };
+          }
+        }
+      }
+
+      return null;
+    };
+
+    var isDeltaValueNonEmpty = function (value) {
+      if (value == null) {
+        return false;
+      }
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      if (typeof value === 'object') {
+        var keys = Object.keys(value);
+        if (!keys.length) {
+          return false;
+        }
+        for (var i = 0; i < keys.length; i++) {
+          if (isDeltaValueNonEmpty(value[keys[i]])) {
+            return true;
+          }
+        }
+        return false;
+      }
+      if (typeof value === 'number') {
+        return value !== 0;
+      }
+      if (typeof value === 'boolean') {
+        return value;
+      }
+      return String(value).trim() !== '';
+    };
+
+    var getUpdatedDeltaKeys = function (deltas, rowCounts) {
+      var updated = [];
+      var seen = {};
+      var pushUnique = function (key) {
+        key = String(key || '').trim();
+        if (!key || seen[key]) {
+          return;
+        }
+        seen[key] = true;
+        updated.push(key);
+      };
+
+      if (rowCounts && typeof rowCounts === 'object') {
+        Object.keys(rowCounts).forEach(function (key) {
+          var parsed = parseInt(String(rowCounts[key] || '0'), 10) || 0;
+          if (parsed > 0) {
+            pushUnique(key);
+          }
+        });
+      }
+
+      if (!updated.length && deltas && typeof deltas === 'object') {
+        Object.keys(deltas).forEach(function (key) {
+          if (isDeltaValueNonEmpty(deltas[key])) {
+            pushUnique(key);
+          }
+        });
+      }
+
+      return updated;
+    };
 
     var normalizeIntList = function (value, maxCount) {
       var out = [];
@@ -600,18 +838,72 @@ document.addEventListener('DOMContentLoaded', function () {
       return out;
     };
 
+    var normalizeHeartbeatFlag = function (value) {
+      if (value === true || value === 1) {
+        return true;
+      }
+      if (value === false || value === 0 || value == null) {
+        return false;
+      }
+      if (typeof value === 'string') {
+        var normalized = value.trim().toLowerCase();
+        return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+      }
+      return !!value;
+    };
+
     var buildRequestPayload = function () {
-      var channels = [];
+      var requestedChannels = {};
       var viewContext = 'dashboard';
       var candidateIds = [];
       var supportTicketIds = [];
       var bookingThreadIds = [];
       var staffLoungeThreadTypes = [];
+      var supportTicketCursorMap = {};
+      var bookingChatCursorMap = {};
+      var staffLoungeCursorMap = {};
       var includeAccountManagerBadge = false;
+      var includePresenceTouch = false;
+      var presenceTouch = { candidate: 0, staff: 0 };
       var supportSinceMessageId = 0;
       var bookingChatSinceMessageId = 0;
       var staffLoungeSinceMessageId = 0;
-      var seen = {};
+      var notificationsLastId = Math.max(0, parseInt(String(cursor || '0'), 10) || 0);
+
+      var addChannel = function (channelName) {
+        var normalized = String(channelName || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '');
+        if (!normalized) {
+          return;
+        }
+        if (normalized === 'support_tickets') {
+          normalized = 'support_ticket';
+        } else if (normalized === 'booking_chats') {
+          normalized = 'booking_chat';
+        } else if (normalized === 'account_manager_chat_status') {
+          normalized = 'account_manager_badge';
+        }
+        requestedChannels[normalized] = true;
+      };
+
+      var mergePresenceTouch = function (rawPresence) {
+        if (!rawPresence) {
+          return;
+        }
+        includePresenceTouch = true;
+        if (typeof rawPresence === 'object') {
+          if (normalizeHeartbeatFlag(rawPresence.candidate)) {
+            presenceTouch.candidate = 1;
+          }
+          if (normalizeHeartbeatFlag(rawPresence.staff)) {
+            presenceTouch.staff = 1;
+          }
+          return;
+        }
+        if (normalizeHeartbeatFlag(rawPresence)) {
+          presenceTouch.candidate = 1;
+          presenceTouch.staff = 1;
+        }
+      };
 
       Object.keys(subscribers).forEach(function (key) {
         var sub = subscribers[key];
@@ -627,18 +919,98 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         }
 
+        var reqChannelsObject = (req.channels && typeof req.channels === 'object' && !Array.isArray(req.channels))
+          ? req.channels
+          : {};
+        if (Object.keys(reqChannelsObject).length) {
+          Object.keys(reqChannelsObject).forEach(function (channelKey) {
+            var channelValue = reqChannelsObject[channelKey];
+            var normalizedKey = String(channelKey || '').trim().toLowerCase();
+            if (!normalizedKey) {
+              return;
+            }
+            if (normalizedKey === 'presence_touch') {
+              mergePresenceTouch(channelValue);
+              addChannel('presence_touch');
+              return;
+            }
+            if (normalizedKey === 'support_ticket_id') {
+              var supportTicketSingle = parseInt(String(channelValue || '0'), 10) || 0;
+              if (supportTicketSingle > 0) {
+                supportTicketIds.push(supportTicketSingle);
+                addChannel('support_ticket');
+              }
+              return;
+            }
+            if (normalizedKey === 'support_ticket_ids') {
+              supportTicketIds = supportTicketIds.concat(normalizeIntList(channelValue, 25));
+              if (Array.isArray(channelValue) && channelValue.length) {
+                addChannel('support_ticket');
+              }
+              return;
+            }
+            if (normalizedKey === 'booking_thread_id') {
+              var bookingThreadSingle = parseInt(String(channelValue || '0'), 10) || 0;
+              if (bookingThreadSingle > 0) {
+                bookingThreadIds.push(bookingThreadSingle);
+                addChannel('booking_chat');
+              }
+              return;
+            }
+            if (normalizedKey === 'booking_thread_ids') {
+              bookingThreadIds = bookingThreadIds.concat(normalizeIntList(channelValue, 25));
+              if (Array.isArray(channelValue) && channelValue.length) {
+                addChannel('booking_chat');
+              }
+              return;
+            }
+            if (normalizedKey === 'staff_lounge_thread_type') {
+              staffLoungeThreadTypes = staffLoungeThreadTypes.concat(normalizeStringList([channelValue], 10));
+              if (String(channelValue || '').trim() !== '') {
+                addChannel('staff_lounge');
+              }
+              return;
+            }
+            if (normalizedKey === 'staff_lounge_thread_types') {
+              staffLoungeThreadTypes = staffLoungeThreadTypes.concat(normalizeStringList(channelValue, 10));
+              if (Array.isArray(channelValue) && channelValue.length) {
+                addChannel('staff_lounge');
+              }
+              return;
+            }
+            if (normalizedKey === 'account_manager_badge' || normalizedKey === 'account_manager_chat_status') {
+              if (normalizeHeartbeatFlag(channelValue)) {
+                includeAccountManagerBadge = true;
+                addChannel('account_manager_badge');
+              }
+              return;
+            }
+            if (normalizedKey === 'candidate_ids') {
+              candidateIds = candidateIds.concat(normalizeIntList(channelValue, 120));
+              if (Array.isArray(channelValue) && channelValue.length) {
+                addChannel('live_matches');
+              }
+              return;
+            }
+            if (normalizeHeartbeatFlag(channelValue)) {
+              addChannel(normalizedKey);
+            }
+          });
+        }
+
         var subChannels = [];
         if (Array.isArray(sub.channels) && sub.channels.length) {
           subChannels = sub.channels;
         } else if (Array.isArray(req.channels) && req.channels.length) {
           subChannels = req.channels;
+        } else if (Object.keys(reqChannelsObject).length) {
+          subChannels = Object.keys(reqChannelsObject);
         }
-        normalizeStringList(subChannels, 20).forEach(function (channel) {
-          if (seen[channel]) {
+        normalizeStringList(subChannels, 25).forEach(function (channel) {
+          if (!channel) {
             return;
           }
-          seen[channel] = true;
-          channels.push(channel);
+          addChannel(channel);
         });
 
         if (!viewContext && req.view_context) {
@@ -648,29 +1020,205 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         candidateIds = candidateIds.concat(normalizeIntList(req.candidate_ids, 120));
-        supportTicketIds = supportTicketIds.concat(normalizeIntList(req.support_ticket_ids, 25));
-        bookingThreadIds = bookingThreadIds.concat(normalizeIntList(req.booking_thread_ids, 25));
-        staffLoungeThreadTypes = staffLoungeThreadTypes.concat(normalizeStringList(req.staff_lounge_thread_types, 10));
+        var reqSupportTicketIds = normalizeIntList(req.support_ticket_ids, 25);
+        var reqSupportTicketId = parseInt(String(req.support_ticket_id || '0'), 10) || 0;
+        if (reqSupportTicketId > 0) {
+          reqSupportTicketIds.push(reqSupportTicketId);
+        }
+        var reqBookingThreadIds = normalizeIntList(req.booking_thread_ids, 25);
+        var reqBookingThreadId = parseInt(String(req.booking_thread_id || '0'), 10) || 0;
+        if (reqBookingThreadId > 0) {
+          reqBookingThreadIds.push(reqBookingThreadId);
+        }
+        var reqStaffLoungeThreadTypes = normalizeStringList(req.staff_lounge_thread_types, 10);
+        if (req.staff_lounge_thread_type) {
+          reqStaffLoungeThreadTypes = reqStaffLoungeThreadTypes.concat(normalizeStringList([req.staff_lounge_thread_type], 10));
+        }
+        supportTicketIds = supportTicketIds.concat(reqSupportTicketIds);
+        bookingThreadIds = bookingThreadIds.concat(reqBookingThreadIds);
+        staffLoungeThreadTypes = staffLoungeThreadTypes.concat(reqStaffLoungeThreadTypes);
         if (req.include_account_manager_chat_status || req.include_account_manager_badge) {
           includeAccountManagerBadge = true;
+          addChannel('account_manager_badge');
         }
-        supportSinceMessageId = Math.max(supportSinceMessageId, parseInt(String(req.support_since_message_id || '0'), 10) || 0);
-        bookingChatSinceMessageId = Math.max(bookingChatSinceMessageId, parseInt(String(req.booking_chat_since_message_id || '0'), 10) || 0);
-        staffLoungeSinceMessageId = Math.max(staffLoungeSinceMessageId, parseInt(String(req.staff_lounge_since_message_id || '0'), 10) || 0);
+
+        mergePresenceTouch(req.presence_touch);
+
+        var reqSupportCursor = parseInt(String(req.support_since_message_id || '0'), 10) || 0;
+        var reqBookingCursor = parseInt(String(req.booking_chat_since_message_id || '0'), 10) || 0;
+        var reqLoungeCursor = parseInt(String(req.staff_lounge_since_message_id || '0'), 10) || 0;
+        var reqSince = (req.since && typeof req.since === 'object' && !Array.isArray(req.since)) ? req.since : {};
+        reqSupportCursor = Math.max(reqSupportCursor, parseInt(String(reqSince.support_last_message_id || '0'), 10) || 0);
+        reqBookingCursor = Math.max(reqBookingCursor, parseInt(String(reqSince.booking_last_message_id || '0'), 10) || 0);
+        reqLoungeCursor = Math.max(reqLoungeCursor, parseInt(String(reqSince.staff_lounge_last_message_id || '0'), 10) || 0);
+        notificationsLastId = Math.max(
+          notificationsLastId,
+          parseInt(String(req.notifications_last_id || '0'), 10) || 0,
+          parseInt(String(reqSince.notifications_last_id || '0'), 10) || 0
+        );
+        supportSinceMessageId = Math.max(supportSinceMessageId, reqSupportCursor);
+        bookingChatSinceMessageId = Math.max(bookingChatSinceMessageId, reqBookingCursor);
+        staffLoungeSinceMessageId = Math.max(staffLoungeSinceMessageId, reqLoungeCursor);
+
+        reqSupportTicketIds.forEach(function (ticketId) {
+          if (!supportTicketCursorMap[ticketId] || reqSupportCursor > supportTicketCursorMap[ticketId]) {
+            supportTicketCursorMap[ticketId] = reqSupportCursor;
+          }
+        });
+        reqBookingThreadIds.forEach(function (threadId) {
+          if (!bookingChatCursorMap[threadId] || reqBookingCursor > bookingChatCursorMap[threadId]) {
+            bookingChatCursorMap[threadId] = reqBookingCursor;
+          }
+        });
+        reqStaffLoungeThreadTypes.forEach(function (threadType) {
+          if (!staffLoungeCursorMap[threadType] || reqLoungeCursor > staffLoungeCursorMap[threadType]) {
+            staffLoungeCursorMap[threadType] = reqLoungeCursor;
+          }
+        });
+
+        if (req.support_ticket_cursor_map && typeof req.support_ticket_cursor_map === 'object') {
+          Object.keys(req.support_ticket_cursor_map).forEach(function (rawKey) {
+            var ticketId = parseInt(String(rawKey || '0'), 10) || 0;
+            var cursorValue = parseInt(String(req.support_ticket_cursor_map[rawKey] || '0'), 10) || 0;
+            if (ticketId < 1) {
+              return;
+            }
+            supportTicketIds.push(ticketId);
+            if (!supportTicketCursorMap[ticketId] || cursorValue > supportTicketCursorMap[ticketId]) {
+              supportTicketCursorMap[ticketId] = cursorValue;
+            }
+          });
+        }
+        if (req.booking_chat_cursor_map && typeof req.booking_chat_cursor_map === 'object') {
+          Object.keys(req.booking_chat_cursor_map).forEach(function (rawKey) {
+            var threadId = parseInt(String(rawKey || '0'), 10) || 0;
+            var cursorValue = parseInt(String(req.booking_chat_cursor_map[rawKey] || '0'), 10) || 0;
+            if (threadId < 1) {
+              return;
+            }
+            bookingThreadIds.push(threadId);
+            if (!bookingChatCursorMap[threadId] || cursorValue > bookingChatCursorMap[threadId]) {
+              bookingChatCursorMap[threadId] = cursorValue;
+            }
+          });
+        }
+        if (req.staff_lounge_cursor_map && typeof req.staff_lounge_cursor_map === 'object') {
+          Object.keys(req.staff_lounge_cursor_map).forEach(function (rawKey) {
+            var threadType = String(rawKey || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '');
+            var cursorValue = parseInt(String(req.staff_lounge_cursor_map[rawKey] || '0'), 10) || 0;
+            if (!threadType) {
+              return;
+            }
+            staffLoungeThreadTypes.push(threadType);
+            if (!staffLoungeCursorMap[threadType] || cursorValue > staffLoungeCursorMap[threadType]) {
+              staffLoungeCursorMap[threadType] = cursorValue;
+            }
+          });
+        }
       });
 
       candidateIds = normalizeIntList(candidateIds, 120);
       supportTicketIds = normalizeIntList(supportTicketIds, 25);
       bookingThreadIds = normalizeIntList(bookingThreadIds, 25);
       staffLoungeThreadTypes = normalizeStringList(staffLoungeThreadTypes, 10);
+      supportTicketIds.forEach(function (ticketId) {
+        if (typeof supportTicketCursorMap[ticketId] !== 'number') {
+          supportTicketCursorMap[ticketId] = supportSinceMessageId;
+        }
+      });
+      bookingThreadIds.forEach(function (threadId) {
+        if (typeof bookingChatCursorMap[threadId] !== 'number') {
+          bookingChatCursorMap[threadId] = bookingChatSinceMessageId;
+        }
+      });
+      staffLoungeThreadTypes.forEach(function (threadType) {
+        if (typeof staffLoungeCursorMap[threadType] !== 'number') {
+          staffLoungeCursorMap[threadType] = staffLoungeSinceMessageId;
+        }
+      });
 
-      if (!channels.length) {
-        channels.push('notifications');
+      if (candidateIds.length) {
+        addChannel('live_matches');
       }
+      if (supportTicketIds.length) {
+        addChannel('support_ticket');
+      }
+      if (bookingThreadIds.length) {
+        addChannel('booking_chat');
+      }
+      if (staffLoungeThreadTypes.length) {
+        addChannel('staff_lounge');
+      }
+      if (includeAccountManagerBadge) {
+        addChannel('account_manager_badge');
+      }
+      if (includePresenceTouch) {
+        addChannel('presence_touch');
+      }
+      if (!Object.keys(requestedChannels).length) {
+        addChannel('notifications');
+      }
+
+      var channelsPayload = {};
+      if (requestedChannels.notifications) {
+        channelsPayload.notifications = true;
+      }
+      if (requestedChannels.live_matches) {
+        channelsPayload.live_matches = true;
+      }
+      if (requestedChannels.support_ticket) {
+        channelsPayload.support_ticket = true;
+        if (supportTicketIds.length === 1) {
+          channelsPayload.support_ticket_id = supportTicketIds[0];
+        } else if (supportTicketIds.length > 1) {
+          channelsPayload.support_ticket_ids = supportTicketIds.slice();
+        }
+      }
+      if (requestedChannels.booking_chat) {
+        channelsPayload.booking_chat = true;
+        if (bookingThreadIds.length === 1) {
+          channelsPayload.booking_thread_id = bookingThreadIds[0];
+        } else if (bookingThreadIds.length > 1) {
+          channelsPayload.booking_thread_ids = bookingThreadIds.slice();
+        }
+      }
+      if (requestedChannels.staff_lounge) {
+        channelsPayload.staff_lounge = true;
+        if (staffLoungeThreadTypes.length === 1) {
+          channelsPayload.staff_lounge_thread_type = staffLoungeThreadTypes[0];
+        } else if (staffLoungeThreadTypes.length > 1) {
+          channelsPayload.staff_lounge_thread_types = staffLoungeThreadTypes.slice();
+        }
+      }
+      if (requestedChannels.account_manager_badge) {
+        channelsPayload.account_manager_badge = true;
+      }
+      if (requestedChannels.presence_touch) {
+        var presencePayload = {
+          candidate: presenceTouch.candidate ? 1 : 0,
+          staff: presenceTouch.staff ? 1 : 0,
+        };
+        if (!presencePayload.candidate && !presencePayload.staff) {
+          presencePayload.candidate = 1;
+          presencePayload.staff = 1;
+        }
+        channelsPayload.presence_touch = presencePayload;
+      }
+
+      var activeChannelNames = Object.keys(requestedChannels).filter(function (channelName) {
+        return !!requestedChannels[channelName];
+      });
 
       return {
         view_context: viewContext || 'dashboard',
-        channels: channels,
+        channels: channelsPayload,
+        since: {
+          notifications_last_id: notificationsLastId,
+          support_last_message_id: supportSinceMessageId,
+          booking_last_message_id: bookingChatSinceMessageId,
+          staff_lounge_last_message_id: staffLoungeSinceMessageId,
+        },
+        channel_names: activeChannelNames,
         candidate_ids: candidateIds,
         support_ticket_ids: supportTicketIds,
         booking_thread_ids: bookingThreadIds,
@@ -680,6 +1228,9 @@ document.addEventListener('DOMContentLoaded', function () {
         support_since_message_id: supportSinceMessageId,
         booking_chat_since_message_id: bookingChatSinceMessageId,
         staff_lounge_since_message_id: staffLoungeSinceMessageId,
+        support_ticket_cursor_map: supportTicketCursorMap,
+        booking_chat_cursor_map: bookingChatCursorMap,
+        staff_lounge_cursor_map: staffLoungeCursorMap,
       };
     };
 
@@ -695,6 +1246,9 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     var run = function () {
+      if (runtimeDisabled) {
+        return Promise.resolve(false);
+      }
       if (inFlight) {
         return Promise.resolve(false);
       }
@@ -703,7 +1257,8 @@ document.addEventListener('DOMContentLoaded', function () {
         return Promise.resolve(false);
       }
       var payload = buildRequestPayload();
-      if (!payload.channels.length) {
+      var activeChannels = Array.isArray(payload.channel_names) ? payload.channel_names : Object.keys(payload.channels || {});
+      if (!activeChannels.length) {
         return Promise.resolve(false);
       }
       var formData = new FormData();
@@ -711,9 +1266,8 @@ document.addEventListener('DOMContentLoaded', function () {
       formData.append('nonce', window.cmnPortal.portalHeartbeatNonce || '');
       formData.append('view_context', payload.view_context);
       formData.append('since_event_id', String(cursor || 0));
-      payload.channels.forEach(function (channel) {
-        formData.append('channels[]', String(channel));
-      });
+      formData.append('channels', JSON.stringify(payload.channels || {}));
+      formData.append('since', JSON.stringify(payload.since || {}));
       payload.candidate_ids.forEach(function (id) {
         formData.append('candidate_ids[]', String(id));
       });
@@ -741,6 +1295,19 @@ document.addEventListener('DOMContentLoaded', function () {
       if (payload.staff_lounge_since_message_id > 0) {
         formData.append('staff_lounge_since_message_id', String(payload.staff_lounge_since_message_id));
       }
+      if (payload.support_ticket_cursor_map && Object.keys(payload.support_ticket_cursor_map).length) {
+        formData.append('support_ticket_cursor_map', JSON.stringify(payload.support_ticket_cursor_map));
+      }
+      if (payload.booking_chat_cursor_map && Object.keys(payload.booking_chat_cursor_map).length) {
+        formData.append('booking_chat_cursor_map', JSON.stringify(payload.booking_chat_cursor_map));
+      }
+      if (payload.staff_lounge_cursor_map && Object.keys(payload.staff_lounge_cursor_map).length) {
+        formData.append('staff_lounge_cursor_map', JSON.stringify(payload.staff_lounge_cursor_map));
+      }
+      recordHeartbeatRpmDebug({
+        phase: 'request',
+        channels: activeChannels,
+      });
 
       inFlight = true;
       return fetch(window.cmnPortal.ajaxUrl, {
@@ -748,8 +1315,23 @@ document.addEventListener('DOMContentLoaded', function () {
         credentials: 'same-origin',
         body: formData,
       }).then(function (response) {
-        return response.json();
-      }).then(function (data) {
+        return response.json().catch(function () {
+          return null;
+        }).then(function (jsonPayload) {
+          return {
+            status: parseInt(String(response.status || '0'), 10) || 0,
+            payload: jsonPayload,
+          };
+        });
+      }).then(function (responseEnvelope) {
+        var data = responseEnvelope && typeof responseEnvelope === 'object'
+          ? responseEnvelope.payload
+          : null;
+        var disabledMeta = extractHeartbeatDisabledMeta(data);
+        if (disabledMeta) {
+          disableHeartbeatForLegacyFallback(disabledMeta.code, disabledMeta.message);
+          return false;
+        }
         if (!data || !data.success || !data.data) {
           return false;
         }
@@ -758,13 +1340,45 @@ document.addEventListener('DOMContentLoaded', function () {
         if (eventIdLatest > 0) {
           cursor = eventIdLatest;
         }
+        var nextPollMs = parseInt(String(hbPayload.next_poll_ms || '0'), 10) || 0;
         var detail = {
+          server_time: parseInt(String(hbPayload.server_time || '0'), 10) || 0,
+          next_poll_ms: nextPollMs,
+          unchanged: !!hbPayload.unchanged,
           event_id_latest: cursor,
           since_event_id: parseInt(String(hbPayload.since_event_id || '0'), 10) || 0,
           view_context: String(hbPayload.view_context || payload.view_context || 'dashboard'),
-          channels: Array.isArray(hbPayload.channels) ? hbPayload.channels : payload.channels,
+          channels: Array.isArray(hbPayload.channels) ? hbPayload.channels : activeChannels,
           deltas: (hbPayload.deltas && typeof hbPayload.deltas === 'object') ? hbPayload.deltas : {},
+          duration_ms: parseInt(String(hbPayload.duration_ms || '0'), 10) || 0,
+          cache_hit_channels: Array.isArray(hbPayload.cache_hit_channels) ? hbPayload.cache_hit_channels : [],
+          row_counts: (hbPayload.row_counts && typeof hbPayload.row_counts === 'object')
+            ? hbPayload.row_counts
+            : (((hbPayload.meta && hbPayload.meta.row_counts) && typeof hbPayload.meta.row_counts === 'object') ? hbPayload.meta.row_counts : {}),
+          meta: (hbPayload.meta && typeof hbPayload.meta === 'object') ? hbPayload.meta : {},
         };
+        recordHeartbeatRpmDebug({
+          phase: 'response',
+          channels: detail.channels || [],
+          duration_ms: parseInt(String(detail.duration_ms || ((detail.meta && detail.meta.duration_ms) || '0')), 10) || 0,
+          row_counts: (detail.row_counts && typeof detail.row_counts === 'object') ? detail.row_counts : {},
+          cache_hit: (detail.meta && detail.meta.cache_hit) ? detail.meta.cache_hit : {},
+          next_poll_ms: detail.next_poll_ms || 0,
+          unchanged: detail.unchanged ? 1 : 0,
+        });
+        var updatedDeltaKeys = getUpdatedDeltaKeys(detail.deltas, detail.row_counts);
+        if (isHeartbeatDebugEnabled() && window.console && typeof window.console.debug === 'function') {
+          var keysLabel = updatedDeltaKeys.length ? updatedDeltaKeys.join(',') : '-';
+          var msValue = parseInt(String(detail.duration_ms || ((detail.meta && detail.meta.duration_ms) || '0')), 10) || 0;
+          window.console.debug('HB ok next=' + String(detail.next_poll_ms || 0) + ' unchanged=' + (detail.unchanged ? '1' : '0') + ' keys=' + keysLabel + ' ms=' + String(msValue));
+        }
+        if (heartbeatShadowMode) {
+          return {
+            ok: true,
+            shadow: true,
+            next_poll_ms: nextPollMs,
+          };
+        }
         emitHeartbeat(detail);
         Object.keys(subscribers).forEach(function (key) {
           var sub = subscribers[key];
@@ -777,8 +1391,15 @@ document.addEventListener('DOMContentLoaded', function () {
             // Subscriber failures should not crash heartbeat polling.
           }
         });
-        return true;
+        return {
+          ok: true,
+          next_poll_ms: nextPollMs,
+        };
       }).catch(function () {
+        recordHeartbeatRpmDebug({
+          phase: 'error',
+          channels: activeChannels,
+        });
         return false;
       }).finally(function () {
         inFlight = false;
@@ -792,31 +1413,56 @@ document.addEventListener('DOMContentLoaded', function () {
       taskRegistered = true;
       if (cmnPollManager) {
         cmnPollManager.register({
-          key: 'cmn-portal-heartbeat-global',
-          intervalMs: 4000,
-          maxIntervalMs: 20000,
+          key: 'cmn-portal-heartbeat',
+          intervalMs: heartbeatShadowMode ? 20000 : 5000,
+          hiddenIntervalMs: heartbeatShadowMode ? 30000 : 20000,
+          maxIntervalMs: 60000,
           callback: run,
-          visibleOnly: true,
+          visibleOnly: false,
           triggerOnFocus: true,
           triggerOnVisibility: true,
           backoffOnError: true,
           immediate: true,
         });
       } else {
-        run();
-        window.setInterval(function () {
-          if (document.hidden) {
-            return;
+        var fallbackDelayMs = heartbeatShadowMode ? 20000 : 5000;
+        var fallbackMaxDelayMs = 60000;
+        var fallbackTimerId = 0;
+        var scheduleFallback = function (delayMs) {
+          if (fallbackTimerId) {
+            window.clearTimeout(fallbackTimerId);
           }
-          run();
-        }, 4000);
+          fallbackTimerId = window.setTimeout(function () {
+            Promise.resolve(run()).then(function (result) {
+              var hinted = result && typeof result === 'object'
+                ? (parseInt(String(result.next_poll_ms || result.nextPollMs || '0'), 10) || 0)
+                : 0;
+              if (hinted > 0) {
+                fallbackDelayMs = Math.min(fallbackMaxDelayMs, Math.max(500, hinted));
+                return;
+              }
+              if (result === false) {
+                fallbackDelayMs = Math.min(fallbackMaxDelayMs, Math.round(fallbackDelayMs * 2));
+                return;
+              }
+              fallbackDelayMs = document.hidden
+                ? (heartbeatShadowMode ? 30000 : 20000)
+                : (heartbeatShadowMode ? 20000 : 5000);
+            }).finally(function () {
+              scheduleFallback(fallbackDelayMs);
+            });
+          }, Math.max(100, parseInt(delayMs || 0, 10) || 0));
+        };
+        scheduleFallback(0);
         document.addEventListener('visibilitychange', function () {
-          if (!document.hidden) {
-            run();
-          }
+          fallbackDelayMs = document.hidden
+            ? (heartbeatShadowMode ? 30000 : 20000)
+            : (heartbeatShadowMode ? 20000 : 5000);
+          scheduleFallback(100);
         });
         window.addEventListener('focus', function () {
-          run();
+          fallbackDelayMs = heartbeatShadowMode ? 20000 : 5000;
+          scheduleFallback(100);
         });
       }
     };
@@ -826,19 +1472,42 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!normalizedKey) {
         return function () {};
       }
-      subscribers[normalizedKey] = options && typeof options === 'object' ? options : {};
+      var normalizedOptions = options && typeof options === 'object' ? options : {};
+      if (runtimeDisabled) {
+        if (typeof normalizedOptions.onDisable === 'function') {
+          try {
+            normalizedOptions.onDisable(disableMeta);
+          } catch (error) {
+            // Ignore subscriber fallback bootstrap failures.
+          }
+        }
+        return function () {};
+      }
+      subscribers[normalizedKey] = normalizedOptions;
       ensureTask();
       return function () {
         delete subscribers[normalizedKey];
       };
     };
 
-    return {
+    publicApi = {
       enabled: true,
+      shadowMode: heartbeatShadowMode,
       register: registerSubscriber,
       trigger: run,
     };
+    return publicApi;
   })();
+
+  var cmnResolveLegacyPollIntervalMs = function (baseMs, heartbeatMs) {
+    var base = Math.max(250, parseInt(baseMs || 0, 10) || 0);
+    var heartbeat = Math.max(base, parseInt(heartbeatMs || base, 10) || base);
+    var heartbeatEnabled = !!(
+      window.cmnPortal
+      && Number(window.cmnPortal.heartbeatEnabled || 0) === 1
+    );
+    return heartbeatEnabled ? heartbeat : base;
+  };
 
   var staffNav = document.querySelector('[data-staff-nav]');
   if (staffNav) {
@@ -4661,25 +5330,14 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
 
-    var heartbeatSharedNotifications = false;
-    if (notificationsApiReady && cmnHeartbeatManager && cmnHeartbeatManager.enabled) {
-      heartbeatSharedNotifications = true;
-      cmnHeartbeatManager.register('cmn-notifications', {
-        channels: ['notifications'],
-        view_context: 'notifications',
-        onDelta: function (deltas) {
-          var notificationsPayload = deltas && deltas.notifications ? deltas.notifications : null;
-          if (!notificationsPayload) {
-            return;
-          }
-          bellContainers.forEach(function (bell) {
-            refreshBellState(bell, notificationsPayload);
-          });
-        },
-      });
-    }
-
-    if (notificationsApiReady && !heartbeatSharedNotifications) {
+    var notificationsLegacyPollingStarted = false;
+    var startNotificationsLegacyPolling = function () {
+      if (!notificationsApiReady || notificationsLegacyPollingStarted) {
+        return;
+      }
+      notificationsLegacyPollingStarted = true;
+      var legacyIntervalMs = cmnResolveLegacyPollIntervalMs(4000, 16000);
+      var legacyMaxIntervalMs = cmnResolveLegacyPollIntervalMs(20000, 60000);
       var pollNotifications = function () {
         return runBellAction('cmn_notifications_poll')
           .then(function (data) {
@@ -4697,8 +5355,8 @@ document.addEventListener('DOMContentLoaded', function () {
       if (cmnPollManager) {
         cmnPollManager.register({
           key: 'cmn-notifications-poll',
-          intervalMs: 4000,
-          maxIntervalMs: 20000,
+          intervalMs: legacyIntervalMs,
+          maxIntervalMs: legacyMaxIntervalMs,
           callback: pollNotifications,
           visibleOnly: true,
           triggerOnFocus: true,
@@ -4708,7 +5366,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       } else {
         pollNotifications();
-        window.setInterval(pollNotifications, 4000);
+        window.setInterval(pollNotifications, legacyIntervalMs);
         document.addEventListener('visibilitychange', function () {
           if (!document.hidden) {
             pollNotifications();
@@ -4718,6 +5376,34 @@ document.addEventListener('DOMContentLoaded', function () {
           pollNotifications();
         });
       }
+    };
+
+    var notificationsHeartbeatAvailable = !!(notificationsApiReady && cmnHeartbeatManager && cmnHeartbeatManager.enabled);
+    var notificationsHeartbeatCanDriveUi = !!(notificationsHeartbeatAvailable && !cmnHeartbeatManager.shadowMode);
+    if (notificationsHeartbeatAvailable) {
+      cmnHeartbeatManager.register('cmn-notifications', {
+        channels: ['notifications'],
+        view_context: 'notifications',
+        onDisable: function () {
+          startNotificationsLegacyPolling();
+        },
+        onDelta: function (deltas) {
+          if (!notificationsHeartbeatCanDriveUi) {
+            return;
+          }
+          var notificationsPayload = deltas && deltas.notifications ? deltas.notifications : null;
+          if (!notificationsPayload) {
+            return;
+          }
+          bellContainers.forEach(function (bell) {
+            refreshBellState(bell, notificationsPayload);
+          });
+        },
+      });
+    }
+
+    if (notificationsApiReady && !notificationsHeartbeatCanDriveUi) {
+      startNotificationsLegacyPolling();
     }
   }
 
@@ -5257,6 +5943,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var activeTicketId = null;
       var activeTicket = null;
       var activeTicketLastMessageId = 0;
+      var activeTicketMessages = [];
       var supportRealtimeTickInFlight = false;
       var supportLastListRefreshAt = 0;
       var supportParams = new URLSearchParams(window.location.search);
@@ -5357,6 +6044,34 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         });
         return latestId;
+      };
+
+      var mergeSupportMessages = function (existingMessages, incomingMessages, maxKeep) {
+        var merged = [];
+        var seen = {};
+        (Array.isArray(existingMessages) ? existingMessages : []).forEach(function (msg) {
+          var messageId = parseInt(String((msg && msg.id) || '0'), 10) || 0;
+          if (messageId > 0 && !seen[messageId]) {
+            seen[messageId] = true;
+            merged.push(msg);
+          }
+        });
+        (Array.isArray(incomingMessages) ? incomingMessages : []).forEach(function (msg) {
+          var messageId = parseInt(String((msg && msg.id) || '0'), 10) || 0;
+          if (messageId > 0 && !seen[messageId]) {
+            seen[messageId] = true;
+            merged.push(msg);
+          }
+        });
+        merged.sort(function (a, b) {
+          var aId = parseInt(String((a && a.id) || '0'), 10) || 0;
+          var bId = parseInt(String((b && b.id) || '0'), 10) || 0;
+          return aId - bId;
+        });
+        if (merged.length > maxKeep) {
+          merged = merged.slice(merged.length - maxKeep);
+        }
+        return merged;
       };
 
       var supportEsc = function (value) {
@@ -5744,10 +6459,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         messagesEl.innerHTML = '';
         if (!messages.length) {
+          activeTicketMessages = [];
           activeTicketLastMessageId = 0;
           messagesEl.innerHTML = '<div class="cmn-empty">No messages yet.</div>';
           return;
         }
+        activeTicketMessages = messages.slice();
         messages.forEach(function (msg) {
           var bubble = document.createElement('div');
           bubble.className = 'cmn-support-bubble ' + (msg.sender_type === 'admin' ? 'is-admin' : 'is-user');
@@ -6148,6 +6865,7 @@ document.addEventListener('DOMContentLoaded', function () {
             forceCloseFeedbackModals();
             updateThreadHeader(null);
             renderPayrollContext(null, null, null);
+            activeTicketMessages = [];
             activeTicketLastMessageId = 0;
             if (messagesEl) {
               messagesEl.innerHTML = '<div class="cmn-empty">' + ((data && data.data && data.data.message) ? data.data.message : 'Ticket not found.') + '</div>';
@@ -6254,6 +6972,7 @@ document.addEventListener('DOMContentLoaded', function () {
             forceCloseFeedbackModals();
             activeTicketId = null;
             activeTicket = null;
+            activeTicketMessages = [];
             activeTicketLastMessageId = 0;
             updateThreadHeader(null);
             renderPayrollContext(null, null, null);
@@ -6489,7 +7208,12 @@ document.addEventListener('DOMContentLoaded', function () {
         toggleAdminButtons(latestTicket, ticketFeedback);
 
         if (messageChanged) {
-          renderMessages(latestTicket, latestMessages);
+          if (activeTicketLastMessageId === 0) {
+            activeTicketMessages = latestMessages.slice();
+          } else if (latestMessages.length) {
+            activeTicketMessages = mergeSupportMessages(activeTicketMessages, latestMessages, 350);
+          }
+          renderMessages(latestTicket, activeTicketMessages);
         }
 
         if (statusChanged || messageChanged) {
@@ -6523,21 +7247,46 @@ document.addEventListener('DOMContentLoaded', function () {
           supportRealtimeTickInFlight = false;
         });
       };
-      if (cmnHeartbeatManager && cmnHeartbeatManager.enabled) {
-        cmnHeartbeatManager.register('cmn-support-realtime-' + String(supportRootIndex || 0), {
-          channels: ['support_ticket'],
-          view_context: 'support',
-          buildRequest: function () {
-            var ticketIds = activeTicketId ? [activeTicketId] : [];
-            return {
-              support_ticket_ids: ticketIds,
-              support_since_message_id: activeTicketLastMessageId || 0,
-            };
-          },
-          onDelta: function (deltas) {
+      var supportLegacyTimerId = 0;
+      var supportLegacyPollingStarted = false;
+      var getSupportLegacyIntervalMs = function () {
+        return cmnResolveLegacyPollIntervalMs(3000, 12000);
+      };
+      var scheduleSupportLegacyTick = function (delayMs) {
+        if (supportLegacyTimerId) {
+          window.clearTimeout(supportLegacyTimerId);
+        }
+        supportLegacyTimerId = window.setTimeout(function () {
+          Promise.resolve(refreshActiveTicketRealtime()).finally(function () {
+            scheduleSupportLegacyTick(getSupportLegacyIntervalMs());
+          });
+        }, Math.max(250, parseInt(delayMs || getSupportLegacyIntervalMs(), 10) || getSupportLegacyIntervalMs()));
+      };
+      var startSupportLegacyPolling = function (initialDelayMs) {
+        if (supportLegacyPollingStarted) {
+          return;
+        }
+        supportLegacyPollingStarted = true;
+        scheduleSupportLegacyTick(initialDelayMs || 0);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) {
+            scheduleSupportLegacyTick(150);
+          }
+        });
+        window.addEventListener('focus', function () {
+          scheduleSupportLegacyTick(150);
+        });
+      };
+      var supportHeartbeatAvailable = !!(cmnHeartbeatManager && cmnHeartbeatManager.enabled);
+      var supportHeartbeatCanDriveUi = !!(supportHeartbeatAvailable && !cmnHeartbeatManager.shadowMode);
+      if (supportHeartbeatAvailable) {
+        if (supportHeartbeatCanDriveUi) {
+          window.addEventListener('cmn:portal-heartbeat', function (event) {
             if (!activeTicketId || isInsightsModalOpen) {
               return;
             }
+            var detail = event && event.detail && typeof event.detail === 'object' ? event.detail : {};
+            var deltas = detail.deltas && typeof detail.deltas === 'object' ? detail.deltas : {};
             var supportMap = deltas && deltas.support_ticket && typeof deltas.support_ticket === 'object'
               ? deltas.support_ticket
               : (deltas && deltas.support_tickets && typeof deltas.support_tickets === 'object'
@@ -6548,34 +7297,25 @@ document.addEventListener('DOMContentLoaded', function () {
               return;
             }
             applySupportRealtimePayload(payload);
+          });
+        }
+        cmnHeartbeatManager.register('cmn-support-realtime-' + String(supportRootIndex || 0), {
+          channels: ['support_ticket'],
+          view_context: 'support',
+          onDisable: function () {
+            startSupportLegacyPolling(0);
+          },
+          buildRequest: function () {
+            var ticketIds = activeTicketId ? [activeTicketId] : [];
+            return {
+              support_ticket_ids: ticketIds,
+              support_since_message_id: activeTicketLastMessageId || 0,
+            };
           },
         });
-      } else if (cmnPollManager) {
-        cmnPollManager.register({
-          key: 'cmn-support-realtime-' + String(supportRootIndex || 0),
-          intervalMs: 3000,
-          maxIntervalMs: 15000,
-          callback: function () {
-            return refreshActiveTicketRealtime();
-          },
-          visibleOnly: true,
-          triggerOnFocus: true,
-          triggerOnVisibility: true,
-          backoffOnError: true,
-          immediate: true,
-        });
-      } else {
-        window.setInterval(function () {
-          refreshActiveTicketRealtime();
-        }, 3000);
-        document.addEventListener('visibilitychange', function () {
-          if (!document.hidden) {
-            refreshActiveTicketRealtime();
-          }
-        });
-        window.addEventListener('focus', function () {
-          refreshActiveTicketRealtime();
-        });
+      }
+      if (!supportHeartbeatCanDriveUi) {
+        startSupportLegacyPolling(0);
       }
 
       syncFilterUiState();
@@ -6639,6 +7379,36 @@ document.addEventListener('DOMContentLoaded', function () {
           return null;
         });
       };
+      var accountManagerLegacyTimerId = 0;
+      var accountManagerLegacyPollingStarted = false;
+      var getAccountManagerLegacyIntervalMs = function () {
+        return cmnResolveLegacyPollIntervalMs(15000, 60000);
+      };
+      var scheduleAccountManagerLegacyTick = function (delayMs) {
+        if (accountManagerLegacyTimerId) {
+          window.clearTimeout(accountManagerLegacyTimerId);
+        }
+        accountManagerLegacyTimerId = window.setTimeout(function () {
+          Promise.resolve(pollStatus()).finally(function () {
+            scheduleAccountManagerLegacyTick(getAccountManagerLegacyIntervalMs());
+          });
+        }, Math.max(500, parseInt(delayMs || getAccountManagerLegacyIntervalMs(), 10) || getAccountManagerLegacyIntervalMs()));
+      };
+      var startAccountManagerLegacyPolling = function (initialDelayMs) {
+        if (accountManagerLegacyPollingStarted) {
+          return;
+        }
+        accountManagerLegacyPollingStarted = true;
+        scheduleAccountManagerLegacyTick(initialDelayMs || 0);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) {
+            scheduleAccountManagerLegacyTick(200);
+          }
+        });
+        window.addEventListener('focus', function () {
+          scheduleAccountManagerLegacyTick(200);
+        });
+      };
 
       launcher.addEventListener('click', function (event) {
         event.preventDefault();
@@ -6665,16 +7435,14 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       });
 
-      if (cmnHeartbeatManager && cmnHeartbeatManager.enabled) {
-        cmnHeartbeatManager.register('cmn-school-account-manager-chat-' + String(launcherIndex || 0), {
-          channels: ['account_manager_badge'],
-          view_context: 'support',
-          buildRequest: function () {
-            return {
-              include_account_manager_badge: 1,
-            };
-          },
-          onDelta: function (deltas) {
+      var accountManagerHeartbeatAvailable = !!(cmnHeartbeatManager && cmnHeartbeatManager.enabled);
+      var accountManagerHeartbeatCanDriveUi = !!(accountManagerHeartbeatAvailable && !cmnHeartbeatManager.shadowMode);
+      var accountManagerHeartbeatChannelActive = false;
+      if (accountManagerHeartbeatAvailable && accountManagerHeartbeatCanDriveUi) {
+        if (accountManagerHeartbeatCanDriveUi) {
+          window.addEventListener('cmn:portal-heartbeat', function (event) {
+            var detail = event && event.detail && typeof event.detail === 'object' ? event.detail : {};
+            var deltas = detail.deltas && typeof detail.deltas === 'object' ? detail.deltas : {};
             var statusPayload = deltas && deltas.account_manager_badge
               ? deltas.account_manager_badge
               : (deltas && deltas.account_manager_chat_status ? deltas.account_manager_chat_status : null);
@@ -6685,27 +7453,24 @@ document.addEventListener('DOMContentLoaded', function () {
               fallbackUrl = statusPayload.support_url;
             }
             setBadgeCount(statusPayload.unread_count || 0);
+          });
+        }
+        accountManagerHeartbeatChannelActive = true;
+        cmnHeartbeatManager.register('cmn-school-account-manager-chat-' + String(launcherIndex || 0), {
+          channels: ['account_manager_badge'],
+          view_context: 'support',
+          onDisable: function () {
+            startAccountManagerLegacyPolling(0);
+          },
+          buildRequest: function () {
+            return {
+              include_account_manager_badge: 1,
+            };
           },
         });
-      } else if (cmnPollManager) {
-        cmnPollManager.register({
-          key: 'cmn-school-account-manager-chat-' + String(launcherIndex || 0),
-          intervalMs: 12000,
-          maxIntervalMs: 45000,
-          callback: function () {
-            return pollStatus();
-          },
-          visibleOnly: true,
-          triggerOnFocus: true,
-          triggerOnVisibility: true,
-          backoffOnError: true,
-          immediate: true,
-        });
-      } else {
-        pollStatus();
-        window.setInterval(function () {
-          pollStatus();
-        }, 15000);
+      }
+      if (!accountManagerHeartbeatChannelActive) {
+        startAccountManagerLegacyPolling(0);
       }
     });
   }
@@ -6718,6 +7483,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var msgEl = root.querySelector('[data-staff-lounge-message]');
       var inFlight = false;
       var staffLoungeLastMessageId = 0;
+      var staffLoungeMessages = [];
 
       var setMsg = function (text, isError) {
         if (!msgEl) {
@@ -6773,6 +7539,34 @@ document.addEventListener('DOMContentLoaded', function () {
         return maxId;
       };
 
+      var mergeStaffLoungeMessages = function (existingRows, incomingRows, maxKeep) {
+        var merged = [];
+        var seen = {};
+        (Array.isArray(existingRows) ? existingRows : []).forEach(function (row) {
+          var rowId = parseInt(String((row && row.id) || '0'), 10) || 0;
+          if (rowId > 0 && !seen[rowId]) {
+            seen[rowId] = true;
+            merged.push(row);
+          }
+        });
+        (Array.isArray(incomingRows) ? incomingRows : []).forEach(function (row) {
+          var rowId = parseInt(String((row && row.id) || '0'), 10) || 0;
+          if (rowId > 0 && !seen[rowId]) {
+            seen[rowId] = true;
+            merged.push(row);
+          }
+        });
+        merged.sort(function (a, b) {
+          var aId = parseInt(String((a && a.id) || '0'), 10) || 0;
+          var bId = parseInt(String((b && b.id) || '0'), 10) || 0;
+          return aId - bId;
+        });
+        if (merged.length > maxKeep) {
+          merged = merged.slice(merged.length - maxKeep);
+        }
+        return merged;
+      };
+
       var applyStaffLoungePayload = function (payload) {
         if (!payload || typeof payload !== 'object') {
           return;
@@ -6787,7 +7581,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (latestMessageId <= staffLoungeLastMessageId && !rows.length && !isInitialLoad) {
           return;
         }
-        renderRows(rows);
+        if (isInitialLoad) {
+          staffLoungeMessages = rows.slice();
+        } else if (rows.length) {
+          staffLoungeMessages = mergeStaffLoungeMessages(staffLoungeMessages, rows, 300);
+        }
+        renderRows(staffLoungeMessages);
         staffLoungeLastMessageId = Math.max(staffLoungeLastMessageId, latestMessageId);
       };
 
@@ -6810,6 +7609,28 @@ document.addEventListener('DOMContentLoaded', function () {
         }).catch(function () {
           return null;
         });
+      };
+      var staffLoungeLegacyTimerId = 0;
+      var staffLoungeLegacyPollingStarted = false;
+      var getStaffLoungeLegacyIntervalMs = function () {
+        return cmnResolveLegacyPollIntervalMs(5000, 20000);
+      };
+      var scheduleStaffLoungeLegacyTick = function (delayMs) {
+        if (staffLoungeLegacyTimerId) {
+          window.clearTimeout(staffLoungeLegacyTimerId);
+        }
+        staffLoungeLegacyTimerId = window.setTimeout(function () {
+          Promise.resolve(fetchRows()).finally(function () {
+            scheduleStaffLoungeLegacyTick(getStaffLoungeLegacyIntervalMs());
+          });
+        }, Math.max(500, parseInt(delayMs || getStaffLoungeLegacyIntervalMs(), 10) || getStaffLoungeLegacyIntervalMs()));
+      };
+      var startStaffLoungeLegacyPolling = function (initialDelayMs) {
+        if (staffLoungeLegacyPollingStarted) {
+          return;
+        }
+        staffLoungeLegacyPollingStarted = true;
+        scheduleStaffLoungeLegacyTick(initialDelayMs || 0);
       };
 
       if (formEl) {
@@ -6862,17 +7683,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
-      if (cmnHeartbeatManager && cmnHeartbeatManager.enabled) {
-        cmnHeartbeatManager.register('cmn-staff-lounge-' + String(threadType) + '-' + String(loungeIndex || 0), {
-          channels: ['staff_lounge'],
-          view_context: 'staff_lounge',
-          buildRequest: function () {
-            return {
-              staff_lounge_thread_types: [threadType],
-              staff_lounge_since_message_id: staffLoungeLastMessageId || 0,
-            };
-          },
-          onDelta: function (deltas) {
+      var staffLoungeHeartbeatAvailable = !!(cmnHeartbeatManager && cmnHeartbeatManager.enabled);
+      var staffLoungeHeartbeatCanDriveUi = !!(staffLoungeHeartbeatAvailable && !cmnHeartbeatManager.shadowMode);
+      if (staffLoungeHeartbeatAvailable) {
+        if (staffLoungeHeartbeatCanDriveUi) {
+          window.addEventListener('cmn:portal-heartbeat', function (event) {
+            var detail = event && event.detail && typeof event.detail === 'object' ? event.detail : {};
+            var deltas = detail.deltas && typeof detail.deltas === 'object' ? detail.deltas : {};
             var loungeMap = deltas && deltas.staff_lounge && typeof deltas.staff_lounge === 'object'
               ? deltas.staff_lounge
               : {};
@@ -6881,26 +7698,24 @@ document.addEventListener('DOMContentLoaded', function () {
               return;
             }
             applyStaffLoungePayload(payload);
+          });
+        }
+        cmnHeartbeatManager.register('cmn-staff-lounge-' + String(threadType) + '-' + String(loungeIndex || 0), {
+          channels: ['staff_lounge'],
+          view_context: 'staff_lounge',
+          onDisable: function () {
+            startStaffLoungeLegacyPolling(0);
+          },
+          buildRequest: function () {
+            return {
+              staff_lounge_thread_types: [threadType],
+              staff_lounge_since_message_id: staffLoungeLastMessageId || 0,
+            };
           },
         });
-        fetchRows();
-      } else if (cmnPollManager) {
-        cmnPollManager.register({
-          key: 'cmn-staff-lounge-' + String(threadType) + '-' + String(loungeIndex || 0),
-          intervalMs: 5000,
-          maxIntervalMs: 20000,
-          callback: function () {
-            return fetchRows();
-          },
-          visibleOnly: true,
-          triggerOnFocus: true,
-          triggerOnVisibility: true,
-          backoffOnError: true,
-          immediate: true,
-        });
-      } else {
-        fetchRows();
-        window.setInterval(fetchRows, 5000);
+      }
+      if (!staffLoungeHeartbeatCanDriveUi) {
+        startStaffLoungeLegacyPolling(0);
       }
     });
   }
@@ -8133,6 +8948,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var defaultStarFields = ['stars_1', 'stars_2', 'stars_3', 'stars_overall'];
       var activeStarFields = defaultStarFields.slice();
       var bookingChatLastMessageId = 0;
+      var bookingChatMessages = [];
       var bookingThreadStatus = '';
 
       var getLatestBookingMessageId = function (messages) {
@@ -8147,6 +8963,34 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         });
         return maxId;
+      };
+
+      var mergeBookingMessages = function (existingMessages, incomingMessages, maxKeep) {
+        var merged = [];
+        var seen = {};
+        (Array.isArray(existingMessages) ? existingMessages : []).forEach(function (msg) {
+          var messageId = parseInt(String((msg && msg.id) || '0'), 10) || 0;
+          if (messageId > 0 && !seen[messageId]) {
+            seen[messageId] = true;
+            merged.push(msg);
+          }
+        });
+        (Array.isArray(incomingMessages) ? incomingMessages : []).forEach(function (msg) {
+          var messageId = parseInt(String((msg && msg.id) || '0'), 10) || 0;
+          if (messageId > 0 && !seen[messageId]) {
+            seen[messageId] = true;
+            merged.push(msg);
+          }
+        });
+        merged.sort(function (a, b) {
+          var aId = parseInt(String((a && a.id) || '0'), 10) || 0;
+          var bId = parseInt(String((b && b.id) || '0'), 10) || 0;
+          return aId - bId;
+        });
+        if (merged.length > maxKeep) {
+          merged = merged.slice(merged.length - maxKeep);
+        }
+        return merged;
       };
 
       var renderBookingChatMessages = function (messages) {
@@ -8510,6 +9354,40 @@ document.addEventListener('DOMContentLoaded', function () {
           return null;
         });
       };
+      var bookingChatLegacyTimerId = 0;
+      var bookingChatLegacyPollingStarted = false;
+      var getBookingChatLegacyIntervalMs = function () {
+        return cmnResolveLegacyPollIntervalMs(5000, 20000);
+      };
+      var scheduleBookingChatLegacyTick = function (delayMs) {
+        if (bookingChatLegacyTimerId) {
+          window.clearTimeout(bookingChatLegacyTimerId);
+        }
+        bookingChatLegacyTimerId = window.setTimeout(function () {
+          if (document.hidden) {
+            scheduleBookingChatLegacyTick(getBookingChatLegacyIntervalMs());
+            return;
+          }
+          Promise.resolve(fetchBookingChat()).finally(function () {
+            scheduleBookingChatLegacyTick(getBookingChatLegacyIntervalMs());
+          });
+        }, Math.max(500, parseInt(delayMs || getBookingChatLegacyIntervalMs(), 10) || getBookingChatLegacyIntervalMs()));
+      };
+      var startBookingChatLegacyPolling = function (initialDelayMs) {
+        if (bookingChatLegacyPollingStarted) {
+          return;
+        }
+        bookingChatLegacyPollingStarted = true;
+        scheduleBookingChatLegacyTick(initialDelayMs || 0);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) {
+            scheduleBookingChatLegacyTick(200);
+          }
+        });
+        window.addEventListener('focus', function () {
+          scheduleBookingChatLegacyTick(200);
+        });
+      };
 
       var applyBookingChatPayload = function (payload) {
         if (!payload || !payload.thread) {
@@ -8530,10 +9408,15 @@ document.addEventListener('DOMContentLoaded', function () {
         var isInitialLoad = bookingChatLastMessageId === 0;
         var messageChanged = latestMessageId !== bookingChatLastMessageId;
         if (messageChanged || isInitialLoad) {
-          if (messages.length || isInitialLoad) {
-            renderBookingChatMessages(messages);
+          if (isInitialLoad) {
+            bookingChatMessages = messages.slice();
+          } else if (messages.length) {
+            bookingChatMessages = mergeBookingMessages(bookingChatMessages, messages, 350);
           }
-          bookingChatLastMessageId = latestMessageId;
+          if (bookingChatMessages.length || isInitialLoad) {
+            renderBookingChatMessages(bookingChatMessages);
+          }
+          bookingChatLastMessageId = Math.max(bookingChatLastMessageId, latestMessageId);
         }
 
         if (threadChanged || messageChanged || isInitialLoad) {
@@ -8622,17 +9505,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
-      if (cmnHeartbeatManager && cmnHeartbeatManager.enabled) {
-        cmnHeartbeatManager.register('cmn-booking-chat-' + String(threadId) + '-' + String(bookingChatIndex || 0), {
-          channels: ['booking_chat'],
-          view_context: 'bookings',
-          buildRequest: function () {
-            return {
-              booking_thread_ids: [threadId],
-              booking_chat_since_message_id: bookingChatLastMessageId || 0,
-            };
-          },
-          onDelta: function (deltas) {
+      var bookingChatHeartbeatAvailable = !!(cmnHeartbeatManager && cmnHeartbeatManager.enabled);
+      var bookingChatHeartbeatCanDriveUi = !!(bookingChatHeartbeatAvailable && !cmnHeartbeatManager.shadowMode);
+      if (bookingChatHeartbeatAvailable) {
+        if (bookingChatHeartbeatCanDriveUi) {
+          window.addEventListener('cmn:portal-heartbeat', function (event) {
+            var detail = event && event.detail && typeof event.detail === 'object' ? event.detail : {};
+            var deltas = detail.deltas && typeof detail.deltas === 'object' ? detail.deltas : {};
             var threadMap = deltas && deltas.booking_chat && typeof deltas.booking_chat === 'object'
               ? deltas.booking_chat
               : (deltas && deltas.booking_chats && typeof deltas.booking_chats === 'object'
@@ -8643,31 +9522,24 @@ document.addEventListener('DOMContentLoaded', function () {
               return;
             }
             applyBookingChatPayload(payload);
+          });
+        }
+        cmnHeartbeatManager.register('cmn-booking-chat-' + String(threadId) + '-' + String(bookingChatIndex || 0), {
+          channels: ['booking_chat'],
+          view_context: 'bookings',
+          onDisable: function () {
+            startBookingChatLegacyPolling(0);
+          },
+          buildRequest: function () {
+            return {
+              booking_thread_ids: [threadId],
+              booking_chat_since_message_id: bookingChatLastMessageId || 0,
+            };
           },
         });
-        fetchBookingChat();
-      } else if (cmnPollManager) {
-        cmnPollManager.register({
-          key: 'cmn-booking-chat-' + String(threadId) + '-' + String(bookingChatIndex || 0),
-          intervalMs: 5000,
-          maxIntervalMs: 20000,
-          callback: function () {
-            return fetchBookingChat();
-          },
-          visibleOnly: true,
-          triggerOnFocus: true,
-          triggerOnVisibility: true,
-          backoffOnError: true,
-          immediate: true,
-        });
-      } else {
-        fetchBookingChat();
-        window.setInterval(function () {
-          if (document.hidden) {
-            return;
-          }
-          fetchBookingChat();
-        }, 5000);
+      }
+      if (!bookingChatHeartbeatCanDriveUi) {
+        startBookingChatLegacyPolling(0);
       }
     });
   }
@@ -13435,6 +14307,7 @@ document.addEventListener('DOMContentLoaded', function () {
       && cmnHeartbeatManager
       && cmnHeartbeatManager.enabled
     );
+    var useSharedHeartbeatUi = !!(useSharedHeartbeat && !cmnHeartbeatManager.shadowMode);
     var offerTickerId = null;
     if (drawer) {
       drawer.hidden = true;
@@ -14116,39 +14989,26 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     render();
-    if (useSharedHeartbeat) {
-      cmnHeartbeatManager.register('cmn-live-match-presence-' + String(rootIndex || 0), {
-        channels: ['live_matches'],
-        view_context: heartbeatContext,
-        buildRequest: function () {
-          return {
-            view_context: heartbeatContext,
-            candidate_ids: getLiveMatchCandidateIds(),
-          };
-        },
-        onDelta: function (deltas) {
-          var hbPresence = deltas && typeof deltas.live_match_presence === 'object'
-            ? deltas.live_match_presence
-            : {};
-          var hbOffers = deltas && typeof deltas.live_match_offers === 'object'
-            ? deltas.live_match_offers
-            : {};
-          applyPresenceAndOffers(hbPresence, hbOffers);
-        },
-      });
-    } else if (cmnPollManager) {
-      cmnPollManager.register({
-        key: 'cmn-live-match-presence-' + String(rootIndex || 0),
-        intervalMs: 20000,
-        maxIntervalMs: 60000,
-        callback: pollPresence,
-        visibleOnly: true,
-        triggerOnFocus: true,
-        triggerOnVisibility: true,
-        backoffOnError: true,
-        immediate: true
-      });
-    } else {
+    var liveMatchLegacyPollingStarted = false;
+    var startLiveMatchLegacyPolling = function () {
+      if (liveMatchLegacyPollingStarted) {
+        return;
+      }
+      liveMatchLegacyPollingStarted = true;
+      if (cmnPollManager) {
+        cmnPollManager.register({
+          key: 'cmn-live-match-presence-' + String(rootIndex || 0),
+          intervalMs: 20000,
+          maxIntervalMs: 60000,
+          callback: pollPresence,
+          visibleOnly: true,
+          triggerOnFocus: true,
+          triggerOnVisibility: true,
+          backoffOnError: true,
+          immediate: true
+        });
+        return;
+      }
       pollPresence();
       window.setInterval(pollPresence, 20000);
       document.addEventListener('visibilitychange', function(){
@@ -14159,6 +15019,36 @@ document.addEventListener('DOMContentLoaded', function () {
       window.addEventListener('focus', function(){
         pollPresence();
       });
+    };
+    if (useSharedHeartbeat) {
+      cmnHeartbeatManager.register('cmn-live-match-presence-' + String(rootIndex || 0), {
+        channels: ['live_matches'],
+        view_context: heartbeatContext,
+        onDisable: function () {
+          startLiveMatchLegacyPolling();
+        },
+        buildRequest: function () {
+          return {
+            view_context: heartbeatContext,
+            candidate_ids: getLiveMatchCandidateIds(),
+          };
+        },
+        onDelta: function (deltas) {
+          if (!useSharedHeartbeatUi) {
+            return;
+          }
+          var hbPresence = deltas && typeof deltas.live_match_presence === 'object'
+            ? deltas.live_match_presence
+            : {};
+          var hbOffers = deltas && typeof deltas.live_match_offers === 'object'
+            ? deltas.live_match_offers
+            : {};
+          applyPresenceAndOffers(hbPresence, hbOffers);
+        },
+      });
+    }
+    if (!useSharedHeartbeatUi) {
+      startLiveMatchLegacyPolling();
     }
   });
 })();

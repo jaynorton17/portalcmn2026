@@ -1,0 +1,521 @@
+{
+    "admin_post_nopriv|admin_post_nopriv_cmn_candidate_response|handle_candidate_response": {
+        "nonce_mode": "required"
+    },
+    "admin_post_nopriv|admin_post_nopriv_cmn_marketing_runner|handle_marketing_runner": {
+        "nonce_mode": "required"
+    },
+    "admin_post_nopriv|admin_post_nopriv_cmn_priority_interest_register|handle_priority_interest_register": {
+        "nonce_mode": "required"
+    },
+    "admin_post_nopriv|admin_post_nopriv_cmn_register_candidate|handle_register_candidate": {
+        "nonce_mode": "required"
+    },
+    "admin_post_nopriv|admin_post_nopriv_cmn_register_school|handle_register_school": {
+        "nonce_mode": "required"
+    },
+    "admin_post|admin_post_cmn_add_candidate_internal_note|handle_add_candidate_internal_note": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_add_contact|handle_add_contact_portal": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_add_school|handle_add_school_portal": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_add_staff|handle_add_staff_portal": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_approve_school_request|handle_approve_school_request": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_assign_contact_to_school|handle_assign_contact_to_school": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_booking_chat_ack|handle_booking_chat_ack": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_bulk_schools|handle_bulk_schools": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_candidate_accept_compliance_ack|handle_candidate_accept_compliance_ack": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_candidate_request_action|handle_candidate_request_action": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_candidate_response|handle_candidate_response": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_complete_activity|handle_complete_activity": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_create_booking|handle_create_booking": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_delete_contact|handle_delete_contact_portal": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_email_sender_toggle|handle_email_sender_toggle": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_email_template_assign_sender|handle_email_template_assign_sender": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_email_template_save|handle_email_template_save": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_import_contacts|handle_import_contacts_portal": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_import_schools|handle_import_schools_portal": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_mark_pay_approval_disputed|handle_mark_pay_approval_disputed": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_mark_school_import_resolved|handle_mark_school_import_resolved": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_marketing_runner|handle_marketing_runner": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_open_booking_thread|handle_open_booking_thread": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_partner_programme_recalculate|handle_partner_programme_recalculate": {
+        "ability_required": "partner.admin.mutate"
+    },
+    "admin_post|admin_post_cmn_payroll_adjustment_create|handle_payroll_adjustment_create": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_payroll_adjustment_decision|handle_payroll_adjustment_decision": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_priority_allocation_send|handle_priority_allocation_send": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_priority_interest_register|handle_priority_interest_register": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_process_school_request|handle_process_school_request": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_ready_response_delete|handle_ready_response_delete": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_ready_response_save|handle_ready_response_save": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_regenerate_marketing_runner_token|handle_regenerate_marketing_runner_token": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_register_candidate|handle_register_candidate": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_register_school|handle_register_school": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_reject_school_request|handle_reject_school_request": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_run_automation_smoke_test|handle_run_automation_smoke_test": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_run_upgrade_runner|handle_run_upgrade_runner": {
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_save_admin_recipient_email|handle_save_admin_recipient_email": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_save_automation_rule|handle_save_automation_rule": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_save_calendar|handle_save_calendar": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_save_candidate_bank_details|handle_save_candidate_bank_details": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_save_converter_settings|handle_save_converter_settings": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_save_school_team_user_limit|handle_save_school_team_user_limit": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_save_staff_availability_settings|handle_save_staff_availability_settings": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_school_add_team_member|handle_school_add_team_member": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_school_create_long_booking|handle_school_create_long_booking": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_school_rebook_candidate|handle_school_rebook_candidate": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_school_template_defaults_save|handle_school_template_defaults_save": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_school_update_profile|handle_school_update_profile": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_send_candidate_invite|handle_send_candidate_invite": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_send_emergency_broadcast|handle_send_emergency_broadcast": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_compliance_decision|handle_staff_candidate_compliance_decision": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_adjust_shifts|handle_staff_candidate_rewards_adjust_shifts": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_flag_review|handle_staff_candidate_rewards_flag_review": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_mark_no_show|handle_staff_candidate_rewards_mark_no_show": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_recalculate|handle_staff_candidate_rewards_recalculate": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_reinstate|handle_staff_candidate_rewards_reinstate": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_resolve_appeal|handle_staff_candidate_rewards_resolve_appeal": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_reverse_no_show|handle_staff_candidate_rewards_reverse_no_show": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_set_tier|handle_staff_candidate_rewards_set_tier": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_suspend|handle_staff_candidate_rewards_suspend": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_candidate_rewards_terminate|handle_staff_candidate_rewards_terminate": {
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_delete_candidate_doc|handle_staff_delete_candidate_doc": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_payroll_ticket_quick_action|handle_staff_payroll_ticket_quick_action": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_review_candidate_doc|handle_staff_review_candidate_doc": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_save_candidate_role_rates|handle_staff_save_candidate_role_rates": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_set_candidate_doc_visibility|handle_staff_set_candidate_doc_visibility": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_staff_update_candidate_pay|handle_staff_update_candidate_pay": {
+        "nonce_mode": "required",
+        "ability_required": "portal.staff.view"
+    },
+    "admin_post|admin_post_cmn_toggle_automation_rule|handle_toggle_automation_rule": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_toggle_availability|handle_toggle_availability": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_unassign_contact|handle_unassign_contact": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_update_candidate_rate|handle_update_candidate_rate": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_update_candidate_request|handle_update_candidate_request": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_update_contact|handle_update_contact_portal": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_update_invoice_school_reminder_opt_out|handle_update_invoice_school_reminder_opt_out": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_update_school_assignments|handle_update_school_assignments": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "admin_post|admin_post_cmn_update_status|handle_update_status": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_add_staff_user|handle_add_staff_user_ajax": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_admin_delete_candidate_account|handle_admin_delete_candidate_account": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_booking_feedback_submit|handle_booking_feedback_submit": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_bulk_update_calendar|handle_bulk_update_calendar": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_contact_card_save|handle_candidate_contact_card_save": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_delete_doc|handle_candidate_delete_doc": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_learning_complete_course|handle_candidate_learning_complete_course": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_learning_opt_in|handle_candidate_learning_opt_in": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_profile_photo_remove|handle_candidate_profile_photo_remove": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_profile_photo_upload|handle_candidate_profile_photo_upload": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_remove_doc|handle_candidate_delete_doc": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_request_delete_account|handle_candidate_request_delete_account": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_submit_payroll_query|handle_candidate_submit_payroll_query": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_update_profile|handle_candidate_update_profile": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_candidate_upload_doc|handle_candidate_upload_doc": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_dismiss_candidate_tour|handle_dismiss_candidate_tour": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_livechat_feedback_submit|handle_livechat_feedback_submit": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_livechat_send|handle_livechat_send": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_livechat_start|handle_livechat_start": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_mark_available|handle_mark_available": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_mark_unavailable_morning|handle_mark_unavailable_morning": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_delete_list|handle_marketing_delete_list": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_delete_template|handle_marketing_delete_template": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_duplicate_list|handle_marketing_duplicate_list": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_pause_campaign|handle_marketing_pause_campaign": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_poll_replies|handle_marketing_poll_replies": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_queue_campaign|handle_marketing_queue_campaign": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_refresh_list|handle_marketing_refresh_list": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_remove_unsubscribe|handle_marketing_remove_unsubscribe": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_resend_failed|handle_marketing_resend_failed": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_resume_campaign|handle_marketing_resume_campaign": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_run_quick_campaign|handle_marketing_run_quick_campaign": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_save_campaign|handle_marketing_save_campaign": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_save_list|handle_marketing_save_list": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_save_quick_campaign|handle_marketing_save_quick_campaign": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_save_segment|handle_marketing_save_segment": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_save_settings|handle_marketing_save_settings": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_save_template|handle_marketing_save_template": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_marketing_segment_to_list|handle_marketing_segment_to_list": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_match_rollback_weights|handle_match_rollback_weights": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_match_save_weights|handle_match_save_weights": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_match_set_active_weights|handle_match_set_active_weights": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_request_candidate|handle_request_candidate": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_save_candidate_formatted_cv|handle_save_candidate_formatted_cv": {
+        "nonce_mode": "required",
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_save_candidate_settings|handle_save_candidate_settings": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_save_staff_nav_order|handle_save_staff_nav_order": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_save_staff_nav_state|handle_save_staff_nav_state": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_school_live_match_action|handle_school_live_match_action": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_send_staff_reset_password|handle_send_staff_reset_password_ajax": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_staff_lounge_fetch|handle_staff_lounge_fetch": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_staff_lounge_post|handle_staff_lounge_post": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_support_close_ticket|handle_support_close_ticket": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_support_create_ticket|handle_support_create_ticket": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_support_email_transcript|handle_support_email_transcript": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_support_get_ticket|handle_support_get_ticket": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_support_post_message|handle_support_post_message": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_support_request_feedback|handle_support_request_feedback": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_support_save_transcript|handle_support_save_transcript": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_support_submit_feedback|handle_support_submit_feedback": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_system_health_apply_all_safe_fixes|handle_system_health_apply_all_safe_fixes": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_system_health_apply_fix|handle_system_health_apply_fix": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_system_health_preview_fix|handle_system_health_preview_fix": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_thread_post_message|handle_thread_post_message": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_thread_set_status|handle_thread_set_status": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_toggle_staff_deactivated|handle_toggle_staff_deactivated_ajax": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_touch_staff_presence|handle_touch_staff_presence": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_update_calendar_day|handle_update_calendar_day": {
+        "ability_required": "portal.logged_in"
+    },
+    "wp_ajax|wp_ajax_cmn_update_staff_user|handle_update_staff_user_ajax": {
+        "ability_required": "portal.staff.view"
+    },
+    "wp_ajax|wp_ajax_cmn_update_system_health_issue|handle_update_system_health_issue": {
+        "ability_required": "portal.logged_in"
+    }
+}

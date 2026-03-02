@@ -1,0 +1,13 @@
+{
+  "nopriv_write_hooks": [
+    "admin_post_nopriv_cmn_candidate_response",
+    "admin_post_nopriv_cmn_marketing_runner",
+    "admin_post_nopriv_cmn_priority_interest_register",
+    "admin_post_nopriv_cmn_register_candidate",
+    "admin_post_nopriv_cmn_register_school",
+    "wp_ajax_nopriv_cmn_livechat_feedback_submit",
+    "wp_ajax_nopriv_cmn_livechat_send",
+    "wp_ajax_nopriv_cmn_livechat_start",
+    "wp_ajax_nopriv_cmn_thread_post_message"
+  ]
+}
