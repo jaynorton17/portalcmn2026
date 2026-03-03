@@ -80998,6 +80998,16 @@ global $wpdb;
         if ($weekly_state_note === '') {
             $weekly_state_note = 'Estimate (pending lock).';
         }
+        $candidate_id = (int) $this->get_candidate_id_for_user($candidate_user_id);
+        $candidate_day_rate_raw = $candidate_id > 0 ? (string) get_post_meta($candidate_id, 'cmn_default_rate', true) : '';
+        $candidate_day_rate_value = is_numeric($candidate_day_rate_raw) ? round((float) $candidate_day_rate_raw, 2) : null;
+        $candidate_day_rate_is_set = ($candidate_day_rate_value !== null && $candidate_day_rate_value > 0);
+        $candidate_day_rate_display = $candidate_day_rate_is_set
+            ? ('£' . number_format((float) $candidate_day_rate_value, 2) . ' per day')
+            : 'Not set yet';
+        $candidate_day_rate_helper = $candidate_day_rate_is_set
+            ? 'This is your base payroll day rate set by the CoverMeNow team.'
+            : 'A team member will confirm this after review.';
         $ytd_monthly_payload = $this->get_candidate_year_to_date_monthly_earnings($candidate_user_id);
         $ytd_month_rows = is_array($ytd_monthly_payload['months'] ?? null) ? (array) ($ytd_monthly_payload['months'] ?? []) : [];
         $ytd_total_confirmed = round((float) ($ytd_monthly_payload['total_confirmed'] ?? 0), 2);
@@ -81234,6 +81244,10 @@ global $wpdb;
                     <h3>Payment Details</h3>
                     <div class="cmn-candidate-finance-status-list">
                         <div class="cmn-candidate-finance-status-row">
+                            <span>Your Day Rate</span>
+                            <strong><?php echo esc_html($candidate_day_rate_display); ?></strong>
+                        </div>
+                        <div class="cmn-candidate-finance-status-row">
                             <span>Bank details</span>
                             <strong><span class="cmn-status-chip <?php echo esc_attr($bank_status_chip); ?>"><?php echo esc_html($bank_status_label); ?></span></strong>
                         </div>
@@ -81242,6 +81256,7 @@ global $wpdb;
                             <strong>Weekly (Fri-Thu, paid Friday)</strong>
                         </div>
                     </div>
+                    <p class="cmn-muted"><?php echo esc_html($candidate_day_rate_helper); ?></p>
                     <details class="cmn-candidate-finance-bank-details" id="cmn-candidate-bank-details"<?php echo $bank_details_open ? ' open' : ''; ?>>
                         <summary class="cmn-candidate-finance-bank-summary"><?php echo esc_html($has_bank_details ? 'Edit bank details' : 'Add bank details'); ?></summary>
                         <p class="cmn-muted">Add your payment bank details. Re-enter full sort code and account number when updating.</p>
