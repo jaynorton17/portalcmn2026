@@ -9350,6 +9350,51 @@ global $wpdb;
         return (int) $candidate->getTimestamp();
     }
 
+    private function get_school_live_match_day_reset_cutoff_timestamp($reference_ts = 0) {
+        $reference_ts = (int) $reference_ts;
+        if ($reference_ts < 1) {
+            $reference_ts = (int) (function_exists('cmn_now') ? cmn_now()->getTimestamp() : current_time('timestamp'));
+        }
+        $tz = wp_timezone();
+        $reference = (new DateTimeImmutable('@' . max(1, $reference_ts)))->setTimezone($tz);
+        return (int) $reference->setTime(9, 0, 0)->getTimestamp();
+    }
+
+    private function parse_mysql_datetime_to_wp_timestamp($raw_datetime) {
+        $raw_datetime = trim((string) $raw_datetime);
+        if ($raw_datetime === '') {
+            return 0;
+        }
+        $tz = wp_timezone();
+        $parsed = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $raw_datetime, $tz);
+        if ($parsed instanceof DateTimeImmutable) {
+            return (int) $parsed->getTimestamp();
+        }
+        $fallback_ts = strtotime($raw_datetime);
+        return $fallback_ts ? (int) $fallback_ts : 0;
+    }
+
+    private function candidate_has_fresh_live_match_availability_for_date($candidate_id, $date, $reset_cutoff_ts) {
+        $candidate_id = (int) $candidate_id;
+        $date = sanitize_text_field((string) $date);
+        $reset_cutoff_ts = (int) $reset_cutoff_ts;
+        if ($candidate_id < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return false;
+        }
+        if ($reset_cutoff_ts < 1) {
+            $reset_cutoff_ts = $this->get_school_live_match_day_reset_cutoff_timestamp();
+        }
+        $entry = $this->get_candidate_availability_entry($candidate_id, $date);
+        if (!is_array($entry) || empty($entry['created_at'])) {
+            return false;
+        }
+        $created_at_ts = $this->parse_mysql_datetime_to_wp_timestamp((string) $entry['created_at']);
+        if ($created_at_ts < 1) {
+            return false;
+        }
+        return $created_at_ts >= $reset_cutoff_ts;
+    }
+
     public function run_school_live_match_daily_reset_cron() {
         $result = $this->run_school_live_match_daily_reset_job('cron', 0, false);
         return is_array($result) ? $result : [];
@@ -9445,10 +9490,14 @@ global $wpdb;
         return false;
     }
 
-    private function candidate_has_valid_live_match_green_state($candidate_id, $today, $tomorrow) {
+    private function candidate_has_valid_live_match_green_state($candidate_id, $today, $tomorrow, $reset_cutoff_ts = null) {
         $candidate_id = (int) $candidate_id;
         if ($candidate_id < 1) {
             return false;
+        }
+        $reset_cutoff_ts = (int) $reset_cutoff_ts;
+        if ($reset_cutoff_ts < 1) {
+            $reset_cutoff_ts = $this->get_school_live_match_day_reset_cutoff_timestamp();
         }
         $dates = [];
         foreach ([$today, $tomorrow] as $date_raw) {
@@ -9457,14 +9506,19 @@ global $wpdb;
                 continue;
             }
             $dates[$date] = $date;
-            if ($this->has_candidate_availability($candidate_id, $date)) {
-                return true;
-            }
             if ($this->candidate_has_confirmed_booking_for_date($candidate_id, $date)) {
                 return true;
             }
         }
-        return $this->candidate_has_confirmed_request_for_dates($candidate_id, array_values($dates));
+        if ($this->candidate_has_confirmed_request_for_dates($candidate_id, array_values($dates))) {
+            return true;
+        }
+        foreach (array_values($dates) as $date) {
+            if ($this->candidate_has_fresh_live_match_availability_for_date($candidate_id, $date, $reset_cutoff_ts)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function run_school_live_match_daily_reset_job($trigger = 'cron', $actor_user_id = 0, $force = false) {
@@ -9492,6 +9546,7 @@ global $wpdb;
             $now = new DateTimeImmutable('now', $tz);
             $today = $now->format('Y-m-d');
             $tomorrow = $now->modify('+1 day')->format('Y-m-d');
+            $reset_cutoff_ts = $this->get_school_live_match_day_reset_cutoff_timestamp((int) $now->getTimestamp());
             $last_run_date = sanitize_text_field((string) get_option('cmn_school_live_match_reset_last_run_date', ''));
             if (!$force && $last_run_date === $today) {
                 return [
@@ -9556,7 +9611,7 @@ global $wpdb;
                 if ($candidate_id < 1) {
                     continue;
                 }
-                if ($this->candidate_has_valid_live_match_green_state($candidate_id, $today, $tomorrow)) {
+                if ($this->candidate_has_valid_live_match_green_state($candidate_id, $today, $tomorrow, $reset_cutoff_ts)) {
                     $skipped_valid++;
                     continue;
                 }
@@ -62249,7 +62304,6 @@ global $wpdb;
         ), ARRAY_A);
 
         $preferred_rows = [];
-        $fallback_rows = [];
         foreach ($rows as $row) {
             if (!is_array($row)) {
                 continue;
@@ -62261,9 +62315,6 @@ global $wpdb;
             $requested_date = sanitize_text_field((string) ($row['requested_date'] ?? ''));
             $target_date = (string) ($target_dates_by_candidate[$candidate_id] ?? '');
             if ($target_date !== '' && $requested_date !== $target_date) {
-                if (!isset($fallback_rows[$candidate_id])) {
-                    $fallback_rows[$candidate_id] = $row;
-                }
                 continue;
             }
             if (!isset($preferred_rows[$candidate_id])) {
@@ -62273,7 +62324,7 @@ global $wpdb;
 
         $map = [];
         foreach ($target_dates_by_candidate as $candidate_id => $target_date) {
-            $request_row = $preferred_rows[$candidate_id] ?? $fallback_rows[$candidate_id] ?? null;
+            $request_row = $preferred_rows[$candidate_id] ?? null;
             if (!is_array($request_row)) {
                 $map[$candidate_id] = [
                     'state' => '',
@@ -62285,7 +62336,6 @@ global $wpdb;
                 ];
                 continue;
             }
-            $this->maybe_mark_request_expired($request_row);
             $request_id = (int) ($request_row['id'] ?? 0);
             $request_status = $this->normalize_request_status((string) ($request_row['status'] ?? ''));
             $expires_at = $this->get_request_expires_at($request_row);
@@ -84882,6 +84932,7 @@ global $wpdb;
         $not_responded_count = 0;
         $shortlisted_count = 0;
         $target_date = current_time('Y-m-d');
+        $live_match_reset_cutoff_ts = $this->get_school_live_match_day_reset_cutoff_timestamp();
         $distance_school_user_id = 0;
         if ($school_id > 0) {
             $distance_school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
@@ -84948,41 +84999,32 @@ global $wpdb;
             $availability_dates_for_check = array_values(array_unique(array_filter($availability_dates_for_check)));
 
             // Canonical card state: confirmed availability should be reflected consistently across candidate + school cards.
-            $is_confirmed = !empty($item['is_confirmed']);
+            $is_confirmed = false;
             $confirmed_at_source = sanitize_text_field((string) ($item['created_at'] ?? ''));
-            if (!$is_confirmed) {
-                $saved_contact_card_show_available_raw = '';
-                if ($candidate_user_id > 0) {
-                    $saved_contact_card_show_available_raw = (string) get_user_meta($candidate_user_id, 'cmn_contact_card_show_available', true);
-                }
-                if ($saved_contact_card_show_available_raw === '' && $candidate_profile_id > 0) {
-                    $saved_contact_card_show_available_raw = (string) get_post_meta($candidate_profile_id, 'cmn_contact_card_show_available', true);
-                }
-                if ($saved_contact_card_show_available_raw === '' && $candidate_id > 0) {
-                    $saved_contact_card_show_available_raw = (string) get_post_meta($candidate_id, 'cmn_contact_card_show_available', true);
-                }
-                if (in_array(strtolower(trim($saved_contact_card_show_available_raw)), ['1', 'true', 'yes', 'on'], true)) {
+            $state_candidate_ids = array_values(array_unique(array_filter([
+                (int) $candidate_profile_id,
+                (int) $candidate_id,
+            ])));
+            foreach ($state_candidate_ids as $state_candidate_id) {
+                if ($this->candidate_has_valid_live_match_green_state($state_candidate_id, $today, $tomorrow, $live_match_reset_cutoff_ts)) {
                     $is_confirmed = true;
+                    break;
                 }
             }
-            if (!$is_confirmed && $availability_dates_for_check) {
+            if ($is_confirmed && $availability_dates_for_check) {
                 foreach ($availability_dates_for_check as $check_date) {
-                    $has_availability = $this->has_candidate_availability($candidate_profile_id, $check_date);
-                    if (!$has_availability && $candidate_profile_id !== $candidate_id) {
-                        $has_availability = $this->has_candidate_availability($candidate_id, $check_date);
-                    }
-                    if (!$has_availability) {
-                        continue;
-                    }
-                    $is_confirmed = true;
                     $confirmed_entry = $this->get_candidate_availability_entry($candidate_profile_id, $check_date);
                     if ((!is_array($confirmed_entry) || empty($confirmed_entry['created_at'])) && $candidate_profile_id !== $candidate_id) {
                         $confirmed_entry = $this->get_candidate_availability_entry($candidate_id, $check_date);
                     }
                     if (is_array($confirmed_entry) && !empty($confirmed_entry['created_at'])) {
-                        $confirmed_at_source = sanitize_text_field((string) $confirmed_entry['created_at']);
+                        $confirmed_at_candidate = sanitize_text_field((string) $confirmed_entry['created_at']);
+                        $confirmed_at_candidate_ts = $this->parse_mysql_datetime_to_wp_timestamp($confirmed_at_candidate);
+                        if ($confirmed_at_candidate_ts >= $live_match_reset_cutoff_ts) {
+                            $confirmed_at_source = $confirmed_at_candidate;
+                            break;
+                        }
                     }
-                    break;
                 }
             }
             $status_key = $is_confirmed ? 'available' : 'not_responded';
