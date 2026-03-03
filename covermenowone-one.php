@@ -605,7 +605,7 @@ final class CmnFeedbackInsights {
 final class CMN_One_Plugin {
     const VERSION = '0.1.25';
     const SCHEMA_BASE_VERSION = 38;
-    const SCHEMA_VERSION = 76;
+    const SCHEMA_VERSION = 77;
     const OFFER_EXPIRY_SECONDS = 900;
     const EMAIL_CANDIDATE_DECLINED = false;
     const AUTOMATION_DEFAULT_COOLDOWN_HOURS = 24;
@@ -640,6 +640,8 @@ final class CMN_One_Plugin {
     const SCHOOL_PARTNER_CONFIRMATION_REMINDER_LOCK_TTL = 1800;
     const SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK = 'cmn_school_live_match_daily_reset';
     const SCHOOL_LIVE_MATCH_DAILY_RESET_LOCK_TTL = 600;
+    const CANDIDATE_EMAIL_OUTBOX_CRON_HOOK = 'cmn_candidate_email_outbox_processor';
+    const CANDIDATE_EMAIL_OUTBOX_LOCK_TTL = 240;
     const SCHOOL_PARTNER_CONFIRMATION_TOKEN_TTL_DAYS = 14;
     const SCHOOL_PARTNER_CONFIRMATION_RATE_LIMIT_WINDOW = 600;
     const SCHOOL_PARTNER_CONFIRMATION_RATE_LIMIT_MAX_ATTEMPTS = 60;
@@ -1036,6 +1038,9 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_portal_reset_password', [$this, 'handle_portal_reset_password']);
         add_action('admin_post_cmn_run_upgrade_runner', [$this, 'handle_run_upgrade_runner']);
         add_action('admin_post_cmn_run_school_live_match_reset_now', [$this, 'handle_run_school_live_match_reset_now']);
+        add_action('admin_post_cmn_run_candidate_email_outbox_now', [$this, 'handle_run_candidate_email_outbox_now']);
+        add_action('admin_post_cmn_backfill_candidate_lifecycle_emails', [$this, 'handle_backfill_candidate_lifecycle_emails']);
+        add_action('admin_post_cmn_resend_candidate_email_outbox_item', [$this, 'handle_resend_candidate_email_outbox_item']);
         add_action('wp_ajax_cmn_add_staff_user', [$this, 'handle_add_staff_user_ajax']);
         add_action('wp_ajax_cmn_update_staff_user', [$this, 'handle_update_staff_user_ajax']);
         add_action('wp_ajax_cmn_send_staff_reset_password', [$this, 'handle_send_staff_reset_password_ajax']);
@@ -1175,6 +1180,7 @@ final class CMN_One_Plugin {
         add_action('init', [$this, 'schedule_school_partner_confirmation_email_cron']);
         add_action('init', [$this, 'schedule_school_partner_confirmation_reminder_cron']);
         add_action('init', [$this, 'schedule_school_live_match_daily_reset']);
+        add_action('init', [$this, 'schedule_candidate_email_outbox_processor']);
         add_action('init', [$this, 'ensure_rewards_academic_year_configs'], 24);
         add_action('cmn_automation_runner', [$this, 'run_automation_runner']);
         add_action(self::MONTHLY_INVOICE_CRON_HOOK, [$this, 'run_monthly_invoice_generation_cron']);
@@ -1186,6 +1192,7 @@ final class CMN_One_Plugin {
         add_action(self::SCHOOL_PARTNER_CONFIRMATION_EMAIL_CRON_HOOK, [$this, 'run_school_partner_confirmation_email_cron']);
         add_action(self::SCHOOL_PARTNER_CONFIRMATION_REMINDER_CRON_HOOK, [$this, 'run_school_partner_confirmation_reminder_cron']);
         add_action(self::SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK, [$this, 'run_school_live_match_daily_reset_cron']);
+        add_action(self::CANDIDATE_EMAIL_OUTBOX_CRON_HOOK, [$this, 'run_candidate_email_outbox_cron']);
         add_action('cmn_automation_realtime', [$this, 'handle_automation_realtime'], 10, 3);
     }
 
@@ -2292,6 +2299,12 @@ final class CMN_One_Plugin {
                 $from_version = $installed;
                 self::migrate_schema_v76_delta_query_indexes();
                 $mark_schema_step($from_version, 76, 'v76');
+            }
+
+            if ($installed < 77) {
+                $from_version = $installed;
+                self::migrate_schema_v77_candidate_email_outbox_queue();
+                $mark_schema_step($from_version, 77, 'v77');
             }
 
             if ($installed < self::SCHEMA_VERSION) {
@@ -6312,6 +6325,76 @@ global $wpdb;
         );
     }
 
+    /*
+     * v77 candidate email outbox queue checks:
+     * 1) Lifecycle email outbox table exists with durable queued/sent/failed state.
+     * 2) Idempotency key is unique to prevent duplicate lifecycle sends.
+     * 3) Retry scheduler queries are supported by status + next_attempt_at composite index.
+     */
+    private static function migrate_schema_v77_candidate_email_outbox_queue() {
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+        self::ensure_candidate_email_outbox_table_schema();
+    }
+
+    private static function ensure_candidate_email_outbox_table_schema() {
+        global $wpdb;
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $table = self::get_email_outbox_table_name();
+        $charset = $wpdb->get_charset_collate();
+        $sql = "CREATE TABLE {$table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            to_email varchar(190) NOT NULL,
+            user_id bigint(20) unsigned NULL,
+            template_key varchar(120) NOT NULL,
+            subject varchar(255) NOT NULL,
+            body_html longtext NULL,
+            body_text longtext NULL,
+            status varchar(20) NOT NULL DEFAULT 'queued',
+            attempts int(10) unsigned NOT NULL DEFAULT 0,
+            last_error text NULL,
+            next_attempt_at datetime NULL,
+            idempotency_key varchar(191) NOT NULL,
+            related_entity bigint(20) unsigned NULL,
+            related_event varchar(40) NOT NULL DEFAULT '',
+            PRIMARY KEY (id),
+            UNIQUE KEY idempotency_key (idempotency_key),
+            KEY status_next_attempt_at (status, next_attempt_at, id),
+            KEY user_id (user_id),
+            KEY related_entity_event (related_entity, related_event),
+            KEY created_at (created_at)
+        ) {$charset};";
+        dbDelta($sql);
+
+        self::maybe_add_missing_column($table, 'created_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($table, 'updated_at', "datetime NOT NULL");
+        self::maybe_add_missing_column($table, 'to_email', "varchar(190) NOT NULL");
+        self::maybe_add_missing_column($table, 'user_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($table, 'template_key', "varchar(120) NOT NULL");
+        self::maybe_add_missing_column($table, 'subject', "varchar(255) NOT NULL");
+        self::maybe_add_missing_column($table, 'body_html', "longtext NULL");
+        self::maybe_add_missing_column($table, 'body_text', "longtext NULL");
+        self::maybe_add_missing_column($table, 'status', "varchar(20) NOT NULL DEFAULT 'queued'");
+        self::maybe_add_missing_column($table, 'attempts', "int(10) unsigned NOT NULL DEFAULT 0");
+        self::maybe_add_missing_column($table, 'last_error', "text NULL");
+        self::maybe_add_missing_column($table, 'next_attempt_at', "datetime NULL");
+        self::maybe_add_missing_column($table, 'idempotency_key', "varchar(191) NOT NULL");
+        self::maybe_add_missing_column($table, 'related_entity', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($table, 'related_event', "varchar(40) NOT NULL DEFAULT ''");
+
+        self::maybe_add_missing_index($table, 'idempotency_key', "UNIQUE KEY idempotency_key (idempotency_key)");
+        self::maybe_add_missing_index($table, 'status_next_attempt_at', "KEY status_next_attempt_at (status, next_attempt_at, id)");
+        self::maybe_add_missing_index($table, 'user_id', "KEY user_id (user_id)");
+        self::maybe_add_missing_index($table, 'related_entity_event', "KEY related_entity_event (related_entity, related_event)");
+        self::maybe_add_missing_index($table, 'created_at', "KEY created_at (created_at)");
+    }
+
     private static function table_exists($table_name) {
         global $wpdb;
         $table_name = trim((string) $table_name);
@@ -6916,6 +6999,11 @@ global $wpdb;
     private static function get_email_logs_table_name() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_email_logs';
+    }
+
+    private static function get_email_outbox_table_name() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_email_outbox';
     }
 
     private static function get_email_senders_table_name() {
@@ -9167,6 +9255,15 @@ global $wpdb;
         }
     }
 
+    public function schedule_candidate_email_outbox_processor() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
+        if (!wp_next_scheduled(self::CANDIDATE_EMAIL_OUTBOX_CRON_HOOK)) {
+            wp_schedule_event(time() + 300, 'cmn_five_minutes', self::CANDIDATE_EMAIL_OUTBOX_CRON_HOOK);
+        }
+    }
+
     public function maybe_run_compliance_reminders_fallback() {
         if (wp_doing_ajax()) {
             return;
@@ -10548,6 +10645,136 @@ global $wpdb;
         wp_safe_redirect(add_query_arg([
             'cmn_live_match_reset_status' => $status,
             'cmn_live_match_reset_msg' => rawurlencode($message),
+        ], $redirect));
+        exit;
+    }
+
+    public function handle_run_candidate_email_outbox_now() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.upgrade.run',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_run_candidate_email_outbox_now',
+            'nonce_field' => 'cmn_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $redirect = esc_url_raw((string) ($_POST['cmn_return_url'] ?? ''));
+        if ($redirect !== '') {
+            $redirect = wp_validate_redirect($redirect, $this->get_portal_base_url());
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = wp_get_referer();
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = add_query_arg(['view' => 'system-health'], $this->get_portal_base_url());
+        }
+
+        $result = $this->process_candidate_email_outbox_queue('manual', $actor_user_id, 100);
+        $status = sanitize_key((string) ($result['status'] ?? 'error'));
+        if (!in_array($status, ['success', 'busy', 'error'], true)) {
+            $status = 'error';
+        }
+        $message = sanitize_text_field((string) ($result['message'] ?? 'Unable to run email queue.'));
+        wp_safe_redirect(add_query_arg([
+            'cmn_email_outbox_status' => $status,
+            'cmn_email_outbox_msg' => rawurlencode($message),
+        ], $redirect));
+        exit;
+    }
+
+    public function handle_backfill_candidate_lifecycle_emails() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.upgrade.run',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_backfill_candidate_lifecycle_emails',
+            'nonce_field' => 'cmn_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $redirect = esc_url_raw((string) ($_POST['cmn_return_url'] ?? ''));
+        if ($redirect !== '') {
+            $redirect = wp_validate_redirect($redirect, $this->get_portal_base_url());
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = wp_get_referer();
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = add_query_arg(['view' => 'system-health'], $this->get_portal_base_url());
+        }
+
+        $result = $this->backfill_candidate_lifecycle_email_queue($actor_user_id);
+        $status = sanitize_key((string) ($result['status'] ?? 'error'));
+        if (!in_array($status, ['success', 'error'], true)) {
+            $status = 'error';
+        }
+        $message = sanitize_text_field((string) ($result['message'] ?? 'Unable to backfill candidate lifecycle emails.'));
+        wp_safe_redirect(add_query_arg([
+            'cmn_email_backfill_status' => $status,
+            'cmn_email_backfill_msg' => rawurlencode($message),
+        ], $redirect));
+        exit;
+    }
+
+    public function handle_resend_candidate_email_outbox_item() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.upgrade.run',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_resend_candidate_email_outbox_item',
+            'nonce_field' => 'cmn_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $redirect = esc_url_raw((string) ($_POST['cmn_return_url'] ?? ''));
+        if ($redirect !== '') {
+            $redirect = wp_validate_redirect($redirect, $this->get_portal_base_url());
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = wp_get_referer();
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = add_query_arg(['view' => 'system-health'], $this->get_portal_base_url());
+        }
+
+        $outbox_id = max(0, (int) ($_POST['outbox_id'] ?? 0));
+        $result = $this->requeue_candidate_email_outbox_item($outbox_id, $actor_user_id);
+        $status = sanitize_key((string) ($result['status'] ?? 'error'));
+        if (!in_array($status, ['success', 'error'], true)) {
+            $status = 'error';
+        }
+        $message = sanitize_text_field((string) ($result['message'] ?? 'Unable to requeue email outbox item.'));
+        wp_safe_redirect(add_query_arg([
+            'cmn_email_resend_status' => $status,
+            'cmn_email_resend_msg' => rawurlencode($message),
         ], $redirect));
         exit;
     }
@@ -20797,6 +21024,27 @@ global $wpdb;
     private function get_email_log_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_email_log';
+    }
+
+    private function get_email_outbox_table() {
+        global $wpdb;
+        return $wpdb->prefix . 'cmn_email_outbox';
+    }
+
+    private function ensure_candidate_email_outbox_table_ready() {
+        static $is_ready = null;
+        if ($is_ready !== null) {
+            return (bool) $is_ready;
+        }
+        global $wpdb;
+        $table = $this->get_email_outbox_table();
+        $exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($exists !== $table) {
+            self::ensure_candidate_email_outbox_table_schema();
+            $exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        }
+        $is_ready = ($exists === $table);
+        return (bool) $is_ready;
     }
 
     private function get_email_templates_storage_table() {
@@ -36872,6 +37120,27 @@ global $wpdb;
         $last_upgrade_status_class = $last_upgrade_status === 'success'
             ? 'cmn-register-success'
             : ($last_upgrade_status === 'busy' ? 'cmn-register-warning' : ($last_upgrade_status === 'error' ? 'cmn-register-error' : 'cmn-muted'));
+        $email_outbox_status = sanitize_key((string) ($_GET['cmn_email_outbox_status'] ?? ''));
+        $email_outbox_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_email_outbox_msg'] ?? '')));
+        $email_backfill_status = sanitize_key((string) ($_GET['cmn_email_backfill_status'] ?? ''));
+        $email_backfill_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_email_backfill_msg'] ?? '')));
+        $email_resend_status = sanitize_key((string) ($_GET['cmn_email_resend_status'] ?? ''));
+        $email_resend_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_email_resend_msg'] ?? '')));
+        $email_outbox_msg_class = function ($status) {
+            $status = sanitize_key((string) $status);
+            if ($status === 'success') {
+                return 'cmn-register-success';
+            }
+            if ($status === 'busy') {
+                return 'cmn-register-warning';
+            }
+            if ($status === 'error') {
+                return 'cmn-register-error';
+            }
+            return 'cmn-muted';
+        };
+        $email_outbox_counts = $this->is_admin_user() ? $this->get_candidate_email_outbox_status_counts(7) : ['queued' => 0, 'failed' => 0, 'sent' => 0];
+        $email_outbox_failed_rows = $this->is_admin_user() ? $this->get_candidate_email_outbox_failed_rows(20) : [];
 
         ob_start();
         ?>
@@ -36935,6 +37204,97 @@ global $wpdb;
                     <?php if ($last_upgrade_message !== '') : ?>
                         <div class="<?php echo esc_attr($last_upgrade_status_class); ?>" style="margin-top:8px;"><?php echo esc_html($last_upgrade_message); ?></div>
                     <?php endif; ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($this->is_admin_user()) : ?>
+                <div class="cmn-dashboard-card" style="margin-top:12px;">
+                    <h3 style="margin:0 0 8px;">Candidate Email Outbox (7 days)</h3>
+                    <div class="cmn-system-health-summary-grid" style="margin-bottom:10px;">
+                        <div><span>Queued</span><strong><?php echo esc_html((string) max(0, (int) ($email_outbox_counts['queued'] ?? 0))); ?></strong></div>
+                        <div><span>Failed</span><strong><?php echo esc_html((string) max(0, (int) ($email_outbox_counts['failed'] ?? 0))); ?></strong></div>
+                        <div><span>Sent</span><strong><?php echo esc_html((string) max(0, (int) ($email_outbox_counts['sent'] ?? 0))); ?></strong></div>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-flex;gap:8px;align-items:center;">
+                            <?php wp_nonce_field('cmn_run_candidate_email_outbox_now', 'cmn_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_run_candidate_email_outbox_now">
+                            <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr($this->get_current_url()); ?>">
+                            <button class="cmn-ghost" type="submit">Run Email Queue Now</button>
+                        </form>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-flex;gap:8px;align-items:center;">
+                            <?php wp_nonce_field('cmn_backfill_candidate_lifecycle_emails', 'cmn_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_backfill_candidate_lifecycle_emails">
+                            <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr($this->get_current_url()); ?>">
+                            <button class="cmn-ghost" type="submit">Backfill Missing Candidate Emails</button>
+                        </form>
+                    </div>
+                    <?php if ($email_outbox_msg !== '') : ?>
+                        <div class="<?php echo esc_attr($email_outbox_msg_class($email_outbox_status)); ?>" style="margin-top:8px;"><?php echo esc_html($email_outbox_msg); ?></div>
+                    <?php endif; ?>
+                    <?php if ($email_backfill_msg !== '') : ?>
+                        <div class="<?php echo esc_attr($email_outbox_msg_class($email_backfill_status)); ?>" style="margin-top:8px;"><?php echo esc_html($email_backfill_msg); ?></div>
+                    <?php endif; ?>
+                    <?php if ($email_resend_msg !== '') : ?>
+                        <div class="<?php echo esc_attr($email_outbox_msg_class($email_resend_status)); ?>" style="margin-top:8px;"><?php echo esc_html($email_resend_msg); ?></div>
+                    <?php endif; ?>
+
+                    <div style="margin-top:12px;">
+                        <h4 style="margin:0 0 8px;">Failed emails</h4>
+                        <div class="cmn-system-health-table-wrap">
+                            <table class="cmn-approval-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>To</th>
+                                        <th>Template</th>
+                                        <th>Event</th>
+                                        <th>Candidate</th>
+                                        <th>Attempts</th>
+                                        <th>Next Attempt</th>
+                                        <th>Last Error</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                <?php if (!empty($email_outbox_failed_rows)) : ?>
+                                    <?php foreach ($email_outbox_failed_rows as $failed_row) : ?>
+                                        <?php
+                                        $outbox_id = max(0, (int) ($failed_row['id'] ?? 0));
+                                        $candidate_ref = max(0, (int) ($failed_row['related_entity'] ?? 0));
+                                        $next_attempt = sanitize_text_field((string) ($failed_row['next_attempt_at'] ?? ''));
+                                        $next_attempt_label = $next_attempt !== '' ? date_i18n('M j, Y g:ia', strtotime($next_attempt)) : '-';
+                                        ?>
+                                        <tr>
+                                            <td><?php echo esc_html((string) $outbox_id); ?></td>
+                                            <td><?php echo esc_html((string) ($failed_row['to_email'] ?? '')); ?></td>
+                                            <td><?php echo esc_html((string) ($failed_row['template_key'] ?? '')); ?></td>
+                                            <td><?php echo esc_html((string) ($failed_row['related_event'] ?? '')); ?></td>
+                                            <td><?php echo esc_html($candidate_ref > 0 ? ('#' . $candidate_ref) : '-'); ?></td>
+                                            <td><?php echo esc_html((string) max(0, (int) ($failed_row['attempts'] ?? 0))); ?></td>
+                                            <td><?php echo esc_html($next_attempt_label); ?></td>
+                                            <td><span class="cmn-muted"><?php echo esc_html((string) ($failed_row['last_error'] ?? '')); ?></span></td>
+                                            <td>
+                                                <?php if ($outbox_id > 0) : ?>
+                                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-flex;gap:6px;align-items:center;">
+                                                        <?php wp_nonce_field('cmn_resend_candidate_email_outbox_item', 'cmn_nonce'); ?>
+                                                        <input type="hidden" name="action" value="cmn_resend_candidate_email_outbox_item">
+                                                        <input type="hidden" name="outbox_id" value="<?php echo esc_attr((string) $outbox_id); ?>">
+                                                        <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr($this->get_current_url()); ?>">
+                                                        <button class="cmn-ghost" type="submit">Resend</button>
+                                                    </form>
+                                                <?php else : ?>
+                                                    <span class="cmn-muted">-</span>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php else : ?>
+                                    <tr><td colspan="9">No failed outbox emails.</td></tr>
+                                <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             <?php endif; ?>
 
@@ -94305,90 +94665,180 @@ p{margin:0;line-height:1.5}
         return sanitize_email((string) get_post_meta($candidate_id, 'cmn_email', true));
     }
 
+    private function build_candidate_lifecycle_email_payload($candidate_id, $candidate_user_id, $event_key) {
+        $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        $event_key = sanitize_key((string) $event_key);
+        if ($candidate_id < 1 || $candidate_user_id < 1 || $event_key === '') {
+            return [];
+        }
+        $candidate_email = $this->get_candidate_notification_email($candidate_id, $candidate_user_id);
+        if ($candidate_email === '') {
+            return [];
+        }
+        $portal_url = $this->get_portal_base_url();
+        $support_url = add_query_arg(['candidate' => 'support'], $portal_url);
+        $dashboard_url = add_query_arg(['candidate' => 'dashboard'], $portal_url);
+        if ($event_key === 'pending_review') {
+            $subject = 'Your CoverMeNow application has been received';
+            $body_text = "Thanks for registering with CoverMeNow.\n\nYour registration has been received and your status is now: Pending review.\n\nOur team will review your profile and documents and notify you as soon as your application is approved.\n\nNeed help? Contact support here:\n{$support_url}\n\nCoverMeNow ONE";
+            return [
+                'to_email' => $candidate_email,
+                'template_key' => 'candidate_pending_review',
+                'subject' => $subject,
+                'body_text' => $body_text,
+                'body_html' => wpautop(esc_html($body_text)),
+                'related_event' => 'pending_review',
+            ];
+        }
+        if ($event_key === 'approved') {
+            $subject = "You're approved on CoverMeNow 🎉";
+            $body_text = "Great news - your CoverMeNow profile has been approved.\n\nYou can now access your dashboard and start receiving opportunities.\n\nNext steps:\n1. Update your availability calendar\n2. Review your profile details\n3. Keep your documents up to date\n\nGo to your dashboard:\n{$dashboard_url}\n\nCoverMeNow ONE";
+            return [
+                'to_email' => $candidate_email,
+                'template_key' => 'candidate_approved',
+                'subject' => $subject,
+                'body_text' => $body_text,
+                'body_html' => wpautop(esc_html($body_text)),
+                'related_event' => 'approved',
+            ];
+        }
+        return [];
+    }
+
+    private function get_candidate_lifecycle_email_idempotency_key($candidate_user_id, $event_key) {
+        $candidate_user_id = max(0, (int) $candidate_user_id);
+        $event_key = sanitize_key((string) $event_key);
+        if ($candidate_user_id < 1 || $event_key === '') {
+            return '';
+        }
+        return 'candidate:' . $candidate_user_id . ':' . $event_key;
+    }
+
+    private function enqueue_candidate_lifecycle_email($candidate_id, $candidate_user_id, $event_key, $context = '') {
+        $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        $event_key = sanitize_key((string) $event_key);
+        $context = sanitize_key((string) $context);
+        if ($candidate_id < 1 || $candidate_user_id < 1 || !$this->is_candidate_user($candidate_user_id) || $event_key === '') {
+            $this->debug_candidate_email_event('candidate_lifecycle_queue_skipped_invalid_target', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'event' => $event_key,
+                'context' => $context,
+            ]);
+            return false;
+        }
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            $this->debug_candidate_email_event('candidate_lifecycle_queue_skipped_table_unavailable', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'event' => $event_key,
+                'context' => $context,
+            ]);
+            return false;
+        }
+
+        $payload = $this->build_candidate_lifecycle_email_payload($candidate_id, $candidate_user_id, $event_key);
+        if (!$payload) {
+            $this->debug_candidate_email_event('candidate_lifecycle_queue_skipped_missing_payload', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'event' => $event_key,
+                'context' => $context,
+            ]);
+            return false;
+        }
+
+        $idempotency_key = $this->get_candidate_lifecycle_email_idempotency_key($candidate_user_id, $event_key);
+        if ($idempotency_key === '') {
+            return false;
+        }
+
+        global $wpdb;
+        $table = $this->get_email_outbox_table();
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, status
+             FROM {$table}
+             WHERE idempotency_key = %s
+             LIMIT 1",
+            $idempotency_key
+        ), ARRAY_A);
+        if (is_array($existing) && !empty($existing['id'])) {
+            $this->debug_candidate_email_event('candidate_lifecycle_queue_skipped_duplicate', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'event' => $event_key,
+                'context' => $context,
+                'existing_status' => sanitize_key((string) ($existing['status'] ?? 'queued')),
+                'outbox_id' => (int) ($existing['id'] ?? 0),
+            ]);
+            return false;
+        }
+
+        $now = current_time('mysql');
+        $inserted = $wpdb->insert(
+            $table,
+            [
+                'created_at' => $now,
+                'updated_at' => $now,
+                'to_email' => sanitize_email((string) ($payload['to_email'] ?? '')),
+                'user_id' => $candidate_user_id,
+                'template_key' => sanitize_key((string) ($payload['template_key'] ?? 'candidate_lifecycle')),
+                'subject' => sanitize_text_field((string) ($payload['subject'] ?? 'CoverMeNow update')),
+                'body_html' => (string) ($payload['body_html'] ?? ''),
+                'body_text' => (string) ($payload['body_text'] ?? ''),
+                'status' => 'queued',
+                'attempts' => 0,
+                'last_error' => '',
+                'next_attempt_at' => $now,
+                'idempotency_key' => $idempotency_key,
+                'related_entity' => $candidate_id,
+                'related_event' => sanitize_key((string) ($payload['related_event'] ?? $event_key)),
+            ],
+            ['%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%d', '%s']
+        );
+        if ($inserted === false) {
+            $this->debug_candidate_email_event('candidate_lifecycle_queue_insert_failed', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'event' => $event_key,
+                'context' => $context,
+                'db_error' => sanitize_text_field((string) $wpdb->last_error),
+            ]);
+            return false;
+        }
+
+        $outbox_id = (int) $wpdb->insert_id;
+        $this->add_audit_log('email_outbox_enqueued', 'candidate', (string) $candidate_id, [
+            'outbox_id' => $outbox_id,
+            'event' => $event_key,
+            'context' => $context,
+            'idempotency_key' => $idempotency_key,
+            'status' => 'queued',
+        ], get_current_user_id());
+        $this->debug_candidate_email_event('candidate_lifecycle_queue_enqueued', [
+            'candidate_id' => $candidate_id,
+            'candidate_user_id' => $candidate_user_id,
+            'event' => $event_key,
+            'context' => $context,
+            'outbox_id' => $outbox_id,
+        ]);
+        return true;
+    }
+
     private function maybe_send_candidate_pending_review_email($candidate_id, $candidate_user_id, $context = '') {
         $candidate_id = (int) $candidate_id;
         $candidate_user_id = (int) $candidate_user_id;
         $context = sanitize_key((string) $context);
         if ($candidate_id < 1 || $candidate_user_id < 1 || !$this->is_candidate_user($candidate_user_id)) {
-            $this->debug_candidate_email_event('candidate_pending_review_skipped_invalid_target', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'context' => $context,
-            ]);
             return false;
         }
         $verification_status = $this->normalize_candidate_verification_status((string) get_user_meta($candidate_user_id, 'cmn_admin_verification_status', true));
         if (!$this->is_pending_review_candidate_status($verification_status)) {
-            $this->debug_candidate_email_event('candidate_pending_review_skipped_status', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'status' => $verification_status,
-                'context' => $context,
-            ]);
             return false;
         }
-        $already_sent_at = (string) get_user_meta($candidate_user_id, 'cmn_email_pending_review_sent_at', true);
-        if ($already_sent_at !== '') {
-            $this->debug_candidate_email_event('candidate_pending_review_skipped_already_sent', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'sent_at' => $already_sent_at,
-                'context' => $context,
-            ]);
-            return false;
-        }
-
-        $candidate_email = $this->get_candidate_notification_email($candidate_id, $candidate_user_id);
-        if ($candidate_email === '') {
-            $this->debug_candidate_email_event('candidate_pending_review_skipped_missing_email', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'context' => $context,
-            ]);
-            return false;
-        }
-        $portal_url = $this->get_portal_base_url();
-        $support_url = add_query_arg(['candidate' => 'support'], $portal_url);
-        $subject = 'Your CoverMeNow application has been received';
-        $message = "Thanks for registering with CoverMeNow.\n\nYour registration has been received and your status is now: Pending review.\n\nOur team will review your profile and documents and notify you as soon as your application is approved.\n\nNeed help? Contact support here:\n{$support_url}\n\nCoverMeNow ONE";
-        $sent = $this->send_candidate_email($candidate_email, $subject, $message, [
-            'type' => 'candidate_status_update',
-            'user_id' => $candidate_user_id,
-            'related_candidate_id' => $candidate_id,
-            'notify_key' => 'cmn_notify_email_profile_reminders',
-        ]);
-
-        if ($sent) {
-            $sent_at = current_time('mysql');
-            update_user_meta($candidate_user_id, 'cmn_email_pending_review_sent_at', $sent_at);
-            update_post_meta($candidate_id, 'cmn_email_pending_review_sent_at', $sent_at);
-            $this->add_audit_log('email_sent', 'candidate', (string) $candidate_id, [
-                'email_event' => 'candidate_pending_review',
-                'status' => $verification_status,
-                'context' => $context,
-                'sent_at' => $sent_at,
-            ], get_current_user_id());
-            $this->debug_candidate_email_event('candidate_pending_review_sent', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'status' => $verification_status,
-                'context' => $context,
-            ]);
-            return true;
-        }
-
-        $this->add_audit_log('email_send_failed', 'candidate', (string) $candidate_id, [
-            'email_event' => 'candidate_pending_review',
-            'status' => $verification_status,
-            'context' => $context,
-        ], get_current_user_id());
-        $this->debug_candidate_email_event('candidate_pending_review_failed', [
-            'candidate_id' => $candidate_id,
-            'candidate_user_id' => $candidate_user_id,
-            'status' => $verification_status,
-            'context' => $context,
-        ]);
-        return false;
+        return $this->enqueue_candidate_lifecycle_email($candidate_id, $candidate_user_id, 'pending_review', $context);
     }
 
     private function maybe_send_candidate_approved_email($candidate_id, $candidate_user_id, $previous_status, $new_status, $context = '') {
@@ -94398,100 +94848,435 @@ p{margin:0;line-height:1.5}
         $previous_status = $this->normalize_candidate_verification_status($previous_status);
         $new_status = $this->normalize_candidate_verification_status($new_status);
         if ($candidate_id < 1 || $candidate_user_id < 1 || !$this->is_candidate_user($candidate_user_id)) {
-            $this->debug_candidate_email_event('candidate_approved_skipped_invalid_target', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'from' => $previous_status,
-                'to' => $new_status,
-                'context' => $context,
-            ]);
             return false;
         }
         if ($new_status !== 'approved' || !$this->is_pending_review_candidate_status($previous_status)) {
-            $this->debug_candidate_email_event('candidate_approved_skipped_transition', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'from' => $previous_status,
-                'to' => $new_status,
-                'context' => $context,
-            ]);
             return false;
         }
+        return $this->enqueue_candidate_lifecycle_email($candidate_id, $candidate_user_id, 'approved', $context);
+    }
 
-        $transition_marker = $previous_status . '->' . $new_status;
-        $last_transition_marker = (string) get_user_meta($candidate_user_id, 'cmn_email_approved_last_transition', true);
-        $last_transition_at = (string) get_user_meta($candidate_user_id, 'cmn_email_approved_sent_at', true);
-        if ($last_transition_marker === $transition_marker && $last_transition_at !== '') {
-            $this->debug_candidate_email_event('candidate_approved_skipped_already_sent', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'from' => $previous_status,
-                'to' => $new_status,
-                'context' => $context,
-                'sent_at' => $last_transition_at,
-            ]);
-            return false;
+    private function calculate_candidate_email_outbox_backoff_seconds($attempts) {
+        $attempts = max(1, (int) $attempts);
+        $delay = 300 * (2 ** max(0, $attempts - 1));
+        return min(DAY_IN_SECONDS, (int) $delay);
+    }
+
+    private function process_single_candidate_email_outbox_row(array $row, $actor_user_id = 0, $trigger = 'cron') {
+        global $wpdb;
+        $table = $this->get_email_outbox_table();
+        $row_id = (int) ($row['id'] ?? 0);
+        if ($row_id < 1) {
+            return ['status' => 'skipped', 'message' => 'Invalid outbox row.', 'row_id' => 0];
         }
 
-        $candidate_email = $this->get_candidate_notification_email($candidate_id, $candidate_user_id);
-        if ($candidate_email === '') {
-            $this->debug_candidate_email_event('candidate_approved_skipped_missing_email', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'from' => $previous_status,
-                'to' => $new_status,
-                'context' => $context,
-            ]);
-            return false;
+        $attempts_before = max(0, (int) ($row['attempts'] ?? 0));
+        $attempts_after = $attempts_before + 1;
+        $candidate_id = max(0, (int) ($row['related_entity'] ?? 0));
+        $candidate_user_id = max(0, (int) ($row['user_id'] ?? 0));
+        $to_email = sanitize_email((string) ($row['to_email'] ?? ''));
+        $subject = sanitize_text_field((string) ($row['subject'] ?? 'CoverMeNow update'));
+        $body_text = (string) ($row['body_text'] ?? '');
+        if ($body_text === '') {
+            $body_text = wp_strip_all_tags((string) ($row['body_html'] ?? ''));
+        }
+        if ($to_email === '' || $body_text === '') {
+            $now = current_time('mysql');
+            $wpdb->update(
+                $table,
+                [
+                    'status' => 'failed',
+                    'attempts' => $attempts_after,
+                    'last_error' => 'Missing recipient or message body.',
+                    'updated_at' => $now,
+                    'next_attempt_at' => date('Y-m-d H:i:s', current_time('timestamp') + $this->calculate_candidate_email_outbox_backoff_seconds($attempts_after)),
+                ],
+                ['id' => $row_id],
+                ['%s', '%d', '%s', '%s', '%s'],
+                ['%d']
+            );
+            return ['status' => 'failed', 'message' => 'Missing recipient or body.', 'row_id' => $row_id];
         }
 
-        $dashboard_url = add_query_arg(['candidate' => 'dashboard'], $this->get_portal_base_url());
-        $subject = "You're approved on CoverMeNow 🎉";
-        $message = "Great news — your CoverMeNow profile has been approved.\n\nYou can now access your dashboard and start receiving opportunities.\n\nNext steps:\n1. Update your availability calendar\n2. Review your profile details\n3. Keep your documents up to date\n\nGo to your dashboard:\n{$dashboard_url}\n\nCoverMeNow ONE";
-        $sent = $this->send_candidate_email($candidate_email, $subject, $message, [
-            'type' => 'candidate_status_update',
+        $sent = $this->send_candidate_email($to_email, $subject, $body_text, [
+            'type' => 'candidate_lifecycle_transactional',
+            'template_key' => sanitize_key((string) ($row['template_key'] ?? 'candidate_lifecycle')),
             'user_id' => $candidate_user_id,
             'related_candidate_id' => $candidate_id,
-            'notify_key' => 'cmn_notify_email_profile_reminders',
         ]);
-
+        $now = current_time('mysql');
         if ($sent) {
-            $sent_at = current_time('mysql');
-            update_user_meta($candidate_user_id, 'cmn_email_approved_sent_at', $sent_at);
-            update_user_meta($candidate_user_id, 'cmn_email_approved_last_transition', $transition_marker);
-            update_post_meta($candidate_id, 'cmn_email_approved_sent_at', $sent_at);
-            update_post_meta($candidate_id, 'cmn_email_approved_last_transition', $transition_marker);
-            $this->add_audit_log('email_sent', 'candidate', (string) $candidate_id, [
-                'email_event' => 'candidate_approved',
-                'from_status' => $previous_status,
-                'to_status' => $new_status,
-                'context' => $context,
-                'sent_at' => $sent_at,
-            ], get_current_user_id());
-            $this->debug_candidate_email_event('candidate_approved_sent', [
-                'candidate_id' => $candidate_id,
-                'candidate_user_id' => $candidate_user_id,
-                'from' => $previous_status,
-                'to' => $new_status,
-                'context' => $context,
-            ]);
-            return true;
+            $wpdb->update(
+                $table,
+                [
+                    'status' => 'sent',
+                    'attempts' => $attempts_after,
+                    'last_error' => '',
+                    'updated_at' => $now,
+                    'next_attempt_at' => null,
+                ],
+                ['id' => $row_id],
+                ['%s', '%d', '%s', '%s', '%s'],
+                ['%d']
+            );
+            $this->add_audit_log('email_outbox_sent', 'candidate', (string) $candidate_id, [
+                'outbox_id' => $row_id,
+                'related_event' => sanitize_key((string) ($row['related_event'] ?? '')),
+                'attempts' => $attempts_after,
+                'trigger' => sanitize_key((string) $trigger),
+            ], (int) $actor_user_id);
+            return ['status' => 'sent', 'message' => 'Sent', 'row_id' => $row_id];
         }
 
-        $this->add_audit_log('email_send_failed', 'candidate', (string) $candidate_id, [
-            'email_event' => 'candidate_approved',
-            'from_status' => $previous_status,
-            'to_status' => $new_status,
-            'context' => $context,
-        ], get_current_user_id());
-        $this->debug_candidate_email_event('candidate_approved_failed', [
-            'candidate_id' => $candidate_id,
-            'candidate_user_id' => $candidate_user_id,
-            'from' => $previous_status,
-            'to' => $new_status,
-            'context' => $context,
-        ]);
-        return false;
+        $next_attempt_at = date('Y-m-d H:i:s', current_time('timestamp') + $this->calculate_candidate_email_outbox_backoff_seconds($attempts_after));
+        $error_message = 'wp_mail returned false.';
+        $wpdb->update(
+            $table,
+            [
+                'status' => 'failed',
+                'attempts' => $attempts_after,
+                'last_error' => $error_message,
+                'updated_at' => $now,
+                'next_attempt_at' => $next_attempt_at,
+            ],
+            ['id' => $row_id],
+            ['%s', '%d', '%s', '%s', '%s'],
+            ['%d']
+        );
+        $this->add_audit_log('email_outbox_failed', 'candidate', (string) $candidate_id, [
+            'outbox_id' => $row_id,
+            'related_event' => sanitize_key((string) ($row['related_event'] ?? '')),
+            'attempts' => $attempts_after,
+            'trigger' => sanitize_key((string) $trigger),
+            'error' => $error_message,
+            'next_attempt_at' => $next_attempt_at,
+        ], (int) $actor_user_id);
+        return ['status' => 'failed', 'message' => $error_message, 'row_id' => $row_id];
+    }
+
+    private function process_candidate_email_outbox_queue($trigger = 'cron', $actor_user_id = 0, $limit = 25) {
+        $trigger = sanitize_key((string) $trigger);
+        if ($trigger === '') {
+            $trigger = 'cron';
+        }
+        $actor_user_id = max(0, (int) $actor_user_id);
+        $limit = max(1, min(200, (int) $limit));
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            return [
+                'status' => 'error',
+                'message' => 'Email outbox table unavailable.',
+                'processed' => 0,
+                'sent' => 0,
+                'failed' => 0,
+            ];
+        }
+
+        $lock_runner = $this->cmn_acquire_job_lock(
+            'candidate_email_outbox_processor',
+            self::CANDIDATE_EMAIL_OUTBOX_LOCK_TTL,
+            $this->get_job_lock_runner_id('candidate-email-outbox')
+        );
+        if (!$lock_runner) {
+            return [
+                'status' => 'busy',
+                'message' => 'Email outbox processor is already running.',
+                'processed' => 0,
+                'sent' => 0,
+                'failed' => 0,
+            ];
+        }
+
+        $started_at = microtime(true);
+        $processed = 0;
+        $sent = 0;
+        $failed = 0;
+        $skipped = 0;
+        try {
+            global $wpdb;
+            $table = $this->get_email_outbox_table();
+            $now = current_time('mysql');
+            $rows = (array) $wpdb->get_results($wpdb->prepare(
+                "SELECT *
+                 FROM {$table}
+                 WHERE status IN ('queued', 'failed')
+                   AND (next_attempt_at IS NULL OR next_attempt_at <= %s)
+                 ORDER BY COALESCE(next_attempt_at, created_at) ASC, id ASC
+                 LIMIT %d",
+                $now,
+                $limit
+            ), ARRAY_A);
+
+            foreach ($rows as $row) {
+                $processed++;
+                $result = $this->process_single_candidate_email_outbox_row((array) $row, $actor_user_id, $trigger);
+                $result_status = sanitize_key((string) ($result['status'] ?? 'skipped'));
+                if ($result_status === 'sent') {
+                    $sent++;
+                } elseif ($result_status === 'failed') {
+                    $failed++;
+                } else {
+                    $skipped++;
+                }
+            }
+
+            $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
+            $this->add_audit_log('email_outbox_processor_run', 'system', 'email_outbox', [
+                'trigger' => $trigger,
+                'processed' => $processed,
+                'sent' => $sent,
+                'failed' => $failed,
+                'skipped' => $skipped,
+                'duration_ms' => $duration_ms,
+            ], $actor_user_id);
+
+            return [
+                'status' => 'success',
+                'message' => sprintf('Processed %d queued email(s): %d sent, %d failed, %d skipped.', $processed, $sent, $failed, $skipped),
+                'processed' => $processed,
+                'sent' => $sent,
+                'failed' => $failed,
+                'skipped' => $skipped,
+                'duration_ms' => $duration_ms,
+            ];
+        } finally {
+            $this->cmn_release_job_lock('candidate_email_outbox_processor', (string) $lock_runner);
+        }
+    }
+
+    public function run_candidate_email_outbox_cron() {
+        return $this->process_candidate_email_outbox_queue('cron', 0, 50);
+    }
+
+    private function get_candidate_email_outbox_status_counts($days = 7) {
+        $days = max(1, (int) $days);
+        $counts = ['queued' => 0, 'failed' => 0, 'sent' => 0];
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            return $counts;
+        }
+
+        global $wpdb;
+        $table = $this->get_email_outbox_table();
+        $cutoff = date('Y-m-d H:i:s', current_time('timestamp') - (DAY_IN_SECONDS * $days));
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT status, COUNT(*) AS total
+             FROM {$table}
+             WHERE created_at >= %s
+             GROUP BY status",
+            $cutoff
+        ), ARRAY_A);
+        foreach ($rows as $row) {
+            $status = sanitize_key((string) ($row['status'] ?? ''));
+            if (!isset($counts[$status])) {
+                continue;
+            }
+            $counts[$status] = max(0, (int) ($row['total'] ?? 0));
+        }
+        return $counts;
+    }
+
+    private function get_candidate_email_outbox_failed_rows($limit = 25) {
+        $limit = max(1, min(100, (int) $limit));
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            return [];
+        }
+
+        global $wpdb;
+        $table = $this->get_email_outbox_table();
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT id, to_email, template_key, related_entity, related_event, attempts, last_error, next_attempt_at, updated_at, created_at
+             FROM {$table}
+             WHERE status = 'failed'
+             ORDER BY updated_at DESC, id DESC
+             LIMIT %d",
+            $limit
+        ), ARRAY_A);
+        return array_map(static function ($row) {
+            return [
+                'id' => max(0, (int) ($row['id'] ?? 0)),
+                'to_email' => sanitize_email((string) ($row['to_email'] ?? '')),
+                'template_key' => sanitize_key((string) ($row['template_key'] ?? '')),
+                'related_entity' => max(0, (int) ($row['related_entity'] ?? 0)),
+                'related_event' => sanitize_key((string) ($row['related_event'] ?? '')),
+                'attempts' => max(0, (int) ($row['attempts'] ?? 0)),
+                'last_error' => sanitize_text_field((string) ($row['last_error'] ?? '')),
+                'next_attempt_at' => sanitize_text_field((string) ($row['next_attempt_at'] ?? '')),
+                'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
+                'created_at' => sanitize_text_field((string) ($row['created_at'] ?? '')),
+            ];
+        }, $rows);
+    }
+
+    private function backfill_candidate_lifecycle_email_queue($actor_user_id = 0, $batch_size = 200, $max_candidates = 5000) {
+        $actor_user_id = max(0, (int) $actor_user_id);
+        $batch_size = max(50, min(500, (int) $batch_size));
+        $max_candidates = max(1, min(20000, (int) $max_candidates));
+
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            return [
+                'status' => 'error',
+                'message' => 'Email outbox table unavailable.',
+                'processed' => 0,
+                'pending_enqueued' => 0,
+                'approved_enqueued' => 0,
+                'skipped' => 0,
+            ];
+        }
+
+        $offset = 0;
+        $processed = 0;
+        $pending_enqueued = 0;
+        $approved_enqueued = 0;
+        $skipped = 0;
+        while ($processed < $max_candidates) {
+            $candidate_ids = get_posts([
+                'post_type' => 'cmn_candidate',
+                'post_status' => ['publish', 'private'],
+                'fields' => 'ids',
+                'orderby' => 'ID',
+                'order' => 'ASC',
+                'numberposts' => $batch_size,
+                'offset' => $offset,
+                'suppress_filters' => true,
+            ]);
+            $batch_count = is_array($candidate_ids) ? count($candidate_ids) : 0;
+            if ($batch_count < 1) {
+                break;
+            }
+
+            foreach ($candidate_ids as $candidate_id_raw) {
+                if ($processed >= $max_candidates) {
+                    break;
+                }
+                $candidate_id = (int) $candidate_id_raw;
+                $processed++;
+                if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
+                    $skipped++;
+                    continue;
+                }
+
+                $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+                if ($candidate_user_id < 1 || !$this->is_candidate_user($candidate_user_id)) {
+                    $skipped++;
+                    continue;
+                }
+
+                $status = $this->normalize_candidate_verification_status((string) get_user_meta($candidate_user_id, 'cmn_admin_verification_status', true));
+                if ($status === '') {
+                    $status = $this->normalize_candidate_verification_status((string) get_post_meta($candidate_id, 'cmn_admin_verification_status', true));
+                }
+
+                if ($this->is_pending_review_candidate_status($status)) {
+                    if ($this->enqueue_candidate_lifecycle_email($candidate_id, $candidate_user_id, 'pending_review', 'backfill')) {
+                        $pending_enqueued++;
+                    } else {
+                        $skipped++;
+                    }
+                    continue;
+                }
+                if ($status === 'approved') {
+                    if ($this->enqueue_candidate_lifecycle_email($candidate_id, $candidate_user_id, 'approved', 'backfill')) {
+                        $approved_enqueued++;
+                    } else {
+                        $skipped++;
+                    }
+                    continue;
+                }
+
+                $skipped++;
+            }
+
+            $offset += $batch_count;
+            if ($batch_count < $batch_size) {
+                break;
+            }
+        }
+
+        $message = sprintf(
+            'Backfill processed %d candidate(s): %d pending-review queued, %d approved queued, %d skipped.',
+            $processed,
+            $pending_enqueued,
+            $approved_enqueued,
+            $skipped
+        );
+        $this->add_audit_log('email_outbox_backfill_run', 'system', 'email_outbox', [
+            'processed' => $processed,
+            'pending_enqueued' => $pending_enqueued,
+            'approved_enqueued' => $approved_enqueued,
+            'skipped' => $skipped,
+        ], $actor_user_id);
+
+        return [
+            'status' => 'success',
+            'message' => $message,
+            'processed' => $processed,
+            'pending_enqueued' => $pending_enqueued,
+            'approved_enqueued' => $approved_enqueued,
+            'skipped' => $skipped,
+        ];
+    }
+
+    private function requeue_candidate_email_outbox_item($outbox_id, $actor_user_id = 0) {
+        $outbox_id = max(0, (int) $outbox_id);
+        $actor_user_id = max(0, (int) $actor_user_id);
+        if ($outbox_id < 1) {
+            return [
+                'status' => 'error',
+                'message' => 'Invalid outbox row.',
+            ];
+        }
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            return [
+                'status' => 'error',
+                'message' => 'Email outbox table unavailable.',
+            ];
+        }
+
+        global $wpdb;
+        $table = $this->get_email_outbox_table();
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, related_entity, related_event
+             FROM {$table}
+             WHERE id = %d
+             LIMIT 1",
+            $outbox_id
+        ), ARRAY_A);
+        if (!is_array($row) || empty($row['id'])) {
+            return [
+                'status' => 'error',
+                'message' => 'Outbox row not found.',
+            ];
+        }
+
+        $now = current_time('mysql');
+        $updated = $wpdb->update(
+            $table,
+            [
+                'status' => 'queued',
+                'last_error' => '',
+                'updated_at' => $now,
+                'next_attempt_at' => $now,
+            ],
+            ['id' => $outbox_id],
+            ['%s', '%s', '%s', '%s'],
+            ['%d']
+        );
+        if ($updated === false) {
+            return [
+                'status' => 'error',
+                'message' => 'Failed to requeue outbox row.',
+            ];
+        }
+
+        $candidate_id = max(0, (int) ($row['related_entity'] ?? 0));
+        $this->add_audit_log('email_outbox_requeued', 'candidate', (string) $candidate_id, [
+            'outbox_id' => $outbox_id,
+            'related_event' => sanitize_key((string) ($row['related_event'] ?? '')),
+            'trigger' => 'manual_resend',
+        ], $actor_user_id);
+        return [
+            'status' => 'success',
+            'message' => 'Outbox email requeued.',
+        ];
     }
 
 
