@@ -17675,7 +17675,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-ident{display:flex;align-items:center;gap:10px;min-width:0}
 .cmn-live-avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.22);background:#20182f}
 .cmn-live-name{font-size:18px;font-weight:800;line-height:1.1}
-.cmn-live-role{display:inline-flex;align-items:center;min-height:22px;margin-top:3px;padding:2px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.14);font-size:12px;font-weight:800;letter-spacing:.02em;color:#fff4f6}
+.cmn-live-role{display:block;margin-top:4px;font-size:13px;font-weight:900;line-height:1.25;letter-spacing:.01em;color:#fff4f6;text-shadow:0 1px 4px rgba(0,0,0,.3)}
 .cmn-live-rating{margin-top:5px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#f8fafc;line-height:1.2}
 .cmn-live-rating-stars{position:relative;display:inline-block;font-size:13px;line-height:1;letter-spacing:1px;white-space:nowrap;vertical-align:middle}
 .cmn-live-rating-stars-base{color:rgba(255,255,255,.3)}
@@ -17716,13 +17716,13 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-skills{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
 .cmn-live-skill{background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:6px 10px;border-radius:999px;font-size:11px}
 .cmn-live-actions{display:grid;gap:8px;margin-top:auto}
-.cmn-live-actions-main{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.cmn-live-actions .cmn-primary,.cmn-live-actions .cmn-live-secondary{width:100%;min-height:38px;padding:7px 10px;font-size:12px}
-.cmn-live-actions [data-live-action="book_now"]{background:linear-gradient(180deg,#67e454,#22c55e);border:1px solid #14532d;color:#111 !important;-webkit-text-fill-color:#111;font-weight:800}
-.cmn-live-actions .cmn-live-secondary{display:inline-flex;align-items:center;justify-content:center;border:1.5px solid rgba(241,245,249,.58);background:rgba(15,23,42,.76);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;text-decoration:none;font-weight:800;letter-spacing:.01em;box-shadow:0 2px 0 rgba(2,6,12,.3);transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease}
-.cmn-live-actions .cmn-live-secondary:hover,.cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(30,41,59,.94);border-color:#f8fafc;transform:translateY(-1px);box-shadow:0 4px 0 rgba(2,6,12,.34)}
-.cmn-live-actions .cmn-live-not-interest{justify-self:end;width:auto;min-height:26px;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.58);background:rgba(15,23,42,.42);color:#cbd5e1 !important;-webkit-text-fill-color:#cbd5e1;font-size:10.5px;font-weight:700;letter-spacing:.03em}
-.cmn-live-actions .cmn-live-not-interest:hover,.cmn-live-actions .cmn-live-not-interest:focus-visible{border-color:rgba(226,232,240,.82);background:rgba(51,65,85,.58);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc}
+.cmn-live-actions .cmn-live-primary{width:100%;min-height:40px;padding:8px 12px;font-size:13px;font-weight:900}
+.cmn-live-actions [data-live-action="book_now"]{background:linear-gradient(180deg,#67e454,#22c55e);border:1px solid #14532d;color:#111 !important;-webkit-text-fill-color:#111;font-weight:900}
+.cmn-live-actions-secondary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.cmn-live-actions .cmn-live-secondary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:38px;padding:7px 10px;border:1.5px solid rgba(241,245,249,.68);background:rgba(15,23,42,.8);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.01em;box-shadow:0 2px 0 rgba(2,6,12,.3);transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+.cmn-live-actions .cmn-live-secondary:hover,.cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(30,41,59,.95);border-color:#f8fafc;transform:translateY(-1px);box-shadow:0 4px 0 rgba(2,6,12,.34)}
+.cmn-live-actions .cmn-live-not-interest{justify-self:end;width:auto;min-height:24px;padding:3px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.48);background:transparent;color:rgba(226,232,240,.88) !important;-webkit-text-fill-color:rgba(226,232,240,.88);font-size:10.5px;font-weight:700;letter-spacing:.03em}
+.cmn-live-actions .cmn-live-not-interest:hover,.cmn-live-actions .cmn-live-not-interest:focus-visible{border-color:rgba(226,232,240,.82);background:rgba(51,65,85,.36);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc}
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary{background:rgba(255,255,255,.9);border-color:rgba(5,46,22,.48);color:#04170b !important;-webkit-text-fill-color:#04170b}
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:focus-visible{background:#fff;border-color:#052e16;color:#000 !important;-webkit-text-fill-color:#000}
 .cmn-live-offer{margin-top:2px;min-height:18px;font-weight:700;font-size:12px;color:#fffab4}
@@ -17761,8 +17761,8 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
   70%{transform:translate(-50%,-50%) scale(2);opacity:0}
   100%{transform:translate(-50%,-50%) scale(2);opacity:0}
 }
-@media (max-width:1200px){.cmn-live-carousel{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-card.is-bookable{transform:translateY(-8px) scale(1.04)}.cmn-live-card.is-bookable:hover{transform:translateY(-10px) scale(1.045)}.cmn-live-card.is-pending-confirmation{transform:translateY(3px) scale(1.04);opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-kpi:nth-child(2){border-right:0}.cmn-live-actions-main{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:760px){.cmn-live-matches-head{padding-right:0}.cmn-live-filter-btn{position:static;margin-bottom:10px}.cmn-live-carousel-wrap{grid-template-columns:1fr}.cmn-live-arrow{min-height:38px;width:100%}.cmn-live-carousel{grid-template-columns:1fr}.cmn-live-card.is-bookable,.cmn-live-card.is-bookable:hover,.cmn-live-card.is-pending-confirmation{transform:none}.cmn-live-card.is-pending-confirmation{opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:1fr}.cmn-live-kpi{border-right:0}.cmn-live-actions-main{grid-template-columns:1fr}.cmn-live-offer-modal{padding:10px}}
+@media (max-width:1200px){.cmn-live-carousel{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-card.is-bookable{transform:translateY(-8px) scale(1.04)}.cmn-live-card.is-bookable:hover{transform:translateY(-10px) scale(1.045)}.cmn-live-card.is-pending-confirmation{transform:translateY(3px) scale(1.04);opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-kpi:nth-child(2){border-right:0}.cmn-live-actions-secondary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){.cmn-live-matches-head{padding-right:0}.cmn-live-filter-btn{position:static;margin-bottom:10px}.cmn-live-carousel-wrap{grid-template-columns:1fr}.cmn-live-arrow{min-height:38px;width:100%}.cmn-live-carousel{grid-template-columns:1fr}.cmn-live-card.is-bookable,.cmn-live-card.is-bookable:hover,.cmn-live-card.is-pending-confirmation{transform:none}.cmn-live-card.is-pending-confirmation{opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:1fr}.cmn-live-kpi{border-right:0}.cmn-live-actions-secondary{grid-template-columns:1fr}.cmn-live-actions .cmn-live-not-interest{justify-self:start}.cmn-live-offer-modal{padding:10px}}
 
 /* Finance overlap hard-fix + unified portal format pass */
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-row {
