@@ -916,7 +916,10 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_seo_assistant_scan', [$this, 'handle_seo_assistant_scan']);
         add_action('wp_ajax_cmn_seo_assistant_set_recommendation_status', [$this, 'handle_seo_assistant_set_recommendation_status']);
         add_action('wp_ajax_cmn_seo_assistant_apply_approved', [$this, 'handle_seo_assistant_apply_approved']);
+        add_action('wp_ajax_cmn_seo_assistant_start_apply_batch', [$this, 'handle_seo_assistant_start_apply_batch']);
         add_action('wp_ajax_cmn_seo_assistant_apply_next', [$this, 'handle_seo_assistant_apply_next']);
+        add_action('wp_ajax_cmn_seo_assistant_get_batch_progress', [$this, 'handle_seo_assistant_get_batch_progress']);
+        add_action('wp_ajax_cmn_seo_assistant_rollback_last_batch', [$this, 'handle_seo_assistant_rollback_last_batch']);
         add_action('wp_ajax_cmn_seo_assistant_discover_pages', [$this, 'handle_seo_assistant_discover_pages']);
         add_action('wp_ajax_cmn_seo_assistant_verify_page', [$this, 'handle_seo_assistant_verify_page']);
         add_action('wp_ajax_cmn_save_staff_nav_state', [$this, 'handle_save_staff_nav_state']);
@@ -34567,6 +34570,75 @@ global $wpdb;
         return array_values($discovered);
     }
 
+    private function seo_assistant_discover_pages_from_wp_queries($max_urls = 500) {
+        $max_urls = max(20, (int) $max_urls);
+        $urls = [];
+        $push_url = function ($url) use (&$urls, $max_urls) {
+            if (count($urls) >= $max_urls) {
+                return;
+            }
+            $normalized = $this->normalize_seo_assistant_url((string) $url);
+            if ($normalized === '' || !$this->seo_assistant_is_public_page_url($normalized)) {
+                return;
+            }
+            $urls[$normalized] = $normalized;
+        };
+
+        $push_url(home_url('/'));
+        $posts_page_id = (int) get_option('page_for_posts');
+        if ($posts_page_id > 0) {
+            $push_url(get_permalink($posts_page_id));
+        }
+
+        $post_types = get_post_types([
+            'public' => true,
+        ], 'objects');
+        foreach ((array) $post_types as $post_type_key => $post_type_obj) {
+            if (!($post_type_obj instanceof WP_Post_Type)) {
+                continue;
+            }
+            $post_type_name = sanitize_key((string) $post_type_key);
+            if ($post_type_name === '' || $post_type_name === 'attachment') {
+                continue;
+            }
+            if (strpos($post_type_name, 'cmn_') === 0) {
+                continue;
+            }
+            if (!empty($post_type_obj->has_archive)) {
+                $archive_link = get_post_type_archive_link($post_type_name);
+                if (is_string($archive_link) && $archive_link !== '') {
+                    $push_url($archive_link);
+                }
+            }
+            $post_ids = get_posts([
+                'post_type' => $post_type_name,
+                'post_status' => 'publish',
+                'posts_per_page' => $max_urls,
+                'orderby' => 'date',
+                'order' => 'DESC',
+                'fields' => 'ids',
+                'suppress_filters' => true,
+                'no_found_rows' => true,
+            ]);
+            foreach ((array) $post_ids as $post_id) {
+                if (count($urls) >= $max_urls) {
+                    break 2;
+                }
+                $post_id = (int) $post_id;
+                if ($post_id < 1) {
+                    continue;
+                }
+                $permalink = get_permalink($post_id);
+                if (!is_string($permalink) || $permalink === '') {
+                    continue;
+                }
+                $push_url($permalink);
+            }
+        }
+
+        return array_values($urls);
+    }
+
     private function get_seo_assistant_default_allowlist() {
         $defaults = [
             home_url('/'),
@@ -34620,6 +34692,8 @@ global $wpdb;
             'scans' => [],
             'recommendations' => [],
             'overrides' => [],
+            'apply_batches' => [],
+            'last_apply_batch_id' => '',
             'updated_at' => '',
         ];
         $raw = get_option($this->get_seo_assistant_option_key(), '');
@@ -34635,8 +34709,31 @@ global $wpdb;
         $state['scans'] = is_array($state['scans']) ? $state['scans'] : [];
         $state['recommendations'] = is_array($state['recommendations']) ? $state['recommendations'] : [];
         $state['overrides'] = is_array($state['overrides']) ? $state['overrides'] : [];
+        $state['apply_batches'] = is_array($state['apply_batches']) ? $state['apply_batches'] : [];
+        $state['last_apply_batch_id'] = sanitize_key((string) ($state['last_apply_batch_id'] ?? ''));
         $state['updated_at'] = sanitize_text_field((string) ($state['updated_at'] ?? ''));
         return $state;
+    }
+
+    private function maybe_bootstrap_seo_assistant_discovery(array &$state, $actor_user_id = 0) {
+        $existing_discovered = array_values((array) ($state['discovered_pages'] ?? []));
+        if (!empty($existing_discovered)) {
+            return false;
+        }
+        $bootstrap_pages = $this->seo_assistant_discover_pages_from_wp_queries(500);
+        if (!$bootstrap_pages) {
+            return false;
+        }
+        $state['discovered_pages'] = $bootstrap_pages;
+        $state['discovered_at'] = current_time('mysql');
+        $state['allowlist'] = $this->sanitize_seo_assistant_allowlist(array_merge((array) ($state['allowlist'] ?? []), $bootstrap_pages));
+        $this->save_seo_assistant_state($state);
+        $actor_user_id = (int) $actor_user_id;
+        $this->add_audit_log('seo_assistant_pages_discovered', 'seo_assistant', 'bootstrap', [
+            'source' => 'wp_query_bootstrap',
+            'count' => count($bootstrap_pages),
+        ], $actor_user_id);
+        return true;
     }
 
     private function prune_seo_assistant_state(&$state) {
@@ -34673,6 +34770,70 @@ global $wpdb;
                 continue;
             }
             $state['recommendations'][$recommendation_id] = $recommendation_row;
+        }
+
+        $batch_rows = array_values(array_filter((array) ($state['apply_batches'] ?? []), 'is_array'));
+        usort($batch_rows, static function ($a, $b) {
+            return strcmp((string) ($b['started_at'] ?? ''), (string) ($a['started_at'] ?? ''));
+        });
+        if (count($batch_rows) > 80) {
+            $batch_rows = array_slice($batch_rows, 0, 80);
+        }
+        $state['apply_batches'] = [];
+        foreach ($batch_rows as $batch_row) {
+            $batch_id = sanitize_key((string) ($batch_row['batch_id'] ?? ''));
+            if ($batch_id === '') {
+                continue;
+            }
+            $batch_row['batch_id'] = $batch_id;
+            $batch_row['status'] = sanitize_key((string) ($batch_row['status'] ?? 'running'));
+            if (!in_array($batch_row['status'], ['running', 'completed', 'failed', 'rolled_back'], true)) {
+                $batch_row['status'] = 'running';
+            }
+            $batch_row['started_at'] = sanitize_text_field((string) ($batch_row['started_at'] ?? ''));
+            $batch_row['started_by'] = (int) ($batch_row['started_by'] ?? 0);
+            $batch_row['completed_at'] = sanitize_text_field((string) ($batch_row['completed_at'] ?? ''));
+            $batch_row['rolled_back_at'] = sanitize_text_field((string) ($batch_row['rolled_back_at'] ?? ''));
+            $batch_row['rolled_back_by'] = (int) ($batch_row['rolled_back_by'] ?? 0);
+            $batch_row['queued_total'] = max(0, (int) ($batch_row['queued_total'] ?? 0));
+            $batch_row['processed_count'] = max(0, (int) ($batch_row['processed_count'] ?? 0));
+            $batch_row['applied_count'] = max(0, (int) ($batch_row['applied_count'] ?? 0));
+            $batch_row['failed_count'] = max(0, (int) ($batch_row['failed_count'] ?? 0));
+            $batch_row['skipped_count'] = max(0, (int) ($batch_row['skipped_count'] ?? 0));
+            $batch_row['duration_ms'] = max(0, (int) ($batch_row['duration_ms'] ?? 0));
+            $batch_row['recommendation_ids'] = array_values(array_filter(array_map('sanitize_key', (array) ($batch_row['recommendation_ids'] ?? []))));
+            if (count($batch_row['recommendation_ids']) > 1200) {
+                $batch_row['recommendation_ids'] = array_slice($batch_row['recommendation_ids'], 0, 1200);
+            }
+            $batch_events = [];
+            foreach ((array) ($batch_row['events'] ?? []) as $batch_event_row) {
+                if (!is_array($batch_event_row)) {
+                    continue;
+                }
+                $batch_events[] = [
+                    'at' => sanitize_text_field((string) ($batch_event_row['at'] ?? '')),
+                    'recommendation_id' => sanitize_key((string) ($batch_event_row['recommendation_id'] ?? '')),
+                    'page_url' => $this->normalize_seo_assistant_url((string) ($batch_event_row['page_url'] ?? '')),
+                    'field' => sanitize_key((string) ($batch_event_row['field'] ?? '')),
+                    'result' => sanitize_key((string) ($batch_event_row['result'] ?? '')),
+                    'message' => sanitize_text_field((string) ($batch_event_row['message'] ?? '')),
+                    'old_value' => sanitize_textarea_field((string) ($batch_event_row['old_value'] ?? '')),
+                    'new_value' => sanitize_textarea_field((string) ($batch_event_row['new_value'] ?? '')),
+                    'store' => sanitize_key((string) ($batch_event_row['store'] ?? '')),
+                ];
+            }
+            if (count($batch_events) > 1200) {
+                $batch_events = array_slice($batch_events, -1200);
+            }
+            $batch_row['events'] = $batch_events;
+            $state['apply_batches'][$batch_id] = $batch_row;
+        }
+        $last_apply_batch_id = sanitize_key((string) ($state['last_apply_batch_id'] ?? ''));
+        if ($last_apply_batch_id === '' || !isset($state['apply_batches'][$last_apply_batch_id])) {
+            $batch_ids = array_keys((array) $state['apply_batches']);
+            $state['last_apply_batch_id'] = !empty($batch_ids[0]) ? sanitize_key((string) $batch_ids[0]) : '';
+        } else {
+            $state['last_apply_batch_id'] = $last_apply_batch_id;
         }
 
         $discovered_pages = array_values(array_filter(array_map(
@@ -34789,6 +34950,24 @@ global $wpdb;
             }
             $status_counts[$status]++;
         }
+        $batch_rows = array_values(array_filter((array) ($state['apply_batches'] ?? []), 'is_array'));
+        usort($batch_rows, static function ($a, $b) {
+            return strcmp((string) ($b['started_at'] ?? ''), (string) ($a['started_at'] ?? ''));
+        });
+        $last_batch_id = sanitize_key((string) ($state['last_apply_batch_id'] ?? ''));
+        $last_batch = null;
+        if ($last_batch_id !== '') {
+            foreach ($batch_rows as $batch_row) {
+                if (sanitize_key((string) ($batch_row['batch_id'] ?? '')) === $last_batch_id) {
+                    $last_batch = $batch_row;
+                    break;
+                }
+            }
+        }
+        if ($last_batch === null && !empty($batch_rows[0]) && is_array($batch_rows[0])) {
+            $last_batch = $batch_rows[0];
+        }
+
         return [
             'allowlist' => array_values((array) ($state['allowlist'] ?? [])),
             'allowlist_text' => implode("\n", array_values((array) ($state['allowlist'] ?? []))),
@@ -34798,6 +34977,8 @@ global $wpdb;
             'scans' => $scan_rows,
             'recommendations' => $recommendation_rows,
             'overrides' => (array) ($state['overrides'] ?? []),
+            'apply_batches' => array_slice($batch_rows, 0, 20),
+            'last_apply_batch' => is_array($last_batch) ? $last_batch : null,
             'status_counts' => $status_counts,
             'updated_at' => sanitize_text_field((string) ($state['updated_at'] ?? '')),
         ];
@@ -35410,6 +35591,91 @@ global $wpdb;
         return '';
     }
 
+    private function get_seo_assistant_approved_recommendation_ids(array $state) {
+        $recommendation_rows = array_values(array_filter((array) ($state['recommendations'] ?? []), 'is_array'));
+        usort($recommendation_rows, static function ($a, $b) {
+            return strcmp((string) ($a['created_at'] ?? ''), (string) ($b['created_at'] ?? ''));
+        });
+        $approved_ids = [];
+        foreach ($recommendation_rows as $recommendation_row) {
+            $status = sanitize_key((string) ($recommendation_row['status'] ?? ''));
+            if ($status !== 'approved') {
+                continue;
+            }
+            $recommendation_id = sanitize_key((string) ($recommendation_row['recommendation_id'] ?? ''));
+            if ($recommendation_id !== '') {
+                $approved_ids[] = $recommendation_id;
+            }
+        }
+        return array_values(array_unique($approved_ids));
+    }
+
+    private function create_seo_assistant_apply_batch(array &$state, $actor_user_id = 0) {
+        $actor_user_id = (int) $actor_user_id;
+        $approved_ids = $this->get_seo_assistant_approved_recommendation_ids($state);
+        if (!$approved_ids) {
+            return '';
+        }
+        $batch_id = sanitize_key('batch_' . gmdate('YmdHis') . '_' . wp_generate_password(6, false, false));
+        $state['apply_batches'][$batch_id] = [
+            'batch_id' => $batch_id,
+            'status' => 'running',
+            'started_at' => current_time('mysql'),
+            'started_by' => $actor_user_id,
+            'completed_at' => '',
+            'rolled_back_at' => '',
+            'rolled_back_by' => 0,
+            'queued_total' => count($approved_ids),
+            'processed_count' => 0,
+            'applied_count' => 0,
+            'failed_count' => 0,
+            'skipped_count' => 0,
+            'duration_ms' => 0,
+            'recommendation_ids' => $approved_ids,
+            'events' => [],
+        ];
+        $state['last_apply_batch_id'] = $batch_id;
+        return $batch_id;
+    }
+
+    private function get_seo_assistant_batch_from_state(array &$state, $batch_id = '') {
+        $batch_id = sanitize_key((string) $batch_id);
+        if ($batch_id === '') {
+            $batch_id = sanitize_key((string) ($state['last_apply_batch_id'] ?? ''));
+        }
+        if ($batch_id === '' || !isset($state['apply_batches'][$batch_id]) || !is_array($state['apply_batches'][$batch_id])) {
+            return null;
+        }
+        return $state['apply_batches'][$batch_id];
+    }
+
+    private function save_seo_assistant_batch_to_state(array &$state, array $batch_row) {
+        $batch_id = sanitize_key((string) ($batch_row['batch_id'] ?? ''));
+        if ($batch_id === '') {
+            return;
+        }
+        if (!isset($state['apply_batches']) || !is_array($state['apply_batches'])) {
+            $state['apply_batches'] = [];
+        }
+        $state['apply_batches'][$batch_id] = $batch_row;
+        $state['last_apply_batch_id'] = $batch_id;
+    }
+
+    private function mark_seo_assistant_batch_complete(array &$batch_row) {
+        if (!is_array($batch_row)) {
+            return;
+        }
+        if ((string) ($batch_row['completed_at'] ?? '') !== '') {
+            return;
+        }
+        $batch_row['status'] = 'completed';
+        $batch_row['completed_at'] = current_time('mysql');
+        $started_at_ts = strtotime((string) ($batch_row['started_at'] ?? ''));
+        if ($started_at_ts !== false) {
+            $batch_row['duration_ms'] = max(0, (((int) current_time('timestamp')) - ((int) $started_at_ts)) * 1000);
+        }
+    }
+
     private function apply_seo_assistant_recommendation(array &$state, $recommendation_id, $actor_user_id = 0) {
         $recommendation_id = sanitize_key((string) $recommendation_id);
         $actor_user_id = (int) $actor_user_id;
@@ -35652,7 +35918,9 @@ global $wpdb;
         if (is_wp_error($ability_check)) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>SEO Assistant is available to admins only.</p></div></section>';
         }
-        $state_payload = $this->get_seo_assistant_state_payload($this->get_seo_assistant_state());
+        $state = $this->get_seo_assistant_state();
+        $this->maybe_bootstrap_seo_assistant_discovery($state, (int) get_current_user_id());
+        $state_payload = $this->get_seo_assistant_state_payload($state);
         ob_start();
         ?>
         <header class="cmn-school-header">
@@ -35668,6 +35936,7 @@ global $wpdb;
                 <button type="button" class="cmn-ghost" data-seo-discover-pages>Discover Pages</button>
                 <button type="button" class="cmn-primary" data-seo-scan-selected>Scan Selected Pages</button>
                 <button type="button" class="cmn-ghost" data-seo-apply-approved>Apply Approved</button>
+                <button type="button" class="cmn-ghost" data-seo-rollback-last-batch>Rollback Last Batch</button>
                 <span class="cmn-muted" data-seo-status-msg>Ready.</span>
             </div>
 
@@ -35683,6 +35952,7 @@ global $wpdb;
                     </div>
                     <p class="cmn-muted" data-seo-discovered-meta>No discovery run yet.</p>
                     <div class="cmn-seo-page-list" data-seo-page-list></div>
+                    <div class="cmn-seo-page-pagination" data-seo-page-pagination></div>
                 </div>
                 <div class="cmn-seo-assistant-panel">
                     <h3>Scan Summary</h3>
@@ -35713,6 +35983,7 @@ global $wpdb;
                     </div>
                     <div class="cmn-muted" data-seo-apply-progress-text>0%</div>
                 </div>
+                <p class="cmn-muted" data-seo-last-batch-meta>No apply batches yet.</p>
                 <div class="cmn-seo-apply-log" data-seo-apply-log></div>
                 <p class="cmn-muted" data-seo-apply-summary></p>
             </div>
@@ -35785,6 +36056,7 @@ global $wpdb;
             return;
         }
         $state = $this->get_seo_assistant_state();
+        $this->maybe_bootstrap_seo_assistant_discovery($state, (int) get_current_user_id());
         wp_send_json_success([
             'state' => $this->get_seo_assistant_state_payload($state),
         ]);
@@ -36047,7 +36319,7 @@ global $wpdb;
         ]);
     }
 
-    public function handle_seo_assistant_apply_next() {
+    public function handle_seo_assistant_start_apply_batch() {
         $guard = $this->cmn_endpoint_guard([
             'ability_required' => 'system.seo.manage',
             'nonce_mode' => 'required',
@@ -36065,6 +36337,72 @@ global $wpdb;
             return;
         }
         $state = $this->get_seo_assistant_state();
+        $actor_user_id = (int) get_current_user_id();
+        $batch_id = $this->create_seo_assistant_apply_batch($state, $actor_user_id);
+        if ($batch_id === '') {
+            wp_send_json_error(['message' => 'No approved recommendations to apply.'], 400);
+        }
+        $this->save_seo_assistant_state($state);
+        $batch_row = $this->get_seo_assistant_batch_from_state($state, $batch_id);
+        $this->add_audit_log('seo_assistant_apply_batch_started', 'seo_assistant', $batch_id, [
+            'queued_total' => (int) ($batch_row['queued_total'] ?? 0),
+        ], $actor_user_id);
+        wp_send_json_success([
+            'message' => 'Apply batch started.',
+            'batch' => $batch_row,
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_get_batch_progress() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+        $batch_id = sanitize_key((string) ($_POST['batch_id'] ?? ''));
+        $state = $this->get_seo_assistant_state();
+        $batch_row = $this->get_seo_assistant_batch_from_state($state, $batch_id);
+        if (!is_array($batch_row)) {
+            wp_send_json_error(['message' => 'Batch not found.'], 404);
+        }
+        wp_send_json_success([
+            'batch' => $batch_row,
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_apply_next() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+        $batch_id = sanitize_key((string) ($_POST['batch_id'] ?? ''));
+        $state = $this->get_seo_assistant_state();
+        $batch_row = $this->get_seo_assistant_batch_from_state($state, $batch_id);
         $remaining_before = 0;
         foreach ((array) ($state['recommendations'] ?? []) as $recommendation_row) {
             if (!is_array($recommendation_row)) {
@@ -36075,22 +36413,34 @@ global $wpdb;
             }
         }
         if ($remaining_before < 1) {
+            if (is_array($batch_row)) {
+                $this->mark_seo_assistant_batch_complete($batch_row);
+                $this->save_seo_assistant_batch_to_state($state, $batch_row);
+                $this->save_seo_assistant_state($state);
+            }
             wp_send_json_success([
                 'message' => 'No approved recommendations left to apply.',
                 'done' => true,
                 'result' => null,
                 'remaining' => 0,
+                'batch' => $batch_row,
                 'state' => $this->get_seo_assistant_state_payload($state),
             ]);
         }
 
         $next_recommendation_id = $this->get_seo_assistant_next_approved_recommendation_id($state);
         if ($next_recommendation_id === '') {
+            if (is_array($batch_row)) {
+                $this->mark_seo_assistant_batch_complete($batch_row);
+                $this->save_seo_assistant_batch_to_state($state, $batch_row);
+                $this->save_seo_assistant_state($state);
+            }
             wp_send_json_success([
                 'message' => 'No approved recommendations left to apply.',
                 'done' => true,
                 'result' => null,
                 'remaining' => 0,
+                'batch' => $batch_row,
                 'state' => $this->get_seo_assistant_state_payload($state),
             ]);
         }
@@ -36098,7 +36448,33 @@ global $wpdb;
         $actor_user_id = (int) get_current_user_id();
         $apply_started_at = microtime(true);
         $apply_result = $this->apply_seo_assistant_recommendation($state, $next_recommendation_id, $actor_user_id);
-        $this->save_seo_assistant_state($state);
+        if (is_array($batch_row)) {
+            $batch_row['processed_count'] = max(0, (int) ($batch_row['processed_count'] ?? 0)) + 1;
+            $apply_status = sanitize_key((string) ($apply_result['result'] ?? 'failed'));
+            if ($apply_status === 'applied') {
+                $batch_row['applied_count'] = max(0, (int) ($batch_row['applied_count'] ?? 0)) + 1;
+            } elseif ($apply_status === 'skipped') {
+                $batch_row['skipped_count'] = max(0, (int) ($batch_row['skipped_count'] ?? 0)) + 1;
+            } else {
+                $batch_row['failed_count'] = max(0, (int) ($batch_row['failed_count'] ?? 0)) + 1;
+            }
+            $batch_events = is_array($batch_row['events'] ?? null) ? $batch_row['events'] : [];
+            $batch_events[] = [
+                'at' => current_time('mysql'),
+                'recommendation_id' => sanitize_key((string) ($apply_result['recommendation_id'] ?? $next_recommendation_id)),
+                'page_url' => $this->normalize_seo_assistant_url((string) ($apply_result['page_url'] ?? '')),
+                'field' => sanitize_key((string) ($apply_result['field'] ?? '')),
+                'result' => $apply_status,
+                'message' => sanitize_text_field((string) ($apply_result['message'] ?? '')),
+                'old_value' => sanitize_textarea_field((string) ($apply_result['old_value'] ?? '')),
+                'new_value' => sanitize_textarea_field((string) ($apply_result['new_value'] ?? '')),
+                'store' => sanitize_key((string) ($apply_result['store'] ?? '')),
+            ];
+            if (count($batch_events) > 1200) {
+                $batch_events = array_slice($batch_events, -1200);
+            }
+            $batch_row['events'] = $batch_events;
+        }
 
         $remaining_after = 0;
         foreach ((array) ($state['recommendations'] ?? []) as $recommendation_row) {
@@ -36109,13 +36485,122 @@ global $wpdb;
                 $remaining_after++;
             }
         }
+        if (is_array($batch_row) && $remaining_after < 1) {
+            $this->mark_seo_assistant_batch_complete($batch_row);
+            $this->add_audit_log('seo_assistant_apply_batch_completed', 'seo_assistant', sanitize_key((string) ($batch_row['batch_id'] ?? '')), [
+                'queued_total' => (int) ($batch_row['queued_total'] ?? 0),
+                'processed_count' => (int) ($batch_row['processed_count'] ?? 0),
+                'applied_count' => (int) ($batch_row['applied_count'] ?? 0),
+                'failed_count' => (int) ($batch_row['failed_count'] ?? 0),
+                'skipped_count' => (int) ($batch_row['skipped_count'] ?? 0),
+                'duration_ms' => (int) ($batch_row['duration_ms'] ?? 0),
+            ], $actor_user_id);
+        }
+        if (is_array($batch_row)) {
+            $this->save_seo_assistant_batch_to_state($state, $batch_row);
+        }
+        $this->save_seo_assistant_state($state);
         wp_send_json_success([
             'message' => 'Applied next approved recommendation.',
             'done' => $remaining_after < 1,
             'result' => $apply_result,
             'remaining' => $remaining_after,
             'started_with' => $remaining_before,
+            'batch' => $batch_row,
             'duration_ms' => (int) round((microtime(true) - $apply_started_at) * 1000),
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_rollback_last_batch() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+        $state = $this->get_seo_assistant_state();
+        $batch_row = $this->get_seo_assistant_batch_from_state($state, '');
+        if (!is_array($batch_row)) {
+            wp_send_json_error(['message' => 'No apply batch found to roll back.'], 404);
+        }
+        if (!empty($batch_row['rolled_back_at'])) {
+            wp_send_json_error(['message' => 'Latest batch has already been rolled back.'], 400);
+        }
+        $events = array_values(array_filter((array) ($batch_row['events'] ?? []), 'is_array'));
+        if (!$events) {
+            wp_send_json_error(['message' => 'No applied changes found in latest batch.'], 400);
+        }
+        $allowed_fields = $this->get_seo_assistant_allowed_override_fields();
+        $actor_user_id = (int) get_current_user_id();
+        $rolled_back = 0;
+        $failed = 0;
+        $rolled_back_ids = [];
+        foreach (array_reverse($events) as $event_row) {
+            $event_result = sanitize_key((string) ($event_row['result'] ?? ''));
+            if ($event_result !== 'applied') {
+                continue;
+            }
+            $page_url = $this->normalize_seo_assistant_url((string) ($event_row['page_url'] ?? ''));
+            $field = sanitize_key((string) ($event_row['field'] ?? ''));
+            if ($page_url === '' || !$this->seo_assistant_is_internal_url($page_url) || !in_array($field, $allowed_fields, true)) {
+                $failed++;
+                continue;
+            }
+            if (!isset($state['overrides'][$page_url]) || !is_array($state['overrides'][$page_url])) {
+                $state['overrides'][$page_url] = [];
+            }
+            $old_value = sanitize_textarea_field((string) ($event_row['old_value'] ?? ''));
+            if ($old_value === '') {
+                unset($state['overrides'][$page_url][$field]);
+            } else {
+                $state['overrides'][$page_url][$field] = $old_value;
+            }
+            if (isset($state['recommendations']) && is_array($state['recommendations'])) {
+                $recommendation_id = sanitize_key((string) ($event_row['recommendation_id'] ?? ''));
+                if ($recommendation_id !== '' && isset($state['recommendations'][$recommendation_id]) && is_array($state['recommendations'][$recommendation_id])) {
+                    $recommendation_row = $state['recommendations'][$recommendation_id];
+                    $recommendation_row['status'] = 'approved';
+                    $recommendation_row['updated_at'] = current_time('mysql');
+                    $recommendation_row['updated_by'] = $actor_user_id;
+                    $recommendation_row['applied_result'] = 'rolled_back';
+                    $recommendation_row['applied_message'] = 'Rolled back from batch ' . sanitize_key((string) ($batch_row['batch_id'] ?? ''));
+                    $state['recommendations'][$recommendation_id] = $recommendation_row;
+                    $rolled_back_ids[] = $recommendation_id;
+                }
+            }
+            $rolled_back++;
+        }
+        foreach ((array) ($state['overrides'] ?? []) as $override_url => $override_row) {
+            if (is_array($override_row) && empty($override_row)) {
+                unset($state['overrides'][$override_url]);
+            }
+        }
+        $batch_row['status'] = 'rolled_back';
+        $batch_row['rolled_back_at'] = current_time('mysql');
+        $batch_row['rolled_back_by'] = $actor_user_id;
+        $this->save_seo_assistant_batch_to_state($state, $batch_row);
+        $this->save_seo_assistant_state($state);
+        $this->add_audit_log('seo_assistant_apply_batch_rolled_back', 'seo_assistant', sanitize_key((string) ($batch_row['batch_id'] ?? '')), [
+            'rolled_back_count' => $rolled_back,
+            'failed_count' => $failed,
+            'recommendation_ids' => $rolled_back_ids,
+        ], $actor_user_id);
+        wp_send_json_success([
+            'message' => 'Rollback completed.',
+            'rolled_back_count' => $rolled_back,
+            'failed_count' => $failed,
+            'batch' => $batch_row,
             'state' => $this->get_seo_assistant_state_payload($state),
         ]);
     }
@@ -36138,13 +36623,28 @@ global $wpdb;
             return;
         }
         $state = $this->get_seo_assistant_state();
-        $source = 'sitemap';
         $discover_started_at = microtime(true);
-        $discovered_pages = $this->seo_assistant_discover_pages_from_sitemaps(350);
-        if (!$discovered_pages) {
-            $source = 'crawl';
-            $discovered_pages = $this->seo_assistant_discover_pages_from_crawl(220, 2);
+        $sources = [];
+        $discovered_pages = [];
+        $wp_query_pages = $this->seo_assistant_discover_pages_from_wp_queries(500);
+        if ($wp_query_pages) {
+            $sources[] = 'wp_query';
+            $discovered_pages = array_merge($discovered_pages, $wp_query_pages);
         }
+        $sitemap_pages = $this->seo_assistant_discover_pages_from_sitemaps(450);
+        if ($sitemap_pages) {
+            $sources[] = 'sitemap';
+            $discovered_pages = array_merge($discovered_pages, $sitemap_pages);
+        }
+        $crawl_pages = [];
+        if (count($discovered_pages) < 50) {
+            $crawl_pages = $this->seo_assistant_discover_pages_from_crawl(260, 2);
+            if ($crawl_pages) {
+                $sources[] = 'crawl';
+                $discovered_pages = array_merge($discovered_pages, $crawl_pages);
+            }
+        }
+        $discovered_pages = $this->sanitize_seo_assistant_allowlist($discovered_pages);
         if (!$discovered_pages) {
             wp_send_json_error(['message' => 'No public pages discovered.'], 400);
         }
@@ -36153,13 +36653,21 @@ global $wpdb;
         $state['allowlist'] = $this->sanitize_seo_assistant_allowlist(array_merge((array) ($state['allowlist'] ?? []), $discovered_pages));
         $this->save_seo_assistant_state($state);
         $this->add_audit_log('seo_assistant_pages_discovered', 'seo_assistant', 'discovery', [
-            'source' => $source,
+            'source' => implode('+', array_values(array_unique(array_filter($sources)))),
             'count' => count($discovered_pages),
+            'wp_query_count' => count($wp_query_pages),
+            'sitemap_count' => count($sitemap_pages),
+            'crawl_count' => count($crawl_pages),
             'duration_ms' => (int) round((microtime(true) - $discover_started_at) * 1000),
         ], (int) get_current_user_id());
         wp_send_json_success([
             'message' => 'Discovered ' . count($discovered_pages) . ' public page(s).',
-            'source' => $source,
+            'source' => implode('+', array_values(array_unique(array_filter($sources)))),
+            'source_counts' => [
+                'wp_query' => count($wp_query_pages),
+                'sitemap' => count($sitemap_pages),
+                'crawl' => count($crawl_pages),
+            ],
             'duration_ms' => (int) round((microtime(true) - $discover_started_at) * 1000),
             'state' => $this->get_seo_assistant_state_payload($state),
         ]);

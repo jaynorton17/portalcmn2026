@@ -14128,6 +14128,8 @@ document.addEventListener('DOMContentLoaded', function () {
         scans: [],
         recommendations: [],
         overrides: {},
+        apply_batches: [],
+        last_apply_batch: null,
         status_counts: {
           pending: 0,
           approved: 0,
@@ -14152,6 +14154,8 @@ document.addEventListener('DOMContentLoaded', function () {
       normalized.scans = Array.isArray(state.scans) ? state.scans : [];
       normalized.recommendations = Array.isArray(state.recommendations) ? state.recommendations : [];
       normalized.overrides = (state.overrides && typeof state.overrides === 'object') ? state.overrides : {};
+      normalized.apply_batches = Array.isArray(state.apply_batches) ? state.apply_batches : [];
+      normalized.last_apply_batch = (state.last_apply_batch && typeof state.last_apply_batch === 'object') ? state.last_apply_batch : null;
       normalized.updated_at = String(state.updated_at || '');
       var statusCounts = (state.status_counts && typeof state.status_counts === 'object') ? state.status_counts : {};
       normalized.status_counts = {
@@ -14202,6 +14206,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var statusMsg = root.querySelector('[data-seo-status-msg]');
       var allowlistInput = root.querySelector('[data-seo-allowlist-input]');
       var pageList = root.querySelector('[data-seo-page-list]');
+      var pagePagination = root.querySelector('[data-seo-page-pagination]');
       var pageSearchInput = root.querySelector('[data-seo-page-search]');
       var publicOnlyToggle = root.querySelector('[data-seo-public-only]');
       var discoveredMeta = root.querySelector('[data-seo-discovered-meta]');
@@ -14215,12 +14220,17 @@ document.addEventListener('DOMContentLoaded', function () {
       var applyProgressText = root.querySelector('[data-seo-apply-progress-text]');
       var applyLog = root.querySelector('[data-seo-apply-log]');
       var applySummary = root.querySelector('[data-seo-apply-summary]');
+      var lastBatchMeta = root.querySelector('[data-seo-last-batch-meta]');
       var discoverButton = root.querySelector('[data-seo-discover-pages]');
       var scanButton = root.querySelector('[data-seo-scan-selected]');
       var applyButton = root.querySelector('[data-seo-apply-approved]');
+      var rollbackButton = root.querySelector('[data-seo-rollback-last-batch]');
       var saveAllowlistButton = root.querySelector('[data-seo-save-allowlist]');
       var inFlightCount = 0;
       var applyInProgress = false;
+      var currentApplyBatchId = '';
+      var pageListPage = 1;
+      var pageListPerPage = 20;
       var selectedPageMap = {};
       var state = seoStateDefaults();
       var initialStateRaw = root.getAttribute('data-seo-initial-state') || '';
@@ -14248,7 +14258,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         var disabled = inFlightCount > 0 || applyInProgress;
         root.classList.toggle('is-busy', disabled);
-        [discoverButton, scanButton, applyButton, saveAllowlistButton].forEach(function (button) {
+        [discoverButton, scanButton, applyButton, rollbackButton, saveAllowlistButton].forEach(function (button) {
           if (!button) {
             return;
           }
@@ -14352,11 +14362,23 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         pageList.innerHTML = '';
+        if (pagePagination) {
+          pagePagination.innerHTML = '';
+        }
         if (!rows.length) {
           pageList.innerHTML = '<p class="cmn-muted">No matching pages found.</p>';
           return;
         }
-        rows.forEach(function (row) {
+        var totalPages = Math.max(1, Math.ceil(rows.length / pageListPerPage));
+        if (pageListPage > totalPages) {
+          pageListPage = totalPages;
+        }
+        if (pageListPage < 1) {
+          pageListPage = 1;
+        }
+        var start = (pageListPage - 1) * pageListPerPage;
+        var visibleRows = rows.slice(start, start + pageListPerPage);
+        visibleRows.forEach(function (row) {
           var url = String((row && row.url) || '').trim();
           if (!url) {
             return;
@@ -14373,6 +14395,58 @@ document.addEventListener('DOMContentLoaded', function () {
             + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-verify-page data-seo-page-url="' + seoEscapeHtml(url) + '">Verify</button>';
           pageList.appendChild(rowNode);
         });
+        if (pagePagination && totalPages > 1) {
+          var fromItem = rows.length > 0 ? (start + 1) : 0;
+          var toItem = Math.min(rows.length, start + visibleRows.length);
+          pagePagination.innerHTML = ''
+            + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-page-nav="prev"' + (pageListPage <= 1 ? ' disabled' : '') + '>Prev</button>'
+            + '<span class="cmn-muted">Page ' + String(pageListPage) + ' of ' + String(totalPages) + ' • Showing ' + String(fromItem) + '–' + String(toItem) + ' of ' + String(rows.length) + '</span>'
+            + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-page-nav="next"' + (pageListPage >= totalPages ? ' disabled' : '') + '>Next</button>';
+        }
+      };
+
+      var renderLastBatchMeta = function () {
+        if (!lastBatchMeta) {
+          return;
+        }
+        var batch = state && state.last_apply_batch && typeof state.last_apply_batch === 'object'
+          ? state.last_apply_batch
+          : null;
+        if (!batch) {
+          if (applyPanel && !applyInProgress) {
+            applyPanel.hidden = true;
+          }
+          lastBatchMeta.textContent = 'No apply batches yet.';
+          return;
+        }
+        if (applyPanel) {
+          applyPanel.hidden = false;
+        }
+        var batchId = String(batch.batch_id || '');
+        var status = String(batch.status || 'running');
+        var startedAt = String(batch.started_at || '');
+        var completedAt = String(batch.completed_at || '');
+        var rolledBackAt = String(batch.rolled_back_at || '');
+        var processed = parseInt(String(batch.processed_count || 0), 10) || 0;
+        var queued = parseInt(String(batch.queued_total || 0), 10) || 0;
+        var applied = parseInt(String(batch.applied_count || 0), 10) || 0;
+        var failed = parseInt(String(batch.failed_count || 0), 10) || 0;
+        var skipped = parseInt(String(batch.skipped_count || 0), 10) || 0;
+        var statusBits = [];
+        statusBits.push('Batch ' + (batchId || '-'));
+        statusBits.push('Status: ' + status);
+        statusBits.push('Processed: ' + String(processed) + '/' + String(queued));
+        statusBits.push('Applied: ' + String(applied));
+        statusBits.push('Failed: ' + String(failed));
+        statusBits.push('Skipped: ' + String(skipped));
+        if (rolledBackAt) {
+          statusBits.push('Rolled back: ' + formatDateTime(rolledBackAt));
+        } else if (completedAt) {
+          statusBits.push('Completed: ' + formatDateTime(completedAt));
+        } else if (startedAt) {
+          statusBits.push('Started: ' + formatDateTime(startedAt));
+        }
+        lastBatchMeta.textContent = statusBits.join(' • ');
       };
 
       var renderSummary = function () {
@@ -14549,6 +14623,7 @@ document.addEventListener('DOMContentLoaded', function () {
         renderAllowlistEditor();
         renderDiscoveredMeta();
         renderAllowlistSelection();
+        renderLastBatchMeta();
         renderSummary();
         renderScans();
         renderRecommendations();
@@ -14568,6 +14643,9 @@ document.addEventListener('DOMContentLoaded', function () {
       };
 
       var runApplyApprovedWithProgress = function () {
+        if (applyInProgress) {
+          return;
+        }
         var totalApproved = parseInt(String((state && state.status_counts && state.status_counts.approved) || 0), 10) || 0;
         if (totalApproved < 1) {
           setStatus('No approved recommendations to apply.', true);
@@ -14590,9 +14668,22 @@ document.addEventListener('DOMContentLoaded', function () {
         var appliedCount = 0;
         var failedCount = 0;
         var skippedCount = 0;
+        var batchId = '';
+
+        var recommendationById = {};
+        (Array.isArray(state.recommendations) ? state.recommendations : []).forEach(function (row) {
+          if (!row || typeof row !== 'object') {
+            return;
+          }
+          var recommendationId = String(row.recommendation_id || '').trim();
+          if (recommendationId) {
+            recommendationById[recommendationId] = row;
+          }
+        });
 
         var finalizeApply = function (message, isError) {
           applyInProgress = false;
+          currentApplyBatchId = '';
           setBusy(false);
           var durationMs = Date.now() - startedAtMs;
           if (applySummary) {
@@ -14607,7 +14698,9 @@ document.addEventListener('DOMContentLoaded', function () {
           if (nextRecommendation) {
             appendApplyLog('Applying: ' + String(nextRecommendation.page_url || '-') + ' — ' + String(nextRecommendation.field || '-'), 'pending');
           }
-          seoApiCall('cmn_seo_assistant_apply_next', {}).then(function (data) {
+          seoApiCall('cmn_seo_assistant_apply_next', {
+            batch_id: batchId
+          }).then(function (data) {
             if (data && data.state) {
               state = seoNormalizeState(data.state);
               renderAll();
@@ -14641,7 +14734,29 @@ document.addEventListener('DOMContentLoaded', function () {
           });
         };
 
-        runNext();
+        seoApiCall('cmn_seo_assistant_start_apply_batch', {}).then(function (data) {
+          if (data && data.state) {
+            state = seoNormalizeState(data.state);
+            renderAll();
+          }
+          var batch = data && data.batch && typeof data.batch === 'object' ? data.batch : null;
+          if (!batch) {
+            throw new Error('Unable to start apply batch.');
+          }
+          batchId = String(batch.batch_id || '');
+          currentApplyBatchId = batchId;
+          totalApproved = parseInt(String(batch.queued_total || totalApproved), 10) || totalApproved;
+          renderApplyProgress(0, '0% (0/' + String(totalApproved) + ')');
+          appendApplyLog('Batch started: ' + (batchId || '-'), 'pending');
+          var queuedIds = Array.isArray(batch.recommendation_ids) ? batch.recommendation_ids : [];
+          queuedIds.forEach(function (queuedId, index) {
+            var row = recommendationById[String(queuedId || '')] || {};
+            appendApplyLog('Queued [' + String(index + 1) + '/' + String(queuedIds.length) + ']: ' + String(row.page_url || '-') + ' — ' + String(row.field || '-'), 'queued');
+          });
+          runNext();
+        }).catch(function (error) {
+          finalizeApply(error && error.message ? error.message : 'Unable to start apply batch.', true);
+        });
       };
 
       var verifyPage = function (pageUrl) {
@@ -14722,13 +14837,34 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
+      if (rollbackButton) {
+        rollbackButton.addEventListener('click', function () {
+          if (applyInProgress) {
+            return;
+          }
+          setBusy(true);
+          seoApiCall('cmn_seo_assistant_rollback_last_batch', {}).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            setStatus((data && data.message) ? data.message : 'Rollback complete.', false);
+            appendApplyLog('ROLLBACK: Applied=' + String((data && data.rolled_back_count) || 0) + ' Failed=' + String((data && data.failed_count) || 0), 'skip');
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to roll back last batch.', true);
+          }).finally(function () {
+            setBusy(false);
+          });
+        });
+      }
+
       if (pageSearchInput) {
         pageSearchInput.addEventListener('input', function () {
+          pageListPage = 1;
           renderAllowlistSelection();
         });
       }
       if (publicOnlyToggle) {
         publicOnlyToggle.addEventListener('change', function () {
+          pageListPage = 1;
           renderAllowlistSelection();
         });
       }
@@ -14746,6 +14882,19 @@ document.addEventListener('DOMContentLoaded', function () {
       });
 
       root.addEventListener('click', function (event) {
+        var pageNavButton = event.target && event.target.closest ? event.target.closest('[data-seo-page-nav]') : null;
+        if (pageNavButton) {
+          event.preventDefault();
+          var direction = String(pageNavButton.getAttribute('data-seo-page-nav') || '').toLowerCase();
+          if (direction === 'prev' && pageListPage > 1) {
+            pageListPage -= 1;
+            renderAllowlistSelection();
+          } else if (direction === 'next') {
+            pageListPage += 1;
+            renderAllowlistSelection();
+          }
+          return;
+        }
         var verifyButton = event.target && event.target.closest ? event.target.closest('[data-seo-verify-page]') : null;
         if (verifyButton) {
           event.preventDefault();

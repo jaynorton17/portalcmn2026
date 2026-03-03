@@ -18479,6 +18479,15 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
   overflow: auto;
 }
 
+.cmn-seo-page-pagination {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .cmn-seo-page-row {
   display: flex;
   gap: 10px;
@@ -18588,6 +18597,10 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
 
 .cmn-seo-apply-log-line.is-pending {
   color: #fde68a;
+}
+
+.cmn-seo-apply-log-line.is-queued {
+  color: #c4b5fd;
 }
 
 .cmn-seo-apply-log-line.is-ok {
