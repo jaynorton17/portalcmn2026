@@ -1107,6 +1107,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_match_set_active_weights', [$this, 'handle_match_set_active_weights']);
         add_action('wp_ajax_cmn_match_rollback_weights', [$this, 'handle_match_rollback_weights']);
         add_action('admin_post_cmn_candidate_download_doc', [$this, 'handle_candidate_download_doc']);
+        add_action('admin_post_cmn_download_candidate_documents', [$this, 'handle_download_candidate_documents']);
         add_filter('upload_size_limit', [$this, 'filter_candidate_upload_size_limit'], 20);
         add_filter('wp_handle_upload_prefilter', [$this, 'prefilter_candidate_doc_upload']);
         add_filter('authenticate', [$this, 'block_deactivated_staff_login'], 30, 3);
@@ -8114,6 +8115,18 @@ global $wpdb;
         }
         if ($ability === 'portal.staff.view') {
             if ($actor_user_id < 1 || !$this->is_staff_user($actor_user_id)) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'portal.school.view') {
+            if ($actor_user_id < 1 || !$this->is_school_user($actor_user_id)) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'school.candidate.documents.download') {
+            if ($actor_user_id < 1 || !$this->is_school_user($actor_user_id)) {
                 return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
             }
             return true;
@@ -62661,6 +62674,197 @@ global $wpdb;
         ], $this->get_portal_base_url());
     }
 
+    private function cmn_school_can_download_candidate_documents($school_user_id, $candidate_id) {
+        $school_user_id = (int) $school_user_id;
+        $candidate_id = (int) $candidate_id;
+        if ($school_user_id < 1 || $candidate_id < 1 || !$this->is_school_user($school_user_id)) {
+            return false;
+        }
+        if (get_post_type($candidate_id) !== 'cmn_candidate') {
+            return false;
+        }
+
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        if ($candidate_user_id < 1) {
+            return false;
+        }
+
+        if ($this->cmn_school_can_access_candidate_docs($school_user_id, $candidate_user_id)) {
+            return true;
+        }
+
+        $school_id = (int) $this->resolve_school_id_for_user($school_user_id);
+        if ($school_id < 1) {
+            return false;
+        }
+        if ($this->is_candidate_hidden_for_school_live_matches($school_id, $candidate_id)) {
+            return false;
+        }
+
+        $candidate_status = sanitize_key((string) get_post_meta($candidate_id, 'cmn_status', true));
+        if ($candidate_status === 'rejected') {
+            return false;
+        }
+        if (!$this->candidate_matches_school_for_dashboard($candidate_id, $school_id)) {
+            return false;
+        }
+
+        $today = function_exists('cmn_today_ymd') ? cmn_today_ymd() : current_time('Y-m-d');
+        $tomorrow = function_exists('cmn_now')
+            ? cmn_now()->setTimezone(wp_timezone())->modify('+1 day')->format('Y-m-d')
+            : $this->get_tomorrow_date();
+        if ($this->is_candidate_unavailable($candidate_id, $today) && $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function get_school_candidate_documents_download_url($candidate_id, $school_user_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        $school_user_id = (int) $school_user_id;
+        if ($candidate_id < 1 || $school_user_id < 1) {
+            return '';
+        }
+        if (!$this->cmn_school_can_download_candidate_documents($school_user_id, $candidate_id)) {
+            return '';
+        }
+
+        $nonce_action = 'cmn_download_candidate_documents_' . $candidate_id . '_' . $school_user_id;
+        return (string) add_query_arg([
+            'action' => 'cmn_download_candidate_documents',
+            'candidate_id' => $candidate_id,
+            'cmn_nonce' => wp_create_nonce($nonce_action),
+        ], admin_url('admin-post.php'));
+    }
+
+    private function cmn_resolve_attachment_extension_for_documents_zip($attachment_id, $file_path = '') {
+        $attachment_id = (int) $attachment_id;
+        $file_path = (string) $file_path;
+        $extension = strtolower((string) pathinfo($file_path, PATHINFO_EXTENSION));
+        $extension = preg_replace('/[^a-z0-9]/', '', $extension);
+        if ($extension !== '') {
+            return $extension;
+        }
+        $mime = $attachment_id > 0 ? strtolower((string) get_post_mime_type($attachment_id)) : '';
+        $map = [
+            'application/pdf' => 'pdf',
+            'image/jpeg' => 'jpg',
+            'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'application/msword' => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'text/plain' => 'txt',
+            'text/html' => 'html',
+        ];
+        return $map[$mime] ?? 'bin';
+    }
+
+    private function cmn_add_candidate_attachment_to_documents_zip($zip, $attachment_id, $entry_label, $candidate_id, &$missing_notes = [], $missing_message = '') {
+        if (!is_object($zip) || !method_exists($zip, 'addFile')) {
+            return;
+        }
+        $attachment_id = (int) $attachment_id;
+        $candidate_id = (int) $candidate_id;
+        $entry_label = preg_replace('/[^A-Za-z0-9_]/', '', (string) $entry_label);
+        if ($entry_label === '') {
+            $entry_label = 'Document';
+        }
+        if ($missing_message === '') {
+            $missing_message = $entry_label . ' is missing.';
+        }
+
+        if ($attachment_id < 1) {
+            $missing_notes[] = $missing_message;
+            return;
+        }
+        $file_path = (string) get_attached_file($attachment_id);
+        if ($file_path === '' || !is_file($file_path) || !is_readable($file_path)) {
+            $missing_notes[] = $missing_message;
+            return;
+        }
+        $extension = $this->cmn_resolve_attachment_extension_for_documents_zip($attachment_id, $file_path);
+        $entry_name = 'Candidate_' . $candidate_id . '_' . $entry_label . '.' . $extension;
+        if (!$zip->addFile($file_path, $entry_name)) {
+            $missing_notes[] = $missing_message;
+        }
+    }
+
+    private function cmn_build_school_candidate_documents_zip($candidate_id) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
+            return new WP_Error('cmn_candidate_not_found', 'Candidate not found.', ['status' => 404]);
+        }
+        if (!class_exists('ZipArchive')) {
+            return new WP_Error('cmn_zip_unavailable', 'ZIP download is unavailable on this server.', ['status' => 500]);
+        }
+
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        if ($candidate_user_id < 1) {
+            return new WP_Error('cmn_candidate_owner_not_found', 'Candidate account is not linked.', ['status' => 404]);
+        }
+
+        $tmp_path = wp_tempnam('cmn_candidate_docs_' . $candidate_id);
+        if (!$tmp_path) {
+            return new WP_Error('cmn_zip_temp_error', 'Could not prepare download bundle.', ['status' => 500]);
+        }
+
+        $zip = new ZipArchive();
+        $open_status = $zip->open($tmp_path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        if ($open_status !== true) {
+            @unlink($tmp_path);
+            return new WP_Error('cmn_zip_open_error', 'Could not build download bundle.', ['status' => 500]);
+        }
+
+        $missing_notes = [];
+        $id_status = $this->get_candidate_doc_status($candidate_id, $candidate_user_id, 'id');
+        $this->cmn_add_candidate_attachment_to_documents_zip(
+            $zip,
+            (int) ($id_status['attachment_id'] ?? 0),
+            'ID',
+            $candidate_id,
+            $missing_notes,
+            'ID document is missing.'
+        );
+
+        $formatted_status = $this->get_candidate_cv_formatted_status($candidate_id);
+        $this->cmn_add_candidate_attachment_to_documents_zip(
+            $zip,
+            (int) ($formatted_status['attachment_id'] ?? 0),
+            'CoverMeNow_CV',
+            $candidate_id,
+            $missing_notes,
+            'CoverMeNow-generated CV is missing.'
+        );
+
+        $dbs_status = $this->get_candidate_doc_status($candidate_id, $candidate_user_id, 'dbs');
+        $this->cmn_add_candidate_attachment_to_documents_zip(
+            $zip,
+            (int) ($dbs_status['attachment_id'] ?? 0),
+            'DBS',
+            $candidate_id,
+            $missing_notes,
+            'DBS certificate is missing.'
+        );
+
+        if (!empty($missing_notes)) {
+            $readme = "Some requested files were unavailable at download time.\n\n";
+            foreach ($missing_notes as $missing_note) {
+                $readme .= '- ' . sanitize_text_field((string) $missing_note) . "\n";
+            }
+            $zip->addFromString('README.txt', $readme);
+        }
+
+        $zip->close();
+
+        return [
+            'zip_path' => $tmp_path,
+            'zip_filename' => 'Candidate_' . $candidate_id . '_Documents.zip',
+            'missing_notes' => $missing_notes,
+        ];
+    }
+
     private function get_request_candidate_pay_rate($candidate_id, $school_id, $request = []) {
         if (!empty($request['candidate_pay_rate'])) {
             return (float) $request['candidate_pay_rate'];
@@ -85098,6 +85302,7 @@ global $wpdb;
                 'first_name' => $first_name,
                 'photo_url' => $this->get_school_live_match_photo_url($candidate_profile_id),
                 'profile_url' => $this->get_school_candidate_profile_url($candidate_id, get_current_user_id()),
+                'documents_download_url' => $this->get_school_candidate_documents_download_url($candidate_id, get_current_user_id()),
                 'role_line' => trim($role_primary . ($role_secondary !== '' ? ' • ' . $role_secondary : '')),
                 'rating' => round((float) ($rating['avg_rating'] ?? 0), 1),
                 'rating_label' => number_format((float) ($rating['avg_rating'] ?? 0), 2) . ' out of 5 stars',
@@ -85180,6 +85385,7 @@ global $wpdb;
             $distance_text = sanitize_text_field((string) ($item['distance'] ?? ''));
             $town_city_text = sanitize_text_field((string) ($item['town_city'] ?? ''));
             $rating_label = sanitize_text_field((string) ($item['rating_label'] ?? (number_format((float) ($item['rating'] ?? 0), 2) . ' out of 5 stars')));
+            $documents_download_url = esc_url((string) ($item['documents_download_url'] ?? ''));
             $rating_value = (float) ($item['rating'] ?? 0);
             if ($rating_value <= 0 && $rating_label !== '' && preg_match('/(\d+(?:\.\d+)?)/', $rating_label, $rating_match)) {
                 $rating_value = (float) ($rating_match[1] ?? 0);
@@ -85265,6 +85471,9 @@ global $wpdb;
             $banner_html = $status === 'available'
                 ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
                 : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
+            $documents_button_html = $documents_download_url !== ''
+                ? '<a class="cmn-ghost cmn-live-secondary" href="' . $documents_download_url . '">Download Documents</a>'
+                : '<button class="cmn-ghost cmn-live-secondary" type="button" disabled>Download Documents</button>';
             $presence_html = '<div class="cmn-live-presence' . ($is_physically_online ? ' is-live' : '') . '"><span class="cmn-live-presence-dot" aria-hidden="true"></span>' . esc_html($is_physically_online ? 'ONLINE NOW' : $presence_label) . '</div>';
             $card_state_class = $status === 'available' ? ' is-bookable' : ' is-pending-confirmation';
             return '<article class="cmn-live-card' . esc_attr($card_state_class) . '" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
@@ -85275,7 +85484,7 @@ global $wpdb;
                 . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
-                . '<div class="cmn-live-actions"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><div class="cmn-live-actions-secondary"><a class="cmn-ghost cmn-live-secondary" href="' . $profile_url . '">Download Documents</a><a class="cmn-ghost cmn-live-secondary" href="' . $profile_url . '">View Profile</a></div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
+                . '<div class="cmn-live-actions"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><div class="cmn-live-actions-secondary">' . $documents_button_html . '<a class="cmn-ghost cmn-live-secondary" href="' . $profile_url . '">View Profile</a></div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
                 . '<div class="cmn-live-offer" data-live-offer data-offer-state="' . esc_attr($offer_state) . '" data-offer-expires-at="' . esc_attr($offer_expires_at) . '" data-offer-chat-url="' . esc_url($offer_chat_url) . '" data-offer-booking-id="' . esc_attr((string) $offer_booking_id) . '">' . esc_html($offer_initial_text) . '</div>'
                 . '</article>';
         };
@@ -96528,6 +96737,77 @@ p{margin:0;line-height:1.5}
         header('Content-Disposition: inline; filename="' . basename($file) . '"');
         header('Content-Length: ' . filesize($file));
         readfile($file);
+        exit;
+    }
+
+    public function handle_download_candidate_documents() {
+        if (!is_user_logged_in()) {
+            wp_die('Unauthorized.', 'Unauthorized', ['response' => 403]);
+        }
+
+        $school_user_id = (int) get_current_user_id();
+        $candidate_id = isset($_REQUEST['candidate_id']) ? (int) $_REQUEST['candidate_id'] : 0;
+        $nonce_action = 'cmn_download_candidate_documents_' . $candidate_id . '_' . $school_user_id;
+
+        $guard_result = $this->cmn_endpoint_guard([
+            'ability_required' => 'school.candidate.documents.download',
+            'nonce_mode' => 'required',
+            'nonce_action' => $nonce_action,
+            'nonce_field' => 'cmn_nonce',
+            'nonce_action_candidates' => [$nonce_action, 'cmn_download_candidate_documents'],
+            'nonce_field_candidates' => ['cmn_nonce', 'nonce', '_wpnonce'],
+            'writes_state' => false,
+            'transport' => 'download',
+            'context' => [
+                'actor_user_id' => $school_user_id,
+            ],
+        ], static function () {
+            return true;
+        });
+        if (is_wp_error($guard_result)) {
+            return;
+        }
+
+        $school_view_check = $this->cmn_policy_require_ability('portal.school.view', [
+            'actor_user_id' => $school_user_id,
+        ]);
+        if (is_wp_error($school_view_check)) {
+            wp_die('Access denied.', 'Forbidden', ['response' => 403]);
+        }
+
+        if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
+            wp_die('Candidate not found.', 'Not found', ['response' => 404]);
+        }
+        if (!$this->cmn_school_can_download_candidate_documents($school_user_id, $candidate_id)) {
+            wp_die('Access denied.', 'Forbidden', ['response' => 403]);
+        }
+
+        $zip_payload = $this->cmn_build_school_candidate_documents_zip($candidate_id);
+        if (is_wp_error($zip_payload)) {
+            $status = (int) ($zip_payload->get_error_data()['status'] ?? 500);
+            wp_die((string) $zip_payload->get_error_message(), 'Download unavailable', ['response' => $status]);
+        }
+
+        $zip_path = (string) ($zip_payload['zip_path'] ?? '');
+        $zip_filename = sanitize_file_name((string) ($zip_payload['zip_filename'] ?? ('Candidate_' . $candidate_id . '_Documents.zip')));
+        if ($zip_path === '' || !is_file($zip_path) || !is_readable($zip_path)) {
+            if ($zip_path !== '' && file_exists($zip_path)) {
+                @unlink($zip_path);
+            }
+            wp_die('Download bundle not found.', 'Download unavailable', ['response' => 500]);
+        }
+
+        nocache_headers();
+        header('X-Content-Type-Options: nosniff');
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . $zip_filename . '"');
+        $file_size = @filesize($zip_path);
+        if ($file_size !== false) {
+            header('Content-Length: ' . (string) $file_size);
+        }
+
+        readfile($zip_path);
+        @unlink($zip_path);
         exit;
     }
 
