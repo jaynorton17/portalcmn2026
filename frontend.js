@@ -14896,7 +14896,7 @@ document.addEventListener('DOMContentLoaded', function () {
         + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'
         + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
         + (locationDistanceText ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</span></div>' : '')
-        + '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £'+Math.round(Number(item.day_rate||160))+'</div></div>'
+        + '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">KEY DEPLOYMENT STRENGTHS</div><div class="cmn-live-charge-rate">Charge Rate £'+Math.round(Number(item.day_rate||160))+'</div></div>'
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
         + '<div class="cmn-live-actions">'
         + '<div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button>'+documentsButton+'</div>'
@@ -14939,8 +14939,14 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       render();
     };
+    root.__cmnAdvanceLive = function(step){
+      advanceLive(step);
+    };
 
     root.addEventListener('click', function(e){
+      if (e && e.__cmnLiveNavHandled) {
+        return;
+      }
       if (offerModal && e.target.closest('[data-live-offer-modal-close]')) {
         e.preventDefault();
         closeOfferModal();
@@ -14972,8 +14978,18 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         return;
       }
-      if (e.target.closest('[data-live-prev]')) { advanceLive(-1); return; }
-      if (e.target.closest('[data-live-next]')) { advanceLive(1); return; }
+      if (e.target.closest('[data-live-prev]')) {
+        e.preventDefault();
+        e.__cmnLiveNavHandled = true;
+        advanceLive(-1);
+        return;
+      }
+      if (e.target.closest('[data-live-next]')) {
+        e.preventDefault();
+        e.__cmnLiveNavHandled = true;
+        advanceLive(1);
+        return;
+      }
       var dot = e.target.closest('[data-live-dot]');
       if (dot) { startIndex = parseInt(dot.getAttribute('data-live-dot') || '0',10) || 0; render(); return; }
       if (drawer && e.target.closest('[data-live-filter-open]')) { drawer.hidden = false; return; }
@@ -15240,12 +15256,16 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!root) {
       return;
     }
-    if (root.getAttribute('data-live-nav-bound') === '1') {
+    var direction = btn.matches('[data-live-next]') ? 1 : -1;
+    if (typeof root.__cmnAdvanceLive === 'function') {
+      e.preventDefault();
+      e.__cmnLiveNavHandled = true;
+      root.__cmnAdvanceLive(direction);
       return;
     }
     e.preventDefault();
-    rotateCards(root, btn.matches('[data-live-next]') ? 1 : -1);
-  });
+    rotateCards(root, direction);
+  }, true);
 })();
 if (typeof themeSelect !== 'undefined' && themeSelect && themeSelect.options && themeSelect.options.length <= 1) {
   themeSelect.disabled = true;

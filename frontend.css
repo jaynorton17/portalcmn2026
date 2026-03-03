@@ -17667,8 +17667,8 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-bookable .cmn-live-rating-copy.is-empty{
   color:#f8fafc !important;
   -webkit-text-fill-color:#f8fafc;
-  background:rgba(5,7,12,.62);
-  border-color:rgba(248,250,252,.26);
+  background:rgba(2,6,12,.82);
+  border-color:rgba(248,250,252,.42);
 }
 .cmn-live-card.is-pending-confirmation{z-index:1;transform:translateY(4px) scale(1.05);opacity:1;filter:none;background:linear-gradient(180deg,rgba(98,71,9,.92),rgba(54,38,7,.96));border-color:rgba(181,136,18,.3);box-shadow:0 10px 24px rgba(24,18,4,.28),0 0 8px rgba(181,136,18,.14)}
 @media (min-width:1201px){
@@ -17686,9 +17686,9 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
     transform:translateY(-14px) scale(1.09);
   }
 }
-.cmn-live-brand{font-size:13px;font-weight:800;letter-spacing:.02em;color:#f3f4f6}
-.cmn-live-brand .cmn-live-brand-main{color:inherit}
-.cmn-live-brand .cmn-live-brand-accent{color:#ff1f43 !important;font-weight:900}
+.cmn-live-brand{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:800;letter-spacing:.02em;color:#f8fafc}
+.cmn-live-brand .cmn-live-brand-main{color:#fff !important;-webkit-text-fill-color:#fff;text-shadow:0 1px 5px rgba(2,6,12,.45)}
+.cmn-live-brand .cmn-live-brand-accent{color:#ff1f43 !important;-webkit-text-fill-color:#ff1f43;font-weight:900;text-shadow:0 1px 4px rgba(127,29,29,.35)}
 .cmn-live-card-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .cmn-live-ident{display:flex;align-items:center;gap:10px;min-width:0}
 .cmn-live-avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.22);background:#20182f}
@@ -17699,7 +17699,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rating-stars-base{color:rgba(255,255,255,.3)}
 .cmn-live-rating-stars-fill{position:absolute;left:0;top:0;overflow:hidden;color:#facc15}
 .cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:20px;padding:1px 7px;border-radius:999px;border:1px solid rgba(248,250,252,.22);background:rgba(15,23,42,.5);white-space:nowrap;flex-wrap:nowrap}
+.cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:21px;max-width:100%;padding:2px 8px;border-radius:999px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.74);white-space:nowrap;flex-wrap:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cmn-live-status{padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap}
 .cmn-live-status.available{
   background:linear-gradient(180deg,#66ff30,#22c55e);
@@ -17728,8 +17728,8 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rate span{display:block;font-size:11px;font-weight:500;margin-top:4px}
 .cmn-live-meta-row{display:flex;align-items:center;min-height:30px;padding:7px 10px;border-radius:10px;background:rgba(5,7,12,.66);border:1px solid rgba(255,255,255,.14)}
 .cmn-live-distance{display:block;font-size:12px;line-height:1.3;color:#f8fafc;font-weight:700;letter-spacing:.01em}
-.cmn-live-strengths-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:4px;padding-top:8px;border-top:1px solid rgba(255,255,255,.18)}
-.cmn-live-strengths-title{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(248,250,252,.25);background:rgba(15,23,42,.5);font-size:10.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#f8fafc}
+.cmn-live-strengths-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:6px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22)}
+.cmn-live-strengths-title{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.62);font-size:10.5px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:#f8fafc}
 .cmn-live-charge-rate{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:rgba(14,20,34,.8);font-size:11px;font-weight:800;color:#f8fafc}
 .cmn-live-skills{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start;min-height:54px;max-height:54px;overflow:hidden;margin-top:2px}
 .cmn-live-skill{display:inline-flex;align-items:center;flex:1 1 calc(33.333% - 6px);max-width:calc(33.333% - 6px);background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:6px 10px;border-radius:999px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -73176,7 +73176,7 @@ global $wpdb;
                                             <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
                                             <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                         </div>
-                                        <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
+                                        <div class="cmn-command-strengths-title">KEY DEPLOYMENT STRENGTHS</div>
                                         <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
                                             <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
                                                 <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
@@ -74876,7 +74876,7 @@ global $wpdb;
                                         <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-dashboard-contact-availability><?php echo esc_html($contact_card_availability_label); ?></span>
                                         <span class="cmn-contact-card-preview-time" data-dashboard-contact-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
                                     </div>
-                                    <div class="cmn-command-strengths-title">Key Deployment Strengths</div>
+                                    <div class="cmn-command-strengths-title">KEY DEPLOYMENT STRENGTHS</div>
                                     <div class="cmn-contact-card-preview-skills">
                                         <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
                                             <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
@@ -85482,7 +85482,7 @@ global $wpdb;
                 . $presence_html
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
                 . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
-                . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
+                . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">KEY DEPLOYMENT STRENGTHS</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
                 . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button>' . $documents_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
                 . '<div class="cmn-live-offer" data-live-offer data-offer-state="' . esc_attr($offer_state) . '" data-offer-expires-at="' . esc_attr($offer_expires_at) . '" data-offer-chat-url="' . esc_url($offer_chat_url) . '" data-offer-booking-id="' . esc_attr((string) $offer_booking_id) . '">' . esc_html($offer_initial_text) . '</div>'
@@ -86040,13 +86040,19 @@ global $wpdb;
             return '';
         }
         $fallback_user_id = (int) $fallback_user_id;
+        // Distance origin must be the canonical school profile postcode first.
+        // User-level postcode is only a fallback for legacy accounts.
+        $school_postcode = $this->get_canonical_postcode_from_post_or_user($school_id, 0);
+        if ($school_postcode !== '') {
+            return $school_postcode;
+        }
         if ($fallback_user_id > 0) {
             $user_postcode = $this->get_canonical_postcode_from_user_only($fallback_user_id);
             if ($user_postcode !== '') {
                 return $user_postcode;
             }
         }
-        return $this->get_canonical_postcode_from_post_or_user($school_id, (int) $fallback_user_id);
+        return '';
     }
 
     private function get_candidate_canonical_postcode_for_distance($candidate_profile_id, $candidate_id = 0, $candidate_user_id = 0) {
