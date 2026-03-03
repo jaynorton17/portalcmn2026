@@ -638,6 +638,8 @@ final class CMN_One_Plugin {
     const SCHOOL_PARTNER_CONFIRMATION_REMINDER_CRON_HOOK = 'cmn_school_partner_confirmation_reminder_daily';
     const SCHOOL_PARTNER_CONFIRMATION_REMINDER_LOCK_KEY = 'cmn_school_partner_confirmation_reminder_lock';
     const SCHOOL_PARTNER_CONFIRMATION_REMINDER_LOCK_TTL = 1800;
+    const SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK = 'cmn_school_live_match_daily_reset';
+    const SCHOOL_LIVE_MATCH_DAILY_RESET_LOCK_TTL = 600;
     const SCHOOL_PARTNER_CONFIRMATION_TOKEN_TTL_DAYS = 14;
     const SCHOOL_PARTNER_CONFIRMATION_RATE_LIMIT_WINDOW = 600;
     const SCHOOL_PARTNER_CONFIRMATION_RATE_LIMIT_MAX_ATTEMPTS = 60;
@@ -1017,6 +1019,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_nopriv_cmn_portal_reset_password', [$this, 'handle_portal_reset_password']);
         add_action('admin_post_cmn_portal_reset_password', [$this, 'handle_portal_reset_password']);
         add_action('admin_post_cmn_run_upgrade_runner', [$this, 'handle_run_upgrade_runner']);
+        add_action('admin_post_cmn_run_school_live_match_reset_now', [$this, 'handle_run_school_live_match_reset_now']);
         add_action('wp_ajax_cmn_add_staff_user', [$this, 'handle_add_staff_user_ajax']);
         add_action('wp_ajax_cmn_update_staff_user', [$this, 'handle_update_staff_user_ajax']);
         add_action('wp_ajax_cmn_send_staff_reset_password', [$this, 'handle_send_staff_reset_password_ajax']);
@@ -1154,6 +1157,7 @@ final class CMN_One_Plugin {
         add_action('init', [$this, 'schedule_payroll_period_auto_lock_processor']);
         add_action('init', [$this, 'schedule_school_partner_confirmation_email_cron']);
         add_action('init', [$this, 'schedule_school_partner_confirmation_reminder_cron']);
+        add_action('init', [$this, 'schedule_school_live_match_daily_reset']);
         add_action('init', [$this, 'ensure_rewards_academic_year_configs'], 24);
         add_action('cmn_automation_runner', [$this, 'run_automation_runner']);
         add_action(self::MONTHLY_INVOICE_CRON_HOOK, [$this, 'run_monthly_invoice_generation_cron']);
@@ -1164,6 +1168,7 @@ final class CMN_One_Plugin {
         add_action(self::PAYROLL_PERIOD_AUTO_LOCK_CRON_HOOK, [$this, 'run_payroll_period_auto_lock_cron']);
         add_action(self::SCHOOL_PARTNER_CONFIRMATION_EMAIL_CRON_HOOK, [$this, 'run_school_partner_confirmation_email_cron']);
         add_action(self::SCHOOL_PARTNER_CONFIRMATION_REMINDER_CRON_HOOK, [$this, 'run_school_partner_confirmation_reminder_cron']);
+        add_action(self::SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK, [$this, 'run_school_live_match_daily_reset_cron']);
         add_action('cmn_automation_realtime', [$this, 'handle_automation_realtime'], 10, 3);
     }
 
@@ -1257,6 +1262,15 @@ final class CMN_One_Plugin {
                 $candidate = $candidate->modify('+1 day')->setTime(7, 30, 0);
             }
             wp_schedule_event((int) $candidate->getTimestamp(), 'daily', self::SCHOOL_PARTNER_CONFIRMATION_REMINDER_CRON_HOOK);
+        }
+        if (!wp_next_scheduled(self::SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK)) {
+            $tz = wp_timezone();
+            $reference = new DateTimeImmutable('now', $tz);
+            $candidate = $reference->setTime(9, 0, 0);
+            if ($reference >= $candidate) {
+                $candidate = $candidate->modify('+1 day')->setTime(9, 0, 0);
+            }
+            wp_schedule_event((int) $candidate->getTimestamp(), 'daily', self::SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK);
         }
     }
 
@@ -9307,6 +9321,267 @@ global $wpdb;
         wp_schedule_event($next_run, 'daily', $hook);
     }
 
+    public function schedule_school_live_match_daily_reset() {
+        if ($this->should_skip_noncritical_init_work()) {
+            return;
+        }
+        $hook = self::SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK;
+        if (wp_next_scheduled($hook)) {
+            return;
+        }
+        $next_run = $this->get_next_school_live_match_daily_reset_timestamp();
+        if ($next_run <= 0) {
+            $next_run = time() + HOUR_IN_SECONDS;
+        }
+        wp_schedule_event($next_run, 'daily', $hook);
+    }
+
+    private function get_next_school_live_match_daily_reset_timestamp($reference_ts = 0) {
+        $reference_ts = (int) $reference_ts;
+        if ($reference_ts < 1) {
+            $reference_ts = (int) (function_exists('cmn_now') ? cmn_now()->getTimestamp() : current_time('timestamp'));
+        }
+        $tz = wp_timezone();
+        $reference = (new DateTimeImmutable('@' . max(1, $reference_ts)))->setTimezone($tz);
+        $candidate = $reference->setTime(9, 0, 0);
+        if ($reference >= $candidate) {
+            $candidate = $candidate->modify('+1 day')->setTime(9, 0, 0);
+        }
+        return (int) $candidate->getTimestamp();
+    }
+
+    public function run_school_live_match_daily_reset_cron() {
+        $result = $this->run_school_live_match_daily_reset_job('cron', 0, false);
+        return is_array($result) ? $result : [];
+    }
+
+    private function is_truthy_available_flag($value) {
+        $normalized = strtolower(trim((string) $value));
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private function candidate_has_active_request_for_dates($candidate_id, $dates = []) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1 || !is_array($dates) || !$dates) {
+            return false;
+        }
+        $clean_dates = [];
+        foreach ($dates as $date_raw) {
+            $date = sanitize_text_field((string) $date_raw);
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+                continue;
+            }
+            $clean_dates[$date] = $date;
+        }
+        if (!$clean_dates) {
+            return false;
+        }
+
+        global $wpdb;
+        $table = $this->get_candidate_requests_table();
+        $placeholders = implode(',', array_fill(0, count($clean_dates), '%s'));
+        $params = array_merge([$candidate_id], array_values($clean_dates));
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT status
+             FROM {$table}
+             WHERE candidate_id = %d
+               AND requested_date IN ({$placeholders})
+             ORDER BY id DESC
+             LIMIT 15",
+            ...$params
+        ), ARRAY_A);
+        if (!$rows) {
+            return false;
+        }
+
+        $active_statuses = [
+            self::REQUEST_STATUS_REQUESTED,
+            self::REQUEST_STATUS_PENDING,
+            self::REQUEST_STATUS_TENTATIVE,
+            self::REQUEST_STATUS_ACCEPTED,
+            self::REQUEST_STATUS_CONFIRMED,
+            self::REQUEST_STATUS_CANDIDATE_ACCEPTED,
+        ];
+        foreach ($rows as $row) {
+            $status = $this->normalize_request_status((string) ($row['status'] ?? ''));
+            if (in_array($status, $active_statuses, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function candidate_has_valid_live_match_green_state($candidate_id, $today, $tomorrow) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1) {
+            return false;
+        }
+        $dates = [];
+        foreach ([$today, $tomorrow] as $date_raw) {
+            $date = sanitize_text_field((string) $date_raw);
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+                continue;
+            }
+            $dates[$date] = $date;
+            if ($this->has_candidate_availability($candidate_id, $date)) {
+                return true;
+            }
+            if ($this->has_booking_for_candidate_date($candidate_id, $date)) {
+                return true;
+            }
+        }
+        return $this->candidate_has_active_request_for_dates($candidate_id, array_values($dates));
+    }
+
+    private function run_school_live_match_daily_reset_job($trigger = 'cron', $actor_user_id = 0, $force = false) {
+        $trigger = sanitize_key((string) $trigger);
+        if ($trigger === '') {
+            $trigger = 'cron';
+        }
+        $actor_user_id = max(0, (int) $actor_user_id);
+        $force = (bool) $force;
+        $lock_runner = $this->cmn_acquire_job_lock(
+            'school_live_match_daily_reset',
+            self::SCHOOL_LIVE_MATCH_DAILY_RESET_LOCK_TTL,
+            $this->get_job_lock_runner_id('school-live-match-reset')
+        );
+        if (!$lock_runner) {
+            return [
+                'status' => 'busy',
+                'message' => 'Daily live match reset is already running.',
+            ];
+        }
+
+        $started_at = microtime(true);
+        try {
+            $tz = wp_timezone();
+            $now = new DateTimeImmutable('now', $tz);
+            $today = $now->format('Y-m-d');
+            $tomorrow = $now->modify('+1 day')->format('Y-m-d');
+            $last_run_date = sanitize_text_field((string) get_option('cmn_school_live_match_reset_last_run_date', ''));
+            if (!$force && $last_run_date === $today) {
+                return [
+                    'status' => 'skipped',
+                    'message' => 'Daily live match reset already completed today.',
+                    'today' => $today,
+                    'tomorrow' => $tomorrow,
+                    'post_flags_reset' => 0,
+                    'user_flags_reset' => 0,
+                    'skipped_valid' => 0,
+                ];
+            }
+
+            global $wpdb;
+            $postmeta_rows = (array) $wpdb->get_results($wpdb->prepare(
+                "SELECT pm.post_id, pm.meta_value
+                 FROM {$wpdb->postmeta} pm
+                 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+                 WHERE pm.meta_key = %s
+                   AND p.post_type = 'cmn_candidate'
+                   AND p.post_status IN ('publish','private','draft')",
+                'cmn_contact_card_show_available'
+            ), ARRAY_A);
+            $candidate_ids = [];
+            foreach ($postmeta_rows as $row) {
+                $candidate_id = (int) ($row['post_id'] ?? 0);
+                if ($candidate_id < 1 || !$this->is_truthy_available_flag((string) ($row['meta_value'] ?? ''))) {
+                    continue;
+                }
+                $candidate_ids[$candidate_id] = $candidate_id;
+            }
+
+            $candidate_user_ids_without_profile = [];
+            $usermeta_rows = (array) $wpdb->get_results($wpdb->prepare(
+                "SELECT user_id, meta_value
+                 FROM {$wpdb->usermeta}
+                 WHERE meta_key = %s",
+                'cmn_contact_card_show_available'
+            ), ARRAY_A);
+            foreach ($usermeta_rows as $row) {
+                $user_id = (int) ($row['user_id'] ?? 0);
+                if (
+                    $user_id < 1
+                    || !$this->is_truthy_available_flag((string) ($row['meta_value'] ?? ''))
+                    || !$this->is_candidate_user($user_id)
+                ) {
+                    continue;
+                }
+                $candidate_id = (int) $this->get_candidate_id_for_user($user_id);
+                if ($candidate_id > 0) {
+                    $candidate_ids[$candidate_id] = $candidate_id;
+                    continue;
+                }
+                $candidate_user_ids_without_profile[$user_id] = $user_id;
+            }
+
+            $post_flags_reset = 0;
+            $user_flags_reset = 0;
+            $skipped_valid = 0;
+            foreach ($candidate_ids as $candidate_id) {
+                $candidate_id = (int) $candidate_id;
+                if ($candidate_id < 1) {
+                    continue;
+                }
+                if ($this->candidate_has_valid_live_match_green_state($candidate_id, $today, $tomorrow)) {
+                    $skipped_valid++;
+                    continue;
+                }
+                update_post_meta($candidate_id, 'cmn_contact_card_show_available', '0');
+                $post_flags_reset++;
+                $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+                if ($candidate_user_id > 0) {
+                    update_user_meta($candidate_user_id, 'cmn_contact_card_show_available', '0');
+                    $user_flags_reset++;
+                }
+            }
+            foreach ($candidate_user_ids_without_profile as $user_id) {
+                update_user_meta((int) $user_id, 'cmn_contact_card_show_available', '0');
+                $user_flags_reset++;
+            }
+
+            update_option('cmn_school_live_match_reset_last_run_date', $today, false);
+            $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
+            $result = [
+                'status' => 'success',
+                'message' => 'Live match card states reset.',
+                'today' => $today,
+                'tomorrow' => $tomorrow,
+                'post_flags_reset' => $post_flags_reset,
+                'user_flags_reset' => $user_flags_reset,
+                'skipped_valid' => $skipped_valid,
+                'trigger' => $trigger,
+                'actor_user_id' => $actor_user_id,
+                'duration_ms' => $duration_ms,
+                'ran_at' => current_time('mysql'),
+            ];
+            update_option('cmn_school_live_match_reset_last_result', wp_json_encode($result), false);
+            $this->add_audit_log('school_live_match_daily_reset', 'system', 'school_live_matches', [
+                'trigger' => $trigger,
+                'today' => $today,
+                'tomorrow' => $tomorrow,
+                'post_flags_reset' => $post_flags_reset,
+                'user_flags_reset' => $user_flags_reset,
+                'skipped_valid' => $skipped_valid,
+                'duration_ms' => $duration_ms,
+            ], $actor_user_id);
+            return $result;
+        } catch (Throwable $e) {
+            $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
+            $this->add_audit_log('school_live_match_daily_reset_failed', 'system', 'school_live_matches', [
+                'trigger' => $trigger,
+                'error' => $e->getMessage(),
+                'duration_ms' => $duration_ms,
+            ], $actor_user_id);
+            return [
+                'status' => 'error',
+                'message' => 'Live match reset failed: ' . $e->getMessage(),
+            ];
+        } finally {
+            $this->cmn_release_job_lock('school_live_match_daily_reset', (string) $lock_runner);
+        }
+    }
+
     private function get_next_candidate_rewards_annual_reset_timestamp($reference_ts = 0) {
         $reference_ts = (int) $reference_ts;
         if ($reference_ts < 1) {
@@ -10086,6 +10361,49 @@ global $wpdb;
         wp_safe_redirect(add_query_arg([
             'cmn_upgrade_status' => $status,
             'cmn_upgrade_msg' => rawurlencode($message),
+        ], $redirect));
+        exit;
+    }
+
+    public function handle_run_school_live_match_reset_now() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.upgrade.run',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_run_school_live_match_reset_now',
+            'nonce_field' => 'cmn_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $redirect = esc_url_raw((string) ($_POST['cmn_return_url'] ?? ''));
+        if ($redirect !== '') {
+            $redirect = wp_validate_redirect($redirect, $this->get_portal_base_url());
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = wp_get_referer();
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = add_query_arg(['view' => 'system-health'], $this->get_portal_base_url());
+        }
+
+        $result = $this->run_school_live_match_daily_reset_job('manual', $actor_user_id, true);
+        $status = sanitize_key((string) ($result['status'] ?? 'error'));
+        if (!in_array($status, ['success', 'busy', 'skipped', 'error'], true)) {
+            $status = 'error';
+        }
+        $message = sanitize_text_field((string) ($result['message'] ?? 'Unable to run live match reset.'));
+        wp_safe_redirect(add_query_arg([
+            'cmn_live_match_reset_status' => $status,
+            'cmn_live_match_reset_msg' => rawurlencode($message),
         ], $redirect));
         exit;
     }
@@ -33807,6 +34125,11 @@ global $wpdb;
         $upgrade_status = sanitize_key((string) ($_GET['cmn_upgrade_status'] ?? ''));
         $upgrade_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_upgrade_msg'] ?? '')));
         $upgrade_msg_class = $upgrade_status === 'success' ? 'cmn-register-success' : ($upgrade_status === 'busy' ? 'cmn-register-warning' : ($upgrade_status === 'error' ? 'cmn-register-error' : 'cmn-muted'));
+        $live_match_reset_status = sanitize_key((string) ($_GET['cmn_live_match_reset_status'] ?? ''));
+        $live_match_reset_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_live_match_reset_msg'] ?? '')));
+        $live_match_reset_msg_class = $live_match_reset_status === 'success'
+            ? 'cmn-register-success'
+            : ($live_match_reset_status === 'busy' ? 'cmn-register-warning' : ($live_match_reset_status === 'skipped' ? 'cmn-register-warning' : ($live_match_reset_status === 'error' ? 'cmn-register-error' : 'cmn-muted')));
         $schema_version = (int) get_option('cmn_schema_version', self::SCHEMA_BASE_VERSION);
         $plugin_version_installed = sanitize_text_field((string) get_option('cmn_plugin_version', self::VERSION));
         if ($plugin_version_installed === '') {
@@ -33850,6 +34173,12 @@ global $wpdb;
                                 <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr($this->get_current_url()); ?>">
                                 <button class="cmn-ghost" type="submit">Run Upgrade Runner</button>
                             </form>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-flex;gap:8px;align-items:center;">
+                                <?php wp_nonce_field('cmn_run_school_live_match_reset_now', 'cmn_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_run_school_live_match_reset_now">
+                                <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr($this->get_current_url()); ?>">
+                                <button class="cmn-ghost" type="submit">Run 9am Card Reset Now</button>
+                            </form>
                             <div class="cmn-muted" style="font-size:12px;">
                                 Schema v<?php echo esc_html((string) $schema_version); ?> | Plugin v<?php echo esc_html($plugin_version_installed); ?>
                             </div>
@@ -33871,6 +34200,9 @@ global $wpdb;
                 <div class="cmn-system-health-run-msg" data-system-health-run-msg></div>
                 <?php if ($upgrade_msg !== '') : ?>
                     <div class="<?php echo esc_attr($upgrade_msg_class); ?>"><?php echo esc_html($upgrade_msg); ?></div>
+                <?php endif; ?>
+                <?php if ($live_match_reset_msg !== '') : ?>
+                    <div class="<?php echo esc_attr($live_match_reset_msg_class); ?>"><?php echo esc_html($live_match_reset_msg); ?></div>
                 <?php endif; ?>
             </div>
             <?php if (!empty($last_upgrade_runner_result)) : ?>
