@@ -85796,15 +85796,16 @@ global $wpdb;
         $profile_postcode = $candidate_profile_id > 0
             ? $this->get_canonical_postcode_from_post_or_user($candidate_profile_id, $candidate_user_id)
             : '';
+        if ($profile_postcode !== '') {
+            return $profile_postcode;
+        }
+
         $candidate_postcode = '';
         if ($candidate_id > 0 && $candidate_id !== $candidate_profile_id) {
             $candidate_postcode = $this->get_canonical_postcode_from_post_or_user($candidate_id, $candidate_user_id);
         }
         if ($candidate_postcode !== '') {
             return $candidate_postcode;
-        }
-        if ($profile_postcode !== '') {
-            return $profile_postcode;
         }
         return '';
     }
@@ -85930,8 +85931,12 @@ global $wpdb;
             return $payload;
         }
 
-        $school_postcode = $this->get_school_canonical_postcode_for_distance($school_id, $school_user_id);
-        $candidate_postcode = $this->get_candidate_canonical_postcode_for_distance($candidate_profile_id, $candidate_id, $candidate_user_id);
+        $school_postcode = $this->normalize_uk_postcode_for_lookup(
+            $this->get_school_canonical_postcode_for_distance($school_id, $school_user_id)
+        );
+        $candidate_postcode = $this->normalize_uk_postcode_for_lookup(
+            $this->get_candidate_canonical_postcode_for_distance($candidate_profile_id, $candidate_id, $candidate_user_id)
+        );
         $payload['school_postcode'] = $school_postcode;
         $payload['candidate_postcode'] = $candidate_postcode;
 
@@ -85962,12 +85967,13 @@ global $wpdb;
             return $payload;
         }
 
-        $candidate_coords = null;
-        if ($candidate_id > 0 && $candidate_id !== $candidate_profile_id) {
+        $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_profile_id);
+        if (
+            !$this->is_valid_geo_coordinates($candidate_coords)
+            && $candidate_id > 0
+            && $candidate_id !== $candidate_profile_id
+        ) {
             $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_id);
-        }
-        if (!$this->is_valid_geo_coordinates($candidate_coords)) {
-            $candidate_coords = $this->ensure_candidate_geo_coordinates($candidate_profile_id);
         }
         $payload['candidate_coords'] = $candidate_coords;
         if (!$this->is_valid_geo_coordinates($candidate_coords)) {
