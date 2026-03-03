@@ -775,6 +775,7 @@ final class CMN_One_Plugin {
     private $current_school_view_req_id = '';
     private $endpoint_policy_manifest_cache = null;
     private $cmn_perf_enabled = null;
+    private $cmn_distance_debug_enabled = null;
     private $cmn_perf_request_started_at = 0.0;
     private $cmn_perf_auth_started_at = 0.0;
     private $cmn_perf_auth_elapsed_ms = null;
@@ -1634,6 +1635,15 @@ final class CMN_One_Plugin {
         }
         $enabled = isset($_REQUEST['cmn_perf']) && (string) wp_unslash($_REQUEST['cmn_perf']) === '1';
         $this->cmn_perf_enabled = $enabled;
+        return $enabled;
+    }
+
+    private function cmn_is_distance_debug_enabled() {
+        if ($this->cmn_distance_debug_enabled !== null) {
+            return (bool) $this->cmn_distance_debug_enabled;
+        }
+        $enabled = isset($_REQUEST['cmn_debug_distance']) && (string) wp_unslash($_REQUEST['cmn_debug_distance']) === '1';
+        $this->cmn_distance_debug_enabled = $enabled;
         return $enabled;
     }
 
@@ -88168,15 +88178,11 @@ global $wpdb;
         if ($candidate_user_id < 1 && $candidate_id > 0) {
             $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
         }
-        if ($candidate_user_id > 0) {
-            $user_postcode = $this->get_canonical_postcode_from_user_only($candidate_user_id);
-            if ($user_postcode !== '') {
-                return $user_postcode;
-            }
-        }
 
+        // Distance must prefer canonical postcode on candidate/profile posts first.
+        // User-level postcode is only a fallback for legacy accounts with no post postcode.
         $profile_postcode = $candidate_profile_id > 0
-            ? $this->get_canonical_postcode_from_post_or_user($candidate_profile_id, $candidate_user_id)
+            ? $this->get_canonical_postcode_from_post_or_user($candidate_profile_id, 0)
             : '';
         if ($profile_postcode !== '') {
             return $profile_postcode;
@@ -88184,10 +88190,16 @@ global $wpdb;
 
         $candidate_postcode = '';
         if ($candidate_id > 0 && $candidate_id !== $candidate_profile_id) {
-            $candidate_postcode = $this->get_canonical_postcode_from_post_or_user($candidate_id, $candidate_user_id);
+            $candidate_postcode = $this->get_canonical_postcode_from_post_or_user($candidate_id, 0);
         }
         if ($candidate_postcode !== '') {
             return $candidate_postcode;
+        }
+        if ($candidate_user_id > 0) {
+            $user_postcode = $this->get_canonical_postcode_from_user_only($candidate_user_id);
+            if ($user_postcode !== '') {
+                return $user_postcode;
+            }
         }
         return '';
     }
@@ -88264,7 +88276,7 @@ global $wpdb;
     }
 
     private function log_live_match_distance_perf($payload) {
-        if (!$this->cmn_is_perf_trace_enabled()) {
+        if (!$this->cmn_is_perf_trace_enabled() && !$this->cmn_is_distance_debug_enabled()) {
             return;
         }
         if (!is_array($payload)) {
@@ -88273,6 +88285,9 @@ global $wpdb;
         $school_coords = isset($payload['school_coords']) && is_array($payload['school_coords']) ? $payload['school_coords'] : null;
         $candidate_coords = isset($payload['candidate_coords']) && is_array($payload['candidate_coords']) ? $payload['candidate_coords'] : null;
         error_log('[CMN_PERF_DISTANCE] ' . wp_json_encode([
+            'school_id' => (int) ($payload['school_id'] ?? 0),
+            'candidate_profile_id' => (int) ($payload['candidate_profile_id'] ?? 0),
+            'candidate_id' => (int) ($payload['candidate_id'] ?? 0),
             'school_postcode' => (string) ($payload['school_postcode'] ?? ''),
             'candidate_postcode' => (string) ($payload['candidate_postcode'] ?? ''),
             'school_latlng' => $this->is_valid_geo_coordinates($school_coords) ? [
@@ -88302,6 +88317,9 @@ global $wpdb;
             'label' => 'Distance unavailable',
             'distance_miles' => null,
             'reason' => 'missing_data',
+            'school_id' => $school_id,
+            'candidate_profile_id' => $candidate_profile_id,
+            'candidate_id' => $candidate_id,
             'school_postcode' => '',
             'candidate_postcode' => '',
             'school_coords' => null,
@@ -88327,6 +88345,9 @@ global $wpdb;
             if (isset($distance_payload_cache[$distance_cache_key]) && is_array($distance_payload_cache[$distance_cache_key])) {
                 $cached_payload = $distance_payload_cache[$distance_cache_key];
                 $cached_payload['cache_hit'] = true;
+                $cached_payload['school_id'] = $school_id;
+                $cached_payload['candidate_profile_id'] = $candidate_profile_id;
+                $cached_payload['candidate_id'] = $candidate_id;
                 $cached_payload['school_postcode'] = $school_postcode;
                 $cached_payload['candidate_postcode'] = $candidate_postcode;
                 $this->log_live_match_distance_perf($cached_payload);
