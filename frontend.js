@@ -15027,6 +15027,9 @@ document.addEventListener('DOMContentLoaded', function () {
         advanceLive(1);
       });
     }
+    if (root) {
+      root.setAttribute('data-live-nav-bound', '1');
+    }
     var touchStartX = 0;
     carousel.addEventListener('touchstart', function(e){ touchStartX = e.touches && e.touches[0] ? e.touches[0].clientX : 0; }, {passive:true});
     carousel.addEventListener('touchend', function(e){
@@ -15163,6 +15166,51 @@ document.addEventListener('DOMContentLoaded', function () {
   } else {
     initLiveMatches();
   }
+})();
+
+// Defensive fallback: if live-match init did not bind arrow handlers,
+// rotate currently rendered cards directly so left/right still works.
+(function () {
+  var rotateCards = function (root, direction) {
+    if (!root) {
+      return;
+    }
+    var carousel = root.querySelector('[data-live-carousel]');
+    if (!carousel) {
+      return;
+    }
+    var cards = Array.prototype.slice.call(carousel.querySelectorAll('.cmn-live-card'));
+    if (cards.length <= 1) {
+      return;
+    }
+    if (direction > 0) {
+      var first = cards[0];
+      if (first && first.parentNode === carousel) {
+        carousel.appendChild(first);
+      }
+      return;
+    }
+    var last = cards[cards.length - 1];
+    if (last && last.parentNode === carousel) {
+      carousel.insertBefore(last, carousel.firstChild || null);
+    }
+  };
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-live-prev], [data-live-next]') : null;
+    if (!btn) {
+      return;
+    }
+    var root = btn.closest ? btn.closest('[data-live-matches-root]') : null;
+    if (!root) {
+      return;
+    }
+    if (root.getAttribute('data-live-nav-bound') === '1') {
+      return;
+    }
+    e.preventDefault();
+    rotateCards(root, btn.matches('[data-live-next]') ? 1 : -1);
+  });
 })();
 if (typeof themeSelect !== 'undefined' && themeSelect && themeSelect.options && themeSelect.options.length <= 1) {
   themeSelect.disabled = true;
