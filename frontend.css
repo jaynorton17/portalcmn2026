@@ -18526,7 +18526,7 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
 
 .cmn-seo-summary-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -18686,6 +18686,12 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
   background: rgba(59, 130, 246, 0.18);
   color: #bfdbfe;
   border-color: rgba(59, 130, 246, 0.45);
+}
+
+.cmn-seo-status-chip.is-failed {
+  background: rgba(239, 68, 68, 0.28);
+  color: #fee2e2;
+  border-color: rgba(248, 113, 113, 0.56);
 }
 
 .cmn-seo-impact-chip.is-high {

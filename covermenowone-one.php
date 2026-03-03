@@ -915,7 +915,9 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_seo_assistant_save_allowlist', [$this, 'handle_seo_assistant_save_allowlist']);
         add_action('wp_ajax_cmn_seo_assistant_scan', [$this, 'handle_seo_assistant_scan']);
         add_action('wp_ajax_cmn_seo_assistant_set_recommendation_status', [$this, 'handle_seo_assistant_set_recommendation_status']);
+        add_action('wp_ajax_cmn_seo_proposal_set_status', [$this, 'handle_seo_assistant_set_recommendation_status']);
         add_action('wp_ajax_cmn_seo_assistant_apply_approved', [$this, 'handle_seo_assistant_apply_approved']);
+        add_action('wp_ajax_cmn_seo_apply_approved', [$this, 'handle_seo_assistant_apply_approved']);
         add_action('wp_ajax_cmn_seo_assistant_start_apply_batch', [$this, 'handle_seo_assistant_start_apply_batch']);
         add_action('wp_ajax_cmn_seo_assistant_apply_next', [$this, 'handle_seo_assistant_apply_next']);
         add_action('wp_ajax_cmn_seo_assistant_get_batch_progress', [$this, 'handle_seo_assistant_get_batch_progress']);
@@ -34942,6 +34944,7 @@ global $wpdb;
             'approved' => 0,
             'rejected' => 0,
             'applied' => 0,
+            'failed' => 0,
         ];
         foreach ($recommendation_rows as $recommendation_row) {
             $status = sanitize_key((string) ($recommendation_row['status'] ?? 'pending'));
@@ -35722,12 +35725,12 @@ global $wpdb;
         } elseif ($result['page_url'] === '' || !$this->seo_assistant_is_internal_url($result['page_url'])) {
             $result['result'] = 'failed';
             $result['message'] = 'Invalid page URL.';
-            $recommendation['status'] = 'applied';
+            $recommendation['status'] = 'failed';
             $recommendation['applied_result'] = 'failed';
         } elseif (!in_array($result['field'], $allowed_fields, true)) {
             $result['result'] = 'failed';
             $result['message'] = 'Unsupported SEO field.';
-            $recommendation['status'] = 'applied';
+            $recommendation['status'] = 'failed';
             $recommendation['applied_result'] = 'failed';
         } else {
             if (!isset($state['overrides'][$result['page_url']]) || !is_array($state['overrides'][$result['page_url']])) {
@@ -35935,7 +35938,7 @@ global $wpdb;
             <div class="cmn-seo-assistant-actions">
                 <button type="button" class="cmn-ghost" data-seo-discover-pages>Discover Pages</button>
                 <button type="button" class="cmn-primary" data-seo-scan-selected>Scan Selected Pages</button>
-                <button type="button" class="cmn-ghost" data-seo-apply-approved>Apply Approved</button>
+                <button type="button" class="cmn-ghost" data-seo-apply-approved>Apply Approved Changes</button>
                 <button type="button" class="cmn-ghost" data-seo-rollback-last-batch>Rollback Last Batch</button>
                 <span class="cmn-muted" data-seo-status-msg>Ready.</span>
             </div>
@@ -36226,6 +36229,11 @@ global $wpdb;
 
         $recommendation_id = sanitize_key((string) ($_POST['recommendation_id'] ?? ''));
         $status = sanitize_key((string) ($_POST['status'] ?? ''));
+        if ($status === 'approve') {
+            $status = 'approved';
+        } elseif ($status === 'reject') {
+            $status = 'rejected';
+        }
         if ($recommendation_id === '' || !in_array($status, ['approved', 'rejected'], true)) {
             wp_send_json_error(['message' => 'Invalid recommendation request.'], 400);
         }

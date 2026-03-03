@@ -14134,7 +14134,8 @@ document.addEventListener('DOMContentLoaded', function () {
           pending: 0,
           approved: 0,
           rejected: 0,
-          applied: 0
+          applied: 0,
+          failed: 0
         },
         updated_at: ''
       };
@@ -14162,7 +14163,8 @@ document.addEventListener('DOMContentLoaded', function () {
         pending: parseInt(String(statusCounts.pending || 0), 10) || 0,
         approved: parseInt(String(statusCounts.approved || 0), 10) || 0,
         rejected: parseInt(String(statusCounts.rejected || 0), 10) || 0,
-        applied: parseInt(String(statusCounts.applied || 0), 10) || 0
+        applied: parseInt(String(statusCounts.applied || 0), 10) || 0,
+        failed: parseInt(String(statusCounts.failed || 0), 10) || 0
       };
       return normalized;
     };
@@ -14455,13 +14457,14 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         var latestScan = (Array.isArray(state.scans) && state.scans.length) ? state.scans[0] : null;
         var averageScore = latestScan ? (parseInt(String(latestScan.average_score || 0), 10) || 0) : 0;
-        var recommendationTotal = (state.status_counts.pending || 0) + (state.status_counts.approved || 0) + (state.status_counts.rejected || 0) + (state.status_counts.applied || 0);
+        var recommendationTotal = (state.status_counts.pending || 0) + (state.status_counts.approved || 0) + (state.status_counts.rejected || 0) + (state.status_counts.applied || 0) + (state.status_counts.failed || 0);
         summary.innerHTML = '' +
           '<div class="cmn-seo-summary-grid">' +
             '<div class="cmn-seo-summary-item"><strong>' + String(averageScore) + '</strong><span>Latest score</span></div>' +
             '<div class="cmn-seo-summary-item"><strong>' + String(state.status_counts.pending || 0) + '</strong><span>Pending</span></div>' +
             '<div class="cmn-seo-summary-item"><strong>' + String(state.status_counts.approved || 0) + '</strong><span>Approved</span></div>' +
             '<div class="cmn-seo-summary-item"><strong>' + String(state.status_counts.applied || 0) + '</strong><span>Applied</span></div>' +
+            '<div class="cmn-seo-summary-item"><strong>' + String(state.status_counts.failed || 0) + '</strong><span>Failed</span></div>' +
             '<div class="cmn-seo-summary-item"><strong>' + String(recommendationTotal) + '</strong><span>Total recs</span></div>' +
           '</div>' +
           '<p class="cmn-muted">Last updated: ' + seoEscapeHtml(state.updated_at || 'Never') + '</p>';
@@ -14532,6 +14535,13 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!recommendationRows) {
           return;
         }
+        var statusLabelMap = {
+          pending: 'Pending',
+          approved: 'Approved',
+          rejected: 'Rejected',
+          applied: 'Applied',
+          failed: 'Failed'
+        };
         recommendationRows.innerHTML = '';
         if (!Array.isArray(state.recommendations) || !state.recommendations.length) {
           recommendationRows.innerHTML = '<tr><td colspan="9">No recommendations yet.</td></tr>';
@@ -14541,10 +14551,11 @@ document.addEventListener('DOMContentLoaded', function () {
           var status = String(row.status || 'pending');
           var impact = String(row.expected_impact || 'medium');
           var statusClass = status.replace(/[^a-z0-9_-]+/gi, '').toLowerCase();
+          var statusLabel = statusLabelMap[statusClass] || 'Pending';
           var impactClass = impact.replace(/[^a-z0-9_-]+/gi, '').toLowerCase();
           var tr = document.createElement('tr');
           tr.innerHTML = '' +
-            '<td><span class="cmn-status-chip cmn-seo-status-chip is-' + seoEscapeHtml(statusClass) + '">' + seoEscapeHtml(status) + '</span></td>' +
+            '<td><span class="cmn-status-chip cmn-seo-status-chip is-' + seoEscapeHtml(statusClass) + '">' + seoEscapeHtml(statusLabel) + '</span></td>' +
             '<td class="cmn-seo-url-cell"><a href="' + seoEscapeHtml(row.page_url || '#') + '" target="_blank" rel="noopener noreferrer">' + seoEscapeHtml(row.page_url || '-') + '</a></td>' +
             '<td><span class="cmn-seo-field">' + seoEscapeHtml(row.field || '-') + '</span></td>' +
             '<td><div class="cmn-seo-cell-value">' + seoEscapeHtml(row.current_value || '-') + '</div></td>' +
@@ -14911,7 +14922,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         decisionButton.disabled = true;
-        seoApiCall('cmn_seo_assistant_set_recommendation_status', {
+        seoApiCall('cmn_seo_proposal_set_status', {
           recommendation_id: recommendationId,
           status: status
         }).then(function (data) {
