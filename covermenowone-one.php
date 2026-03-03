@@ -7990,6 +7990,8 @@ global $wpdb;
             'war_room',
             'broadcast',
             'audit',
+            'email-log',
+            'email_log',
             'bookings',
             'analytics',
             'seo-assistant',
@@ -12051,6 +12053,7 @@ global $wpdb;
                 'items' => array_values(array_filter([
                     $is_admin ? ['key' => 'system_health', 'label' => 'System Health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url), 'active_when' => ['view' => ['system-health', 'system_health']]] : null,
                     $is_admin ? ['key' => 'seo_assistant', 'label' => 'SEO Assistant', 'icon' => 'analytics', 'url' => add_query_arg(['view' => 'seo-assistant'], $portal_url), 'active_when' => ['view' => ['seo-assistant', 'seo_assistant']]] : null,
+                    $is_admin ? ['key' => 'email_log', 'label' => 'Email Log', 'icon' => 'email_centre', 'url' => add_query_arg(['view' => 'email-log'], $portal_url), 'active_when' => ['view' => ['email-log', 'email_log']]] : null,
                     $is_admin ? ['key' => 'system_logs', 'label' => 'Error Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
                     $is_admin ? ['key' => 'audit', 'label' => 'Audit Log', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
                     null,
@@ -28812,6 +28815,9 @@ global $wpdb;
         if ($view === 'audit') {
             return $this->render_staff_audit_shortcode();
         }
+        if ($view === 'email-log' || $view === 'email_log') {
+            return $this->render_staff_email_log_shortcode();
+        }
         if ($view === 'bookings') {
             return $this->render_staff_bookings_shortcode();
         }
@@ -37115,6 +37121,222 @@ global $wpdb;
         <?php
         $inner = ob_get_clean();
         return $this->render_staff_shell('audit', $inner);
+    }
+
+    public function render_staff_email_log_shortcode() {
+        if (!is_user_logged_in()) {
+            return $this->render_login_shortcode();
+        }
+        $actor_user_id = (int) get_current_user_id();
+        if (!$this->is_admin_user($actor_user_id)) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>Email Log is available to admins only.</p></div></section>';
+        }
+        $ability_check = $this->cmn_policy_require_ability('system.upgrade.run', [
+            'actor_user_id' => $actor_user_id,
+        ]);
+        if (is_wp_error($ability_check)) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access denied</h3><p>You do not have permission to access Email Log.</p></div></section>';
+        }
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            return $this->render_staff_shell('email_log', '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Email Log</h3><p>Email outbox table is unavailable.</p></div></section>');
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $status_filter = sanitize_key((string) ($_GET['cmn_email_log_status'] ?? 'all'));
+        if (!in_array($status_filter, ['all', 'queued', 'sent', 'failed'], true)) {
+            $status_filter = 'all';
+        }
+        $template_filter = sanitize_key((string) ($_GET['cmn_email_log_template'] ?? ''));
+        $recipient_filter = sanitize_text_field((string) wp_unslash((string) ($_GET['cmn_email_log_recipient'] ?? '')));
+        $range_filter = sanitize_key((string) ($_GET['cmn_email_log_range'] ?? '7d'));
+        if (!in_array($range_filter, ['all', '24h', '7d', '30d'], true)) {
+            $range_filter = '7d';
+        }
+        $page_number = max(1, (int) ($_GET['cmn_email_log_page'] ?? 1));
+        $per_page = 50;
+        $offset = ($page_number - 1) * $per_page;
+
+        $filters = [
+            'status' => $status_filter,
+            'template_key' => $template_filter,
+            'recipient' => $recipient_filter,
+            'range' => $range_filter,
+        ];
+        $rows = $this->get_candidate_email_outbox_log_rows($filters, $per_page, $offset);
+        $total_rows = $this->count_candidate_email_outbox_log_rows($filters);
+        $total_pages = max(1, (int) ceil($total_rows / $per_page));
+        $status_counts = $this->get_candidate_email_outbox_status_counts(7);
+
+        $email_outbox_status = sanitize_key((string) ($_GET['cmn_email_outbox_status'] ?? ''));
+        $email_outbox_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_email_outbox_msg'] ?? '')));
+        $email_resend_status = sanitize_key((string) ($_GET['cmn_email_resend_status'] ?? ''));
+        $email_resend_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_email_resend_msg'] ?? '')));
+        $message_class = static function ($status) {
+            $status = sanitize_key((string) $status);
+            if ($status === 'success') {
+                return 'cmn-register-success';
+            }
+            if ($status === 'busy') {
+                return 'cmn-register-warning';
+            }
+            if ($status === 'error') {
+                return 'cmn-register-error';
+            }
+            return 'cmn-muted';
+        };
+        $base_query = [
+            'view' => 'email-log',
+            'cmn_email_log_status' => $status_filter,
+            'cmn_email_log_template' => $template_filter,
+            'cmn_email_log_recipient' => $recipient_filter,
+            'cmn_email_log_range' => $range_filter,
+        ];
+        $build_page_url = static function ($page) use ($portal_url, $base_query) {
+            $query = $base_query;
+            $query['cmn_email_log_page'] = max(1, (int) $page);
+            return add_query_arg($query, $portal_url);
+        };
+
+        ob_start();
+        ?>
+        <header class="cmn-school-header">
+            <div class="cmn-header-row">
+                <div>
+                    <h2>Email Log</h2>
+                    <p>Lifecycle email queue for candidate pending-review and approved notifications.</p>
+                </div>
+                <div class="cmn-header-actions">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-flex;gap:8px;align-items:center;">
+                        <?php wp_nonce_field('cmn_run_candidate_email_outbox_now', 'cmn_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_run_candidate_email_outbox_now">
+                        <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr($this->get_current_url()); ?>">
+                        <button class="cmn-primary" type="submit">Run queue now</button>
+                    </form>
+                </div>
+            </div>
+        </header>
+
+        <section class="cmn-dashboard-card">
+            <div class="cmn-system-health-summary-grid" style="margin-bottom:10px;">
+                <div><span>Queued (7d)</span><strong><?php echo esc_html((string) max(0, (int) ($status_counts['queued'] ?? 0))); ?></strong></div>
+                <div><span>Failed (7d)</span><strong><?php echo esc_html((string) max(0, (int) ($status_counts['failed'] ?? 0))); ?></strong></div>
+                <div><span>Sent (7d)</span><strong><?php echo esc_html((string) max(0, (int) ($status_counts['sent'] ?? 0))); ?></strong></div>
+                <div><span>Filtered rows</span><strong><?php echo esc_html((string) $total_rows); ?></strong></div>
+            </div>
+            <form method="get" class="cmn-filters" style="margin-top:8px;">
+                <input type="hidden" name="view" value="email-log">
+                <label>Status
+                    <select name="cmn_email_log_status">
+                        <option value="all"<?php echo $status_filter === 'all' ? ' selected' : ''; ?>>All</option>
+                        <option value="queued"<?php echo $status_filter === 'queued' ? ' selected' : ''; ?>>Queued</option>
+                        <option value="sent"<?php echo $status_filter === 'sent' ? ' selected' : ''; ?>>Sent</option>
+                        <option value="failed"<?php echo $status_filter === 'failed' ? ' selected' : ''; ?>>Failed</option>
+                    </select>
+                </label>
+                <label>Template
+                    <input type="text" name="cmn_email_log_template" value="<?php echo esc_attr($template_filter); ?>" placeholder="candidate_pending_review">
+                </label>
+                <label>Recipient
+                    <input type="search" name="cmn_email_log_recipient" value="<?php echo esc_attr($recipient_filter); ?>" placeholder="email search">
+                </label>
+                <label>Range
+                    <select name="cmn_email_log_range">
+                        <option value="24h"<?php echo $range_filter === '24h' ? ' selected' : ''; ?>>Last 24h</option>
+                        <option value="7d"<?php echo $range_filter === '7d' ? ' selected' : ''; ?>>Last 7d</option>
+                        <option value="30d"<?php echo $range_filter === '30d' ? ' selected' : ''; ?>>Last 30d</option>
+                        <option value="all"<?php echo $range_filter === 'all' ? ' selected' : ''; ?>>All time</option>
+                    </select>
+                </label>
+                <button class="cmn-ghost" type="submit">Apply filters</button>
+                <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'email-log'], $portal_url)); ?>">Reset</a>
+            </form>
+
+            <?php if ($email_outbox_msg !== '') : ?>
+                <div class="<?php echo esc_attr($message_class($email_outbox_status)); ?>" style="margin-top:8px;"><?php echo esc_html($email_outbox_msg); ?></div>
+            <?php endif; ?>
+            <?php if ($email_resend_msg !== '') : ?>
+                <div class="<?php echo esc_attr($message_class($email_resend_status)); ?>" style="margin-top:8px;"><?php echo esc_html($email_resend_msg); ?></div>
+            <?php endif; ?>
+
+            <div class="cmn-system-health-table-wrap" style="margin-top:12px;">
+                <table class="cmn-approval-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Recipient</th>
+                            <th>Template</th>
+                            <th>Subject</th>
+                            <th>Status</th>
+                            <th>Attempts</th>
+                            <th>Last error</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if (!empty($rows)) : ?>
+                        <?php foreach ($rows as $row) : ?>
+                            <?php
+                            $outbox_id = max(0, (int) ($row['id'] ?? 0));
+                            $status = sanitize_key((string) ($row['status'] ?? 'queued'));
+                            $status_chip = $status === 'sent' ? 'is-approved' : ($status === 'failed' ? 'is-warning' : 'is-pending');
+                            $time_raw = sanitize_text_field((string) ($row['sent_at'] ?: $row['created_at'] ?? ''));
+                            $time_label = $time_raw !== '' ? date_i18n('M j, Y g:ia', strtotime($time_raw)) : '-';
+                            $last_error = sanitize_text_field((string) ($row['last_error'] ?? ''));
+                            $last_error_short = $last_error;
+                            if (function_exists('mb_strimwidth')) {
+                                $last_error_short = mb_strimwidth($last_error_short, 0, 90, '...');
+                            } elseif (strlen($last_error_short) > 90) {
+                                $last_error_short = substr($last_error_short, 0, 87) . '...';
+                            }
+                            ?>
+                            <tr>
+                                <td><?php echo esc_html($time_label); ?></td>
+                                <td><?php echo esc_html((string) ($row['to_email'] ?? '')); ?></td>
+                                <td><?php echo esc_html((string) ($row['template_key'] ?? '')); ?></td>
+                                <td><?php echo esc_html((string) ($row['subject'] ?? '')); ?></td>
+                                <td><span class="cmn-status-chip <?php echo esc_attr($status_chip); ?>"><?php echo esc_html(ucfirst($status)); ?></span></td>
+                                <td><?php echo esc_html((string) max(0, (int) ($row['attempts'] ?? 0))); ?></td>
+                                <td title="<?php echo esc_attr($last_error); ?>"><span class="cmn-muted"><?php echo esc_html($last_error_short !== '' ? $last_error_short : '-'); ?></span></td>
+                                <td>
+                                    <?php if ($status === 'failed' && $outbox_id > 0) : ?>
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-flex;gap:6px;align-items:center;">
+                                            <?php wp_nonce_field('cmn_resend_candidate_email_outbox_item', 'cmn_nonce'); ?>
+                                            <input type="hidden" name="action" value="cmn_resend_candidate_email_outbox_item">
+                                            <input type="hidden" name="outbox_id" value="<?php echo esc_attr((string) $outbox_id); ?>">
+                                            <input type="hidden" name="cmn_return_url" value="<?php echo esc_attr($this->get_current_url()); ?>">
+                                            <button class="cmn-ghost cmn-btn-mini" type="submit">Requeue</button>
+                                        </form>
+                                    <?php else : ?>
+                                        <span class="cmn-muted">-</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php else : ?>
+                        <tr><td colspan="8">No outbox rows for the selected filters.</td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <?php if ($total_pages > 1) : ?>
+                <div class="cmn-system-health-pagination" style="margin-top:10px;">
+                    <?php if ($page_number > 1) : ?>
+                        <a class="cmn-ghost" href="<?php echo esc_url($build_page_url($page_number - 1)); ?>">Previous</a>
+                    <?php else : ?>
+                        <span class="cmn-muted">Previous</span>
+                    <?php endif; ?>
+                    <span>Page <?php echo esc_html((string) $page_number); ?> of <?php echo esc_html((string) $total_pages); ?></span>
+                    <?php if ($page_number < $total_pages) : ?>
+                        <a class="cmn-ghost" href="<?php echo esc_url($build_page_url($page_number + 1)); ?>">Next</a>
+                    <?php else : ?>
+                        <span class="cmn-muted">Next</span>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+        <?php
+        return $this->render_staff_shell('email_log', ob_get_clean());
     }
 
     public function render_staff_system_health_shortcode() {
@@ -95491,6 +95713,118 @@ p{margin:0;line-height:1.5}
                 'sent_at' => sanitize_text_field((string) ($row['sent_at'] ?? '')),
                 'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
                 'created_at' => sanitize_text_field((string) ($row['created_at'] ?? '')),
+            ];
+        }, $rows);
+    }
+
+    private function normalize_candidate_email_outbox_status_filter($status) {
+        $status = sanitize_key((string) $status);
+        if ($status === 'all') {
+            $status = '';
+        }
+        return in_array($status, ['queued', 'sent', 'failed'], true) ? $status : '';
+    }
+
+    private function normalize_candidate_email_outbox_range_filter($range) {
+        $range = sanitize_key((string) $range);
+        return in_array($range, ['all', '24h', '7d', '30d'], true) ? $range : '7d';
+    }
+
+    private function build_candidate_email_outbox_filters_sql(array $filters, array &$params) {
+        global $wpdb;
+        $params = [];
+        $where = ['1=1'];
+
+        $status = $this->normalize_candidate_email_outbox_status_filter($filters['status'] ?? '');
+        if ($status !== '') {
+            $where[] = 'status = %s';
+            $params[] = $status;
+        }
+
+        $template_key = sanitize_key((string) ($filters['template_key'] ?? ''));
+        if ($template_key !== '') {
+            $where[] = 'template_key LIKE %s';
+            $params[] = '%' . $wpdb->esc_like($template_key) . '%';
+        }
+
+        $recipient = sanitize_text_field((string) ($filters['recipient'] ?? ''));
+        if ($recipient !== '') {
+            $where[] = 'to_email LIKE %s';
+            $params[] = '%' . $wpdb->esc_like($recipient) . '%';
+        }
+
+        $range = $this->normalize_candidate_email_outbox_range_filter($filters['range'] ?? '7d');
+        if ($range !== 'all') {
+            $seconds = DAY_IN_SECONDS * 7;
+            if ($range === '24h') {
+                $seconds = DAY_IN_SECONDS;
+            } elseif ($range === '30d') {
+                $seconds = DAY_IN_SECONDS * 30;
+            }
+            $cutoff = gmdate('Y-m-d H:i:s', current_time('timestamp', true) - $seconds);
+            $where[] = 'created_at >= %s';
+            $params[] = $cutoff;
+        }
+
+        return implode(' AND ', $where);
+    }
+
+    private function count_candidate_email_outbox_log_rows(array $filters = []) {
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            return 0;
+        }
+
+        global $wpdb;
+        $table = $this->get_email_outbox_table();
+        $params = [];
+        $where_sql = $this->build_candidate_email_outbox_filters_sql($filters, $params);
+        $sql = "SELECT COUNT(*) FROM {$table} WHERE {$where_sql}";
+        if (!empty($params)) {
+            $sql = $wpdb->prepare($sql, $params);
+        }
+        return max(0, (int) $wpdb->get_var($sql));
+    }
+
+    private function get_candidate_email_outbox_log_rows(array $filters = [], $limit = 50, $offset = 0) {
+        $limit = max(1, min(200, (int) $limit));
+        $offset = max(0, (int) $offset);
+        if (!$this->ensure_candidate_email_outbox_table_ready()) {
+            return [];
+        }
+
+        global $wpdb;
+        $table = $this->get_email_outbox_table();
+        $params = [];
+        $where_sql = $this->build_candidate_email_outbox_filters_sql($filters, $params);
+        $params[] = $limit;
+        $params[] = $offset;
+        $sql = $wpdb->prepare(
+            "SELECT id, created_at, updated_at, to_email, user_id, template_key, subject, status, attempts, last_error, next_attempt_at, sent_at, idempotency_key, related_entity, related_event
+             FROM {$table}
+             WHERE {$where_sql}
+             ORDER BY COALESCE(sent_at, created_at) DESC, id DESC
+             LIMIT %d OFFSET %d",
+            $params
+        );
+        $rows = (array) $wpdb->get_results($sql, ARRAY_A);
+
+        return array_map(static function ($row) {
+            return [
+                'id' => max(0, (int) ($row['id'] ?? 0)),
+                'created_at' => sanitize_text_field((string) ($row['created_at'] ?? '')),
+                'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
+                'to_email' => sanitize_email((string) ($row['to_email'] ?? '')),
+                'user_id' => max(0, (int) ($row['user_id'] ?? 0)),
+                'template_key' => sanitize_key((string) ($row['template_key'] ?? '')),
+                'subject' => sanitize_text_field((string) ($row['subject'] ?? '')),
+                'status' => sanitize_key((string) ($row['status'] ?? 'queued')),
+                'attempts' => max(0, (int) ($row['attempts'] ?? 0)),
+                'last_error' => sanitize_text_field((string) ($row['last_error'] ?? '')),
+                'next_attempt_at' => sanitize_text_field((string) ($row['next_attempt_at'] ?? '')),
+                'sent_at' => sanitize_text_field((string) ($row['sent_at'] ?? '')),
+                'idempotency_key' => sanitize_text_field((string) ($row['idempotency_key'] ?? '')),
+                'related_entity' => sanitize_text_field((string) ($row['related_entity'] ?? '')),
+                'related_event' => sanitize_key((string) ($row['related_event'] ?? '')),
             ];
         }, $rows);
     }
