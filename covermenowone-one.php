@@ -84870,7 +84870,7 @@ global $wpdb;
                 $empty_reason_parts[] = (string) ((int) $visibility_reasons['marked_unavailable']) . ' marked not available';
             }
             if ($visibility_reasons['hidden_not_interested'] > 0) {
-                $empty_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
+                $empty_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Suitable';
             }
             if ($empty_reason_parts) {
                 $availability_empty_reason .= ' Current exclusions: ' . implode(' | ', $empty_reason_parts) . '.';
@@ -85156,7 +85156,8 @@ global $wpdb;
             $rating_aria_label = $reviews_count > 0
                 ? ($rating_value_display . ' out of 5 stars from ' . $reviews_count . ' review' . ($reviews_count === 1 ? '' : 's'))
                 : 'No feedback yet';
-            $rating_html = '<div class="cmn-live-rating"><span class="cmn-live-rating-stars" role="img" aria-label="' . esc_attr($rating_aria_label) . '"><span class="cmn-live-rating-stars-base">★★★★★</span><span class="cmn-live-rating-stars-fill" style="width:' . esc_attr(number_format((float) $rating_fill_percent, 2, '.', '')) . '%;">★★★★★</span></span><span class="cmn-live-rating-copy">' . esc_html($rating_copy) . '</span></div>';
+            $rating_copy_class = $reviews_count > 0 ? 'cmn-live-rating-copy' : 'cmn-live-rating-copy is-empty';
+            $rating_html = '<div class="cmn-live-rating"><span class="cmn-live-rating-stars" role="img" aria-label="' . esc_attr($rating_aria_label) . '"><span class="cmn-live-rating-stars-base">★★★★★</span><span class="cmn-live-rating-stars-fill" style="width:' . esc_attr(number_format((float) $rating_fill_percent, 2, '.', '')) . '%;">★★★★★</span></span><span class="' . esc_attr($rating_copy_class) . '">' . esc_html($rating_copy) . '</span></div>';
             $skills = array_values(array_filter(array_map(
                 static function ($skill_item) {
                     return sanitize_text_field((string) $skill_item);
@@ -85225,14 +85226,14 @@ global $wpdb;
             $presence_html = '<div class="cmn-live-presence' . ($is_physically_online ? ' is-live' : '') . '"><span class="cmn-live-presence-dot" aria-hidden="true"></span>' . esc_html($is_physically_online ? 'ONLINE NOW' : $presence_label) . '</div>';
             $card_state_class = $status === 'available' ? ' is-bookable' : ' is-pending-confirmation';
             return '<article class="cmn-live-card' . esc_attr($card_state_class) . '" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
-                . '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
+                . '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
                 . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div>' . $rating_html . '</div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
                 . $presence_html
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
-                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost cmn-live-secondary" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><a class="cmn-ghost cmn-live-secondary" href="' . $profile_url . '">View Profile</a></div><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">Not Interested</button></div>'
+                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button><button class="cmn-ghost cmn-live-secondary" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><a class="cmn-ghost cmn-live-secondary" href="' . $profile_url . '">View Profile</a></div><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div>'
                 . '<div class="cmn-live-offer" data-live-offer data-offer-state="' . esc_attr($offer_state) . '" data-offer-expires-at="' . esc_attr($offer_expires_at) . '" data-offer-chat-url="' . esc_url($offer_chat_url) . '" data-offer-booking-id="' . esc_attr((string) $offer_booking_id) . '">' . esc_html($offer_initial_text) . '</div>'
                 . '</article>';
         };
@@ -85272,7 +85273,7 @@ global $wpdb;
             $visibility_reason_parts[] = (string) ((int) $visibility_reasons['marked_unavailable']) . ' marked not available';
         }
         if ($visibility_reasons['hidden_not_interested'] > 0) {
-            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Interested';
+            $visibility_reason_parts[] = (string) ((int) $visibility_reasons['hidden_not_interested']) . ' hidden from Not Suitable';
         }
         $visibility_reason_text = $visibility_reason_parts ? ('If someone is missing: ' . implode(' | ', $visibility_reason_parts) . '.') : '';
         $not_interested_candidates = $this->get_school_not_interested_candidates($school_id, 40);
@@ -85289,7 +85290,7 @@ global $wpdb;
             <?php if ($not_interested_count > 0) : ?>
                 <div class="cmn-live-not-interested-wrap">
                     <button type="button" class="cmn-live-not-interested-link" data-live-hidden-toggle aria-expanded="false" aria-controls="<?php echo esc_attr($not_interested_panel_id); ?>">
-                        Not Interested (<?php echo esc_html((string) $not_interested_count); ?>)
+                        Not Suitable (<?php echo esc_html((string) $not_interested_count); ?>)
                     </button>
                     <div class="cmn-live-not-interested-list" id="<?php echo esc_attr($not_interested_panel_id); ?>" data-live-hidden-list hidden>
                         <?php foreach ($not_interested_candidates as $hidden_row) : ?>

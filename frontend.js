@@ -14813,9 +14813,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var ratingAria = reviewsCount > 0
         ? ratingDisplay + ' out of 5 stars from ' + reviewsCount + ' review' + (reviewsCount === 1 ? '' : 's')
         : 'No feedback yet';
+      var ratingCopyClass = reviewsCount > 0 ? 'cmn-live-rating-copy' : 'cmn-live-rating-copy is-empty';
       return '<div class="cmn-live-rating">'
         + '<span class="cmn-live-rating-stars" role="img" aria-label="' + escapeHtml(ratingAria) + '"><span class="cmn-live-rating-stars-base">★★★★★</span><span class="cmn-live-rating-stars-fill" style="width:' + ratingFillPercent.toFixed(2) + '%;">★★★★★</span></span>'
-        + '<span class="cmn-live-rating-copy">' + escapeHtml(ratingCopy) + '</span>'
+        + '<span class="' + ratingCopyClass + '">' + escapeHtml(ratingCopy) + '</span>'
         + '</div>';
     };
 
@@ -14843,13 +14844,13 @@ document.addEventListener('DOMContentLoaded', function () {
         return '<span class="cmn-live-skill">' + escapeHtml(skillItem) + '</span>';
       }).join('');
       return '<article class="cmn-live-card'+cardStateClass+'" data-candidate-id="'+item.candidate_id+'">'
-        + '<div class="cmn-live-brand">CoverMeNow <span>ONE</span></div>'
+        + '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
         + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div>'+ratingMarkup+'</div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
         + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'
         + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
         + (locationDistanceText ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</span></div>' : '')
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
-        + '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button><button class="cmn-ghost cmn-live-secondary" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><a class="cmn-ghost cmn-live-secondary" href="'+(item.profile_url || '#')+'">View Profile</a></div><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">Not Interested</button></div>'
+        + '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button><button class="cmn-ghost cmn-live-secondary" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><a class="cmn-ghost cmn-live-secondary" href="'+(item.profile_url || '#')+'">View Profile</a></div><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div>'
         + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'
         + '</article>';
     };
