@@ -85813,10 +85813,29 @@ global $wpdb;
         return '';
     }
 
+    private function get_canonical_postcode_from_user_only($user_id) {
+        $user_id = (int) $user_id;
+        if ($user_id < 1) {
+            return '';
+        }
+        $normalized = $this->normalize_uk_postcode_for_lookup(get_user_meta($user_id, 'cmn_postcode', true));
+        if ($normalized !== '') {
+            return $normalized;
+        }
+        return $this->get_latest_normalized_postcode_from_meta_values(get_user_meta($user_id, 'cmn_postcode', false));
+    }
+
     private function get_school_canonical_postcode_for_distance($school_id, $fallback_user_id = 0) {
         $school_id = (int) $school_id;
         if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
             return '';
+        }
+        $fallback_user_id = (int) $fallback_user_id;
+        if ($fallback_user_id > 0) {
+            $user_postcode = $this->get_canonical_postcode_from_user_only($fallback_user_id);
+            if ($user_postcode !== '') {
+                return $user_postcode;
+            }
         }
         return $this->get_canonical_postcode_from_post_or_user($school_id, (int) $fallback_user_id);
     }
@@ -85833,6 +85852,12 @@ global $wpdb;
         }
         if ($candidate_user_id < 1 && $candidate_id > 0) {
             $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        }
+        if ($candidate_user_id > 0) {
+            $user_postcode = $this->get_canonical_postcode_from_user_only($candidate_user_id);
+            if ($user_postcode !== '') {
+                return $user_postcode;
+            }
         }
 
         $profile_postcode = $candidate_profile_id > 0
@@ -85920,10 +85945,7 @@ global $wpdb;
 
     private function format_distance_miles_label($distance_miles) {
         $distance_miles = max(0.0, (float) $distance_miles);
-        if ($distance_miles < 0.1) {
-            return '0 miles';
-        }
-        return rtrim(rtrim(number_format($distance_miles, 1, '.', ''), '0'), '.') . ' miles';
+        return number_format((float) round($distance_miles, 1), 1, '.', '') . ' miles';
     }
 
     private function log_live_match_distance_perf($payload) {
@@ -85949,11 +85971,13 @@ global $wpdb;
             'computed_miles' => isset($payload['distance_miles']) && $payload['distance_miles'] !== null
                 ? round((float) $payload['distance_miles'], 4)
                 : null,
+            'cache_hit' => !empty($payload['cache_hit']) ? 1 : 0,
             'reason' => (string) ($payload['reason'] ?? ''),
         ]));
     }
 
     private function get_live_match_distance_payload($school_id, $candidate_profile_id, $candidate_id = 0, $school_user_id = 0, $candidate_user_id = 0) {
+        static $distance_payload_cache = [];
         $school_id = (int) $school_id;
         $candidate_profile_id = (int) $candidate_profile_id;
         $candidate_id = (int) $candidate_id;
@@ -85967,6 +85991,7 @@ global $wpdb;
             'candidate_postcode' => '',
             'school_coords' => null,
             'candidate_coords' => null,
+            'cache_hit' => false,
         ];
         if ($school_id < 1 || $candidate_profile_id < 1) {
             $this->log_live_match_distance_perf($payload);
@@ -85981,6 +86006,18 @@ global $wpdb;
         );
         $payload['school_postcode'] = $school_postcode;
         $payload['candidate_postcode'] = $candidate_postcode;
+        $distance_cache_key = '';
+        if ($school_postcode !== '' && $candidate_postcode !== '') {
+            $distance_cache_key = md5($school_postcode . '|' . $candidate_postcode);
+            if (isset($distance_payload_cache[$distance_cache_key]) && is_array($distance_payload_cache[$distance_cache_key])) {
+                $cached_payload = $distance_payload_cache[$distance_cache_key];
+                $cached_payload['cache_hit'] = true;
+                $cached_payload['school_postcode'] = $school_postcode;
+                $cached_payload['candidate_postcode'] = $candidate_postcode;
+                $this->log_live_match_distance_perf($cached_payload);
+                return $cached_payload;
+            }
+        }
 
         if ($school_postcode === '') {
             $payload['reason'] = 'missing_school_postcode';
@@ -85994,9 +86031,12 @@ global $wpdb;
         }
 
         if ($school_postcode !== '' && $candidate_postcode !== '' && $school_postcode === $candidate_postcode) {
-            $payload['label'] = '0 miles';
+            $payload['label'] = $this->format_distance_miles_label(0.0);
             $payload['distance_miles'] = 0.0;
             $payload['reason'] = 'same_postcode';
+            if ($distance_cache_key !== '') {
+                $distance_payload_cache[$distance_cache_key] = $payload;
+            }
             $this->log_live_match_distance_perf($payload);
             return $payload;
         }
@@ -86005,6 +86045,9 @@ global $wpdb;
         $payload['school_coords'] = $school_coords;
         if (!$this->is_valid_geo_coordinates($school_coords)) {
             $payload['reason'] = 'missing_school_geocode';
+            if ($distance_cache_key !== '') {
+                $distance_payload_cache[$distance_cache_key] = $payload;
+            }
             $this->log_live_match_distance_perf($payload);
             return $payload;
         }
@@ -86020,6 +86063,9 @@ global $wpdb;
         $payload['candidate_coords'] = $candidate_coords;
         if (!$this->is_valid_geo_coordinates($candidate_coords)) {
             $payload['reason'] = 'missing_candidate_geocode';
+            if ($distance_cache_key !== '') {
+                $distance_payload_cache[$distance_cache_key] = $payload;
+            }
             $this->log_live_match_distance_perf($payload);
             return $payload;
         }
@@ -86032,13 +86078,19 @@ global $wpdb;
         );
         if ($distance_miles < 0) {
             $payload['reason'] = 'distance_calc_failed';
+            if ($distance_cache_key !== '') {
+                $distance_payload_cache[$distance_cache_key] = $payload;
+            }
             $this->log_live_match_distance_perf($payload);
             return $payload;
         }
 
         $payload['distance_miles'] = $distance_miles < 0.1 ? 0.0 : $distance_miles;
-        $payload['label'] = $this->format_distance_miles_label($distance_miles);
+        $payload['label'] = $this->format_distance_miles_label($payload['distance_miles']);
         $payload['reason'] = 'computed';
+        if ($distance_cache_key !== '') {
+            $distance_payload_cache[$distance_cache_key] = $payload;
+        }
         $this->log_live_match_distance_perf($payload);
         return $payload;
     }
