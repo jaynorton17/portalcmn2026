@@ -15986,7 +15986,7 @@ global $wpdb;
             return $attachment_id;
         }
         if (!$candidate_user_id) {
-            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $candidate_user_id = (int) $this->resolve_candidate_user_id_for_presence($candidate_id);
         }
         if ($candidate_user_id > 0) {
             $cv_status = $this->get_candidate_doc_status($candidate_id, $candidate_user_id, 'cv');
@@ -25939,7 +25939,7 @@ global $wpdb;
                     if ($this->is_candidate_hidden_for_school_live_matches((int) $school_id, (int) $candidate_id)) {
                         continue;
                     }
-                    $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+                    $candidate_user_id = (int) $this->resolve_candidate_user_id_for_presence($candidate_id);
                     if ($candidate_user_id > 0) {
                         $snapshot = $this->get_candidate_presence_snapshot($candidate_user_id);
                         $presence[(string) $candidate_id] = [
@@ -30253,7 +30253,7 @@ global $wpdb;
         $rows = [];
         foreach ($candidate_ids as $candidate_id) {
             $candidate_id = (int) $candidate_id;
-            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+            $candidate_user_id = (int) $this->resolve_candidate_user_id_for_presence($candidate_id);
             if ($candidate_user_id < 1) {
                 continue;
             }
@@ -62860,7 +62860,7 @@ global $wpdb;
 
         return [
             'zip_path' => $tmp_path,
-            'zip_filename' => 'Candidate_' . $candidate_id . '_Documents.zip',
+            'zip_filename' => 'covermenow-documents-' . $candidate_id . '-' . gmdate('Ymd') . '.zip',
             'missing_notes' => $missing_notes,
         ];
     }
@@ -72043,8 +72043,8 @@ global $wpdb;
             },
             $saved_contact_card_skills
         ))));
-        if (count($saved_contact_card_skills) > 3) {
-            $saved_contact_card_skills = array_slice($saved_contact_card_skills, 0, 3);
+        if (count($saved_contact_card_skills) > 6) {
+            $saved_contact_card_skills = array_slice($saved_contact_card_skills, 0, 6);
         }
         $saved_contact_card_custom_skill = '';
         foreach ($saved_contact_card_skills as $contact_skill) {
@@ -72055,7 +72055,7 @@ global $wpdb;
         }
         $contact_card_skill_preview = $saved_contact_card_skills;
         if (empty($contact_card_skill_preview)) {
-            $contact_card_skill_preview = ['Select 3 skills to complete your contact card'];
+            $contact_card_skill_preview = ['Select up to 6 strengths to complete your contact card'];
         }
 
         $completion_percent = 0;
@@ -73201,10 +73201,10 @@ global $wpdb;
                                          data-contact-card-available-detail="<?php echo esc_attr($contact_card_status_available_detail); ?>">
                                     <div class="cmn-card-header">
                                         <h3>Key Skills for Contact Card</h3>
-                                        <span class="cmn-muted">Select exactly 3 skills</span>
+                                        <span class="cmn-muted">Select up to 6 strengths</span>
                                     </div>
                                     <div class="cmn-contact-card-skill-counter" data-contact-card-skill-counter>
-                                        <?php echo esc_html(count($saved_contact_card_skills)); ?>/3 selected
+                                        <?php echo esc_html(count($saved_contact_card_skills)); ?>/6 selected
                                     </div>
                                     <div class="cmn-contact-card-skill-list">
                                         <?php foreach ($contact_card_skill_options as $skill_option) : ?>
@@ -73228,7 +73228,7 @@ global $wpdb;
                                         </label>
                                     </div>
                                     <div class="cmn-contact-card-skill-actions">
-                                        <button class="cmn-primary" type="button" data-contact-card-save>Save 3 skills</button>
+                                        <button class="cmn-primary" type="button" data-contact-card-save>Save strengths</button>
                                         <button class="cmn-ghost" type="button" data-contact-card-reset>Reset</button>
                                         <span class="cmn-muted" data-contact-card-skill-msg aria-live="polite"></span>
                                     </div>
@@ -84972,7 +84972,7 @@ global $wpdb;
                 'location_distance' => $location_distance,
                 'rating' => round((float) ($rating['avg_rating'] ?? 0), 1),
                 'reviews' => (int) ($rating['feedback_count'] ?? 0),
-                'skills' => $this->get_candidate_live_match_skills($candidate_profile_id, 3),
+                'skills' => $this->get_candidate_live_match_skills($candidate_profile_id, 6),
                 'photo_url' => $this->get_school_live_match_photo_url($candidate_profile_id),
                 'profile_url' => $this->get_school_candidate_profile_url($candidate_id, $school_user_id),
             ];
@@ -85314,7 +85314,7 @@ global $wpdb;
                 'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
                 'confirmed_at' => $confirmed_at_label,
                 'day_rate' => round($day_rate, 0),
-                'skills' => $this->get_candidate_live_match_skills($candidate_profile_id, 3),
+                'skills' => $this->get_candidate_live_match_skills($candidate_profile_id, 6),
                 'is_shortlisted' => $is_shortlisted ? 1 : 0,
                 'is_physically_online' => $is_physically_online ? 1 : 0,
                 'presence_label' => $presence_label,
@@ -85414,8 +85414,8 @@ global $wpdb;
             ), static function ($skill_item) {
                 return $skill_item !== '';
             }));
-            if (count($skills) > 3) {
-                $skills = array_slice($skills, 0, 3);
+            if (count($skills) > 6) {
+                $skills = array_slice($skills, 0, 6);
             }
             if (!$skills) {
                 $skills = ['Classroom Management', 'Communication', 'First Aid'];
@@ -85484,7 +85484,7 @@ global $wpdb;
                 . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
-                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button>' . $documents_button_html . '<a class="cmn-ghost cmn-live-secondary cmn-live-view-profile" href="' . $profile_url . '">View Profile</a></div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
+                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button>' . $documents_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
                 . '<div class="cmn-live-offer" data-live-offer data-offer-state="' . esc_attr($offer_state) . '" data-offer-expires-at="' . esc_attr($offer_expires_at) . '" data-offer-chat-url="' . esc_url($offer_chat_url) . '" data-offer-booking-id="' . esc_attr((string) $offer_booking_id) . '">' . esc_html($offer_initial_text) . '</div>'
                 . '</article>';
         };
@@ -91956,6 +91956,25 @@ p{margin:0;line-height:1.5}
         }
     }
 
+    private function resolve_candidate_user_id_for_presence($candidate_id) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
+            return 0;
+        }
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        if ($candidate_user_id > 0) {
+            return $candidate_user_id;
+        }
+        $candidate_profile_id = (int) $this->resolve_candidate_profile_post_id($candidate_id, 0);
+        if ($candidate_profile_id > 0 && $candidate_profile_id !== $candidate_id) {
+            $candidate_user_id = (int) $this->get_candidate_user_id($candidate_profile_id);
+            if ($candidate_user_id > 0) {
+                return $candidate_user_id;
+            }
+        }
+        return 0;
+    }
+
     private function format_candidate_last_seen_label($last_seen_ts, $now_ts = 0) {
         $last_seen_ts = (int) $last_seen_ts;
         $now_ts = $now_ts > 0 ? (int) $now_ts : time();
@@ -96188,11 +96207,11 @@ p{margin:0;line-height:1.5}
             },
             $raw_skills
         ))));
-        if (count($skills) > 3) {
-            $skills = array_slice($skills, 0, 3);
+        if (count($skills) > 6) {
+            $skills = array_slice($skills, 0, 6);
         }
-        if (count($skills) !== 3) {
-            wp_send_json_error(['message' => 'Select exactly 3 skills.'], 400);
+        if (count($skills) < 1 || count($skills) > 6) {
+            wp_send_json_error(['message' => 'Select between 1 and 6 strengths.'], 400);
         }
         $raw_show_available = sanitize_text_field((string) ($_POST['show_available'] ?? '0'));
         $show_available = in_array(strtolower(trim($raw_show_available)), ['1', 'true', 'yes', 'on'], true) ? '1' : '0';

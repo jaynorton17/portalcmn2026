@@ -2162,7 +2162,28 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if (window.cmnPortal && Number(window.cmnPortal.isCandidateUser || 0) === 1 && window.cmnPortal.ajaxUrl && window.cmnPortal.candidateProfileNonce) {
+    var isCandidatePresenceRouteSafe = function () {
+      var href = String(window.location && window.location.href ? window.location.href : '').toLowerCase();
+      if (href.indexOf('view=login') > -1 || href.indexOf('wp-login.php') > -1) {
+        return false;
+      }
+      if (document && document.body && document.body.classList.contains('cmn-portal-login-view')) {
+        return false;
+      }
+      return true;
+    };
+    var candidatePresenceIntervalId = null;
+    var stopCandidatePresenceGlobal = function () {
+      if (candidatePresenceIntervalId) {
+        window.clearInterval(candidatePresenceIntervalId);
+        candidatePresenceIntervalId = null;
+      }
+    };
     var touchCandidatePresenceGlobal = function () {
+      if (!isCandidatePresenceRouteSafe()) {
+        stopCandidatePresenceGlobal();
+        return;
+      }
       var fd = new FormData();
       fd.append('action', 'cmn_touch_candidate_presence');
       fd.append('nonce', window.cmnPortal.candidateProfileNonce);
@@ -2175,7 +2196,8 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     };
     touchCandidatePresenceGlobal();
-    window.setInterval(touchCandidatePresenceGlobal, 60000);
+    candidatePresenceIntervalId = window.setInterval(touchCandidatePresenceGlobal, 60000);
+    window.addEventListener('beforeunload', stopCandidatePresenceGlobal);
   }
 
   var actionMenus = document.querySelectorAll('[data-action-menu]');
@@ -11712,7 +11734,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!selected.length) {
           var placeholderChip = document.createElement('span');
           placeholderChip.className = 'cmn-contact-card-skill-chip';
-          placeholderChip.textContent = 'Select 3 skills to complete your contact card';
+          placeholderChip.textContent = 'Select up to 6 strengths to complete your contact card';
           contactCardPreviewSkills.appendChild(placeholderChip);
           return;
         }
@@ -11750,10 +11772,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var refreshContactCardSkillUi = function () {
         var selectedSkills = getContactCardSelectedSkills();
         var selectedCount = selectedSkills.length;
-        var maxReached = selectedCount >= 3;
+        var maxReached = selectedCount >= 6;
 
         if (contactCardCounter) {
-          contactCardCounter.textContent = selectedCount + '/3 selected';
+          contactCardCounter.textContent = selectedCount + '/6 selected';
         }
 
         if (contactCardOtherInputWrap) {
@@ -11779,7 +11801,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         if (contactCardSaveBtn) {
-          contactCardSaveBtn.disabled = contactCardBusy || selectedCount !== 3;
+          contactCardSaveBtn.disabled = contactCardBusy || selectedCount < 1 || selectedCount > 6;
         }
 
         renderContactCardPreviewSkills(selectedSkills);
@@ -11810,7 +11832,7 @@ document.addEventListener('DOMContentLoaded', function () {
       };
 
       if (contactCardInitialSkills.length) {
-        applyContactCardSelectionState(contactCardInitialSkills.slice(0, 3));
+        applyContactCardSelectionState(contactCardInitialSkills.slice(0, 6));
       } else {
         refreshContactCardSkillUi();
       }
@@ -11881,8 +11903,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           var selectedSkills = getContactCardSelectedSkills();
-          if (selectedSkills.length !== 3) {
-            setContactCardMessage('Select exactly 3 skills before saving.', true);
+          if (selectedSkills.length < 1 || selectedSkills.length > 6) {
+            setContactCardMessage('Select between 1 and 6 strengths before saving.', true);
             refreshContactCardSkillUi();
             return;
           }
@@ -11912,7 +11934,7 @@ document.addEventListener('DOMContentLoaded', function () {
               return;
             }
             var savedSkills = data && data.data && Array.isArray(data.data.skills) ? data.data.skills : selectedSkills;
-            applyContactCardSelectionState(savedSkills.slice(0, 3));
+            applyContactCardSelectionState(savedSkills.slice(0, 6));
             var savedShowAvailable = data && data.data && String(data.data.show_available || '') === '1';
             applyContactCardAvailabilityState(savedShowAvailable);
             setContactCardMessage(data && data.data && data.data.message ? String(data.data.message) : 'Skills saved.', false);
@@ -14857,7 +14879,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return String(skillItem || '').trim();
       }).filter(function(skillItem){
         return skillItem !== '';
-      }).slice(0, 3);
+      }).slice(0, 6);
       if (!skills.length) {
         skills = ['Classroom Management', 'Communication', 'First Aid'];
       }
@@ -14877,7 +14899,7 @@ document.addEventListener('DOMContentLoaded', function () {
         + '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £'+Math.round(Number(item.day_rate||160))+'</div></div>'
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
         + '<div class="cmn-live-actions">'
-        + '<div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button>'+documentsButton+'<a class="cmn-ghost cmn-live-secondary cmn-live-view-profile" href="'+(item.profile_url || '#')+'">View Profile</a></div>'
+        + '<div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button>'+documentsButton+'</div>'
         + '<div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div>'
         + '</div>'
         + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'
