@@ -31340,6 +31340,17 @@ global $wpdb;
         $roles_meta = (array) get_post_meta($candidate_id, 'cmn_roles', true);
         $candidate_role_labels = $this->get_candidate_role_labels($candidate_id);
         $candidate_role_rate_map = $this->get_candidate_role_rate_map($candidate_id);
+        $wanted_pay_per_day_raw = (string) get_post_meta($candidate_id, 'cmn_default_rate', true);
+        $wanted_pay_per_day_display = 'Not provided';
+        if ($wanted_pay_per_day_raw !== '' && is_numeric($wanted_pay_per_day_raw)) {
+            $wanted_pay_per_day_amount = round((float) $wanted_pay_per_day_raw, 2);
+            if ($wanted_pay_per_day_amount > 0) {
+                $wanted_pay_formatted = number_format($wanted_pay_per_day_amount, 2, '.', '');
+                $wanted_pay_formatted = preg_replace('/\.00$/', '', $wanted_pay_formatted);
+                $wanted_pay_formatted = preg_replace('/(\.\d)0$/', '$1', (string) $wanted_pay_formatted);
+                $wanted_pay_per_day_display = '£' . $wanted_pay_formatted . ' per day';
+            }
+        }
         $availability_days = (array) get_post_meta($candidate_id, 'cmn_availability_days', true);
         $verification_status = $candidate_user_id ? (string) get_user_meta($candidate_user_id, 'cmn_admin_verification_status', true) : '';
         $email_verified = $candidate_user_id ? (string) get_user_meta($candidate_user_id, 'cmn_email_verified', true) : '';
@@ -31434,6 +31445,7 @@ global $wpdb;
                     <h3>Role Rates (Staff Only)</h3>
                     <span class="cmn-status-chip">School charge vs candidate pay</span>
                 </div>
+                <p><strong>Wanted pay per day:</strong> <?php echo esc_html($wanted_pay_per_day_display); ?></p>
                 <?php if (!empty($candidate_role_labels)) : ?>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-role-rate-form">
                         <?php wp_nonce_field('cmn_staff_save_candidate_role_rates', 'cmn_staff_save_candidate_role_rates_nonce'); ?>
@@ -94145,6 +94157,16 @@ p{margin:0;line-height:1.5}
             $this->sync_registered_candidate_doc_upload($post_id, $candidate_user_id, 'cv', $cv);
             $this->sync_registered_candidate_doc_upload($post_id, $candidate_user_id, 'dbs', $dbs);
             $this->sync_registered_candidate_doc_upload($post_id, $candidate_user_id, 'id', $id_doc);
+            if ($candidate_user_id > 0) {
+                $verification_docs = [];
+                foreach ($this->get_candidate_doc_types() as $verification_doc_type) {
+                    $verification_docs[$verification_doc_type] = $this->get_candidate_doc_status($post_id, $candidate_user_id, $verification_doc_type);
+                }
+                $verification_status = $this->sync_candidate_admin_verification_status($post_id, $candidate_user_id, $verification_docs);
+                if ($this->is_pending_review_candidate_status($verification_status)) {
+                    $this->maybe_send_candidate_pending_review_email($post_id, $candidate_user_id, 'registration_complete');
+                }
+            }
             $uploaded_doc_labels = [];
             if (!empty($cv['attachment_id'])) {
                 $uploaded_doc_labels[] = 'CV';
@@ -94232,6 +94254,244 @@ p{margin:0;line-height:1.5}
             'cmn_email' => $candidate_email,
         ], wp_get_referer() ?: home_url()));
         exit;
+    }
+
+    private function is_email_debug_enabled() {
+        return isset($_REQUEST['cmn_debug_email']) && (string) wp_unslash($_REQUEST['cmn_debug_email']) === '1';
+    }
+
+    private function debug_candidate_email_event($event_key, array $context = []) {
+        if (!$this->is_email_debug_enabled()) {
+            return;
+        }
+        $event_key = sanitize_key((string) $event_key);
+        $payload = [
+            'event' => $event_key,
+            'context' => $context,
+        ];
+        error_log('CMN_EMAIL_DEBUG ' . wp_json_encode($payload));
+    }
+
+    private function normalize_candidate_verification_status($status) {
+        $status = sanitize_key((string) $status);
+        $map = [
+            'pending_review' => 'awaiting_review',
+            'pending' => 'awaiting_review',
+            'awaiting' => 'awaiting_review',
+            'verified' => 'approved',
+            'declined' => 'rejected',
+        ];
+        return $map[$status] ?? $status;
+    }
+
+    private function is_pending_review_candidate_status($status) {
+        $status = $this->normalize_candidate_verification_status($status);
+        return in_array($status, ['awaiting_review', 'incomplete', 'pending_review', 'pending'], true);
+    }
+
+    private function get_candidate_notification_email($candidate_id, $candidate_user_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        $candidate_user_email = '';
+        if ($candidate_user_id > 0) {
+            $candidate_user = get_user_by('id', $candidate_user_id);
+            if ($candidate_user instanceof WP_User) {
+                $candidate_user_email = sanitize_email((string) $candidate_user->user_email);
+            }
+        }
+        if ($candidate_user_email !== '') {
+            return $candidate_user_email;
+        }
+        return sanitize_email((string) get_post_meta($candidate_id, 'cmn_email', true));
+    }
+
+    private function maybe_send_candidate_pending_review_email($candidate_id, $candidate_user_id, $context = '') {
+        $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        $context = sanitize_key((string) $context);
+        if ($candidate_id < 1 || $candidate_user_id < 1 || !$this->is_candidate_user($candidate_user_id)) {
+            $this->debug_candidate_email_event('candidate_pending_review_skipped_invalid_target', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'context' => $context,
+            ]);
+            return false;
+        }
+        $verification_status = $this->normalize_candidate_verification_status((string) get_user_meta($candidate_user_id, 'cmn_admin_verification_status', true));
+        if (!$this->is_pending_review_candidate_status($verification_status)) {
+            $this->debug_candidate_email_event('candidate_pending_review_skipped_status', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'status' => $verification_status,
+                'context' => $context,
+            ]);
+            return false;
+        }
+        $already_sent_at = (string) get_user_meta($candidate_user_id, 'cmn_email_pending_review_sent_at', true);
+        if ($already_sent_at !== '') {
+            $this->debug_candidate_email_event('candidate_pending_review_skipped_already_sent', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'sent_at' => $already_sent_at,
+                'context' => $context,
+            ]);
+            return false;
+        }
+
+        $candidate_email = $this->get_candidate_notification_email($candidate_id, $candidate_user_id);
+        if ($candidate_email === '') {
+            $this->debug_candidate_email_event('candidate_pending_review_skipped_missing_email', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'context' => $context,
+            ]);
+            return false;
+        }
+        $portal_url = $this->get_portal_base_url();
+        $support_url = add_query_arg(['candidate' => 'support'], $portal_url);
+        $subject = 'Your CoverMeNow application has been received';
+        $message = "Thanks for registering with CoverMeNow.\n\nYour registration has been received and your status is now: Pending review.\n\nOur team will review your profile and documents and notify you as soon as your application is approved.\n\nNeed help? Contact support here:\n{$support_url}\n\nCoverMeNow ONE";
+        $sent = $this->send_candidate_email($candidate_email, $subject, $message, [
+            'type' => 'candidate_status_update',
+            'user_id' => $candidate_user_id,
+            'related_candidate_id' => $candidate_id,
+            'notify_key' => 'cmn_notify_email_profile_reminders',
+        ]);
+
+        if ($sent) {
+            $sent_at = current_time('mysql');
+            update_user_meta($candidate_user_id, 'cmn_email_pending_review_sent_at', $sent_at);
+            update_post_meta($candidate_id, 'cmn_email_pending_review_sent_at', $sent_at);
+            $this->add_audit_log('email_sent', 'candidate', (string) $candidate_id, [
+                'email_event' => 'candidate_pending_review',
+                'status' => $verification_status,
+                'context' => $context,
+                'sent_at' => $sent_at,
+            ], get_current_user_id());
+            $this->debug_candidate_email_event('candidate_pending_review_sent', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'status' => $verification_status,
+                'context' => $context,
+            ]);
+            return true;
+        }
+
+        $this->add_audit_log('email_send_failed', 'candidate', (string) $candidate_id, [
+            'email_event' => 'candidate_pending_review',
+            'status' => $verification_status,
+            'context' => $context,
+        ], get_current_user_id());
+        $this->debug_candidate_email_event('candidate_pending_review_failed', [
+            'candidate_id' => $candidate_id,
+            'candidate_user_id' => $candidate_user_id,
+            'status' => $verification_status,
+            'context' => $context,
+        ]);
+        return false;
+    }
+
+    private function maybe_send_candidate_approved_email($candidate_id, $candidate_user_id, $previous_status, $new_status, $context = '') {
+        $candidate_id = (int) $candidate_id;
+        $candidate_user_id = (int) $candidate_user_id;
+        $context = sanitize_key((string) $context);
+        $previous_status = $this->normalize_candidate_verification_status($previous_status);
+        $new_status = $this->normalize_candidate_verification_status($new_status);
+        if ($candidate_id < 1 || $candidate_user_id < 1 || !$this->is_candidate_user($candidate_user_id)) {
+            $this->debug_candidate_email_event('candidate_approved_skipped_invalid_target', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'from' => $previous_status,
+                'to' => $new_status,
+                'context' => $context,
+            ]);
+            return false;
+        }
+        if ($new_status !== 'approved' || !$this->is_pending_review_candidate_status($previous_status)) {
+            $this->debug_candidate_email_event('candidate_approved_skipped_transition', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'from' => $previous_status,
+                'to' => $new_status,
+                'context' => $context,
+            ]);
+            return false;
+        }
+
+        $transition_marker = $previous_status . '->' . $new_status;
+        $last_transition_marker = (string) get_user_meta($candidate_user_id, 'cmn_email_approved_last_transition', true);
+        $last_transition_at = (string) get_user_meta($candidate_user_id, 'cmn_email_approved_sent_at', true);
+        if ($last_transition_marker === $transition_marker && $last_transition_at !== '') {
+            $this->debug_candidate_email_event('candidate_approved_skipped_already_sent', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'from' => $previous_status,
+                'to' => $new_status,
+                'context' => $context,
+                'sent_at' => $last_transition_at,
+            ]);
+            return false;
+        }
+
+        $candidate_email = $this->get_candidate_notification_email($candidate_id, $candidate_user_id);
+        if ($candidate_email === '') {
+            $this->debug_candidate_email_event('candidate_approved_skipped_missing_email', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'from' => $previous_status,
+                'to' => $new_status,
+                'context' => $context,
+            ]);
+            return false;
+        }
+
+        $dashboard_url = add_query_arg(['candidate' => 'dashboard'], $this->get_portal_base_url());
+        $subject = "You're approved on CoverMeNow 🎉";
+        $message = "Great news — your CoverMeNow profile has been approved.\n\nYou can now access your dashboard and start receiving opportunities.\n\nNext steps:\n1. Update your availability calendar\n2. Review your profile details\n3. Keep your documents up to date\n\nGo to your dashboard:\n{$dashboard_url}\n\nCoverMeNow ONE";
+        $sent = $this->send_candidate_email($candidate_email, $subject, $message, [
+            'type' => 'candidate_status_update',
+            'user_id' => $candidate_user_id,
+            'related_candidate_id' => $candidate_id,
+            'notify_key' => 'cmn_notify_email_profile_reminders',
+        ]);
+
+        if ($sent) {
+            $sent_at = current_time('mysql');
+            update_user_meta($candidate_user_id, 'cmn_email_approved_sent_at', $sent_at);
+            update_user_meta($candidate_user_id, 'cmn_email_approved_last_transition', $transition_marker);
+            update_post_meta($candidate_id, 'cmn_email_approved_sent_at', $sent_at);
+            update_post_meta($candidate_id, 'cmn_email_approved_last_transition', $transition_marker);
+            $this->add_audit_log('email_sent', 'candidate', (string) $candidate_id, [
+                'email_event' => 'candidate_approved',
+                'from_status' => $previous_status,
+                'to_status' => $new_status,
+                'context' => $context,
+                'sent_at' => $sent_at,
+            ], get_current_user_id());
+            $this->debug_candidate_email_event('candidate_approved_sent', [
+                'candidate_id' => $candidate_id,
+                'candidate_user_id' => $candidate_user_id,
+                'from' => $previous_status,
+                'to' => $new_status,
+                'context' => $context,
+            ]);
+            return true;
+        }
+
+        $this->add_audit_log('email_send_failed', 'candidate', (string) $candidate_id, [
+            'email_event' => 'candidate_approved',
+            'from_status' => $previous_status,
+            'to_status' => $new_status,
+            'context' => $context,
+        ], get_current_user_id());
+        $this->debug_candidate_email_event('candidate_approved_failed', [
+            'candidate_id' => $candidate_id,
+            'candidate_user_id' => $candidate_user_id,
+            'from' => $previous_status,
+            'to' => $new_status,
+            'context' => $context,
+        ]);
+        return false;
     }
 
 
@@ -99277,6 +99537,10 @@ p{margin:0;line-height:1.5}
         if ($candidate_user_id < 1) {
             wp_die('Candidate account is not linked');
         }
+        $previous_verification_status = (string) get_user_meta($candidate_user_id, 'cmn_admin_verification_status', true);
+        if ($previous_verification_status === '') {
+            $previous_verification_status = (string) get_post_meta($candidate_id, 'cmn_admin_verification_status', true);
+        }
         $status_value = $decision === 'approved' ? 'approved' : 'rejected';
         update_post_meta($candidate_id, 'cmn_status', $status_value);
         update_post_meta($candidate_id, 'cmn_admin_verification_status', $status_value);
@@ -99286,6 +99550,7 @@ p{margin:0;line-height:1.5}
                 'approved_by' => (int) get_current_user_id(),
                 'automation_meta' => ['source' => 'compliance_quick_approve'],
             ]);
+            $this->maybe_send_candidate_approved_email($candidate_id, $candidate_user_id, $previous_verification_status, $status_value, 'staff_compliance_decision');
         } else {
             update_post_meta($candidate_id, 'cmn_compliance_rejection_reason', $reason);
             $candidate_email = sanitize_email((string) get_post_meta($candidate_id, 'cmn_email', true));
@@ -99672,11 +99937,22 @@ p{margin:0;line-height:1.5}
             update_user_meta($candidate_user_id, $keys['reviewed_by'], get_current_user_id());
         }
 
+        $previous_verification_status = (string) get_user_meta($candidate_user_id, 'cmn_admin_verification_status', true);
+        if ($previous_verification_status === '') {
+            $previous_verification_status = (string) get_post_meta($candidate_id, 'cmn_admin_verification_status', true);
+        }
         $docs_for_sync = [];
         foreach ($this->get_candidate_doc_types() as $sync_doc_type) {
             $docs_for_sync[$sync_doc_type] = $this->get_candidate_doc_status($candidate_id, $candidate_user_id, $sync_doc_type);
         }
-        $this->sync_candidate_admin_verification_status($candidate_id, $candidate_user_id, $docs_for_sync);
+        $updated_verification_status = $this->sync_candidate_admin_verification_status($candidate_id, $candidate_user_id, $docs_for_sync);
+        $this->maybe_send_candidate_approved_email(
+            $candidate_id,
+            $candidate_user_id,
+            $previous_verification_status,
+            $updated_verification_status,
+            'staff_doc_review'
+        );
 
         $doc_label_map = [
             'dbs' => 'DBS',
