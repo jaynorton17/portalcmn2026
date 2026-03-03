@@ -86426,10 +86426,34 @@ global $wpdb;
                 $candidate_profile_id = $candidate_id;
             }
             if ($candidate_profile_id !== $candidate_id) {
-                $role_labels = $this->get_candidate_role_labels($candidate_profile_id);
+                $profile_role_labels = $this->get_candidate_role_labels($candidate_profile_id);
+                if ($profile_role_labels) {
+                    $role_labels = $profile_role_labels;
+                }
             }
-            $role_primary = isset($role_labels[0]) ? (string) $role_labels[0] : 'Candidate';
+            if (!$role_labels && $candidate_profile_id !== $candidate_id) {
+                $role_labels = $this->get_candidate_role_labels($candidate_id);
+            }
+            $role_primary = isset($role_labels[0]) ? (string) $role_labels[0] : '';
+            if ($role_primary === '' || strtolower($role_primary) === 'candidate') {
+                $role_fallback = sanitize_text_field((string) get_post_meta($candidate_profile_id, 'cmn_role_type', true));
+                if ($role_fallback === '') {
+                    $role_fallback = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_role_type', true));
+                }
+                if ($role_fallback === '' && $candidate_user_id > 0) {
+                    $role_fallback = sanitize_text_field((string) get_user_meta($candidate_user_id, 'role_type', true));
+                }
+                if ($role_fallback !== '' && strtolower($role_fallback) !== 'candidate') {
+                    $role_primary = $role_fallback;
+                }
+            }
+            if ($role_primary === '') {
+                $role_primary = 'Candidate';
+            }
             $role_secondary = isset($role_labels[1]) ? (string) $role_labels[1] : '';
+            if ($role_secondary !== '' && strcasecmp($role_secondary, $role_primary) === 0) {
+                $role_secondary = '';
+            }
             $candidate_town_city = $this->get_candidate_town_city_label($candidate_profile_id, $candidate_user_id);
             $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
             $name_parts = preg_split('/\s+/', trim((string) $candidate->post_title));
