@@ -14317,6 +14317,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 (function(){
+  var initLiveMatches = function(){
   var roots = document.querySelectorAll('[data-live-matches-root]');
   if (!roots.length) { return; }
   var LIVE_OFFER_STATES = {
@@ -14332,6 +14333,12 @@ document.addEventListener('DOMContentLoaded', function () {
     LIVE_OFFER_STATES.EXPIRED
   ];
   roots.forEach(function(root, rootIndex){
+    if (root && root.getAttribute('data-live-initialized') === '1') {
+      return;
+    }
+    if (root) {
+      root.setAttribute('data-live-initialized', '1');
+    }
     if (!root) {
       return;
     }
@@ -15150,6 +15157,12 @@ document.addEventListener('DOMContentLoaded', function () {
       startLiveMatchLegacyPolling();
     }
   });
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLiveMatches);
+  } else {
+    initLiveMatches();
+  }
 })();
 if (typeof themeSelect !== 'undefined' && themeSelect && themeSelect.options && themeSelect.options.length <= 1) {
   themeSelect.disabled = true;
