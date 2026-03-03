@@ -14108,6 +14108,366 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var seoAssistantRoots = document.querySelectorAll('[data-seo-assistant-root]');
+  if (seoAssistantRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.seoAssistantNonce) {
+    var seoEscapeHtml = function (value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    };
+    var seoStateDefaults = function () {
+      return {
+        allowlist: [],
+        allowlist_text: '',
+        scans: [],
+        recommendations: [],
+        overrides: {},
+        status_counts: {
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+          applied: 0
+        },
+        updated_at: ''
+      };
+    };
+    var seoNormalizeState = function (state) {
+      var normalized = seoStateDefaults();
+      if (!state || typeof state !== 'object') {
+        return normalized;
+      }
+      normalized.allowlist = Array.isArray(state.allowlist) ? state.allowlist.map(function (row) {
+        return String(row || '').trim();
+      }).filter(function (row) { return row !== ''; }) : [];
+      normalized.allowlist_text = String(state.allowlist_text || normalized.allowlist.join('\n'));
+      normalized.scans = Array.isArray(state.scans) ? state.scans : [];
+      normalized.recommendations = Array.isArray(state.recommendations) ? state.recommendations : [];
+      normalized.overrides = (state.overrides && typeof state.overrides === 'object') ? state.overrides : {};
+      normalized.updated_at = String(state.updated_at || '');
+      var statusCounts = (state.status_counts && typeof state.status_counts === 'object') ? state.status_counts : {};
+      normalized.status_counts = {
+        pending: parseInt(String(statusCounts.pending || 0), 10) || 0,
+        approved: parseInt(String(statusCounts.approved || 0), 10) || 0,
+        rejected: parseInt(String(statusCounts.rejected || 0), 10) || 0,
+        applied: parseInt(String(statusCounts.applied || 0), 10) || 0
+      };
+      return normalized;
+    };
+    var seoApiCall = function (action, payload) {
+      var fd = new FormData();
+      fd.append('action', String(action || ''));
+      fd.append('nonce', window.cmnPortal.seoAssistantNonce || '');
+      Object.keys(payload || {}).forEach(function (key) {
+        var value = payload[key];
+        if (Array.isArray(value)) {
+          value.forEach(function (item) {
+            fd.append(String(key) + '[]', item);
+          });
+          return;
+        }
+        if (typeof value !== 'undefined' && value !== null) {
+          fd.append(String(key), value);
+        }
+      });
+      return fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      }).then(function (response) {
+        return response.json().catch(function () {
+          return null;
+        }).then(function (json) {
+          if (!json || typeof json !== 'object') {
+            throw new Error('Unexpected server response.');
+          }
+          if (!response.ok || !json.success) {
+            var errorMessage = (json && json.data && json.data.message) ? String(json.data.message) : 'Request failed.';
+            throw new Error(errorMessage);
+          }
+          return (json.data && typeof json.data === 'object') ? json.data : {};
+        });
+      });
+    };
+
+    seoAssistantRoots.forEach(function (root) {
+      var statusMsg = root.querySelector('[data-seo-status-msg]');
+      var allowlistInput = root.querySelector('[data-seo-allowlist-input]');
+      var pageList = root.querySelector('[data-seo-page-list]');
+      var summary = root.querySelector('[data-seo-summary]');
+      var scanRows = root.querySelector('[data-seo-scan-rows]');
+      var recommendationRows = root.querySelector('[data-seo-recommendation-rows]');
+      var scanButton = root.querySelector('[data-seo-scan-selected]');
+      var applyButton = root.querySelector('[data-seo-apply-approved]');
+      var saveAllowlistButton = root.querySelector('[data-seo-save-allowlist]');
+      var inFlightCount = 0;
+      var state = seoStateDefaults();
+      var initialStateRaw = root.getAttribute('data-seo-initial-state') || '';
+      if (initialStateRaw) {
+        try {
+          state = seoNormalizeState(JSON.parse(initialStateRaw));
+        } catch (error) {
+          state = seoStateDefaults();
+        }
+      }
+
+      var setStatus = function (message, isError) {
+        if (!statusMsg) {
+          return;
+        }
+        statusMsg.textContent = String(message || '');
+        statusMsg.classList.toggle('is-error', !!isError);
+        statusMsg.classList.toggle('is-ok', !isError);
+      };
+
+      var setBusy = function (isBusy) {
+        inFlightCount += isBusy ? 1 : -1;
+        if (inFlightCount < 0) {
+          inFlightCount = 0;
+        }
+        var disabled = inFlightCount > 0;
+        root.classList.toggle('is-busy', disabled);
+        [scanButton, applyButton, saveAllowlistButton].forEach(function (button) {
+          if (!button) {
+            return;
+          }
+          button.disabled = disabled;
+        });
+      };
+
+      var formatDateTime = function (value) {
+        var date = new Date(String(value || ''));
+        if (!date || isNaN(date.getTime())) {
+          return String(value || '-');
+        }
+        return date.toLocaleString();
+      };
+
+      var renderAllowlistEditor = function () {
+        if (!allowlistInput) {
+          return;
+        }
+        if (document.activeElement !== allowlistInput) {
+          allowlistInput.value = String(state.allowlist_text || state.allowlist.join('\n'));
+        }
+      };
+
+      var renderAllowlistSelection = function () {
+        if (!pageList) {
+          return;
+        }
+        pageList.innerHTML = '';
+        if (!Array.isArray(state.allowlist) || !state.allowlist.length) {
+          pageList.innerHTML = '<p class="cmn-muted">No allowlisted URLs saved yet.</p>';
+          return;
+        }
+        state.allowlist.forEach(function (url) {
+          var row = document.createElement('label');
+          row.className = 'cmn-seo-page-check';
+          row.innerHTML = '' +
+            '<input type="checkbox" data-seo-page-check value="' + seoEscapeHtml(url) + '" checked>' +
+            '<span>' + seoEscapeHtml(url) + '</span>';
+          pageList.appendChild(row);
+        });
+      };
+
+      var renderSummary = function () {
+        if (!summary) {
+          return;
+        }
+        var latestScan = (Array.isArray(state.scans) && state.scans.length) ? state.scans[0] : null;
+        var averageScore = latestScan ? (parseInt(String(latestScan.average_score || 0), 10) || 0) : 0;
+        var recommendationTotal = (state.status_counts.pending || 0) + (state.status_counts.approved || 0) + (state.status_counts.rejected || 0) + (state.status_counts.applied || 0);
+        summary.innerHTML = '' +
+          '<div class="cmn-seo-summary-grid">' +
+            '<div class="cmn-seo-summary-item"><strong>' + String(averageScore) + '</strong><span>Latest score</span></div>' +
+            '<div class="cmn-seo-summary-item"><strong>' + String(state.status_counts.pending || 0) + '</strong><span>Pending</span></div>' +
+            '<div class="cmn-seo-summary-item"><strong>' + String(state.status_counts.approved || 0) + '</strong><span>Approved</span></div>' +
+            '<div class="cmn-seo-summary-item"><strong>' + String(state.status_counts.applied || 0) + '</strong><span>Applied</span></div>' +
+            '<div class="cmn-seo-summary-item"><strong>' + String(recommendationTotal) + '</strong><span>Total recs</span></div>' +
+          '</div>' +
+          '<p class="cmn-muted">Last updated: ' + seoEscapeHtml(state.updated_at || 'Never') + '</p>';
+      };
+
+      var renderScans = function () {
+        if (!scanRows) {
+          return;
+        }
+        scanRows.innerHTML = '';
+        if (!Array.isArray(state.scans) || !state.scans.length) {
+          scanRows.innerHTML = '<tr><td colspan="4">No scans yet.</td></tr>';
+          return;
+        }
+        state.scans.slice(0, 40).forEach(function (scanRow) {
+          var score = parseInt(String(scanRow.average_score || 0), 10) || 0;
+          var when = formatDateTime(scanRow.scanned_at || '');
+          var pages = parseInt(String(scanRow.url_count || 0), 10) || 0;
+          var issues = parseInt(String(scanRow.recommendation_count || 0), 10) || 0;
+          var tr = document.createElement('tr');
+          tr.innerHTML = '' +
+            '<td>' + seoEscapeHtml(when) + '</td>' +
+            '<td>' + String(pages) + ' page(s)</td>' +
+            '<td><span class="cmn-status-chip cmn-seo-score-chip">' + String(score) + '/100</span></td>' +
+            '<td>' + String(issues) + '</td>';
+          scanRows.appendChild(tr);
+        });
+      };
+
+      var buildDecisionButtons = function (recommendation) {
+        var status = String(recommendation && recommendation.status ? recommendation.status : 'pending');
+        var recommendationId = String(recommendation && recommendation.recommendation_id ? recommendation.recommendation_id : '');
+        if (!recommendationId || status === 'applied') {
+          return '<span class="cmn-muted">-</span>';
+        }
+        var actions = [];
+        if (status !== 'approved') {
+          actions.push('<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="approved" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '">Approve</button>');
+        }
+        if (status !== 'rejected') {
+          actions.push('<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="rejected" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '">Reject</button>');
+        }
+        return actions.join('');
+      };
+
+      var renderRecommendations = function () {
+        if (!recommendationRows) {
+          return;
+        }
+        recommendationRows.innerHTML = '';
+        if (!Array.isArray(state.recommendations) || !state.recommendations.length) {
+          recommendationRows.innerHTML = '<tr><td colspan="8">No recommendations yet.</td></tr>';
+          return;
+        }
+        state.recommendations.slice(0, 300).forEach(function (row) {
+          var status = String(row.status || 'pending');
+          var impact = String(row.expected_impact || 'medium');
+          var statusClass = status.replace(/[^a-z0-9_-]+/gi, '').toLowerCase();
+          var impactClass = impact.replace(/[^a-z0-9_-]+/gi, '').toLowerCase();
+          var tr = document.createElement('tr');
+          tr.innerHTML = '' +
+            '<td><span class="cmn-status-chip cmn-seo-status-chip is-' + seoEscapeHtml(statusClass) + '">' + seoEscapeHtml(status) + '</span></td>' +
+            '<td class="cmn-seo-url-cell"><a href="' + seoEscapeHtml(row.page_url || '#') + '" target="_blank" rel="noopener noreferrer">' + seoEscapeHtml(row.page_url || '-') + '</a></td>' +
+            '<td><span class="cmn-seo-field">' + seoEscapeHtml(row.field || '-') + '</span></td>' +
+            '<td><div class="cmn-seo-cell-value">' + seoEscapeHtml(row.current_value || '-') + '</div></td>' +
+            '<td><div class="cmn-seo-cell-value">' + seoEscapeHtml(row.proposed_value || '-') + '</div></td>' +
+            '<td><span class="cmn-status-chip cmn-seo-impact-chip is-' + seoEscapeHtml(impactClass) + '">' + seoEscapeHtml(impact) + '</span></td>' +
+            '<td><div class="cmn-seo-cell-value">' + seoEscapeHtml(row.reason || '-') + '</div></td>' +
+            '<td class="cmn-seo-decision-cell">' + buildDecisionButtons(row) + '</td>';
+          recommendationRows.appendChild(tr);
+        });
+      };
+
+      var renderAll = function () {
+        renderAllowlistEditor();
+        renderAllowlistSelection();
+        renderSummary();
+        renderScans();
+        renderRecommendations();
+      };
+
+      var refreshState = function () {
+        setBusy(true);
+        return seoApiCall('cmn_seo_assistant_get_state', {}).then(function (data) {
+          state = seoNormalizeState((data && data.state) ? data.state : {});
+          renderAll();
+          setStatus('State refreshed.', false);
+        }).catch(function (error) {
+          setStatus(error && error.message ? error.message : 'Unable to load SEO Assistant state.', true);
+        }).finally(function () {
+          setBusy(false);
+        });
+      };
+
+      if (saveAllowlistButton && allowlistInput) {
+        saveAllowlistButton.addEventListener('click', function () {
+          setBusy(true);
+          seoApiCall('cmn_seo_assistant_save_allowlist', {
+            allowlist: allowlistInput.value || ''
+          }).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            setStatus((data && data.message) ? data.message : 'Allowlist saved.', false);
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to save allowlist.', true);
+          }).finally(function () {
+            setBusy(false);
+          });
+        });
+      }
+
+      if (scanButton) {
+        scanButton.addEventListener('click', function () {
+          var selectedUrls = [];
+          root.querySelectorAll('[data-seo-page-check]:checked').forEach(function (checkbox) {
+            var value = String(checkbox.value || '').trim();
+            if (value) {
+              selectedUrls.push(value);
+            }
+          });
+          setBusy(true);
+          seoApiCall('cmn_seo_assistant_scan', {
+            urls: selectedUrls
+          }).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            setStatus((data && data.message) ? data.message : 'Scan complete.', false);
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to run SEO scan.', true);
+          }).finally(function () {
+            setBusy(false);
+          });
+        });
+      }
+
+      if (applyButton) {
+        applyButton.addEventListener('click', function () {
+          setBusy(true);
+          seoApiCall('cmn_seo_assistant_apply_approved', {}).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            var message = (data && data.message) ? data.message : 'Applied approved recommendations.';
+            var appliedCount = parseInt(String((data && data.applied_count) || 0), 10) || 0;
+            setStatus(message + ' Applied: ' + String(appliedCount) + '.', false);
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to apply approved recommendations.', true);
+          }).finally(function () {
+            setBusy(false);
+          });
+        });
+      }
+
+      root.addEventListener('click', function (event) {
+        var decisionButton = event.target && event.target.closest ? event.target.closest('[data-seo-decision]') : null;
+        if (!decisionButton) {
+          return;
+        }
+        var recommendationId = String(decisionButton.getAttribute('data-seo-recommendation-id') || '').trim();
+        var status = String(decisionButton.getAttribute('data-seo-decision') || '').trim();
+        if (!recommendationId || (status !== 'approved' && status !== 'rejected')) {
+          return;
+        }
+        decisionButton.disabled = true;
+        seoApiCall('cmn_seo_assistant_set_recommendation_status', {
+          recommendation_id: recommendationId,
+          status: status
+        }).then(function (data) {
+          state = seoNormalizeState((data && data.state) ? data.state : {});
+          renderAll();
+          setStatus((data && data.message) ? data.message : 'Recommendation updated.', false);
+        }).catch(function (error) {
+          setStatus(error && error.message ? error.message : 'Unable to update recommendation.', true);
+        }).finally(function () {
+          decisionButton.disabled = false;
+        });
+      });
+
+      renderAll();
+      refreshState();
+    });
+  }
+
   var candidateTourRoot = document.querySelector('[data-candidate-tour]');
   if (candidateTourRoot && candidateTourRoot.getAttribute('data-candidate-tour') === '1' && window.cmnPortal && window.cmnPortal.ajaxUrl) {
     var createTourElements = function () {

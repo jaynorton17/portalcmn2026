@@ -18415,6 +18415,179 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
   border-color: rgba(148, 163, 184, 0.46) !important;
 }
 
+/* SEO Assistant */
+.cmn-seo-assistant {
+  display: grid;
+  gap: 16px;
+}
+
+.cmn-seo-assistant.is-busy {
+  opacity: 0.86;
+}
+
+.cmn-seo-assistant-actions,
+.cmn-seo-assistant-actions-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.cmn-seo-assistant [data-seo-status-msg].is-error {
+  color: #fecaca;
+}
+
+.cmn-seo-assistant [data-seo-status-msg].is-ok {
+  color: #d1fae5;
+}
+
+.cmn-seo-assistant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.cmn-seo-assistant-panel {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  background: rgba(8, 12, 20, 0.62);
+  padding: 14px;
+}
+
+.cmn-seo-assistant-panel h3 {
+  margin: 0 0 8px;
+}
+
+.cmn-seo-assistant [data-seo-allowlist-input] {
+  width: 100%;
+  min-height: 170px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.7);
+  color: #f8fafc;
+  resize: vertical;
+}
+
+.cmn-seo-page-list {
+  margin-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  padding-top: 10px;
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.cmn-seo-page-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: rgba(226, 232, 240, 0.95);
+  font-size: 12px;
+}
+
+.cmn-seo-page-check span {
+  overflow-wrap: anywhere;
+}
+
+.cmn-seo-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.cmn-seo-summary-item {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  padding: 9px;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.cmn-seo-summary-item strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.1;
+  color: #f8fafc;
+}
+
+.cmn-seo-summary-item span {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(191, 219, 254, 0.92);
+}
+
+.cmn-seo-table-wrap {
+  overflow: auto;
+}
+
+.cmn-seo-url-cell {
+  min-width: 220px;
+  max-width: 280px;
+}
+
+.cmn-seo-cell-value {
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 160px;
+  max-width: 260px;
+}
+
+.cmn-seo-field {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: #e0e7ff;
+}
+
+.cmn-seo-decision-cell {
+  min-width: 150px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmn-seo-status-chip.is-pending {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.cmn-seo-status-chip.is-approved {
+  background: rgba(16, 185, 129, 0.16);
+  color: #a7f3d0;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.cmn-seo-status-chip.is-rejected {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.cmn-seo-status-chip.is-applied {
+  background: rgba(59, 130, 246, 0.18);
+  color: #bfdbfe;
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.cmn-seo-impact-chip.is-high {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+}
+
+.cmn-seo-impact-chip.is-medium {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+}
+
+.cmn-seo-impact-chip.is-low {
+  background: rgba(59, 130, 246, 0.12);
+  color: #bfdbfe;
+}
+
 /* Mobile phone audit hardening: reduce overflow + normalize dense layouts */
 @media (max-width: 900px) {
   html.cmn-portal-page,
@@ -18482,6 +18655,14 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
 
   body.cmn-portal-page :is(.cmn-bulk-actions, .cmn-panel-actions, .cmn-calendar-range-controls, .cmn-profile-progress-actions, .cmn-contact-card-skill-actions) {
     flex-wrap: wrap;
+  }
+
+  .cmn-seo-assistant-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-seo-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   body.cmn-portal-page :is(

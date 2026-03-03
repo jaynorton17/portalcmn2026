@@ -805,6 +805,8 @@ final class CMN_One_Plugin {
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_assets']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_livechat_contact_assets'], 30);
+        add_action('wp_head', [$this, 'render_seo_assistant_head_overrides'], 1);
+        add_filter('pre_get_document_title', [$this, 'filter_seo_assistant_document_title'], 20);
         add_action('wp_footer', [$this, 'render_public_livechat_widget_shell'], 80);
         add_filter('body_class', [$this, 'add_portal_body_class']);
         add_action('admin_post_cmn_add_activity', [$this, 'handle_add_activity']);
@@ -908,6 +910,11 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_system_health_apply', [$this, 'handle_system_health_apply']);
         add_action('wp_ajax_cmn_system_health_export_csv', [$this, 'handle_system_health_export_csv']);
         add_action('wp_ajax_cmn_get_system_health_fixes', [$this, 'handle_get_system_health_fixes']);
+        add_action('wp_ajax_cmn_seo_assistant_get_state', [$this, 'handle_seo_assistant_get_state']);
+        add_action('wp_ajax_cmn_seo_assistant_save_allowlist', [$this, 'handle_seo_assistant_save_allowlist']);
+        add_action('wp_ajax_cmn_seo_assistant_scan', [$this, 'handle_seo_assistant_scan']);
+        add_action('wp_ajax_cmn_seo_assistant_set_recommendation_status', [$this, 'handle_seo_assistant_set_recommendation_status']);
+        add_action('wp_ajax_cmn_seo_assistant_apply_approved', [$this, 'handle_seo_assistant_apply_approved']);
         add_action('wp_ajax_cmn_save_staff_nav_state', [$this, 'handle_save_staff_nav_state']);
         add_action('wp_ajax_cmn_save_staff_nav_order', [$this, 'handle_save_staff_nav_order']);
         add_action('wp_ajax_cmn_touch_staff_presence', [$this, 'handle_touch_staff_presence']);
@@ -7544,12 +7551,14 @@ global $wpdb;
                 'partner.admin.mutate',
                 'system.after_booking_support.view',
                 'system.upgrade.run',
+                'system.seo.manage',
             ],
             'cmn_admin' => [
                 'portal.staff.view',
                 'partner.admin.mutate',
                 'system.after_booking_support.view',
                 'system.upgrade.run',
+                'system.seo.manage',
             ],
             // Staff-manager equivalent roles keep support-board visibility without admin-only upgrade capability.
             'cmn_staff' => [
@@ -7637,6 +7646,7 @@ global $wpdb;
             'isStaffUser' => $this->is_staff_user() ? 1 : 0,
             'isCandidateUser' => $this->is_candidate_user() ? 1 : 0,
             'systemHealthNonce' => wp_create_nonce('cmn_system_health'),
+            'seoAssistantNonce' => wp_create_nonce('cmn_seo_assistant'),
             'portalHeartbeatNonce' => wp_create_nonce('cmn_portal_heartbeat'),
             'afterBookingSupportNonce' => wp_create_nonce('cmn_after_booking_support_snapshot'),
             'heartbeatEnabled' => $this->is_feature_enabled('heartbeat', true) ? 1 : 0,
@@ -7833,6 +7843,8 @@ global $wpdb;
             'audit',
             'bookings',
             'analytics',
+            'seo-assistant',
+            'seo_assistant',
             'system-health',
             'system_health',
             'data-integrity',
@@ -8145,6 +8157,12 @@ global $wpdb;
         }
         if ($ability === 'system.upgrade.run') {
             // Upgrade runner is intentionally admin-only (no staff access).
+            if ($actor_user_id < 1 || !$this->is_admin_user($actor_user_id)) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'system.seo.manage') {
             if ($actor_user_id < 1 || !$this->is_admin_user($actor_user_id)) {
                 return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
             }
@@ -11744,6 +11762,7 @@ global $wpdb;
                 'icon' => 'system',
                 'items' => array_values(array_filter([
                     $is_admin ? ['key' => 'system_health', 'label' => 'System Health', 'icon' => 'system_health', 'url' => add_query_arg(['view' => 'system-health'], $portal_url), 'active_when' => ['view' => ['system-health', 'system_health']]] : null,
+                    $is_admin ? ['key' => 'seo_assistant', 'label' => 'SEO Assistant', 'icon' => 'analytics', 'url' => add_query_arg(['view' => 'seo-assistant'], $portal_url), 'active_when' => ['view' => ['seo-assistant', 'seo_assistant']]] : null,
                     $is_admin ? ['key' => 'system_logs', 'label' => 'Error Logs', 'icon' => 'logs', 'url' => add_query_arg(['view' => 'audit', 'cmn_log_scope' => 'system'], $portal_url), 'active_when' => ['view' => 'audit', 'query' => ['cmn_log_scope' => 'system']]] : null,
                     $is_admin ? ['key' => 'audit', 'label' => 'Audit Log', 'icon' => 'audit_logs', 'url' => add_query_arg(['view' => 'audit'], $portal_url)] : null,
                     null,
@@ -28490,6 +28509,9 @@ global $wpdb;
         if ($view === 'analytics') {
             return $this->render_staff_analytics_shortcode();
         }
+        if ($view === 'seo-assistant' || $view === 'seo_assistant') {
+            return $this->render_staff_seo_assistant_shortcode();
+        }
         if ($view === 'system-health' || $view === 'system_health') {
             return $this->render_staff_system_health_shortcode();
         }
@@ -34148,6 +34170,1225 @@ global $wpdb;
         <?php
         $inner = ob_get_clean();
         return $this->render_staff_shell('feedback_insights', $inner);
+    }
+
+    private function get_seo_assistant_option_key() {
+        return 'cmn_seo_assistant_state_v1';
+    }
+
+    private function normalize_seo_assistant_url($url) {
+        $raw_url = trim((string) $url);
+        if ($raw_url === '') {
+            return '';
+        }
+        $sanitized_url = esc_url_raw($raw_url, ['http', 'https']);
+        if ($sanitized_url === '') {
+            return '';
+        }
+        $parts = wp_parse_url($sanitized_url);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return '';
+        }
+        $home_parts = wp_parse_url(home_url('/'));
+        $default_scheme = is_array($home_parts) && !empty($home_parts['scheme']) ? strtolower((string) $home_parts['scheme']) : 'https';
+        $scheme = !empty($parts['scheme']) ? strtolower((string) $parts['scheme']) : $default_scheme;
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return '';
+        }
+        $host = strtolower((string) $parts['host']);
+        if ($host === '') {
+            return '';
+        }
+        $port = isset($parts['port']) ? (int) $parts['port'] : 0;
+        $path = isset($parts['path']) ? (string) $parts['path'] : '/';
+        $path = '/' . ltrim($path, '/');
+        $path = preg_replace('#/+#', '/', $path);
+        if (!is_string($path) || $path === '') {
+            $path = '/';
+        }
+        if ($path !== '/') {
+            $path = trailingslashit(untrailingslashit($path));
+        }
+        $normalized = $scheme . '://' . $host;
+        if ($port > 0) {
+            $normalized .= ':' . $port;
+        }
+        $normalized .= $path;
+        return $normalized;
+    }
+
+    private function seo_assistant_is_internal_url($url) {
+        $normalized = $this->normalize_seo_assistant_url($url);
+        if ($normalized === '') {
+            return false;
+        }
+        $target_parts = wp_parse_url($normalized);
+        $home_parts = wp_parse_url(home_url('/'));
+        $target_host = is_array($target_parts) ? strtolower((string) ($target_parts['host'] ?? '')) : '';
+        $home_host = is_array($home_parts) ? strtolower((string) ($home_parts['host'] ?? '')) : '';
+        return ($target_host !== '' && $home_host !== '' && $target_host === $home_host);
+    }
+
+    private function get_seo_assistant_default_allowlist() {
+        $defaults = [
+            home_url('/'),
+        ];
+        $named_pages = [
+            'CoverMeNow ONE',
+            'CoverMeNow ONE for Schools',
+            'CoverMeNow ONE for Candidates',
+        ];
+        foreach ($named_pages as $page_title) {
+            $page = cmn_get_page_by_title($page_title, OBJECT, 'page');
+            if ($page instanceof WP_Post) {
+                $defaults[] = get_permalink((int) $page->ID);
+            }
+        }
+        return $this->sanitize_seo_assistant_allowlist($defaults);
+    }
+
+    private function sanitize_seo_assistant_allowlist($urls) {
+        $sanitized = [];
+        foreach ((array) $urls as $url_raw) {
+            if (is_array($url_raw) || is_object($url_raw)) {
+                continue;
+            }
+            $normalized = $this->normalize_seo_assistant_url((string) $url_raw);
+            if ($normalized === '' || !$this->seo_assistant_is_internal_url($normalized)) {
+                continue;
+            }
+            $sanitized[$normalized] = $normalized;
+            if (count($sanitized) >= 250) {
+                break;
+            }
+        }
+        return array_values($sanitized);
+    }
+
+    private function parse_seo_assistant_allowlist_text($allowlist_text) {
+        $allowlist_text = (string) $allowlist_text;
+        $rows = preg_split('/\r\n|\r|\n/', $allowlist_text);
+        if (!is_array($rows)) {
+            $rows = [];
+        }
+        return $this->sanitize_seo_assistant_allowlist($rows);
+    }
+
+    private function get_seo_assistant_state() {
+        $default_state = [
+            'allowlist' => $this->get_seo_assistant_default_allowlist(),
+            'scans' => [],
+            'recommendations' => [],
+            'overrides' => [],
+            'updated_at' => '',
+        ];
+        $raw = get_option($this->get_seo_assistant_option_key(), '');
+        $decoded = is_string($raw) ? json_decode($raw, true) : (is_array($raw) ? $raw : []);
+        $state = is_array($decoded) ? $decoded : [];
+        $state = array_merge($default_state, $state);
+        $state['allowlist'] = $this->sanitize_seo_assistant_allowlist((array) ($state['allowlist'] ?? []));
+        if (!$state['allowlist']) {
+            $state['allowlist'] = $default_state['allowlist'];
+        }
+        $state['scans'] = is_array($state['scans']) ? $state['scans'] : [];
+        $state['recommendations'] = is_array($state['recommendations']) ? $state['recommendations'] : [];
+        $state['overrides'] = is_array($state['overrides']) ? $state['overrides'] : [];
+        $state['updated_at'] = sanitize_text_field((string) ($state['updated_at'] ?? ''));
+        return $state;
+    }
+
+    private function prune_seo_assistant_state(&$state) {
+        if (!is_array($state)) {
+            return;
+        }
+        $scan_rows = array_values(array_filter((array) ($state['scans'] ?? []), 'is_array'));
+        usort($scan_rows, static function ($a, $b) {
+            return strcmp((string) ($b['scanned_at'] ?? ''), (string) ($a['scanned_at'] ?? ''));
+        });
+        if (count($scan_rows) > 80) {
+            $scan_rows = array_slice($scan_rows, 0, 80);
+        }
+        $state['scans'] = [];
+        foreach ($scan_rows as $scan_row) {
+            $scan_id = sanitize_key((string) ($scan_row['scan_id'] ?? ''));
+            if ($scan_id === '') {
+                continue;
+            }
+            $state['scans'][$scan_id] = $scan_row;
+        }
+
+        $recommendation_rows = array_values(array_filter((array) ($state['recommendations'] ?? []), 'is_array'));
+        usort($recommendation_rows, static function ($a, $b) {
+            return strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+        });
+        if (count($recommendation_rows) > 1200) {
+            $recommendation_rows = array_slice($recommendation_rows, 0, 1200);
+        }
+        $state['recommendations'] = [];
+        foreach ($recommendation_rows as $recommendation_row) {
+            $recommendation_id = sanitize_key((string) ($recommendation_row['recommendation_id'] ?? ''));
+            if ($recommendation_id === '') {
+                continue;
+            }
+            $state['recommendations'][$recommendation_id] = $recommendation_row;
+        }
+    }
+
+    private function save_seo_assistant_state(array $state) {
+        $state['updated_at'] = current_time('mysql');
+        $this->prune_seo_assistant_state($state);
+        update_option($this->get_seo_assistant_option_key(), wp_json_encode($state), false);
+    }
+
+    private function get_seo_assistant_state_payload(array $state) {
+        $scan_rows = array_values(array_filter((array) ($state['scans'] ?? []), 'is_array'));
+        usort($scan_rows, static function ($a, $b) {
+            return strcmp((string) ($b['scanned_at'] ?? ''), (string) ($a['scanned_at'] ?? ''));
+        });
+        $recommendation_rows = array_values(array_filter((array) ($state['recommendations'] ?? []), 'is_array'));
+        usort($recommendation_rows, static function ($a, $b) {
+            return strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+        });
+        $status_counts = [
+            'pending' => 0,
+            'approved' => 0,
+            'rejected' => 0,
+            'applied' => 0,
+        ];
+        foreach ($recommendation_rows as $recommendation_row) {
+            $status = sanitize_key((string) ($recommendation_row['status'] ?? 'pending'));
+            if (!isset($status_counts[$status])) {
+                $status = 'pending';
+            }
+            $status_counts[$status]++;
+        }
+        return [
+            'allowlist' => array_values((array) ($state['allowlist'] ?? [])),
+            'allowlist_text' => implode("\n", array_values((array) ($state['allowlist'] ?? []))),
+            'scans' => $scan_rows,
+            'recommendations' => $recommendation_rows,
+            'overrides' => (array) ($state['overrides'] ?? []),
+            'status_counts' => $status_counts,
+            'updated_at' => sanitize_text_field((string) ($state['updated_at'] ?? '')),
+        ];
+    }
+
+    private function seo_assistant_trim_text($text, $max_length = 160) {
+        $max_length = max(20, (int) $max_length);
+        $text = trim((string) wp_strip_all_tags((string) $text));
+        $text = preg_replace('/\s+/', ' ', $text);
+        if (!is_string($text) || $text === '') {
+            return '';
+        }
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            if (mb_strlen($text) <= $max_length) {
+                return $text;
+            }
+            return rtrim(mb_substr($text, 0, max(1, $max_length - 1))) . '…';
+        }
+        if (strlen($text) <= $max_length) {
+            return $text;
+        }
+        return rtrim(substr($text, 0, max(1, $max_length - 1))) . '…';
+    }
+
+    private function seo_assistant_human_title_from_url($url) {
+        $normalized = $this->normalize_seo_assistant_url($url);
+        if ($normalized === '') {
+            return 'CoverMeNow';
+        }
+        $parts = wp_parse_url($normalized);
+        $path = is_array($parts) ? (string) ($parts['path'] ?? '/') : '/';
+        $slug = trim((string) basename(untrailingslashit($path)));
+        if ($slug === '' || $slug === 'covermenow-one') {
+            return 'CoverMeNow';
+        }
+        $slug = str_replace(['-', '_'], ' ', $slug);
+        $slug = ucwords($slug);
+        return $this->seo_assistant_trim_text($slug . ' | CoverMeNow', 60);
+    }
+
+    private function seo_assistant_resolve_asset_url($asset_url, $page_url) {
+        $asset_url = trim((string) $asset_url);
+        if ($asset_url === '') {
+            return '';
+        }
+        if (preg_match('#^https?://#i', $asset_url)) {
+            return esc_url_raw($asset_url, ['http', 'https']);
+        }
+        $page_url = $this->normalize_seo_assistant_url($page_url);
+        if ($page_url === '') {
+            return '';
+        }
+        $page_parts = wp_parse_url($page_url);
+        if (!is_array($page_parts) || empty($page_parts['host'])) {
+            return '';
+        }
+        $scheme = !empty($page_parts['scheme']) ? (string) $page_parts['scheme'] : 'https';
+        $host = (string) $page_parts['host'];
+        $port = isset($page_parts['port']) ? ':' . (int) $page_parts['port'] : '';
+        if (strpos($asset_url, '//') === 0) {
+            return esc_url_raw($scheme . ':' . $asset_url, ['http', 'https']);
+        }
+        if (strpos($asset_url, '/') === 0) {
+            return esc_url_raw($scheme . '://' . $host . $port . $asset_url, ['http', 'https']);
+        }
+        $base_path = isset($page_parts['path']) ? (string) $page_parts['path'] : '/';
+        $base_dir = trailingslashit(dirname($base_path));
+        if ($base_dir === '//') {
+            $base_dir = '/';
+        }
+        return esc_url_raw($scheme . '://' . $host . $port . $base_dir . ltrim($asset_url, '/'), ['http', 'https']);
+    }
+
+    private function seo_assistant_extract_page_analysis($url) {
+        $normalized_url = $this->normalize_seo_assistant_url($url);
+        $analysis = [
+            'url' => $normalized_url,
+            'status_code' => 0,
+            'error' => '',
+            'title' => '',
+            'meta_description' => '',
+            'canonical' => '',
+            'robots' => '',
+            'h1_count' => 0,
+            'first_h1' => '',
+            'images_total' => 0,
+            'images_missing_alt' => 0,
+            'first_image' => '',
+            'first_paragraph' => '',
+            'og' => [
+                'title' => '',
+                'description' => '',
+                'image' => '',
+            ],
+            'twitter' => [
+                'title' => '',
+                'description' => '',
+                'image' => '',
+            ],
+            'score' => 0,
+            'issues_count' => 0,
+        ];
+        if ($normalized_url === '' || !$this->seo_assistant_is_internal_url($normalized_url)) {
+            $analysis['error'] = 'URL is not allowed.';
+            return $analysis;
+        }
+        $response = wp_remote_get($normalized_url, [
+            'timeout' => 12,
+            'redirection' => 3,
+            'sslverify' => true,
+            'headers' => [
+                'Accept' => 'text/html,application/xhtml+xml',
+                'User-Agent' => 'CoverMeNow SEO Assistant',
+            ],
+        ]);
+        if (is_wp_error($response)) {
+            $analysis['error'] = sanitize_text_field((string) $response->get_error_message());
+            return $analysis;
+        }
+        $analysis['status_code'] = max(0, (int) wp_remote_retrieve_response_code($response));
+        if ($analysis['status_code'] < 200 || $analysis['status_code'] >= 400) {
+            $analysis['error'] = 'HTTP ' . $analysis['status_code'];
+            return $analysis;
+        }
+        $body = (string) wp_remote_retrieve_body($response);
+        if (trim($body) === '') {
+            $analysis['error'] = 'Empty response body.';
+            return $analysis;
+        }
+        $body = (string) substr($body, 0, 1200000);
+
+        $internal_errors = libxml_use_internal_errors(true);
+        $doc = new DOMDocument();
+        $loaded = @$doc->loadHTML('<?xml encoding="utf-8" ?>' . $body);
+        libxml_clear_errors();
+        libxml_use_internal_errors($internal_errors);
+        if (!$loaded) {
+            $analysis['error'] = 'Unable to parse HTML.';
+            return $analysis;
+        }
+        $xpath = new DOMXPath($doc);
+
+        $title_nodes = $doc->getElementsByTagName('title');
+        if ($title_nodes->length > 0) {
+            $analysis['title'] = $this->seo_assistant_trim_text((string) $title_nodes->item(0)->textContent, 120);
+        }
+
+        $meta_nodes = $xpath->query('//meta[@name]');
+        if ($meta_nodes instanceof DOMNodeList) {
+            foreach ($meta_nodes as $meta_node) {
+                if (!$meta_node instanceof DOMElement) {
+                    continue;
+                }
+                $name = strtolower(trim((string) $meta_node->getAttribute('name')));
+                $content = trim((string) $meta_node->getAttribute('content'));
+                if ($name === 'description' && $analysis['meta_description'] === '') {
+                    $analysis['meta_description'] = $this->seo_assistant_trim_text($content, 260);
+                } elseif ($name === 'robots' && $analysis['robots'] === '') {
+                    $analysis['robots'] = sanitize_text_field($content);
+                } elseif ($name === 'twitter:title' && $analysis['twitter']['title'] === '') {
+                    $analysis['twitter']['title'] = $this->seo_assistant_trim_text($content, 120);
+                } elseif ($name === 'twitter:description' && $analysis['twitter']['description'] === '') {
+                    $analysis['twitter']['description'] = $this->seo_assistant_trim_text($content, 260);
+                } elseif ($name === 'twitter:image' && $analysis['twitter']['image'] === '') {
+                    $analysis['twitter']['image'] = $this->seo_assistant_resolve_asset_url($content, $normalized_url);
+                }
+            }
+        }
+
+        $property_nodes = $xpath->query('//meta[@property]');
+        if ($property_nodes instanceof DOMNodeList) {
+            foreach ($property_nodes as $property_node) {
+                if (!$property_node instanceof DOMElement) {
+                    continue;
+                }
+                $property = strtolower(trim((string) $property_node->getAttribute('property')));
+                $content = trim((string) $property_node->getAttribute('content'));
+                if ($property === 'og:title' && $analysis['og']['title'] === '') {
+                    $analysis['og']['title'] = $this->seo_assistant_trim_text($content, 120);
+                } elseif ($property === 'og:description' && $analysis['og']['description'] === '') {
+                    $analysis['og']['description'] = $this->seo_assistant_trim_text($content, 260);
+                } elseif ($property === 'og:image' && $analysis['og']['image'] === '') {
+                    $analysis['og']['image'] = $this->seo_assistant_resolve_asset_url($content, $normalized_url);
+                }
+            }
+        }
+
+        $canonical_nodes = $xpath->query('//link[@rel]');
+        if ($canonical_nodes instanceof DOMNodeList) {
+            foreach ($canonical_nodes as $canonical_node) {
+                if (!$canonical_node instanceof DOMElement) {
+                    continue;
+                }
+                $rel = strtolower(trim((string) $canonical_node->getAttribute('rel')));
+                if ($rel !== 'canonical') {
+                    continue;
+                }
+                $href = trim((string) $canonical_node->getAttribute('href'));
+                $analysis['canonical'] = $this->normalize_seo_assistant_url($href);
+                if ($analysis['canonical'] !== '') {
+                    break;
+                }
+            }
+        }
+
+        $h1_nodes = $doc->getElementsByTagName('h1');
+        $analysis['h1_count'] = max(0, (int) $h1_nodes->length);
+        if ($h1_nodes->length > 0) {
+            $analysis['first_h1'] = $this->seo_assistant_trim_text((string) $h1_nodes->item(0)->textContent, 120);
+        }
+
+        $paragraph_nodes = $doc->getElementsByTagName('p');
+        if ($paragraph_nodes->length > 0) {
+            foreach ($paragraph_nodes as $paragraph_node) {
+                $paragraph_text = $this->seo_assistant_trim_text((string) $paragraph_node->textContent, 260);
+                if ($paragraph_text !== '') {
+                    $analysis['first_paragraph'] = $paragraph_text;
+                    break;
+                }
+            }
+        }
+
+        $image_nodes = $doc->getElementsByTagName('img');
+        $analysis['images_total'] = max(0, (int) $image_nodes->length);
+        $images_missing_alt = 0;
+        foreach ($image_nodes as $image_node) {
+            if (!$image_node instanceof DOMElement) {
+                continue;
+            }
+            $alt = trim((string) $image_node->getAttribute('alt'));
+            if ($alt === '') {
+                $images_missing_alt++;
+            }
+            if ($analysis['first_image'] === '') {
+                $analysis['first_image'] = $this->seo_assistant_resolve_asset_url((string) $image_node->getAttribute('src'), $normalized_url);
+            }
+        }
+        $analysis['images_missing_alt'] = $images_missing_alt;
+        return $analysis;
+    }
+
+    private function seo_assistant_build_recommendation($scan_id, $url, $field, $current_value, $proposed_value, $reason, $impact = 'medium', $apply_mode = 'override') {
+        $recommendation_id = sanitize_key('seo_' . md5($scan_id . '|' . $url . '|' . $field . '|' . $reason . '|' . wp_generate_password(6, false, false)));
+        $impact = sanitize_key((string) $impact);
+        if (!in_array($impact, ['low', 'medium', 'high'], true)) {
+            $impact = 'medium';
+        }
+        $apply_mode = sanitize_key((string) $apply_mode);
+        if (!in_array($apply_mode, ['override', 'manual'], true)) {
+            $apply_mode = 'override';
+        }
+        return [
+            'recommendation_id' => $recommendation_id,
+            'scan_id' => sanitize_key((string) $scan_id),
+            'page_url' => $this->normalize_seo_assistant_url($url),
+            'field' => sanitize_key((string) $field),
+            'current_value' => sanitize_textarea_field((string) $current_value),
+            'proposed_value' => sanitize_textarea_field((string) $proposed_value),
+            'reason' => sanitize_textarea_field((string) $reason),
+            'expected_impact' => $impact,
+            'apply_mode' => $apply_mode,
+            'status' => 'pending',
+            'created_at' => current_time('mysql'),
+            'updated_at' => current_time('mysql'),
+            'updated_by' => (int) get_current_user_id(),
+        ];
+    }
+
+    private function seo_assistant_build_recommendations(array $analysis, $scan_id) {
+        $scan_id = sanitize_key((string) $scan_id);
+        $url = $this->normalize_seo_assistant_url((string) ($analysis['url'] ?? ''));
+        if ($url === '') {
+            return [
+                'score' => 0,
+                'recommendations' => [],
+                'issues_count' => 1,
+            ];
+        }
+        $recommendations = [];
+        $score = 100;
+        $issues = 0;
+
+        if ((string) ($analysis['error'] ?? '') !== '') {
+            $issues++;
+            $score -= 35;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'fetch',
+                '',
+                '',
+                'Page could not be analysed: ' . (string) $analysis['error'],
+                'high',
+                'manual'
+            );
+            return [
+                'score' => max(0, (int) $score),
+                'recommendations' => $recommendations,
+                'issues_count' => $issues,
+            ];
+        }
+
+        $title = trim((string) ($analysis['title'] ?? ''));
+        if ($title === '') {
+            $issues++;
+            $score -= 18;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'title',
+                '',
+                $this->seo_assistant_human_title_from_url($url),
+                'Title tag is missing.',
+                'high',
+                'override'
+            );
+        } else {
+            $title_length = function_exists('mb_strlen') ? mb_strlen($title) : strlen($title);
+            if ($title_length > 60) {
+                $issues++;
+                $score -= 7;
+                $recommendations[] = $this->seo_assistant_build_recommendation(
+                    $scan_id,
+                    $url,
+                    'title',
+                    $title,
+                    $this->seo_assistant_trim_text($title, 60),
+                    'Title is too long and may truncate in search results.',
+                    'medium',
+                    'override'
+                );
+            } elseif ($title_length < 20) {
+                $issues++;
+                $score -= 5;
+                $recommendations[] = $this->seo_assistant_build_recommendation(
+                    $scan_id,
+                    $url,
+                    'title',
+                    $title,
+                    $this->seo_assistant_human_title_from_url($url),
+                    'Title is short; adding context should improve relevance.',
+                    'low',
+                    'override'
+                );
+            }
+        }
+
+        $description = trim((string) ($analysis['meta_description'] ?? ''));
+        $description_fallback = trim((string) ($analysis['first_paragraph'] ?? ''));
+        if ($description === '') {
+            $issues++;
+            $score -= 16;
+            $proposed_description = $description_fallback !== ''
+                ? $this->seo_assistant_trim_text($description_fallback, 155)
+                : 'Discover verified schools and candidates with CoverMeNow ONE.';
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'meta_description',
+                '',
+                $proposed_description,
+                'Meta description is missing.',
+                'high',
+                'override'
+            );
+        } else {
+            $description_length = function_exists('mb_strlen') ? mb_strlen($description) : strlen($description);
+            if ($description_length > 160) {
+                $issues++;
+                $score -= 7;
+                $recommendations[] = $this->seo_assistant_build_recommendation(
+                    $scan_id,
+                    $url,
+                    'meta_description',
+                    $description,
+                    $this->seo_assistant_trim_text($description, 155),
+                    'Meta description is too long.',
+                    'medium',
+                    'override'
+                );
+            } elseif ($description_length < 70) {
+                $issues++;
+                $score -= 4;
+                $recommendations[] = $this->seo_assistant_build_recommendation(
+                    $scan_id,
+                    $url,
+                    'meta_description',
+                    $description,
+                    $this->seo_assistant_trim_text($description . ' Explore trusted education cover with CoverMeNow ONE.', 155),
+                    'Meta description is short.',
+                    'low',
+                    'override'
+                );
+            }
+        }
+
+        $canonical = trim((string) ($analysis['canonical'] ?? ''));
+        if ($canonical === '') {
+            $issues++;
+            $score -= 10;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'canonical',
+                '',
+                $url,
+                'Canonical URL is missing.',
+                'high',
+                'override'
+            );
+        }
+
+        $h1_count = max(0, (int) ($analysis['h1_count'] ?? 0));
+        if ($h1_count < 1) {
+            $issues++;
+            $score -= 12;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'h1',
+                '',
+                'Add one clear H1 near the top of the page.',
+                'H1 heading is missing.',
+                'high',
+                'manual'
+            );
+        } elseif ($h1_count > 1) {
+            $issues++;
+            $score -= 6;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'h1',
+                (string) $h1_count,
+                'Keep one primary H1 and convert the others to H2/H3.',
+                'Multiple H1 headings were found.',
+                'medium',
+                'manual'
+            );
+        }
+
+        $images_missing_alt = max(0, (int) ($analysis['images_missing_alt'] ?? 0));
+        if ($images_missing_alt > 0) {
+            $issues++;
+            $score -= min(14, $images_missing_alt * 2);
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'images_alt',
+                (string) $images_missing_alt,
+                'Add descriptive alt text to images missing alt attributes.',
+                (string) $images_missing_alt . ' image(s) are missing alt text.',
+                'medium',
+                'manual'
+            );
+        }
+
+        $robots = strtolower(trim((string) ($analysis['robots'] ?? '')));
+        if ($robots !== '' && (strpos($robots, 'noindex') !== false || strpos($robots, 'nofollow') !== false)) {
+            $issues++;
+            $score -= 18;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'robots',
+                $robots,
+                'index,follow',
+                'Robots meta currently includes noindex or nofollow.',
+                'high',
+                'override'
+            );
+        }
+
+        $first_image = trim((string) ($analysis['first_image'] ?? ''));
+        $og_title = trim((string) ($analysis['og']['title'] ?? ''));
+        if ($og_title === '') {
+            $issues++;
+            $score -= 4;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'og_title',
+                '',
+                $title !== '' ? $this->seo_assistant_trim_text($title, 100) : $this->seo_assistant_human_title_from_url($url),
+                'Open Graph title is missing.',
+                'medium',
+                'override'
+            );
+        }
+        $og_description = trim((string) ($analysis['og']['description'] ?? ''));
+        if ($og_description === '') {
+            $issues++;
+            $score -= 4;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'og_description',
+                '',
+                $description !== '' ? $this->seo_assistant_trim_text($description, 155) : $this->seo_assistant_trim_text($description_fallback, 155),
+                'Open Graph description is missing.',
+                'medium',
+                'override'
+            );
+        }
+        $og_image = trim((string) ($analysis['og']['image'] ?? ''));
+        if ($og_image === '' && $first_image !== '') {
+            $issues++;
+            $score -= 3;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'og_image',
+                '',
+                $first_image,
+                'Open Graph image is missing.',
+                'low',
+                'override'
+            );
+        }
+
+        $twitter_title = trim((string) ($analysis['twitter']['title'] ?? ''));
+        if ($twitter_title === '') {
+            $issues++;
+            $score -= 3;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'twitter_title',
+                '',
+                $title !== '' ? $this->seo_assistant_trim_text($title, 100) : $this->seo_assistant_human_title_from_url($url),
+                'Twitter title is missing.',
+                'low',
+                'override'
+            );
+        }
+        $twitter_description = trim((string) ($analysis['twitter']['description'] ?? ''));
+        if ($twitter_description === '') {
+            $issues++;
+            $score -= 3;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'twitter_description',
+                '',
+                $description !== '' ? $this->seo_assistant_trim_text($description, 155) : $this->seo_assistant_trim_text($description_fallback, 155),
+                'Twitter description is missing.',
+                'low',
+                'override'
+            );
+        }
+        $twitter_image = trim((string) ($analysis['twitter']['image'] ?? ''));
+        if ($twitter_image === '' && $first_image !== '') {
+            $issues++;
+            $score -= 2;
+            $recommendations[] = $this->seo_assistant_build_recommendation(
+                $scan_id,
+                $url,
+                'twitter_image',
+                '',
+                $first_image,
+                'Twitter image is missing.',
+                'low',
+                'override'
+            );
+        }
+
+        return [
+            'score' => max(0, min(100, (int) round($score))),
+            'recommendations' => $recommendations,
+            'issues_count' => $issues,
+        ];
+    }
+
+    private function get_seo_assistant_override_for_current_request() {
+        if (is_admin()) {
+            return [];
+        }
+        $state = $this->get_seo_assistant_state();
+        $overrides = is_array($state['overrides'] ?? null) ? $state['overrides'] : [];
+        if (!$overrides) {
+            return [];
+        }
+        $current_url = $this->normalize_seo_assistant_url($this->get_current_url());
+        if ($current_url === '') {
+            return [];
+        }
+        $row = $overrides[$current_url] ?? null;
+        return is_array($row) ? $row : [];
+    }
+
+    public function filter_seo_assistant_document_title($title) {
+        $override = $this->get_seo_assistant_override_for_current_request();
+        $override_title = trim((string) ($override['title'] ?? ''));
+        if ($override_title === '') {
+            return $title;
+        }
+        return sanitize_text_field($override_title);
+    }
+
+    public function render_seo_assistant_head_overrides() {
+        if (is_admin() || (function_exists('wp_doing_ajax') && wp_doing_ajax())) {
+            return;
+        }
+        $override = $this->get_seo_assistant_override_for_current_request();
+        if (!$override) {
+            return;
+        }
+        $meta_description = trim((string) ($override['meta_description'] ?? ''));
+        $canonical = $this->normalize_seo_assistant_url((string) ($override['canonical'] ?? ''));
+        $robots = sanitize_text_field((string) ($override['robots'] ?? ''));
+        $og_title = trim((string) ($override['og_title'] ?? ''));
+        $og_description = trim((string) ($override['og_description'] ?? ''));
+        $og_image = esc_url((string) ($override['og_image'] ?? ''));
+        $twitter_title = trim((string) ($override['twitter_title'] ?? ''));
+        $twitter_description = trim((string) ($override['twitter_description'] ?? ''));
+        $twitter_image = esc_url((string) ($override['twitter_image'] ?? ''));
+
+        if ($meta_description !== '') {
+            echo "\n" . '<meta name="description" content="' . esc_attr($meta_description) . '">' . "\n";
+        }
+        if ($canonical !== '') {
+            echo '<link rel="canonical" href="' . esc_url($canonical) . '">' . "\n";
+        }
+        if ($robots !== '') {
+            echo '<meta name="robots" content="' . esc_attr($robots) . '">' . "\n";
+        }
+        if ($og_title !== '') {
+            echo '<meta property="og:title" content="' . esc_attr($og_title) . '">' . "\n";
+        }
+        if ($og_description !== '') {
+            echo '<meta property="og:description" content="' . esc_attr($og_description) . '">' . "\n";
+        }
+        if ($og_image !== '') {
+            echo '<meta property="og:image" content="' . esc_url($og_image) . '">' . "\n";
+        }
+        if ($twitter_title !== '') {
+            echo '<meta name="twitter:title" content="' . esc_attr($twitter_title) . '">' . "\n";
+        }
+        if ($twitter_description !== '') {
+            echo '<meta name="twitter:description" content="' . esc_attr($twitter_description) . '">' . "\n";
+        }
+        if ($twitter_image !== '') {
+            echo '<meta name="twitter:image" content="' . esc_url($twitter_image) . '">' . "\n";
+        }
+    }
+
+    public function render_staff_seo_assistant_shortcode() {
+        if (!is_user_logged_in()) {
+            return $this->render_login_shortcode();
+        }
+        $ability_check = $this->cmn_policy_require_ability('system.seo.manage', [
+            'actor_user_id' => (int) get_current_user_id(),
+        ]);
+        if (is_wp_error($ability_check)) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>SEO Assistant is available to admins only.</p></div></section>';
+        }
+        $state_payload = $this->get_seo_assistant_state_payload($this->get_seo_assistant_state());
+        ob_start();
+        ?>
+        <header class="cmn-school-header">
+            <div class="cmn-header-row">
+                <div>
+                    <h2>SEO Assistant</h2>
+                    <p>Run lightweight SEO scans, review recommendations, approve/reject, and apply approved metadata safely.</p>
+                </div>
+            </div>
+        </header>
+        <section class="cmn-dashboard-card cmn-seo-assistant" data-seo-assistant-root data-seo-initial-state="<?php echo esc_attr(wp_json_encode($state_payload)); ?>">
+            <div class="cmn-seo-assistant-actions">
+                <button type="button" class="cmn-primary" data-seo-scan-selected>Scan Selected Pages</button>
+                <button type="button" class="cmn-ghost" data-seo-apply-approved>Apply Approved</button>
+                <span class="cmn-muted" data-seo-status-msg>Ready.</span>
+            </div>
+
+            <div class="cmn-seo-assistant-grid">
+                <div class="cmn-seo-assistant-panel">
+                    <h3>Allowlisted Pages</h3>
+                    <p class="cmn-muted">One internal URL per line. Scans are restricted to this list.</p>
+                    <textarea rows="8" data-seo-allowlist-input></textarea>
+                    <div class="cmn-seo-assistant-actions-inline">
+                        <button type="button" class="cmn-ghost" data-seo-save-allowlist>Save Allowlist</button>
+                    </div>
+                    <div class="cmn-seo-page-list" data-seo-page-list></div>
+                </div>
+                <div class="cmn-seo-assistant-panel">
+                    <h3>Scan Summary</h3>
+                    <div class="cmn-seo-summary" data-seo-summary></div>
+                    <div class="cmn-seo-table-wrap">
+                        <table class="cmn-approval-table">
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>Page</th>
+                                    <th>Score</th>
+                                    <th>Issues</th>
+                                </tr>
+                            </thead>
+                            <tbody data-seo-scan-rows>
+                                <tr><td colspan="4">No scans yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cmn-seo-assistant-panel">
+                <h3>Recommendations</h3>
+                <div class="cmn-seo-table-wrap">
+                    <table class="cmn-approval-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Page</th>
+                                <th>Field</th>
+                                <th>Current</th>
+                                <th>Proposed</th>
+                                <th>Impact</th>
+                                <th>Reason</th>
+                                <th>Decision</th>
+                            </tr>
+                        </thead>
+                        <tbody data-seo-recommendation-rows>
+                            <tr><td colspan="8">No recommendations yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+        <?php
+        $inner = ob_get_clean();
+        return $this->render_staff_shell('seo_assistant', $inner);
+    }
+
+    public function handle_seo_assistant_get_state() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+        $state = $this->get_seo_assistant_state();
+        wp_send_json_success([
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_save_allowlist() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $allowlist_text = sanitize_textarea_field((string) ($_POST['allowlist'] ?? ''));
+        $allowlist = $this->parse_seo_assistant_allowlist_text($allowlist_text);
+        if (!$allowlist) {
+            wp_send_json_error(['message' => 'Allowlist must contain at least one valid internal URL.'], 400);
+        }
+
+        $state = $this->get_seo_assistant_state();
+        $state['allowlist'] = $allowlist;
+        $this->save_seo_assistant_state($state);
+        $this->add_audit_log('seo_assistant_allowlist_saved', 'seo_assistant', 'allowlist', [
+            'count' => count($allowlist),
+        ], (int) get_current_user_id());
+        wp_send_json_success([
+            'message' => 'Allowlist saved.',
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_scan() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $state = $this->get_seo_assistant_state();
+        $allowlist = $this->sanitize_seo_assistant_allowlist((array) ($state['allowlist'] ?? []));
+        if (!$allowlist) {
+            wp_send_json_error(['message' => 'No allowlisted URLs available to scan.'], 400);
+        }
+        $requested_urls = (array) ($_POST['urls'] ?? []);
+        $scan_urls = [];
+        if ($requested_urls) {
+            $allowlist_map = array_fill_keys($allowlist, true);
+            foreach ($requested_urls as $requested_url) {
+                $normalized = $this->normalize_seo_assistant_url((string) $requested_url);
+                if ($normalized !== '' && isset($allowlist_map[$normalized])) {
+                    $scan_urls[$normalized] = $normalized;
+                }
+            }
+            $scan_urls = array_values($scan_urls);
+        }
+        if (!$scan_urls) {
+            $scan_urls = $allowlist;
+        }
+
+        $scan_id = sanitize_key('scan_' . gmdate('YmdHis') . '_' . wp_generate_password(6, false, false));
+        $scan_rows = [];
+        $recommendations = [];
+        $scan_started_at = microtime(true);
+        foreach ($scan_urls as $scan_url) {
+            $analysis = $this->seo_assistant_extract_page_analysis($scan_url);
+            $recommendation_bundle = $this->seo_assistant_build_recommendations($analysis, $scan_id);
+            $analysis['score'] = (int) ($recommendation_bundle['score'] ?? 0);
+            $analysis['issues_count'] = (int) ($recommendation_bundle['issues_count'] ?? 0);
+            $scan_rows[] = [
+                'scan_id' => $scan_id,
+                'url' => $scan_url,
+                'scanned_at' => current_time('mysql'),
+                'score' => (int) ($analysis['score'] ?? 0),
+                'issues_count' => (int) ($analysis['issues_count'] ?? 0),
+                'status_code' => (int) ($analysis['status_code'] ?? 0),
+                'error' => sanitize_text_field((string) ($analysis['error'] ?? '')),
+            ];
+            foreach ((array) ($recommendation_bundle['recommendations'] ?? []) as $recommendation_row) {
+                if (!is_array($recommendation_row)) {
+                    continue;
+                }
+                $recommendation_id = sanitize_key((string) ($recommendation_row['recommendation_id'] ?? ''));
+                if ($recommendation_id === '') {
+                    continue;
+                }
+                $recommendations[$recommendation_id] = $recommendation_row;
+            }
+        }
+
+        $average_score = 0;
+        if ($scan_rows) {
+            $score_total = 0;
+            foreach ($scan_rows as $scan_row) {
+                $score_total += (int) ($scan_row['score'] ?? 0);
+            }
+            $average_score = (int) round($score_total / count($scan_rows));
+        }
+        $scan_record = [
+            'scan_id' => $scan_id,
+            'scanned_at' => current_time('mysql'),
+            'scanned_by' => (int) get_current_user_id(),
+            'urls' => $scan_rows,
+            'url_count' => count($scan_rows),
+            'recommendation_count' => count($recommendations),
+            'average_score' => $average_score,
+            'duration_ms' => (int) round((microtime(true) - $scan_started_at) * 1000),
+        ];
+        $state['scans'][$scan_id] = $scan_record;
+        foreach ($recommendations as $recommendation_id => $recommendation_row) {
+            $state['recommendations'][$recommendation_id] = $recommendation_row;
+        }
+        $this->save_seo_assistant_state($state);
+
+        $this->add_audit_log('seo_assistant_scan_run', 'seo_assistant', $scan_id, [
+            'url_count' => count($scan_rows),
+            'average_score' => $average_score,
+        ], (int) get_current_user_id());
+        $this->add_audit_log('seo_assistant_recommendations_generated', 'seo_assistant', $scan_id, [
+            'recommendation_count' => count($recommendations),
+        ], (int) get_current_user_id());
+
+        wp_send_json_success([
+            'message' => 'SEO scan complete.',
+            'scan_id' => $scan_id,
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_set_recommendation_status() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $recommendation_id = sanitize_key((string) ($_POST['recommendation_id'] ?? ''));
+        $status = sanitize_key((string) ($_POST['status'] ?? ''));
+        if ($recommendation_id === '' || !in_array($status, ['approved', 'rejected'], true)) {
+            wp_send_json_error(['message' => 'Invalid recommendation request.'], 400);
+        }
+        $state = $this->get_seo_assistant_state();
+        $recommendation = $state['recommendations'][$recommendation_id] ?? null;
+        if (!is_array($recommendation)) {
+            wp_send_json_error(['message' => 'Recommendation not found.'], 404);
+        }
+        $recommendation['status'] = $status;
+        $recommendation['updated_at'] = current_time('mysql');
+        $recommendation['updated_by'] = (int) get_current_user_id();
+        $state['recommendations'][$recommendation_id] = $recommendation;
+        $this->save_seo_assistant_state($state);
+        $this->add_audit_log(
+            $status === 'approved' ? 'seo_assistant_recommendation_approved' : 'seo_assistant_recommendation_rejected',
+            'seo_assistant',
+            $recommendation_id,
+            [
+                'page_url' => (string) ($recommendation['page_url'] ?? ''),
+                'field' => (string) ($recommendation['field'] ?? ''),
+            ],
+            (int) get_current_user_id()
+        );
+        wp_send_json_success([
+            'message' => 'Recommendation ' . $status . '.',
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_apply_approved() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $state = $this->get_seo_assistant_state();
+        $applied_count = 0;
+        $manual_count = 0;
+        foreach ((array) $state['recommendations'] as $recommendation_id => $recommendation_row) {
+            if (!is_array($recommendation_row)) {
+                continue;
+            }
+            if (sanitize_key((string) ($recommendation_row['status'] ?? '')) !== 'approved') {
+                continue;
+            }
+            $page_url = $this->normalize_seo_assistant_url((string) ($recommendation_row['page_url'] ?? ''));
+            $field = sanitize_key((string) ($recommendation_row['field'] ?? ''));
+            $proposed = sanitize_textarea_field((string) ($recommendation_row['proposed_value'] ?? ''));
+            $apply_mode = sanitize_key((string) ($recommendation_row['apply_mode'] ?? 'override'));
+            if ($apply_mode === 'override' && $page_url !== '' && $field !== '') {
+                if (!isset($state['overrides'][$page_url]) || !is_array($state['overrides'][$page_url])) {
+                    $state['overrides'][$page_url] = [];
+                }
+                $allowed_fields = [
+                    'title',
+                    'meta_description',
+                    'canonical',
+                    'robots',
+                    'og_title',
+                    'og_description',
+                    'og_image',
+                    'twitter_title',
+                    'twitter_description',
+                    'twitter_image',
+                ];
+                if (in_array($field, $allowed_fields, true)) {
+                    $state['overrides'][$page_url][$field] = $proposed;
+                    $applied_count++;
+                }
+            } else {
+                $manual_count++;
+            }
+            $recommendation_row['status'] = 'applied';
+            $recommendation_row['updated_at'] = current_time('mysql');
+            $recommendation_row['updated_by'] = (int) get_current_user_id();
+            $recommendation_row['applied_at'] = current_time('mysql');
+            $state['recommendations'][$recommendation_id] = $recommendation_row;
+        }
+        $this->save_seo_assistant_state($state);
+        $this->add_audit_log('seo_assistant_changes_applied', 'seo_assistant', 'overrides', [
+            'applied_count' => $applied_count,
+            'manual_count' => $manual_count,
+        ], (int) get_current_user_id());
+        wp_send_json_success([
+            'message' => 'Applied approved recommendations.',
+            'applied_count' => $applied_count,
+            'manual_count' => $manual_count,
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
     }
 
     public function render_staff_audit_shortcode() {
@@ -111392,6 +112633,8 @@ if (!function_exists('cmn_can')) {
             case 'partner.admin.mutate':
                 return $is_staff_or_admin;
             case 'system.upgrade.run':
+                return $is_admin;
+            case 'system.seo.manage':
                 return $is_admin;
 
             case 'rewards.view_self':
