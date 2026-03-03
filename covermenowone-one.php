@@ -9360,7 +9360,7 @@ global $wpdb;
         return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
     }
 
-    private function candidate_has_active_request_for_dates($candidate_id, $dates = []) {
+    private function candidate_has_confirmed_request_for_dates($candidate_id, $dates = []) {
         $candidate_id = (int) $candidate_id;
         if ($candidate_id < 1 || !is_array($dates) || !$dates) {
             return false;
@@ -9394,21 +9394,54 @@ global $wpdb;
             return false;
         }
 
-        $active_statuses = [
-            self::REQUEST_STATUS_REQUESTED,
-            self::REQUEST_STATUS_PENDING,
-            self::REQUEST_STATUS_TENTATIVE,
-            self::REQUEST_STATUS_ACCEPTED,
-            self::REQUEST_STATUS_CONFIRMED,
-            self::REQUEST_STATUS_CANDIDATE_ACCEPTED,
-        ];
         foreach ($rows as $row) {
             $status = $this->normalize_request_status((string) ($row['status'] ?? ''));
-            if (in_array($status, $active_statuses, true)) {
+            if ($this->is_request_status_accepted($status)) {
                 return true;
             }
         }
 
+        return false;
+    }
+
+    private function candidate_has_confirmed_booking_for_date($candidate_id, $date) {
+        $candidate_id = (int) $candidate_id;
+        $date = sanitize_text_field((string) $date);
+        if ($candidate_id < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return false;
+        }
+        $existing = get_posts([
+            'post_type' => 'cmn_booking',
+            'posts_per_page' => 12,
+            'fields' => 'ids',
+            'meta_query' => [
+                'relation' => 'AND',
+                [
+                    'key' => 'cmn_candidate_id',
+                    'value' => $candidate_id,
+                ],
+                [
+                    'relation' => 'OR',
+                    [
+                        'key' => 'cmn_date',
+                        'value' => $date,
+                    ],
+                    [
+                        'key' => 'cmn_start_date',
+                        'value' => $date,
+                    ],
+                ],
+            ],
+        ]);
+        if (!$existing) {
+            return false;
+        }
+        foreach ($existing as $booking_id) {
+            $status = $this->normalize_booking_status((string) get_post_meta((int) $booking_id, 'cmn_status', true));
+            if ($this->is_booking_status_accepted($status)) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -9427,11 +9460,11 @@ global $wpdb;
             if ($this->has_candidate_availability($candidate_id, $date)) {
                 return true;
             }
-            if ($this->has_booking_for_candidate_date($candidate_id, $date)) {
+            if ($this->candidate_has_confirmed_booking_for_date($candidate_id, $date)) {
                 return true;
             }
         }
-        return $this->candidate_has_active_request_for_dates($candidate_id, array_values($dates));
+        return $this->candidate_has_confirmed_request_for_dates($candidate_id, array_values($dates));
     }
 
     private function run_school_live_match_daily_reset_job($trigger = 'cron', $actor_user_id = 0, $force = false) {
@@ -9556,6 +9589,7 @@ global $wpdb;
                 'ran_at' => current_time('mysql'),
             ];
             update_option('cmn_school_live_match_reset_last_result', wp_json_encode($result), false);
+            error_log('[CMN_LIVE_MATCH_RESET] ' . wp_json_encode($result));
             $this->add_audit_log('school_live_match_daily_reset', 'system', 'school_live_matches', [
                 'trigger' => $trigger,
                 'today' => $today,
@@ -9568,6 +9602,12 @@ global $wpdb;
             return $result;
         } catch (Throwable $e) {
             $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
+            error_log('[CMN_LIVE_MATCH_RESET] ' . wp_json_encode([
+                'status' => 'error',
+                'trigger' => $trigger,
+                'duration_ms' => $duration_ms,
+                'error' => $e->getMessage(),
+            ]));
             $this->add_audit_log('school_live_match_daily_reset_failed', 'system', 'school_live_matches', [
                 'trigger' => $trigger,
                 'error' => $e->getMessage(),
