@@ -87482,6 +87482,7 @@ global $wpdb;
             $town_city_text = sanitize_text_field((string) ($item['town_city'] ?? ''));
             $rating_label = sanitize_text_field((string) ($item['rating_label'] ?? (number_format((float) ($item['rating'] ?? 0), 2) . ' out of 5 stars')));
             $documents_download_url = esc_url((string) ($item['documents_download_url'] ?? ''));
+            $profile_url = esc_url((string) ($item['profile_url'] ?? '#'));
             $rating_value = (float) ($item['rating'] ?? 0);
             if ($rating_value <= 0 && $rating_label !== '' && preg_match('/(\d+(?:\.\d+)?)/', $rating_label, $rating_match)) {
                 $rating_value = (float) ($rating_match[1] ?? 0);
@@ -87570,6 +87571,9 @@ global $wpdb;
             $documents_button_html = $documents_download_url !== ''
                 ? '<a class="cmn-ghost cmn-live-secondary cmn-live-documents" href="' . $documents_download_url . '">Download Documents</a>'
                 : '<button class="cmn-ghost cmn-live-secondary cmn-live-documents" type="button" disabled>Download Documents</button>';
+            $profile_button_html = $profile_url !== '' && $profile_url !== '#'
+                ? '<a class="cmn-ghost cmn-live-secondary cmn-live-profile" href="' . $profile_url . '">View Profile</a>'
+                : '<button class="cmn-ghost cmn-live-secondary cmn-live-profile" type="button" disabled>View Profile</button>';
             $presence_html = '<div class="cmn-live-presence' . ($is_physically_online ? ' is-live' : '') . '"><span class="cmn-live-presence-dot" aria-hidden="true"></span>' . esc_html($is_physically_online ? 'ONLINE NOW' : $presence_label) . '</div>';
             $card_state_class = $status === 'available' ? ' is-bookable' : ' is-pending-confirmation';
             return '<article class="cmn-live-card' . esc_attr($card_state_class) . '" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
@@ -87580,7 +87584,7 @@ global $wpdb;
                 . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">KEY DEPLOYMENT STRENGTHS</div><div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
-                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button>' . $documents_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
+                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button>' . $documents_button_html . $profile_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
                 . '<div class="cmn-live-offer" data-live-offer data-offer-state="' . esc_attr($offer_state) . '" data-offer-expires-at="' . esc_attr($offer_expires_at) . '" data-offer-chat-url="' . esc_url($offer_chat_url) . '" data-offer-booking-id="' . esc_attr((string) $offer_booking_id) . '">' . esc_html($offer_initial_text) . '</div>'
                 . '</article>';
         };

@@ -15564,6 +15564,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var documentsButton = documentsUrl
         ? '<a class="cmn-ghost cmn-live-secondary cmn-live-documents" href="' + documentsUrl + '">Download Documents</a>'
         : '<button class="cmn-ghost cmn-live-secondary cmn-live-documents" type="button" disabled>Download Documents</button>';
+      var profileUrl = String(item.profile_url || '').trim();
+      var profileButton = profileUrl
+        ? '<a class="cmn-ghost cmn-live-secondary cmn-live-profile" href="' + profileUrl + '">View Profile</a>'
+        : '<button class="cmn-ghost cmn-live-secondary cmn-live-profile" type="button" disabled>View Profile</button>';
       return '<article class="cmn-live-card'+cardStateClass+'" data-candidate-id="'+item.candidate_id+'">'
         + '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
         + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div>'+ratingMarkup+'</div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
@@ -15573,7 +15577,7 @@ document.addEventListener('DOMContentLoaded', function () {
         + '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">KEY DEPLOYMENT STRENGTHS</div><div class="cmn-live-charge-rate">Charge Rate £'+Math.round(Number(item.day_rate||160))+'</div></div>'
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
         + '<div class="cmn-live-actions">'
-        + '<div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button>'+documentsButton+'</div>'
+        + '<div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button>'+documentsButton+profileButton+'</div>'
         + '<div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div>'
         + '</div>'
         + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'

@@ -17579,10 +17579,10 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-not-interested-copy span{font-size:11px;color:#cfd3db}
 .cmn-live-not-interested-item .cmn-ghost{min-height:30px;padding:6px 10px;font-size:12px;white-space:nowrap}
 .cmn-live-visibility-note{margin:0 0 12px;padding:8px 12px;border-radius:10px;background:rgba(13,16,27,.7);border:1px solid rgba(255,255,255,.12);font-size:12px;color:#d6d8df}
-.cmn-live-carousel-wrap{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:stretch;gap:10px}
-.cmn-live-carousel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:stretch;perspective:1400px;perspective-origin:50% 42%}
-.cmn-live-arrow{position:relative;z-index:30;pointer-events:auto;width:42px;min-height:100%;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(10,8,20,.8);color:#fff;font-size:26px;line-height:1;cursor:pointer}
-.cmn-live-card{position:relative;z-index:1;transform:translateY(0) scale(1);transform-origin:center top;background:linear-gradient(180deg,rgba(197,17,47,.95),rgba(102,7,28,.96));border:1px solid rgba(255,71,99,.65);border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.35);padding:12px 12px 0;display:flex;flex-direction:column;gap:8px;min-height:100%;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease,opacity .22s ease,filter .22s ease}
+.cmn-live-carousel-wrap{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr) 52px;align-items:stretch;gap:10px;isolation:isolate}
+.cmn-live-carousel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:stretch;perspective:1400px;perspective-origin:50% 42%;overflow:hidden}
+.cmn-live-arrow{position:relative;z-index:80;pointer-events:auto;width:52px;min-height:100%;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid rgba(255,255,255,.24);background:rgba(10,8,20,.9);color:#fff;font-size:26px;line-height:1;cursor:pointer}
+.cmn-live-card{position:relative;z-index:1;transform:translateY(0) scale(1);transform-origin:center top;background:linear-gradient(180deg,rgba(197,17,47,.95),rgba(102,7,28,.96));border:1px solid rgba(255,71,99,.65);border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.35);padding:12px;display:flex;flex-direction:column;gap:10px;min-height:100%;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease,opacity .22s ease,filter .22s ease}
 .cmn-live-card.is-bookable{
   z-index:3;
   transform:translateY(-10px) scale(1.05);
@@ -17694,12 +17694,12 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.22);background:#20182f}
 .cmn-live-name{font-size:18px;font-weight:800;line-height:1.1}
 .cmn-live-role{display:block;margin-top:4px;font-size:13px;font-weight:900;line-height:1.25;letter-spacing:.01em;color:#fff4f6;text-shadow:0 1px 4px rgba(0,0,0,.3)}
-.cmn-live-rating{margin-top:5px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#f8fafc;line-height:1.2}
+.cmn-live-rating{margin-top:5px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#f8fafc;line-height:1.2;flex-wrap:nowrap;min-width:0}
 .cmn-live-rating-stars{position:relative;display:inline-block;font-size:13px;line-height:1;letter-spacing:1px;white-space:nowrap;vertical-align:middle}
 .cmn-live-rating-stars-base{color:rgba(255,255,255,.3)}
 .cmn-live-rating-stars-fill{position:absolute;left:0;top:0;overflow:hidden;color:#facc15}
-.cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:21px;max-width:100%;padding:2px 8px;border-radius:999px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.74);white-space:nowrap;flex-wrap:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:21px;max-width:100%;padding:2px 9px;border-radius:999px;border:1px solid rgba(248,250,252,.48);background:rgba(2,6,12,.84);white-space:nowrap !important;flex-wrap:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;font-weight:800;letter-spacing:.01em}
 .cmn-live-status{padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap}
 .cmn-live-status.available{
   background:linear-gradient(180deg,#66ff30,#22c55e);
@@ -17728,23 +17728,23 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rate span{display:block;font-size:11px;font-weight:500;margin-top:4px}
 .cmn-live-meta-row{display:flex;align-items:center;min-height:30px;padding:7px 10px;border-radius:10px;background:rgba(5,7,12,.66);border:1px solid rgba(255,255,255,.14)}
 .cmn-live-distance{display:block;font-size:12px;line-height:1.3;color:#f8fafc;font-weight:700;letter-spacing:.01em}
-.cmn-live-strengths-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:6px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22)}
+.cmn-live-strengths-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:4px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22)}
 .cmn-live-strengths-title{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.62);font-size:10.5px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:#f8fafc}
-.cmn-live-charge-rate{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:rgba(14,20,34,.8);font-size:11px;font-weight:800;color:#f8fafc}
-.cmn-live-skills{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start;min-height:54px;max-height:54px;overflow:hidden;margin-top:2px}
+.cmn-live-charge-rate{display:inline-flex;align-items:center;min-height:26px;padding:0 11px;border-radius:999px;border:1px solid rgba(248,250,252,.52);background:rgba(2,6,12,.86);font-size:11.5px;font-weight:900;color:#f8fafc;letter-spacing:.01em}
+.cmn-live-skills{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start;min-height:58px;max-height:58px;overflow:hidden;margin-top:0}
 .cmn-live-skill{display:inline-flex;align-items:center;flex:1 1 calc(33.333% - 6px);max-width:calc(33.333% - 6px);background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:6px 10px;border-radius:999px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cmn-live-actions{display:grid;gap:8px;margin-top:auto}
-.cmn-live-actions-main{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:8px;align-items:stretch}
-.cmn-live-actions .cmn-live-primary{width:100%;min-height:40px;padding:8px 12px;font-size:13px;font-weight:900}
+.cmn-live-actions-main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:stretch}
+.cmn-live-actions .cmn-live-primary{width:100%;min-height:42px;padding:8px 12px;font-size:13px;font-weight:900}
 .cmn-live-actions [data-live-action="book_now"]{background:linear-gradient(180deg,#67e454,#22c55e);border:1px solid #14532d;color:#111 !important;-webkit-text-fill-color:#111;font-weight:900}
-.cmn-live-actions .cmn-live-secondary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:40px;padding:7px 10px;border:1.5px solid rgba(241,245,249,.68);background:rgba(15,23,42,.8);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.01em;box-shadow:0 2px 0 rgba(2,6,12,.3);transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+.cmn-live-actions .cmn-live-secondary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:7px 10px;border:1.5px solid rgba(241,245,249,.72);background:rgba(15,23,42,.84);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.01em;box-shadow:0 2px 0 rgba(2,6,12,.3);transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease}
 .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(30,41,59,.95);border-color:#f8fafc;transform:translateY(-1px);box-shadow:0 4px 0 rgba(2,6,12,.34)}
 .cmn-live-actions-tertiary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.cmn-live-actions .cmn-live-tertiary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:24px;padding:3px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.48);background:transparent;color:rgba(226,232,240,.88) !important;-webkit-text-fill-color:rgba(226,232,240,.88);font-size:10.5px;font-weight:700;letter-spacing:.03em}
+.cmn-live-actions .cmn-live-tertiary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:30px;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.44);background:rgba(2,6,12,.12);color:rgba(226,232,240,.82) !important;-webkit-text-fill-color:rgba(226,232,240,.82);font-size:11px;font-weight:650;letter-spacing:.02em}
 .cmn-live-actions .cmn-live-tertiary:hover,.cmn-live-actions .cmn-live-tertiary:focus-visible{border-color:rgba(226,232,240,.82);background:rgba(51,65,85,.36);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc}
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary{background:rgba(255,255,255,.9);border-color:rgba(5,46,22,.48);color:#04170b !important;-webkit-text-fill-color:#04170b}
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:focus-visible{background:#fff;border-color:#052e16;color:#000 !important;-webkit-text-fill-color:#000}
-.cmn-live-offer{margin-top:0;min-height:8px;font-weight:700;font-size:12px;color:#fffab4}
+.cmn-live-offer{margin-top:0;min-height:16px;font-weight:700;font-size:12px;color:#fffab4}
 .cmn-live-offer.is-active{padding-top:2px}
 .cmn-live-offer-state{display:inline-flex;align-items:center;gap:6px}
 .cmn-live-offer-state.is-offered{color:#fde68a}
@@ -17780,7 +17780,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
   70%{transform:translate(-50%,-50%) scale(2);opacity:0}
   100%{transform:translate(-50%,-50%) scale(2);opacity:0}
 }
-@media (max-width:1200px){.cmn-live-carousel{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-card.is-bookable{transform:translateY(-8px) scale(1.04)}.cmn-live-card.is-bookable:hover{transform:translateY(-10px) scale(1.045)}.cmn-live-card.is-pending-confirmation{transform:translateY(3px) scale(1.04);opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-kpi:nth-child(2){border-right:0}.cmn-live-skills{min-height:52px;max-height:52px}}
+@media (max-width:1200px){.cmn-live-carousel{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-card.is-bookable{transform:translateY(-8px) scale(1.04)}.cmn-live-card.is-bookable:hover{transform:translateY(-10px) scale(1.045)}.cmn-live-card.is-pending-confirmation{transform:translateY(3px) scale(1.04);opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-kpi:nth-child(2){border-right:0}.cmn-live-skills{min-height:54px;max-height:54px}}
 @media (max-width:760px){.cmn-live-matches-head{padding-right:0}.cmn-live-filter-btn{position:static;margin-bottom:10px}.cmn-live-carousel-wrap{grid-template-columns:1fr}.cmn-live-arrow{min-height:38px;width:100%}.cmn-live-carousel{grid-template-columns:1fr}.cmn-live-card.is-bookable,.cmn-live-card.is-bookable:hover,.cmn-live-card.is-pending-confirmation{transform:none}.cmn-live-card.is-pending-confirmation{opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:1fr}.cmn-live-kpi{border-right:0}.cmn-live-actions-main{grid-template-columns:1fr}.cmn-live-actions-main .cmn-live-primary{grid-column:auto}.cmn-live-actions-tertiary{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-offer-modal{padding:10px}}
 
 /* Finance overlap hard-fix + unified portal format pass */
