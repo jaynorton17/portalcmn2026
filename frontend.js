@@ -14868,8 +14868,8 @@ document.addEventListener('DOMContentLoaded', function () {
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
         + '<div class="cmn-live-actions">'
         + '<button class="cmn-primary cmn-live-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button>'
-        + '<div class="cmn-live-actions-secondary"><button class="cmn-ghost cmn-live-secondary" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><a class="cmn-ghost cmn-live-secondary" href="'+(item.profile_url || '#')+'">View Profile</a></div>'
-        + '<button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">Not Suitable</button>'
+        + '<div class="cmn-live-actions-secondary"><a class="cmn-ghost cmn-live-secondary" href="'+(item.profile_url || '#')+'">Download Documents</a><a class="cmn-ghost cmn-live-secondary" href="'+(item.profile_url || '#')+'">View Profile</a></div>'
+        + '<div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div>'
         + '</div>'
         + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'
         + '</article>';
