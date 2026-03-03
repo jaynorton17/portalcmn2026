@@ -14122,6 +14122,9 @@ document.addEventListener('DOMContentLoaded', function () {
       return {
         allowlist: [],
         allowlist_text: '',
+        discovered_pages: [],
+        discovered_at: '',
+        page_rows: [],
         scans: [],
         recommendations: [],
         overrides: {},
@@ -14143,6 +14146,9 @@ document.addEventListener('DOMContentLoaded', function () {
         return String(row || '').trim();
       }).filter(function (row) { return row !== ''; }) : [];
       normalized.allowlist_text = String(state.allowlist_text || normalized.allowlist.join('\n'));
+      normalized.discovered_pages = Array.isArray(state.discovered_pages) ? state.discovered_pages : [];
+      normalized.discovered_at = String(state.discovered_at || '');
+      normalized.page_rows = Array.isArray(state.page_rows) ? state.page_rows : [];
       normalized.scans = Array.isArray(state.scans) ? state.scans : [];
       normalized.recommendations = Array.isArray(state.recommendations) ? state.recommendations : [];
       normalized.overrides = (state.overrides && typeof state.overrides === 'object') ? state.overrides : {};
@@ -14196,13 +14202,26 @@ document.addEventListener('DOMContentLoaded', function () {
       var statusMsg = root.querySelector('[data-seo-status-msg]');
       var allowlistInput = root.querySelector('[data-seo-allowlist-input]');
       var pageList = root.querySelector('[data-seo-page-list]');
+      var pageSearchInput = root.querySelector('[data-seo-page-search]');
+      var publicOnlyToggle = root.querySelector('[data-seo-public-only]');
+      var discoveredMeta = root.querySelector('[data-seo-discovered-meta]');
       var summary = root.querySelector('[data-seo-summary]');
       var scanRows = root.querySelector('[data-seo-scan-rows]');
       var recommendationRows = root.querySelector('[data-seo-recommendation-rows]');
+      var verifyRows = root.querySelector('[data-seo-verify-rows]');
+      var verifyStatus = root.querySelector('[data-seo-verify-status]');
+      var applyPanel = root.querySelector('[data-seo-apply-panel]');
+      var applyProgressBar = root.querySelector('[data-seo-apply-progress-bar]');
+      var applyProgressText = root.querySelector('[data-seo-apply-progress-text]');
+      var applyLog = root.querySelector('[data-seo-apply-log]');
+      var applySummary = root.querySelector('[data-seo-apply-summary]');
+      var discoverButton = root.querySelector('[data-seo-discover-pages]');
       var scanButton = root.querySelector('[data-seo-scan-selected]');
       var applyButton = root.querySelector('[data-seo-apply-approved]');
       var saveAllowlistButton = root.querySelector('[data-seo-save-allowlist]');
       var inFlightCount = 0;
+      var applyInProgress = false;
+      var selectedPageMap = {};
       var state = seoStateDefaults();
       var initialStateRaw = root.getAttribute('data-seo-initial-state') || '';
       if (initialStateRaw) {
@@ -14227,9 +14246,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (inFlightCount < 0) {
           inFlightCount = 0;
         }
-        var disabled = inFlightCount > 0;
+        var disabled = inFlightCount > 0 || applyInProgress;
         root.classList.toggle('is-busy', disabled);
-        [scanButton, applyButton, saveAllowlistButton].forEach(function (button) {
+        [discoverButton, scanButton, applyButton, saveAllowlistButton].forEach(function (button) {
           if (!button) {
             return;
           }
@@ -14245,6 +14264,53 @@ document.addEventListener('DOMContentLoaded', function () {
         return date.toLocaleString();
       };
 
+      var getPageRows = function () {
+        var rows = Array.isArray(state.page_rows) ? state.page_rows.slice() : [];
+        if (!rows.length && Array.isArray(state.allowlist)) {
+          rows = state.allowlist.map(function (url) {
+            return {
+              url: url,
+              source: 'allowlist',
+              is_public: 0,
+              last_scanned_at: '',
+              last_score: 0
+            };
+          });
+        }
+        return rows;
+      };
+
+      var getSelectedUrls = function () {
+        var selected = [];
+        Object.keys(selectedPageMap).forEach(function (url) {
+          if (!selectedPageMap[url]) {
+            return;
+          }
+          selected.push(url);
+        });
+        if (!selected.length) {
+          root.querySelectorAll('[data-seo-page-check]:checked').forEach(function (checkbox) {
+            var value = String(checkbox.value || '').trim();
+            if (value) {
+              selected.push(value);
+            }
+          });
+        }
+        return Array.from(new Set(selected));
+      };
+
+      var ensureSelectionDefaults = function () {
+        getPageRows().forEach(function (row) {
+          var url = String((row && row.url) || '').trim();
+          if (!url) {
+            return;
+          }
+          if (!Object.prototype.hasOwnProperty.call(selectedPageMap, url)) {
+            selectedPageMap[url] = true;
+          }
+        });
+      };
+
       var renderAllowlistEditor = function () {
         if (!allowlistInput) {
           return;
@@ -14254,22 +14320,58 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       };
 
+      var renderDiscoveredMeta = function () {
+        if (!discoveredMeta) {
+          return;
+        }
+        var discoveredCount = Array.isArray(state.discovered_pages) ? state.discovered_pages.length : 0;
+        var discoveredAt = String(state.discovered_at || '');
+        if (discoveredCount < 1) {
+          discoveredMeta.textContent = 'No discovery run yet.';
+          return;
+        }
+        discoveredMeta.textContent = 'Discovered ' + String(discoveredCount) + ' page(s) at ' + formatDateTime(discoveredAt) + '.';
+      };
+
       var renderAllowlistSelection = function () {
         if (!pageList) {
           return;
         }
+        ensureSelectionDefaults();
+        var searchTerm = pageSearchInput ? String(pageSearchInput.value || '').trim().toLowerCase() : '';
+        var publicOnly = !!(publicOnlyToggle && publicOnlyToggle.checked);
+        var rows = getPageRows().filter(function (row) {
+          var url = String((row && row.url) || '').toLowerCase();
+          if (publicOnly && !(parseInt(String((row && row.is_public) || '0'), 10) > 0)) {
+            return false;
+          }
+          if (!searchTerm) {
+            return true;
+          }
+          return url.indexOf(searchTerm) !== -1;
+        });
+
         pageList.innerHTML = '';
-        if (!Array.isArray(state.allowlist) || !state.allowlist.length) {
-          pageList.innerHTML = '<p class="cmn-muted">No allowlisted URLs saved yet.</p>';
+        if (!rows.length) {
+          pageList.innerHTML = '<p class="cmn-muted">No matching pages found.</p>';
           return;
         }
-        state.allowlist.forEach(function (url) {
-          var row = document.createElement('label');
-          row.className = 'cmn-seo-page-check';
-          row.innerHTML = '' +
-            '<input type="checkbox" data-seo-page-check value="' + seoEscapeHtml(url) + '" checked>' +
-            '<span>' + seoEscapeHtml(url) + '</span>';
-          pageList.appendChild(row);
+        rows.forEach(function (row) {
+          var url = String((row && row.url) || '').trim();
+          if (!url) {
+            return;
+          }
+          var checked = !!selectedPageMap[url];
+          var rowNode = document.createElement('div');
+          rowNode.className = 'cmn-seo-page-row';
+          rowNode.innerHTML = ''
+            + '<label class="cmn-seo-page-check">'
+            + '<input type="checkbox" data-seo-page-check value="' + seoEscapeHtml(url) + '"' + (checked ? ' checked' : '') + '>'
+            + '<span><strong>' + seoEscapeHtml(url) + '</strong>'
+            + '<small class="cmn-muted">Source: ' + seoEscapeHtml(String((row && row.source) || 'allowlist')) + ' • Last score: ' + String(parseInt(String((row && row.last_score) || '0'), 10) || 0) + ' • Last scan: ' + seoEscapeHtml(String((row && row.last_scanned_at) || 'Never')) + '</small></span>'
+            + '</label>'
+            + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-verify-page data-seo-page-url="' + seoEscapeHtml(url) + '">Verify</button>';
+          pageList.appendChild(rowNode);
         });
       };
 
@@ -14315,6 +14417,27 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       };
 
+      var getAppliedDetailsMarkup = function (row) {
+        var status = String((row && row.status) || '');
+        if (status !== 'applied') {
+          return '<span class="cmn-muted">-</span>';
+        }
+        var appliedResult = String((row && row.applied_result) || 'applied');
+        var appliedAt = String((row && row.applied_at) || '');
+        var store = String((row && row.applied_store) || 'plugin_override');
+        var oldValue = String((row && row.applied_old_value) || '');
+        var newValue = String((row && row.applied_new_value) || '');
+        var message = String((row && row.applied_message) || '');
+        return '<div class="cmn-seo-applied-proof">'
+          + '<strong>' + seoEscapeHtml(appliedResult.toUpperCase()) + '</strong>'
+          + '<span><b>Store:</b> ' + seoEscapeHtml(store) + '</span>'
+          + '<span><b>At:</b> ' + seoEscapeHtml(appliedAt || '-') + '</span>'
+          + '<span><b>Old:</b> ' + seoEscapeHtml(oldValue || '(empty)') + '</span>'
+          + '<span><b>New:</b> ' + seoEscapeHtml(newValue || '(empty)') + '</span>'
+          + (message ? '<span><b>Note:</b> ' + seoEscapeHtml(message) + '</span>' : '')
+          + '</div>';
+      };
+
       var buildDecisionButtons = function (recommendation) {
         var status = String(recommendation && recommendation.status ? recommendation.status : 'pending');
         var recommendationId = String(recommendation && recommendation.recommendation_id ? recommendation.recommendation_id : '');
@@ -14337,10 +14460,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         recommendationRows.innerHTML = '';
         if (!Array.isArray(state.recommendations) || !state.recommendations.length) {
-          recommendationRows.innerHTML = '<tr><td colspan="8">No recommendations yet.</td></tr>';
+          recommendationRows.innerHTML = '<tr><td colspan="9">No recommendations yet.</td></tr>';
           return;
         }
-        state.recommendations.slice(0, 300).forEach(function (row) {
+        state.recommendations.slice(0, 400).forEach(function (row) {
           var status = String(row.status || 'pending');
           var impact = String(row.expected_impact || 'medium');
           var statusClass = status.replace(/[^a-z0-9_-]+/gi, '').toLowerCase();
@@ -14354,13 +14477,77 @@ document.addEventListener('DOMContentLoaded', function () {
             '<td><div class="cmn-seo-cell-value">' + seoEscapeHtml(row.proposed_value || '-') + '</div></td>' +
             '<td><span class="cmn-status-chip cmn-seo-impact-chip is-' + seoEscapeHtml(impactClass) + '">' + seoEscapeHtml(impact) + '</span></td>' +
             '<td><div class="cmn-seo-cell-value">' + seoEscapeHtml(row.reason || '-') + '</div></td>' +
+            '<td class="cmn-seo-proof-cell">' + getAppliedDetailsMarkup(row) + '</td>' +
             '<td class="cmn-seo-decision-cell">' + buildDecisionButtons(row) + '</td>';
           recommendationRows.appendChild(tr);
         });
       };
 
+      var renderVerifyRows = function (rows, label) {
+        if (verifyStatus) {
+          verifyStatus.textContent = String(label || '');
+        }
+        if (!verifyRows) {
+          return;
+        }
+        verifyRows.innerHTML = '';
+        if (!Array.isArray(rows) || !rows.length) {
+          verifyRows.innerHTML = '<tr><td colspan="5">No verification run yet.</td></tr>';
+          return;
+        }
+        rows.forEach(function (row) {
+          var pass = parseInt(String((row && row.pass) || 0), 10) > 0;
+          var tr = document.createElement('tr');
+          tr.innerHTML = ''
+            + '<td class="cmn-seo-url-cell"><a href="' + seoEscapeHtml(String((row && row.page_url) || '#')) + '" target="_blank" rel="noopener noreferrer">' + seoEscapeHtml(String((row && row.page_url) || '-')) + '</a></td>'
+            + '<td><span class="cmn-seo-field">' + seoEscapeHtml(String((row && row.field) || '-')) + '</span></td>'
+            + '<td><div class="cmn-seo-cell-value">' + seoEscapeHtml(String((row && row.expected) || '-')) + '</div></td>'
+            + '<td><div class="cmn-seo-cell-value">' + seoEscapeHtml(String((row && row.actual) || '-')) + '</div></td>'
+            + '<td><span class="cmn-status-chip ' + (pass ? 'cmn-seo-verify-pass' : 'cmn-seo-verify-fail') + '">' + (pass ? 'PASS' : 'FAIL') + '</span></td>';
+          verifyRows.appendChild(tr);
+        });
+      };
+
+      var renderApplyProgress = function (percent, labelText) {
+        if (applyProgressBar) {
+          applyProgressBar.style.width = String(Math.max(0, Math.min(100, percent || 0))) + '%';
+        }
+        if (applyProgressText) {
+          applyProgressText.textContent = String(labelText || (String(percent || 0) + '%'));
+        }
+      };
+
+      var appendApplyLog = function (text, kind) {
+        if (!applyLog) {
+          return;
+        }
+        var line = document.createElement('div');
+        line.className = 'cmn-seo-apply-log-line' + (kind ? (' is-' + String(kind)) : '');
+        line.textContent = String(text || '');
+        applyLog.appendChild(line);
+        applyLog.scrollTop = applyLog.scrollHeight;
+      };
+
+      var getNextApprovedRecommendation = function () {
+        if (!Array.isArray(state.recommendations)) {
+          return null;
+        }
+        var approvedRows = state.recommendations.filter(function (row) {
+          return row && typeof row === 'object' && String(row.status || '') === 'approved';
+        }).sort(function (a, b) {
+          var aDate = String((a && a.created_at) || '');
+          var bDate = String((b && b.created_at) || '');
+          if (aDate === bDate) {
+            return String((a && a.recommendation_id) || '').localeCompare(String((b && b.recommendation_id) || ''));
+          }
+          return aDate.localeCompare(bDate);
+        });
+        return approvedRows.length ? approvedRows[0] : null;
+      };
+
       var renderAll = function () {
         renderAllowlistEditor();
+        renderDiscoveredMeta();
         renderAllowlistSelection();
         renderSummary();
         renderScans();
@@ -14377,6 +14564,105 @@ document.addEventListener('DOMContentLoaded', function () {
           setStatus(error && error.message ? error.message : 'Unable to load SEO Assistant state.', true);
         }).finally(function () {
           setBusy(false);
+        });
+      };
+
+      var runApplyApprovedWithProgress = function () {
+        var totalApproved = parseInt(String((state && state.status_counts && state.status_counts.approved) || 0), 10) || 0;
+        if (totalApproved < 1) {
+          setStatus('No approved recommendations to apply.', true);
+          return;
+        }
+        applyInProgress = true;
+        setBusy(false);
+        if (applyPanel) {
+          applyPanel.hidden = false;
+        }
+        if (applyLog) {
+          applyLog.innerHTML = '';
+        }
+        if (applySummary) {
+          applySummary.textContent = '';
+        }
+        renderApplyProgress(0, '0% (0/' + String(totalApproved) + ')');
+        var startedAtMs = Date.now();
+        var processedCount = 0;
+        var appliedCount = 0;
+        var failedCount = 0;
+        var skippedCount = 0;
+
+        var finalizeApply = function (message, isError) {
+          applyInProgress = false;
+          setBusy(false);
+          var durationMs = Date.now() - startedAtMs;
+          if (applySummary) {
+            applySummary.textContent = 'Applied: ' + String(appliedCount) + ' • Failed: ' + String(failedCount) + ' • Skipped: ' + String(skippedCount) + ' • Duration: ' + String(durationMs) + 'ms';
+          }
+          setStatus(message, !!isError);
+          refreshState();
+        };
+
+        var runNext = function () {
+          var nextRecommendation = getNextApprovedRecommendation();
+          if (nextRecommendation) {
+            appendApplyLog('Applying: ' + String(nextRecommendation.page_url || '-') + ' — ' + String(nextRecommendation.field || '-'), 'pending');
+          }
+          seoApiCall('cmn_seo_assistant_apply_next', {}).then(function (data) {
+            if (data && data.state) {
+              state = seoNormalizeState(data.state);
+              renderAll();
+            }
+            var result = data && data.result ? data.result : null;
+            if (result) {
+              processedCount += 1;
+              var resultStatus = String(result.result || 'failed').toLowerCase();
+              if (resultStatus === 'applied') {
+                appliedCount += 1;
+                appendApplyLog('OK: ' + String(result.page_url || '-') + ' — ' + String(result.field || '-') + ' (' + String(result.store || 'plugin_override') + ')', 'ok');
+              } else if (resultStatus === 'skipped') {
+                skippedCount += 1;
+                appendApplyLog('SKIPPED: ' + String(result.page_url || '-') + ' — ' + String(result.field || '-') + ' (' + String(result.message || 'skipped') + ')', 'skip');
+              } else {
+                failedCount += 1;
+                appendApplyLog('FAILED: ' + String(result.page_url || '-') + ' — ' + String(result.field || '-') + ' (' + String(result.message || 'failed') + ')', 'fail');
+              }
+            }
+            var percent = totalApproved > 0 ? Math.round((processedCount / totalApproved) * 100) : 100;
+            renderApplyProgress(percent, String(percent) + '% (' + String(processedCount) + '/' + String(totalApproved) + ')');
+            if (!data || data.done || processedCount >= totalApproved) {
+              finalizeApply('Apply run complete.', false);
+              return;
+            }
+            runNext();
+          }).catch(function (error) {
+            failedCount += 1;
+            appendApplyLog('FAILED: ' + (error && error.message ? error.message : 'Unable to apply recommendation.'), 'fail');
+            finalizeApply(error && error.message ? error.message : 'Apply run failed.', true);
+          });
+        };
+
+        runNext();
+      };
+
+      var verifyPage = function (pageUrl) {
+        var normalizedUrl = String(pageUrl || '').trim();
+        if (!normalizedUrl) {
+          return;
+        }
+        if (verifyStatus) {
+          verifyStatus.textContent = 'Verifying ' + normalizedUrl + '...';
+        }
+        seoApiCall('cmn_seo_assistant_verify_page', {
+          page_url: normalizedUrl
+        }).then(function (data) {
+          var rows = Array.isArray(data && data.rows) ? data.rows : [];
+          var passCount = parseInt(String((data && data.pass_count) || 0), 10) || 0;
+          var failCount = parseInt(String((data && data.fail_count) || 0), 10) || 0;
+          renderVerifyRows(rows, 'Verified: ' + normalizedUrl + ' • PASS: ' + String(passCount) + ' • FAIL: ' + String(failCount));
+          setStatus((data && data.message) ? data.message : 'Verification complete.', failCount > 0);
+        }).catch(function (error) {
+          renderVerifyRows([], 'Verification failed.');
+          setStatus(error && error.message ? error.message : 'Unable to verify page.', true);
         });
       };
 
@@ -14397,15 +14683,24 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
+      if (discoverButton) {
+        discoverButton.addEventListener('click', function () {
+          setBusy(true);
+          seoApiCall('cmn_seo_assistant_discover_pages', {}).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            setStatus((data && data.message) ? data.message : 'Page discovery complete.', false);
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to discover pages.', true);
+          }).finally(function () {
+            setBusy(false);
+          });
+        });
+      }
+
       if (scanButton) {
         scanButton.addEventListener('click', function () {
-          var selectedUrls = [];
-          root.querySelectorAll('[data-seo-page-check]:checked').forEach(function (checkbox) {
-            var value = String(checkbox.value || '').trim();
-            if (value) {
-              selectedUrls.push(value);
-            }
-          });
+          var selectedUrls = getSelectedUrls();
           setBusy(true);
           seoApiCall('cmn_seo_assistant_scan', {
             urls: selectedUrls
@@ -14423,22 +14718,40 @@ document.addEventListener('DOMContentLoaded', function () {
 
       if (applyButton) {
         applyButton.addEventListener('click', function () {
-          setBusy(true);
-          seoApiCall('cmn_seo_assistant_apply_approved', {}).then(function (data) {
-            state = seoNormalizeState((data && data.state) ? data.state : {});
-            renderAll();
-            var message = (data && data.message) ? data.message : 'Applied approved recommendations.';
-            var appliedCount = parseInt(String((data && data.applied_count) || 0), 10) || 0;
-            setStatus(message + ' Applied: ' + String(appliedCount) + '.', false);
-          }).catch(function (error) {
-            setStatus(error && error.message ? error.message : 'Unable to apply approved recommendations.', true);
-          }).finally(function () {
-            setBusy(false);
-          });
+          runApplyApprovedWithProgress();
         });
       }
 
+      if (pageSearchInput) {
+        pageSearchInput.addEventListener('input', function () {
+          renderAllowlistSelection();
+        });
+      }
+      if (publicOnlyToggle) {
+        publicOnlyToggle.addEventListener('change', function () {
+          renderAllowlistSelection();
+        });
+      }
+
+      root.addEventListener('change', function (event) {
+        var pageCheck = event.target && event.target.closest ? event.target.closest('[data-seo-page-check]') : null;
+        if (!pageCheck) {
+          return;
+        }
+        var value = String(pageCheck.value || '').trim();
+        if (!value) {
+          return;
+        }
+        selectedPageMap[value] = !!pageCheck.checked;
+      });
+
       root.addEventListener('click', function (event) {
+        var verifyButton = event.target && event.target.closest ? event.target.closest('[data-seo-verify-page]') : null;
+        if (verifyButton) {
+          event.preventDefault();
+          verifyPage(verifyButton.getAttribute('data-seo-page-url') || '');
+          return;
+        }
         var decisionButton = event.target && event.target.closest ? event.target.closest('[data-seo-decision]') : null;
         if (!decisionButton) {
           return;
@@ -14464,6 +14777,7 @@ document.addEventListener('DOMContentLoaded', function () {
       });
 
       renderAll();
+      renderVerifyRows([], 'Select a page and click Verify.');
       refreshState();
     });
   }

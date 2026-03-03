@@ -915,6 +915,9 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_seo_assistant_scan', [$this, 'handle_seo_assistant_scan']);
         add_action('wp_ajax_cmn_seo_assistant_set_recommendation_status', [$this, 'handle_seo_assistant_set_recommendation_status']);
         add_action('wp_ajax_cmn_seo_assistant_apply_approved', [$this, 'handle_seo_assistant_apply_approved']);
+        add_action('wp_ajax_cmn_seo_assistant_apply_next', [$this, 'handle_seo_assistant_apply_next']);
+        add_action('wp_ajax_cmn_seo_assistant_discover_pages', [$this, 'handle_seo_assistant_discover_pages']);
+        add_action('wp_ajax_cmn_seo_assistant_verify_page', [$this, 'handle_seo_assistant_verify_page']);
         add_action('wp_ajax_cmn_save_staff_nav_state', [$this, 'handle_save_staff_nav_state']);
         add_action('wp_ajax_cmn_save_staff_nav_order', [$this, 'handle_save_staff_nav_order']);
         add_action('wp_ajax_cmn_touch_staff_presence', [$this, 'handle_touch_staff_presence']);
@@ -34229,6 +34232,331 @@ global $wpdb;
         return ($target_host !== '' && $home_host !== '' && $target_host === $home_host);
     }
 
+    private function seo_assistant_has_disallowed_extension($path) {
+        $path = strtolower((string) $path);
+        if ($path === '') {
+            return false;
+        }
+        return (bool) preg_match('/\.(?:js|css|png|jpe?g|gif|svg|webp|ico|pdf|zip|mp4|mp3|woff2?|ttf|eot|map|xml|json|txt|csv|docx?)$/', $path);
+    }
+
+    private function seo_assistant_is_excluded_public_url($url) {
+        $normalized = $this->normalize_seo_assistant_url($url);
+        if ($normalized === '') {
+            return true;
+        }
+        $parts = wp_parse_url($normalized);
+        if (!is_array($parts)) {
+            return true;
+        }
+        $path = strtolower((string) ($parts['path'] ?? '/'));
+        if ($path === '') {
+            $path = '/';
+        }
+        $disallowed_path_prefixes = [
+            '/covermenow-one/',
+            '/wp-admin/',
+            '/wp-json/',
+            '/xmlrpc.php',
+        ];
+        foreach ($disallowed_path_prefixes as $prefix) {
+            if ($prefix === '/xmlrpc.php') {
+                if ($path === $prefix) {
+                    return true;
+                }
+                continue;
+            }
+            if (strpos($path, $prefix) === 0) {
+                return true;
+            }
+        }
+        if ($path === '/wp-login.php' || $path === '/wp-signup.php' || $path === '/wp-register.php') {
+            return true;
+        }
+        if ($this->seo_assistant_has_disallowed_extension($path)) {
+            return true;
+        }
+        $query = [];
+        if (!empty($parts['query'])) {
+            parse_str((string) $parts['query'], $query);
+        }
+        foreach ((array) $query as $key => $value) {
+            $query_key = strtolower((string) $key);
+            if ($query_key === 'view' || $query_key === 'candidate' || $query_key === 'school') {
+                return true;
+            }
+            if (strpos($query_key, 'cmn_') === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function seo_assistant_is_public_page_url($url) {
+        if (!$this->seo_assistant_is_internal_url($url)) {
+            return false;
+        }
+        return !$this->seo_assistant_is_excluded_public_url($url);
+    }
+
+    private function seo_assistant_fetch_internal_url_response($url, $timeout = 8) {
+        $normalized = $this->normalize_seo_assistant_url($url);
+        if ($normalized === '' || !$this->seo_assistant_is_internal_url($normalized)) {
+            return new WP_Error('cmn_seo_invalid_url', 'Invalid URL.');
+        }
+        return wp_remote_get($normalized, [
+            'timeout' => max(3, (int) $timeout),
+            'redirection' => 3,
+            'sslverify' => true,
+            'headers' => [
+                'Accept' => 'text/html,application/xhtml+xml,application/xml,text/xml',
+                'User-Agent' => 'CoverMeNow SEO Assistant',
+            ],
+        ]);
+    }
+
+    private function seo_assistant_url_is_http_ok($url, $timeout = 5) {
+        $normalized = $this->normalize_seo_assistant_url($url);
+        if ($normalized === '' || !$this->seo_assistant_is_internal_url($normalized)) {
+            return false;
+        }
+        $response = wp_remote_head($normalized, [
+            'timeout' => max(3, (int) $timeout),
+            'redirection' => 3,
+            'sslverify' => true,
+            'headers' => [
+                'User-Agent' => 'CoverMeNow SEO Assistant',
+            ],
+        ]);
+        if (is_wp_error($response)) {
+            $response = wp_remote_get($normalized, [
+                'timeout' => max(3, (int) $timeout),
+                'redirection' => 3,
+                'sslverify' => true,
+                'headers' => [
+                    'User-Agent' => 'CoverMeNow SEO Assistant',
+                ],
+            ]);
+            if (is_wp_error($response)) {
+                return false;
+            }
+        }
+        $status_code = (int) wp_remote_retrieve_response_code($response);
+        return ($status_code >= 200 && $status_code < 400);
+    }
+
+    private function seo_assistant_parse_sitemap_xml($xml_body) {
+        $result = [
+            'urls' => [],
+            'sitemaps' => [],
+        ];
+        $xml_body = trim((string) $xml_body);
+        if ($xml_body === '' || !function_exists('simplexml_load_string')) {
+            return $result;
+        }
+        $old_loader = null;
+        if (function_exists('libxml_disable_entity_loader')) {
+            $old_loader = libxml_disable_entity_loader(true);
+        }
+        $internal_errors = libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($xml_body);
+        libxml_clear_errors();
+        libxml_use_internal_errors($internal_errors);
+        if ($old_loader !== null && function_exists('libxml_disable_entity_loader')) {
+            libxml_disable_entity_loader($old_loader);
+        }
+        if (!$xml) {
+            return $result;
+        }
+        $xml_namespaces = (array) $xml->getNamespaces(true);
+        $ns = isset($xml_namespaces['']) ? (string) $xml_namespaces[''] : '';
+        if ($ns !== '') {
+            $xml->registerXPathNamespace('sm', $ns);
+        }
+        $loc_nodes = $ns !== '' ? $xml->xpath('//sm:url/sm:loc') : $xml->xpath('//url/loc');
+        if (is_array($loc_nodes)) {
+            foreach ($loc_nodes as $loc_node) {
+                $result['urls'][] = (string) $loc_node;
+            }
+        }
+        $sitemap_nodes = $ns !== '' ? $xml->xpath('//sm:sitemap/sm:loc') : $xml->xpath('//sitemap/loc');
+        if (is_array($sitemap_nodes)) {
+            foreach ($sitemap_nodes as $loc_node) {
+                $result['sitemaps'][] = (string) $loc_node;
+            }
+        }
+        return $result;
+    }
+
+    private function seo_assistant_discover_pages_from_sitemaps($max_urls = 300) {
+        $max_urls = max(20, (int) $max_urls);
+        $seed_sitemaps = [
+            home_url('/sitemap_index.xml'),
+            home_url('/sitemap.xml'),
+            home_url('/wp-sitemap.xml'),
+        ];
+        $sitemap_queue = [];
+        foreach ($seed_sitemaps as $seed_sitemap) {
+            $normalized = $this->normalize_seo_assistant_url($seed_sitemap);
+            if ($normalized !== '') {
+                $sitemap_queue[$normalized] = $normalized;
+            }
+        }
+        $seen_sitemaps = [];
+        $discovered = [];
+        while ($sitemap_queue && count($seen_sitemaps) < 25 && count($discovered) < $max_urls) {
+            $current_sitemap = array_shift($sitemap_queue);
+            if (!is_string($current_sitemap) || $current_sitemap === '' || isset($seen_sitemaps[$current_sitemap])) {
+                continue;
+            }
+            $seen_sitemaps[$current_sitemap] = true;
+            $response = $this->seo_assistant_fetch_internal_url_response($current_sitemap, 8);
+            if (is_wp_error($response)) {
+                continue;
+            }
+            $status_code = (int) wp_remote_retrieve_response_code($response);
+            if ($status_code < 200 || $status_code >= 400) {
+                continue;
+            }
+            $content_type = strtolower((string) wp_remote_retrieve_header($response, 'content-type'));
+            if ($content_type !== '' && strpos($content_type, 'xml') === false && strpos($content_type, 'text/plain') === false) {
+                continue;
+            }
+            $xml_data = $this->seo_assistant_parse_sitemap_xml((string) wp_remote_retrieve_body($response));
+            foreach ((array) ($xml_data['sitemaps'] ?? []) as $child_sitemap) {
+                $normalized_sitemap = $this->normalize_seo_assistant_url($child_sitemap);
+                if ($normalized_sitemap === '' || !$this->seo_assistant_is_internal_url($normalized_sitemap) || isset($seen_sitemaps[$normalized_sitemap])) {
+                    continue;
+                }
+                $sitemap_queue[$normalized_sitemap] = $normalized_sitemap;
+            }
+            foreach ((array) ($xml_data['urls'] ?? []) as $page_url) {
+                $normalized_page = $this->normalize_seo_assistant_url($page_url);
+                if ($normalized_page === '' || !$this->seo_assistant_is_public_page_url($normalized_page)) {
+                    continue;
+                }
+                if (isset($discovered[$normalized_page])) {
+                    continue;
+                }
+                if (!$this->seo_assistant_url_is_http_ok($normalized_page, 5)) {
+                    continue;
+                }
+                $discovered[$normalized_page] = $normalized_page;
+                if (count($discovered) >= $max_urls) {
+                    break;
+                }
+            }
+        }
+        return array_values($discovered);
+    }
+
+    private function seo_assistant_extract_internal_links_from_html($html_body, $base_url, $max_links = 180) {
+        $links = [];
+        $html_body = (string) $html_body;
+        if ($html_body === '' || trim($html_body) === '') {
+            return $links;
+        }
+        $internal_errors = libxml_use_internal_errors(true);
+        $document = new DOMDocument();
+        $loaded = @$document->loadHTML('<?xml encoding="utf-8" ?>' . (string) substr($html_body, 0, 1200000));
+        libxml_clear_errors();
+        libxml_use_internal_errors($internal_errors);
+        if (!$loaded) {
+            return $links;
+        }
+        $anchor_nodes = $document->getElementsByTagName('a');
+        foreach ($anchor_nodes as $anchor_node) {
+            if (!$anchor_node instanceof DOMElement) {
+                continue;
+            }
+            $href = trim((string) $anchor_node->getAttribute('href'));
+            if ($href === '' || strpos($href, '#') === 0 || stripos($href, 'javascript:') === 0 || stripos($href, 'mailto:') === 0 || stripos($href, 'tel:') === 0) {
+                continue;
+            }
+            if (strpos($href, '//') === 0) {
+                $base_parts = wp_parse_url($base_url);
+                $scheme = is_array($base_parts) && !empty($base_parts['scheme']) ? (string) $base_parts['scheme'] : 'https';
+                $href = $scheme . ':' . $href;
+            } elseif (strpos($href, '/') === 0) {
+                $base_parts = wp_parse_url($base_url);
+                if (!is_array($base_parts) || empty($base_parts['host'])) {
+                    continue;
+                }
+                $scheme = !empty($base_parts['scheme']) ? (string) $base_parts['scheme'] : 'https';
+                $port = isset($base_parts['port']) ? ':' . (int) $base_parts['port'] : '';
+                $href = $scheme . '://' . (string) $base_parts['host'] . $port . $href;
+            } elseif (!preg_match('#^https?://#i', $href)) {
+                $href = trailingslashit($base_url) . ltrim($href, '/');
+            }
+            $normalized_link = $this->normalize_seo_assistant_url($href);
+            if ($normalized_link === '' || !$this->seo_assistant_is_public_page_url($normalized_link)) {
+                continue;
+            }
+            $links[$normalized_link] = $normalized_link;
+            if (count($links) >= $max_links) {
+                break;
+            }
+        }
+        return array_values($links);
+    }
+
+    private function seo_assistant_discover_pages_from_crawl($max_urls = 220, $max_depth = 2) {
+        $max_urls = max(20, (int) $max_urls);
+        $max_depth = max(1, (int) $max_depth);
+        $home_url_normalized = $this->normalize_seo_assistant_url(home_url('/'));
+        if ($home_url_normalized === '' || !$this->seo_assistant_is_public_page_url($home_url_normalized)) {
+            return [];
+        }
+        $queue = [
+            ['url' => $home_url_normalized, 'depth' => 0],
+        ];
+        $seen = [];
+        $discovered = [];
+        while ($queue && count($discovered) < $max_urls) {
+            $queue_item = array_shift($queue);
+            if (!is_array($queue_item)) {
+                continue;
+            }
+            $page_url = $this->normalize_seo_assistant_url((string) ($queue_item['url'] ?? ''));
+            $depth = (int) ($queue_item['depth'] ?? 0);
+            if ($page_url === '' || isset($seen[$page_url])) {
+                continue;
+            }
+            $seen[$page_url] = true;
+            if (!$this->seo_assistant_is_public_page_url($page_url)) {
+                continue;
+            }
+            $response = $this->seo_assistant_fetch_internal_url_response($page_url, 8);
+            if (is_wp_error($response)) {
+                continue;
+            }
+            $status_code = (int) wp_remote_retrieve_response_code($response);
+            if ($status_code < 200 || $status_code >= 400) {
+                continue;
+            }
+            $content_type = strtolower((string) wp_remote_retrieve_header($response, 'content-type'));
+            if ($content_type !== '' && strpos($content_type, 'text/html') === false && strpos($content_type, 'application/xhtml+xml') === false) {
+                continue;
+            }
+            $discovered[$page_url] = $page_url;
+            if ($depth >= $max_depth || count($discovered) >= $max_urls) {
+                continue;
+            }
+            $html_body = (string) wp_remote_retrieve_body($response);
+            $child_links = $this->seo_assistant_extract_internal_links_from_html($html_body, $page_url, 180);
+            foreach ($child_links as $child_link) {
+                if (isset($seen[$child_link])) {
+                    continue;
+                }
+                $queue[] = [
+                    'url' => $child_link,
+                    'depth' => $depth + 1,
+                ];
+            }
+        }
+        return array_values($discovered);
+    }
+
     private function get_seo_assistant_default_allowlist() {
         $defaults = [
             home_url('/'),
@@ -34277,6 +34605,8 @@ global $wpdb;
     private function get_seo_assistant_state() {
         $default_state = [
             'allowlist' => $this->get_seo_assistant_default_allowlist(),
+            'discovered_pages' => [],
+            'discovered_at' => '',
             'scans' => [],
             'recommendations' => [],
             'overrides' => [],
@@ -34290,6 +34620,8 @@ global $wpdb;
         if (!$state['allowlist']) {
             $state['allowlist'] = $default_state['allowlist'];
         }
+        $state['discovered_pages'] = $this->sanitize_seo_assistant_allowlist((array) ($state['discovered_pages'] ?? []));
+        $state['discovered_at'] = sanitize_text_field((string) ($state['discovered_at'] ?? ''));
         $state['scans'] = is_array($state['scans']) ? $state['scans'] : [];
         $state['recommendations'] = is_array($state['recommendations']) ? $state['recommendations'] : [];
         $state['overrides'] = is_array($state['overrides']) ? $state['overrides'] : [];
@@ -34332,6 +34664,91 @@ global $wpdb;
             }
             $state['recommendations'][$recommendation_id] = $recommendation_row;
         }
+
+        $discovered_pages = array_values(array_filter(array_map(
+            function ($url) {
+                return $this->normalize_seo_assistant_url($url);
+            },
+            (array) ($state['discovered_pages'] ?? [])
+        )));
+        $discovered_pages = array_values(array_unique(array_filter($discovered_pages, function ($url) {
+            return $url !== '' && $this->seo_assistant_is_public_page_url($url);
+        })));
+        if (count($discovered_pages) > 1200) {
+            $discovered_pages = array_slice($discovered_pages, 0, 1200);
+        }
+        $state['discovered_pages'] = $discovered_pages;
+    }
+
+    private function get_seo_assistant_page_rows(array $state) {
+        $scan_rows = array_values(array_filter((array) ($state['scans'] ?? []), 'is_array'));
+        usort($scan_rows, static function ($a, $b) {
+            return strcmp((string) ($b['scanned_at'] ?? ''), (string) ($a['scanned_at'] ?? ''));
+        });
+        $last_scan_map = [];
+        foreach ($scan_rows as $scan_row) {
+            foreach ((array) ($scan_row['urls'] ?? []) as $url_row) {
+                if (!is_array($url_row)) {
+                    continue;
+                }
+                $scan_url = $this->normalize_seo_assistant_url((string) ($url_row['url'] ?? ''));
+                if ($scan_url === '' || isset($last_scan_map[$scan_url])) {
+                    continue;
+                }
+                $last_scan_map[$scan_url] = [
+                    'last_scanned_at' => sanitize_text_field((string) ($url_row['scanned_at'] ?? ($scan_row['scanned_at'] ?? ''))),
+                    'last_score' => (int) ($url_row['score'] ?? 0),
+                ];
+            }
+        }
+        $rows = [];
+        $push_page_row = function ($url, $source_label) use (&$rows, $last_scan_map) {
+            $normalized = $this->normalize_seo_assistant_url($url);
+            if ($normalized === '') {
+                return;
+            }
+            $is_public = $this->seo_assistant_is_public_page_url($normalized);
+            $last_scan = isset($last_scan_map[$normalized]) && is_array($last_scan_map[$normalized]) ? $last_scan_map[$normalized] : [];
+            if (!isset($rows[$normalized])) {
+                $rows[$normalized] = [
+                    'url' => $normalized,
+                    'source' => sanitize_text_field((string) $source_label),
+                    'is_public' => $is_public ? 1 : 0,
+                    'last_scanned_at' => sanitize_text_field((string) ($last_scan['last_scanned_at'] ?? '')),
+                    'last_score' => (int) ($last_scan['last_score'] ?? 0),
+                ];
+                return;
+            }
+            $existing_source = sanitize_text_field((string) ($rows[$normalized]['source'] ?? ''));
+            if ($existing_source !== '' && strpos($existing_source, (string) $source_label) === false) {
+                $rows[$normalized]['source'] = $existing_source . ', ' . sanitize_text_field((string) $source_label);
+            }
+            if (!empty($last_scan['last_scanned_at']) && (string) ($rows[$normalized]['last_scanned_at'] ?? '') === '') {
+                $rows[$normalized]['last_scanned_at'] = sanitize_text_field((string) $last_scan['last_scanned_at']);
+                $rows[$normalized]['last_score'] = (int) ($last_scan['last_score'] ?? 0);
+            }
+        };
+        foreach ((array) ($state['allowlist'] ?? []) as $allowlisted_url) {
+            $push_page_row($allowlisted_url, 'allowlist');
+        }
+        foreach ((array) ($state['discovered_pages'] ?? []) as $discovered_url) {
+            $push_page_row($discovered_url, 'discovered');
+        }
+        $page_rows = array_values($rows);
+        usort($page_rows, static function ($a, $b) {
+            $a_public = !empty($a['is_public']) ? 1 : 0;
+            $b_public = !empty($b['is_public']) ? 1 : 0;
+            if ($a_public !== $b_public) {
+                return ($a_public > $b_public) ? -1 : 1;
+            }
+            $a_scanned = (string) ($a['last_scanned_at'] ?? '');
+            $b_scanned = (string) ($b['last_scanned_at'] ?? '');
+            if ($a_scanned !== $b_scanned) {
+                return strcmp($b_scanned, $a_scanned);
+            }
+            return strcmp((string) ($a['url'] ?? ''), (string) ($b['url'] ?? ''));
+        });
+        return $page_rows;
     }
 
     private function save_seo_assistant_state(array $state) {
@@ -34365,6 +34782,9 @@ global $wpdb;
         return [
             'allowlist' => array_values((array) ($state['allowlist'] ?? [])),
             'allowlist_text' => implode("\n", array_values((array) ($state['allowlist'] ?? []))),
+            'discovered_pages' => array_values((array) ($state['discovered_pages'] ?? [])),
+            'discovered_at' => sanitize_text_field((string) ($state['discovered_at'] ?? '')),
+            'page_rows' => $this->get_seo_assistant_page_rows($state),
             'scans' => $scan_rows,
             'recommendations' => $recommendation_rows,
             'overrides' => (array) ($state['overrides'] ?? []),
@@ -34633,6 +35053,12 @@ global $wpdb;
             'created_at' => current_time('mysql'),
             'updated_at' => current_time('mysql'),
             'updated_by' => (int) get_current_user_id(),
+            'applied_result' => '',
+            'applied_message' => '',
+            'applied_at' => '',
+            'applied_old_value' => '',
+            'applied_new_value' => '',
+            'applied_store' => '',
         ];
     }
 
@@ -34941,6 +35367,198 @@ global $wpdb;
         ];
     }
 
+    private function get_seo_assistant_allowed_override_fields() {
+        return [
+            'title',
+            'meta_description',
+            'canonical',
+            'robots',
+            'og_title',
+            'og_description',
+            'og_image',
+            'twitter_title',
+            'twitter_description',
+            'twitter_image',
+        ];
+    }
+
+    private function get_seo_assistant_next_approved_recommendation_id(array $state) {
+        $recommendation_rows = array_values(array_filter((array) ($state['recommendations'] ?? []), 'is_array'));
+        usort($recommendation_rows, static function ($a, $b) {
+            return strcmp((string) ($a['created_at'] ?? ''), (string) ($b['created_at'] ?? ''));
+        });
+        foreach ($recommendation_rows as $recommendation_row) {
+            $status = sanitize_key((string) ($recommendation_row['status'] ?? ''));
+            if ($status !== 'approved') {
+                continue;
+            }
+            $recommendation_id = sanitize_key((string) ($recommendation_row['recommendation_id'] ?? ''));
+            if ($recommendation_id !== '') {
+                return $recommendation_id;
+            }
+        }
+        return '';
+    }
+
+    private function apply_seo_assistant_recommendation(array &$state, $recommendation_id, $actor_user_id = 0) {
+        $recommendation_id = sanitize_key((string) $recommendation_id);
+        $actor_user_id = (int) $actor_user_id;
+        $result = [
+            'recommendation_id' => $recommendation_id,
+            'page_url' => '',
+            'field' => '',
+            'result' => 'failed',
+            'message' => '',
+            'old_value' => '',
+            'new_value' => '',
+            'applied_at' => '',
+            'store' => '',
+        ];
+        if ($recommendation_id === '') {
+            $result['message'] = 'Recommendation ID is missing.';
+            return $result;
+        }
+        $recommendation = $state['recommendations'][$recommendation_id] ?? null;
+        if (!is_array($recommendation)) {
+            $result['message'] = 'Recommendation not found.';
+            return $result;
+        }
+        $result['page_url'] = $this->normalize_seo_assistant_url((string) ($recommendation['page_url'] ?? ''));
+        $result['field'] = sanitize_key((string) ($recommendation['field'] ?? ''));
+        $result['new_value'] = sanitize_textarea_field((string) ($recommendation['proposed_value'] ?? ''));
+        $applied_at = current_time('mysql');
+        $allowed_fields = $this->get_seo_assistant_allowed_override_fields();
+        $status = sanitize_key((string) ($recommendation['status'] ?? 'pending'));
+        $apply_mode = sanitize_key((string) ($recommendation['apply_mode'] ?? 'override'));
+        $old_value = '';
+
+        if ($status !== 'approved') {
+            $result['result'] = 'skipped';
+            $result['message'] = 'Recommendation is not approved.';
+            $recommendation['status'] = 'applied';
+            $recommendation['applied_result'] = 'skipped';
+        } elseif ($apply_mode !== 'override') {
+            $result['result'] = 'skipped';
+            $result['message'] = 'Manual recommendation: no automatic write applied.';
+            $recommendation['status'] = 'applied';
+            $recommendation['applied_result'] = 'skipped';
+            $recommendation['applied_store'] = 'manual';
+        } elseif ($result['page_url'] === '' || !$this->seo_assistant_is_internal_url($result['page_url'])) {
+            $result['result'] = 'failed';
+            $result['message'] = 'Invalid page URL.';
+            $recommendation['status'] = 'applied';
+            $recommendation['applied_result'] = 'failed';
+        } elseif (!in_array($result['field'], $allowed_fields, true)) {
+            $result['result'] = 'failed';
+            $result['message'] = 'Unsupported SEO field.';
+            $recommendation['status'] = 'applied';
+            $recommendation['applied_result'] = 'failed';
+        } else {
+            if (!isset($state['overrides'][$result['page_url']]) || !is_array($state['overrides'][$result['page_url']])) {
+                $state['overrides'][$result['page_url']] = [];
+            }
+            $old_value = sanitize_textarea_field((string) ($state['overrides'][$result['page_url']][$result['field']] ?? ''));
+            $state['overrides'][$result['page_url']][$result['field']] = $result['new_value'];
+            $result['old_value'] = $old_value;
+            $result['result'] = 'applied';
+            $result['message'] = 'Applied successfully.';
+            $result['store'] = 'plugin_override';
+            $recommendation['status'] = 'applied';
+            $recommendation['applied_result'] = 'applied';
+            $recommendation['applied_store'] = 'plugin_override';
+        }
+
+        $recommendation['updated_at'] = $applied_at;
+        $recommendation['updated_by'] = $actor_user_id;
+        $recommendation['applied_at'] = $applied_at;
+        $recommendation['applied_message'] = sanitize_text_field((string) $result['message']);
+        $recommendation['applied_old_value'] = sanitize_textarea_field((string) $old_value);
+        $recommendation['applied_new_value'] = sanitize_textarea_field((string) $result['new_value']);
+        if (!isset($recommendation['applied_store'])) {
+            $recommendation['applied_store'] = sanitize_key((string) ($result['store'] !== '' ? $result['store'] : 'manual'));
+        }
+        $state['recommendations'][$recommendation_id] = $recommendation;
+
+        $result['applied_at'] = $applied_at;
+        if ($result['store'] === '') {
+            $result['store'] = sanitize_key((string) ($recommendation['applied_store'] ?? 'manual'));
+        }
+        if ($result['old_value'] === '') {
+            $result['old_value'] = sanitize_textarea_field((string) ($recommendation['applied_old_value'] ?? ''));
+        }
+
+        $this->add_audit_log('seo_assistant_recommendation_applied', 'seo_assistant', $recommendation_id, [
+            'page_url' => (string) $result['page_url'],
+            'field' => (string) $result['field'],
+            'old_value' => (string) $result['old_value'],
+            'new_value' => (string) $result['new_value'],
+            'result' => (string) $result['result'],
+            'store' => (string) $result['store'],
+            'message' => (string) $result['message'],
+        ], $actor_user_id);
+
+        return $result;
+    }
+
+    private function get_seo_assistant_page_expected_fields(array $state, $page_url) {
+        $page_url = $this->normalize_seo_assistant_url($page_url);
+        if ($page_url === '') {
+            return [];
+        }
+        $expected = [];
+        $allowed_fields = $this->get_seo_assistant_allowed_override_fields();
+        $override_row = isset($state['overrides'][$page_url]) && is_array($state['overrides'][$page_url]) ? $state['overrides'][$page_url] : [];
+        foreach ($allowed_fields as $field_key) {
+            if (!array_key_exists($field_key, $override_row)) {
+                continue;
+            }
+            $expected[$field_key] = sanitize_textarea_field((string) $override_row[$field_key]);
+        }
+        if ($expected) {
+            return $expected;
+        }
+        foreach ((array) ($state['recommendations'] ?? []) as $recommendation_row) {
+            if (!is_array($recommendation_row)) {
+                continue;
+            }
+            $status = sanitize_key((string) ($recommendation_row['status'] ?? ''));
+            $result = sanitize_key((string) ($recommendation_row['applied_result'] ?? ''));
+            $url = $this->normalize_seo_assistant_url((string) ($recommendation_row['page_url'] ?? ''));
+            $field = sanitize_key((string) ($recommendation_row['field'] ?? ''));
+            if ($status !== 'applied' || $result !== 'applied' || $url !== $page_url || !in_array($field, $allowed_fields, true)) {
+                continue;
+            }
+            $expected[$field] = sanitize_textarea_field((string) ($recommendation_row['applied_new_value'] ?? $recommendation_row['proposed_value'] ?? ''));
+        }
+        return $expected;
+    }
+
+    private function get_seo_assistant_page_actual_fields(array $analysis) {
+        return [
+            'title' => sanitize_textarea_field((string) ($analysis['title'] ?? '')),
+            'meta_description' => sanitize_textarea_field((string) ($analysis['meta_description'] ?? '')),
+            'canonical' => $this->normalize_seo_assistant_url((string) ($analysis['canonical'] ?? '')),
+            'robots' => sanitize_textarea_field((string) ($analysis['robots'] ?? '')),
+            'og_title' => sanitize_textarea_field((string) ($analysis['og']['title'] ?? '')),
+            'og_description' => sanitize_textarea_field((string) ($analysis['og']['description'] ?? '')),
+            'og_image' => esc_url_raw((string) ($analysis['og']['image'] ?? ''), ['http', 'https']),
+            'twitter_title' => sanitize_textarea_field((string) ($analysis['twitter']['title'] ?? '')),
+            'twitter_description' => sanitize_textarea_field((string) ($analysis['twitter']['description'] ?? '')),
+            'twitter_image' => esc_url_raw((string) ($analysis['twitter']['image'] ?? ''), ['http', 'https']),
+        ];
+    }
+
+    private function seo_assistant_values_match($field_key, $expected_value, $actual_value) {
+        $field_key = sanitize_key((string) $field_key);
+        $expected_value = trim((string) $expected_value);
+        $actual_value = trim((string) $actual_value);
+        if (in_array($field_key, ['canonical', 'og_image', 'twitter_image'], true)) {
+            $expected_value = $this->normalize_seo_assistant_url($expected_value);
+            $actual_value = $this->normalize_seo_assistant_url($actual_value);
+        }
+        return $expected_value === $actual_value;
+    }
+
     private function get_seo_assistant_override_for_current_request() {
         if (is_admin()) {
             return [];
@@ -35037,6 +35655,7 @@ global $wpdb;
         </header>
         <section class="cmn-dashboard-card cmn-seo-assistant" data-seo-assistant-root data-seo-initial-state="<?php echo esc_attr(wp_json_encode($state_payload)); ?>">
             <div class="cmn-seo-assistant-actions">
+                <button type="button" class="cmn-ghost" data-seo-discover-pages>Discover Pages</button>
                 <button type="button" class="cmn-primary" data-seo-scan-selected>Scan Selected Pages</button>
                 <button type="button" class="cmn-ghost" data-seo-apply-approved>Apply Approved</button>
                 <span class="cmn-muted" data-seo-status-msg>Ready.</span>
@@ -35044,12 +35663,15 @@ global $wpdb;
 
             <div class="cmn-seo-assistant-grid">
                 <div class="cmn-seo-assistant-panel">
-                    <h3>Allowlisted Pages</h3>
-                    <p class="cmn-muted">One internal URL per line. Scans are restricted to this list.</p>
+                    <h3>Page Discovery + Allowlist</h3>
+                    <p class="cmn-muted">Discover public pages from sitemap/crawl. One internal URL per line for manual entries.</p>
                     <textarea rows="8" data-seo-allowlist-input></textarea>
                     <div class="cmn-seo-assistant-actions-inline">
                         <button type="button" class="cmn-ghost" data-seo-save-allowlist>Save Allowlist</button>
+                        <input type="search" data-seo-page-search placeholder="Search pages">
+                        <label class="cmn-inline-check"><input type="checkbox" data-seo-public-only checked> Public pages only</label>
                     </div>
+                    <p class="cmn-muted" data-seo-discovered-meta>No discovery run yet.</p>
                     <div class="cmn-seo-page-list" data-seo-page-list></div>
                 </div>
                 <div class="cmn-seo-assistant-panel">
@@ -35073,6 +35695,18 @@ global $wpdb;
                 </div>
             </div>
 
+            <div class="cmn-seo-assistant-panel" data-seo-apply-panel hidden>
+                <h3>Apply Progress</h3>
+                <div class="cmn-seo-progress-wrap">
+                    <div class="cmn-seo-progress-track">
+                        <div class="cmn-seo-progress-fill" data-seo-apply-progress-bar></div>
+                    </div>
+                    <div class="cmn-muted" data-seo-apply-progress-text>0%</div>
+                </div>
+                <div class="cmn-seo-apply-log" data-seo-apply-log></div>
+                <p class="cmn-muted" data-seo-apply-summary></p>
+            </div>
+
             <div class="cmn-seo-assistant-panel">
                 <h3>Recommendations</h3>
                 <div class="cmn-seo-table-wrap">
@@ -35086,11 +35720,33 @@ global $wpdb;
                                 <th>Proposed</th>
                                 <th>Impact</th>
                                 <th>Reason</th>
+                                <th>Applied</th>
                                 <th>Decision</th>
                             </tr>
                         </thead>
                         <tbody data-seo-recommendation-rows>
-                            <tr><td colspan="8">No recommendations yet.</td></tr>
+                            <tr><td colspan="9">No recommendations yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="cmn-seo-assistant-panel">
+                <h3>Verification</h3>
+                <p class="cmn-muted" data-seo-verify-status>Select a page and click Verify.</p>
+                <div class="cmn-seo-table-wrap">
+                    <table class="cmn-approval-table">
+                        <thead>
+                            <tr>
+                                <th>Page</th>
+                                <th>Field</th>
+                                <th>Expected</th>
+                                <th>Actual</th>
+                                <th>Result</th>
+                            </tr>
+                        </thead>
+                        <tbody data-seo-verify-rows>
+                            <tr><td colspan="5">No verification run yet.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -35299,6 +35955,14 @@ global $wpdb;
         $recommendation['status'] = $status;
         $recommendation['updated_at'] = current_time('mysql');
         $recommendation['updated_by'] = (int) get_current_user_id();
+        if ($status === 'approved') {
+            $recommendation['applied_result'] = '';
+            $recommendation['applied_at'] = '';
+            $recommendation['applied_message'] = '';
+            $recommendation['applied_old_value'] = '';
+            $recommendation['applied_new_value'] = '';
+            $recommendation['applied_store'] = '';
+        }
         $state['recommendations'][$recommendation_id] = $recommendation;
         $this->save_seo_assistant_state($state);
         $this->add_audit_log(
@@ -35336,58 +36000,225 @@ global $wpdb;
         }
 
         $state = $this->get_seo_assistant_state();
+        $actor_user_id = (int) get_current_user_id();
+        $started_at = microtime(true);
         $applied_count = 0;
-        $manual_count = 0;
-        foreach ((array) $state['recommendations'] as $recommendation_id => $recommendation_row) {
-            if (!is_array($recommendation_row)) {
-                continue;
+        $failed_count = 0;
+        $skipped_count = 0;
+        while (true) {
+            $next_recommendation_id = $this->get_seo_assistant_next_approved_recommendation_id($state);
+            if ($next_recommendation_id === '') {
+                break;
             }
-            if (sanitize_key((string) ($recommendation_row['status'] ?? '')) !== 'approved') {
-                continue;
-            }
-            $page_url = $this->normalize_seo_assistant_url((string) ($recommendation_row['page_url'] ?? ''));
-            $field = sanitize_key((string) ($recommendation_row['field'] ?? ''));
-            $proposed = sanitize_textarea_field((string) ($recommendation_row['proposed_value'] ?? ''));
-            $apply_mode = sanitize_key((string) ($recommendation_row['apply_mode'] ?? 'override'));
-            if ($apply_mode === 'override' && $page_url !== '' && $field !== '') {
-                if (!isset($state['overrides'][$page_url]) || !is_array($state['overrides'][$page_url])) {
-                    $state['overrides'][$page_url] = [];
-                }
-                $allowed_fields = [
-                    'title',
-                    'meta_description',
-                    'canonical',
-                    'robots',
-                    'og_title',
-                    'og_description',
-                    'og_image',
-                    'twitter_title',
-                    'twitter_description',
-                    'twitter_image',
-                ];
-                if (in_array($field, $allowed_fields, true)) {
-                    $state['overrides'][$page_url][$field] = $proposed;
-                    $applied_count++;
-                }
+            $apply_result = $this->apply_seo_assistant_recommendation($state, $next_recommendation_id, $actor_user_id);
+            $apply_status = sanitize_key((string) ($apply_result['result'] ?? 'failed'));
+            if ($apply_status === 'applied') {
+                $applied_count++;
+            } elseif ($apply_status === 'skipped') {
+                $skipped_count++;
             } else {
-                $manual_count++;
+                $failed_count++;
             }
-            $recommendation_row['status'] = 'applied';
-            $recommendation_row['updated_at'] = current_time('mysql');
-            $recommendation_row['updated_by'] = (int) get_current_user_id();
-            $recommendation_row['applied_at'] = current_time('mysql');
-            $state['recommendations'][$recommendation_id] = $recommendation_row;
         }
         $this->save_seo_assistant_state($state);
         $this->add_audit_log('seo_assistant_changes_applied', 'seo_assistant', 'overrides', [
             'applied_count' => $applied_count,
-            'manual_count' => $manual_count,
-        ], (int) get_current_user_id());
+            'failed_count' => $failed_count,
+            'skipped_count' => $skipped_count,
+            'duration_ms' => (int) round((microtime(true) - $started_at) * 1000),
+        ], $actor_user_id);
         wp_send_json_success([
             'message' => 'Applied approved recommendations.',
             'applied_count' => $applied_count,
-            'manual_count' => $manual_count,
+            'failed_count' => $failed_count,
+            'skipped_count' => $skipped_count,
+            'duration_ms' => (int) round((microtime(true) - $started_at) * 1000),
             'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_apply_next() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+        $state = $this->get_seo_assistant_state();
+        $remaining_before = 0;
+        foreach ((array) ($state['recommendations'] ?? []) as $recommendation_row) {
+            if (!is_array($recommendation_row)) {
+                continue;
+            }
+            if (sanitize_key((string) ($recommendation_row['status'] ?? '')) === 'approved') {
+                $remaining_before++;
+            }
+        }
+        if ($remaining_before < 1) {
+            wp_send_json_success([
+                'message' => 'No approved recommendations left to apply.',
+                'done' => true,
+                'result' => null,
+                'remaining' => 0,
+                'state' => $this->get_seo_assistant_state_payload($state),
+            ]);
+        }
+
+        $next_recommendation_id = $this->get_seo_assistant_next_approved_recommendation_id($state);
+        if ($next_recommendation_id === '') {
+            wp_send_json_success([
+                'message' => 'No approved recommendations left to apply.',
+                'done' => true,
+                'result' => null,
+                'remaining' => 0,
+                'state' => $this->get_seo_assistant_state_payload($state),
+            ]);
+        }
+
+        $actor_user_id = (int) get_current_user_id();
+        $apply_started_at = microtime(true);
+        $apply_result = $this->apply_seo_assistant_recommendation($state, $next_recommendation_id, $actor_user_id);
+        $this->save_seo_assistant_state($state);
+
+        $remaining_after = 0;
+        foreach ((array) ($state['recommendations'] ?? []) as $recommendation_row) {
+            if (!is_array($recommendation_row)) {
+                continue;
+            }
+            if (sanitize_key((string) ($recommendation_row['status'] ?? '')) === 'approved') {
+                $remaining_after++;
+            }
+        }
+        wp_send_json_success([
+            'message' => 'Applied next approved recommendation.',
+            'done' => $remaining_after < 1,
+            'result' => $apply_result,
+            'remaining' => $remaining_after,
+            'started_with' => $remaining_before,
+            'duration_ms' => (int) round((microtime(true) - $apply_started_at) * 1000),
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_discover_pages() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+        $state = $this->get_seo_assistant_state();
+        $source = 'sitemap';
+        $discover_started_at = microtime(true);
+        $discovered_pages = $this->seo_assistant_discover_pages_from_sitemaps(350);
+        if (!$discovered_pages) {
+            $source = 'crawl';
+            $discovered_pages = $this->seo_assistant_discover_pages_from_crawl(220, 2);
+        }
+        if (!$discovered_pages) {
+            wp_send_json_error(['message' => 'No public pages discovered.'], 400);
+        }
+        $state['discovered_pages'] = $discovered_pages;
+        $state['discovered_at'] = current_time('mysql');
+        $state['allowlist'] = $this->sanitize_seo_assistant_allowlist(array_merge((array) ($state['allowlist'] ?? []), $discovered_pages));
+        $this->save_seo_assistant_state($state);
+        $this->add_audit_log('seo_assistant_pages_discovered', 'seo_assistant', 'discovery', [
+            'source' => $source,
+            'count' => count($discovered_pages),
+            'duration_ms' => (int) round((microtime(true) - $discover_started_at) * 1000),
+        ], (int) get_current_user_id());
+        wp_send_json_success([
+            'message' => 'Discovered ' . count($discovered_pages) . ' public page(s).',
+            'source' => $source,
+            'duration_ms' => (int) round((microtime(true) - $discover_started_at) * 1000),
+            'state' => $this->get_seo_assistant_state_payload($state),
+        ]);
+    }
+
+    public function handle_seo_assistant_verify_page() {
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.seo.manage',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_seo_assistant',
+            'nonce_field' => 'nonce',
+            'writes_state' => false,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => (int) get_current_user_id(),
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+        $page_url = $this->normalize_seo_assistant_url((string) ($_POST['page_url'] ?? ''));
+        if ($page_url === '' || !$this->seo_assistant_is_internal_url($page_url)) {
+            wp_send_json_error(['message' => 'Invalid page URL for verification.'], 400);
+        }
+
+        $state = $this->get_seo_assistant_state();
+        $expected_fields = $this->get_seo_assistant_page_expected_fields($state, $page_url);
+        if (!$expected_fields) {
+            wp_send_json_error(['message' => 'No applied override fields found for this page.'], 400);
+        }
+
+        $analysis = $this->seo_assistant_extract_page_analysis($page_url);
+        if ((string) ($analysis['error'] ?? '') !== '') {
+            wp_send_json_error(['message' => 'Verification fetch failed: ' . sanitize_text_field((string) ($analysis['error'] ?? 'unknown'))], 400);
+        }
+        $actual_fields = $this->get_seo_assistant_page_actual_fields($analysis);
+        $rows = [];
+        $pass_count = 0;
+        $fail_count = 0;
+        foreach ($expected_fields as $field_key => $expected_value) {
+            $actual_value = sanitize_textarea_field((string) ($actual_fields[$field_key] ?? ''));
+            $match = $this->seo_assistant_values_match($field_key, (string) $expected_value, $actual_value);
+            if ($match) {
+                $pass_count++;
+            } else {
+                $fail_count++;
+            }
+            $rows[] = [
+                'page_url' => $page_url,
+                'field' => $field_key,
+                'expected' => (string) $expected_value,
+                'actual' => (string) $actual_value,
+                'pass' => $match ? 1 : 0,
+            ];
+        }
+        $this->add_audit_log('seo_assistant_verify_page', 'seo_assistant', md5($page_url), [
+            'page_url' => $page_url,
+            'pass_count' => $pass_count,
+            'fail_count' => $fail_count,
+        ], (int) get_current_user_id());
+        wp_send_json_success([
+            'message' => $fail_count < 1 ? 'Verification passed.' : 'Verification found mismatches.',
+            'page_url' => $page_url,
+            'checked_at' => current_time('mysql'),
+            'pass_count' => $pass_count,
+            'fail_count' => $fail_count,
+            'rows' => $rows,
         ]);
     }
 
