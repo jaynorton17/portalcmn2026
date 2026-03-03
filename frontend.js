@@ -1498,6 +1498,9 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     return publicApi;
   })();
+  if (typeof window !== 'undefined') {
+    window.cmnHeartbeatManager = cmnHeartbeatManager;
+  }
 
   var cmnResolveLegacyPollIntervalMs = function (baseMs, heartbeatMs) {
     var base = Math.max(250, parseInt(baseMs || 0, 10) || 0);
@@ -14377,16 +14380,19 @@ document.addEventListener('DOMContentLoaded', function () {
       isSending: false
     };
     var offerExpirySeconds = Math.max(60, parseInt((window.cmnPortal && window.cmnPortal.offerExpirySeconds) || '900', 10) || 900);
-    var heartbeatContext = String((root && root.getAttribute('data-live-heartbeat-context')) || 'school_dashboard').trim() || 'school_dashboard';
-    var useSharedHeartbeat = !!(
-      window.cmnPortal
-      && Number(window.cmnPortal.heartbeatEnabled || 0) === 1
-      && window.cmnPortal.ajaxUrl
-      && window.cmnPortal.portalHeartbeatNonce
-      && cmnHeartbeatManager
-      && cmnHeartbeatManager.enabled
-    );
-    var useSharedHeartbeatUi = !!(useSharedHeartbeat && !cmnHeartbeatManager.shadowMode);
+	    var heartbeatContext = String((root && root.getAttribute('data-live-heartbeat-context')) || 'school_dashboard').trim() || 'school_dashboard';
+	    var cmnHeartbeat = (typeof window !== 'undefined' && window.cmnHeartbeatManager)
+	      ? window.cmnHeartbeatManager
+	      : null;
+	    var useSharedHeartbeat = !!(
+	      window.cmnPortal
+	      && Number(window.cmnPortal.heartbeatEnabled || 0) === 1
+	      && window.cmnPortal.ajaxUrl
+	      && window.cmnPortal.portalHeartbeatNonce
+	      && cmnHeartbeat
+	      && cmnHeartbeat.enabled
+	    );
+	    var useSharedHeartbeatUi = !!(useSharedHeartbeat && !cmnHeartbeat.shadowMode);
     var offerTickerId = null;
     if (drawer) {
       drawer.hidden = true;
@@ -15132,13 +15138,13 @@ document.addEventListener('DOMContentLoaded', function () {
       window.addEventListener('focus', function(){
         pollPresence();
       });
-    };
-    if (useSharedHeartbeat) {
-      cmnHeartbeatManager.register('cmn-live-match-presence-' + String(rootIndex || 0), {
-        channels: ['live_matches'],
-        view_context: heartbeatContext,
-        onDisable: function () {
-          startLiveMatchLegacyPolling();
+	    };
+	    if (useSharedHeartbeat) {
+	      cmnHeartbeat.register('cmn-live-match-presence-' + String(rootIndex || 0), {
+	        channels: ['live_matches'],
+	        view_context: heartbeatContext,
+	        onDisable: function () {
+	          startLiveMatchLegacyPolling();
         },
         buildRequest: function () {
           return {
