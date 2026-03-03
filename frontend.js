@@ -14849,6 +14849,7 @@ document.addEventListener('DOMContentLoaded', function () {
         + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'
         + '<div class="cmn-live-strip">'+banner+'<div class="cmn-live-rate">£'+Math.round(Number(item.day_rate||160))+' <span>per day</span></div></div>'
         + (locationDistanceText ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</span></div>' : '')
+        + '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div><div class="cmn-live-charge-rate">Charge Rate £'+Math.round(Number(item.day_rate||160))+'</div></div>'
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
         + '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button><button class="cmn-ghost cmn-live-secondary" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><a class="cmn-ghost cmn-live-secondary" href="'+(item.profile_url || '#')+'">View Profile</a></div><button class="cmn-live-not-interest cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div>'
         + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'

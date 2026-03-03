@@ -17589,8 +17589,6 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
     inset 0 0 0 1px rgba(187,247,208,.24);
 }
 .cmn-live-card.is-bookable,
-.cmn-live-card.is-bookable .cmn-live-brand,
-.cmn-live-card.is-bookable .cmn-live-brand span,
 .cmn-live-card.is-bookable .cmn-live-name,
 .cmn-live-card.is-bookable .cmn-live-role,
 .cmn-live-card.is-bookable .cmn-live-rating,
@@ -17682,8 +17680,8 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rating-stars{position:relative;display:inline-block;font-size:13px;line-height:1;letter-spacing:1px;white-space:nowrap;vertical-align:middle}
 .cmn-live-rating-stars-base{color:rgba(255,255,255,.3)}
 .cmn-live-rating-stars-fill{position:absolute;left:0;top:0;overflow:hidden;color:#facc15}
-.cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit}
-.cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:22px;padding:2px 8px;border-radius:999px;border:1px solid rgba(248,250,252,.22);background:rgba(15,23,42,.5)}
+.cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:20px;padding:1px 7px;border-radius:999px;border:1px solid rgba(248,250,252,.22);background:rgba(15,23,42,.5);white-space:nowrap;flex-wrap:nowrap}
 .cmn-live-status{padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap}
 .cmn-live-status.available{
   background:linear-gradient(180deg,#66ff30,#22c55e);
