@@ -1138,7 +1138,7 @@ final class CMN_One_Plugin {
         add_filter('pre_http_request', [$this, 'filter_admin_bootstrap_http_preempt'], 5, 3);
         add_filter('http_response', [$this, 'cache_admin_bootstrap_http_response'], 10, 3);
         add_filter('cron_request', [$this, 'filter_admin_bootstrap_cron_request']);
-        add_action('phpmailer_init', [$this, 'configure_candidate_smtp']);
+        add_action('phpmailer_init', [$this, 'configure_candidate_smtp'], 999, 1);
         add_action('wp_mail_failed', [$this, 'handle_candidate_mail_failed']);
         add_action('wp_mail_succeeded', [$this, 'handle_candidate_mail_succeeded']);
         add_filter('wp_mail', [$this, 'capture_wp_mail_log_pre_send'], 1000, 1);
@@ -20161,7 +20161,7 @@ global $wpdb;
         return 'CoverMeNow Support';
     }
 
-    private function get_authorized_mail_from_email() {
+    private function get_explicit_authorized_mail_from_email() {
         $from_email = '';
         if (defined('CMN_MAIL_FROM_EMAIL')) {
             $from_email = sanitize_email((string) CMN_MAIL_FROM_EMAIL);
@@ -20172,25 +20172,47 @@ global $wpdb;
                 $from_email = $option_email;
             }
         }
-        if (!$this->is_valid_covermenow_sender_email($from_email)) {
-            $fallback = sanitize_email((string) $this->get_support_from_email());
-            if ($this->is_valid_covermenow_sender_email($fallback)) {
-                $from_email = $fallback;
-            }
-        }
-        if (!$this->is_valid_covermenow_sender_email($from_email)) {
-            $from_email = 'support@covermenow.co.uk';
-        }
         return $from_email;
     }
 
-    private function get_authorized_mail_from_name() {
+    private function get_authorized_mail_from_email($preferred_email = '') {
+        $configured = $this->get_explicit_authorized_mail_from_email();
+        $active_smtp_email = sanitize_email((string) $this->get_active_smtp_username_for_mail_context());
+        if ($this->is_valid_covermenow_sender_email($configured)) {
+            if ($this->is_valid_covermenow_sender_email($active_smtp_email) && strtolower($active_smtp_email) !== strtolower($configured)) {
+                // Some SMTP providers require MAIL FROM to match authenticated sender.
+                return $active_smtp_email;
+            }
+            return $configured;
+        }
+
+        $preferred_email = sanitize_email((string) $preferred_email);
+        if ($this->is_valid_covermenow_sender_email($preferred_email)) {
+            return $preferred_email;
+        }
+
+        if ($this->is_valid_covermenow_sender_email($active_smtp_email)) {
+            return $active_smtp_email;
+        }
+
+        $fallback = sanitize_email((string) $this->get_support_from_email());
+        if ($this->is_valid_covermenow_sender_email($fallback)) {
+            return $fallback;
+        }
+
+        return 'support@covermenow.co.uk';
+    }
+
+    private function get_authorized_mail_from_name($preferred_name = '') {
         $from_name = '';
         if (defined('CMN_MAIL_FROM_NAME')) {
             $from_name = $this->sanitize_mail_header_text((string) CMN_MAIL_FROM_NAME);
         }
         if ($from_name === '') {
             $from_name = $this->sanitize_mail_header_text((string) get_option('cmn_mail_from_name', ''));
+        }
+        if ($from_name === '') {
+            $from_name = $this->sanitize_mail_header_text((string) $preferred_name);
         }
         if ($from_name === '') {
             $from_name = 'CoverMeNow ONE';
@@ -20252,7 +20274,7 @@ global $wpdb;
         return substr($value, 0, 2) . str_repeat('*', max(2, strlen($value) - 4)) . substr($value, -2);
     }
 
-    private function normalize_headers_with_authorized_sender(array $headers, $reply_to = '') {
+    private function normalize_headers_with_authorized_sender(array $headers, $reply_to = '', $preferred_from_email = '', $preferred_from_name = '') {
         $normalized = [];
         foreach ($headers as $line) {
             $line = trim((string) $line);
@@ -20266,8 +20288,8 @@ global $wpdb;
             $normalized[] = $line;
         }
 
-        $from_email = $this->get_authorized_mail_from_email();
-        $from_name = $this->get_authorized_mail_from_name();
+        $from_email = $this->get_authorized_mail_from_email($preferred_from_email);
+        $from_name = $this->get_authorized_mail_from_name($preferred_from_name);
         $normalized[] = 'From: ' . $from_name . ' <' . $from_email . '>';
         if ($reply_to !== '' && strtolower($reply_to) !== strtolower($from_email)) {
             $normalized[] = 'Reply-To: ' . $reply_to;
@@ -20277,12 +20299,16 @@ global $wpdb;
         return $normalized;
     }
 
-    private function apply_authorized_sender_to_phpmailer($phpmailer, $reply_to_email = '', $reply_to_name = '') {
+    private function apply_authorized_sender_to_phpmailer($phpmailer, $reply_to_email = '', $reply_to_name = '', $preferred_from_email = '', $preferred_from_name = '') {
         if (!is_object($phpmailer)) {
             return;
         }
-        $from_email = $this->get_authorized_mail_from_email();
-        $from_name = $this->get_authorized_mail_from_name();
+        $smtp_username_email = sanitize_email((string) ($phpmailer->Username ?? ''));
+        if ($this->is_valid_covermenow_sender_email($smtp_username_email)) {
+            $preferred_from_email = $smtp_username_email;
+        }
+        $from_email = $this->get_authorized_mail_from_email($preferred_from_email);
+        $from_name = $this->get_authorized_mail_from_name($preferred_from_name);
         if ($from_email === '') {
             return;
         }
@@ -21042,6 +21068,8 @@ global $wpdb;
             $this->apply_authorized_sender_to_phpmailer(
                 $phpmailer,
                 (string) $this->get_candidate_from_email(),
+                (string) $this->get_candidate_from_name(),
+                (string) $this->get_candidate_from_email(),
                 (string) $this->get_candidate_from_name()
             );
             return;
@@ -21059,6 +21087,8 @@ global $wpdb;
             $phpmailer->Password = CMN_SCHOOL_SMTP_PASSWORD;
             $this->apply_authorized_sender_to_phpmailer(
                 $phpmailer,
+                (string) $this->get_school_from_email(),
+                (string) $this->get_school_from_name(),
                 (string) $this->get_school_from_email(),
                 (string) $this->get_school_from_name()
             );
@@ -21084,9 +21114,23 @@ global $wpdb;
             $this->apply_authorized_sender_to_phpmailer(
                 $phpmailer,
                 (string) $this->get_support_from_email(),
+                (string) $this->get_support_from_name(),
+                (string) $this->get_support_from_email(),
                 (string) $this->get_support_from_name()
             );
+            return;
         }
+
+        // Always normalize sender after any third-party SMTP plugin config to keep envelope-from authorized.
+        $existing_from_email = sanitize_email((string) ($phpmailer->From ?? ''));
+        $existing_from_name = $this->sanitize_mail_header_text((string) ($phpmailer->FromName ?? ''));
+        $this->apply_authorized_sender_to_phpmailer(
+            $phpmailer,
+            $existing_from_email,
+            $existing_from_name,
+            $existing_from_email,
+            $existing_from_name
+        );
     }
 
     public function filter_mail_from($from) {
@@ -23378,9 +23422,9 @@ global $wpdb;
             $requested_reply_to = $requested_from_email;
         }
 
-        $from_email = $this->get_authorized_mail_from_email();
-        $from_name = $this->get_authorized_mail_from_name();
-        $headers = $this->normalize_headers_with_authorized_sender($headers, $requested_reply_to);
+        $from_email = $this->get_authorized_mail_from_email($requested_from_email);
+        $from_name = $this->get_authorized_mail_from_name($requested_from_name);
+        $headers = $this->normalize_headers_with_authorized_sender($headers, $requested_reply_to, $requested_from_email, $requested_from_name);
 
         $template_key = sanitize_key((string) ($log_args['template_key'] ?? ''));
         $recipient_role = sanitize_key((string) ($log_args['recipient_role'] ?? ''));
@@ -28622,7 +28666,8 @@ global $wpdb;
             $headers[] = 'Content-Type: text/plain; charset=UTF-8';
         }
         $reply_to = sanitize_email((string) ($log_row['from_email'] ?? ''));
-        $headers = $this->normalize_headers_with_authorized_sender($headers, $reply_to);
+        $reply_to_name = sanitize_text_field((string) ($log_row['from_name'] ?? ''));
+        $headers = $this->normalize_headers_with_authorized_sender($headers, $reply_to, $reply_to, $reply_to_name);
         $module = sanitize_key((string) ($log_row['module'] ?? ''));
         $recipient_role = sanitize_key((string) ($log_row['recipient_role'] ?? ''));
         if ($recipient_role === '') {
@@ -49090,6 +49135,31 @@ global $wpdb;
             'Reply-To: ' . $sender_email,
         ];
 
+        $sender_email_normalized = strtolower($sender_email);
+        $candidate_sender = strtolower($this->sanitize_mail_header_email((string) $this->get_candidate_from_email()));
+        $school_sender = strtolower($this->sanitize_mail_header_email((string) $this->get_school_from_email()));
+        $support_sender = strtolower($this->sanitize_mail_header_email((string) $this->get_support_from_email()));
+        $mail_context_scope = '';
+        $mail_context_was_set = false;
+        $mail_context_state = false;
+        if ($candidate_sender !== '' && $sender_email_normalized === $candidate_sender) {
+            $mail_context_scope = 'candidate';
+            $mail_context_was_set = !empty($GLOBALS['cmn_candidate_mail_context']);
+            $mail_context_state = $this->begin_candidate_mail_context();
+        } elseif ($school_sender !== '' && $sender_email_normalized === $school_sender) {
+            $mail_context_scope = 'school';
+            $mail_context_was_set = !empty($GLOBALS['cmn_school_mail_context']);
+            $mail_context_state = $this->begin_school_mail_context();
+        } elseif ($support_sender !== '' && $sender_email_normalized === $support_sender) {
+            $mail_context_scope = 'support';
+            $mail_context_was_set = !empty($GLOBALS['cmn_support_mail_context']);
+            $mail_context_state = $this->begin_support_mail_context();
+        }
+        if ($mail_context_scope !== '' && $mail_context_state === null) {
+            wp_safe_redirect($build_redirect($redirect, 'error', 'Unable to prepare sender context for this test email.'));
+            exit;
+        }
+
         $mail_result = $this->send_wp_mail_with_email_log(
             $recipient_email,
             $subject,
@@ -49110,6 +49180,25 @@ global $wpdb;
                 ],
             ]
         );
+        if ($mail_context_scope === 'candidate') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_candidate_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_candidate_mail_context']);
+            }
+        } elseif ($mail_context_scope === 'school') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_school_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_school_mail_context']);
+            }
+        } elseif ($mail_context_scope === 'support') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_support_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_support_mail_context']);
+            }
+        }
 
         $sent = !empty($mail_result['success']);
         $send_status = sanitize_key((string) ($mail_result['send_status'] ?? ($sent ? 'sent' : 'failed')));
