@@ -20782,6 +20782,34 @@ global $wpdb;
         return get_user_meta($user_id, $notify_key, true) !== '0';
     }
 
+    private function is_email_domain_deliverable($email) {
+        $email = sanitize_email((string) $email);
+        if ($email === '' || !is_email($email)) {
+            return false;
+        }
+        $parts = explode('@', strtolower($email));
+        if (count($parts) !== 2) {
+            return false;
+        }
+        $domain = trim((string) $parts[1]);
+        if ($domain === '') {
+            return false;
+        }
+        if (!function_exists('checkdnsrr')) {
+            return true;
+        }
+        if (@checkdnsrr($domain, 'MX')) {
+            return true;
+        }
+        if (@checkdnsrr($domain, 'A')) {
+            return true;
+        }
+        if (@checkdnsrr($domain, 'AAAA')) {
+            return true;
+        }
+        return false;
+    }
+
     private function send_support_email($to, $subject, $message, $context = [], $headers = [], $attachments = []) {
         if (!$to) {
             return false;
@@ -28818,6 +28846,9 @@ global $wpdb;
         if (isset($legacy_template_fallbacks[$template_key])) {
             if ($recipient_email === '') {
                 return ['status' => 'failed', 'message' => 'Recipient email is missing.', 'resent_log_id' => 0];
+            }
+            if (!$this->is_email_domain_deliverable($recipient_email)) {
+                return ['status' => 'skipped', 'message' => 'Recipient domain is not resolvable; skipped legacy resend.', 'resent_log_id' => 0];
             }
             if ($this->email_log_has_success_for_template_recipient($template_key, $recipient_email, $related_entity_type, $related_entity_id, $log_id)) {
                 return ['status' => 'skipped', 'message' => 'A successful send already exists for this template and recipient.', 'resent_log_id' => 0];
