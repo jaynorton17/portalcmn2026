@@ -28808,6 +28808,53 @@ global $wpdb;
             ];
         }
 
+        $legacy_template_fallbacks = [
+            'school_email' => 'school',
+            'school_request_status_change_school' => 'school',
+            'candidate_availability_request' => 'candidate',
+            'candidate_availability_nudge' => 'candidate',
+            'support_transcript' => 'support',
+        ];
+        if (isset($legacy_template_fallbacks[$template_key])) {
+            if ($recipient_email === '') {
+                return ['status' => 'failed', 'message' => 'Recipient email is missing.', 'resent_log_id' => 0];
+            }
+            if ($this->email_log_has_success_for_template_recipient($template_key, $recipient_email, $related_entity_type, $related_entity_id, $log_id)) {
+                return ['status' => 'skipped', 'message' => 'A successful send already exists for this template and recipient.', 'resent_log_id' => 0];
+            }
+
+            $fallback_subject = $subject !== '' ? $subject : 'CoverMeNow ONE update';
+            $fallback_message = "This is a resend of a previous CoverMeNow ONE email.\n\n" .
+                "The original message payload is not available for this legacy log entry.\n\n" .
+                "Please review your portal notifications for full details.";
+            $fallback_channel = $legacy_template_fallbacks[$template_key];
+            $sent = false;
+            if ($fallback_channel === 'candidate') {
+                $sent = (bool) $this->send_candidate_email($recipient_email, $fallback_subject, $fallback_message, [
+                    'type' => $template_key !== '' ? $template_key : 'candidate_notification',
+                    'related_candidate_id' => $related_entity_type === 'candidate' ? $related_entity_id : 0,
+                ]);
+            } elseif ($fallback_channel === 'support') {
+                $sent = (bool) $this->send_support_email($recipient_email, $fallback_subject, $fallback_message, [
+                    'type' => $template_key !== '' ? $template_key : 'support_notification',
+                    'related_entity_type' => $related_entity_type,
+                    'related_entity_id' => $related_entity_id,
+                ]);
+            } else {
+                $sent = (bool) $this->send_school_email($recipient_email, $fallback_subject, $fallback_message, [
+                    'type' => $template_key !== '' ? $template_key : 'school_notification',
+                    'related_entity_type' => $related_entity_type,
+                    'related_entity_id' => $related_entity_id,
+                ]);
+            }
+
+            return [
+                'status' => $sent ? 'sent' : 'failed',
+                'message' => $sent ? 'Legacy email resent using fallback content.' : 'Failed to resend legacy email without payload.',
+                'resent_log_id' => 0,
+            ];
+        }
+
         return ['status' => 'failed', 'message' => 'No stored payload available for this template.', 'resent_log_id' => 0];
     }
 
