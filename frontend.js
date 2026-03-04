@@ -14559,17 +14559,16 @@ document.addEventListener('DOMContentLoaded', function () {
       var buildDecisionButtons = function (recommendation) {
         var status = String(recommendation && recommendation.status ? recommendation.status : 'pending');
         var recommendationId = String(recommendation && recommendation.recommendation_id ? recommendation.recommendation_id : '');
-        if (!recommendationId || status === 'applied') {
+        if (!recommendationId) {
           return '<span class="cmn-muted">-</span>';
         }
-        var actions = [];
-        if (status !== 'approved') {
-          actions.push('<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="approved" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '">Approve</button>');
-        }
-        if (status !== 'rejected') {
-          actions.push('<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="rejected" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '">Reject</button>');
-        }
-        return actions.join('');
+        var isApplied = status === 'applied';
+        var approveDisabled = isApplied || status === 'approved';
+        var denyDisabled = isApplied || status === 'rejected';
+        var appliedHint = isApplied ? ' title="Already applied"' : '';
+        return ''
+          + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="approved" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '"' + (approveDisabled ? ' disabled' : '') + appliedHint + '>Approve</button>'
+          + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="rejected" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '"' + (denyDisabled ? ' disabled' : '') + appliedHint + '>Deny</button>';
       };
 
       var renderRecommendations = function () {
@@ -14750,7 +14749,7 @@ document.addEventListener('DOMContentLoaded', function () {
           if (nextRecommendation) {
             appendApplyLog('Applying: ' + String(nextRecommendation.page_url || '-') + ' — ' + String(nextRecommendation.field || '-'), 'pending');
           }
-          seoApiCall('cmn_seo_assistant_apply_next', {
+          seoApiCall('cmn_seo_apply_next_approved', {
             batch_id: batchId
           }).then(function (data) {
             if (data && data.state) {
@@ -14856,7 +14855,7 @@ document.addEventListener('DOMContentLoaded', function () {
           seoDebugLog('click', { action: 'discover_pages' });
           setStatus('Discovering pages...', false);
           runWithBusyButton(discoverButton, 'Discovering...', function () {
-            return seoApiCall('cmn_seo_assistant_discover_pages', {}).then(function (data) {
+            return seoApiCall('cmn_seo_discover_pages', {}).then(function (data) {
               state = seoNormalizeState((data && data.state) ? data.state : {});
               renderAll();
               setStatus((data && data.message) ? data.message : 'Page discovery complete.', false);
@@ -14873,7 +14872,7 @@ document.addEventListener('DOMContentLoaded', function () {
           seoDebugLog('click', { action: 'scan_selected', selectedCount: selectedUrls.length });
           setStatus('Scanning selected pages...', false);
           runWithBusyButton(scanButton, 'Scanning...', function () {
-            return seoApiCall('cmn_seo_assistant_scan', {
+            return seoApiCall('cmn_seo_scan_pages', {
               urls: selectedUrls
             }).then(function (data) {
               state = seoNormalizeState((data && data.state) ? data.state : {});
@@ -14966,7 +14965,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         decisionButton.disabled = true;
-        seoApiCall('cmn_seo_proposal_set_status', {
+        seoApiCall('cmn_seo_set_recommendation_status', {
           recommendation_id: recommendationId,
           status: status
         }).then(function (data) {

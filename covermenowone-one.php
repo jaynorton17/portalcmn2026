@@ -918,13 +918,18 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_seo_assistant_scan', [$this, 'handle_seo_assistant_scan']);
         add_action('wp_ajax_cmn_seo_assistant_set_recommendation_status', [$this, 'handle_seo_assistant_set_recommendation_status']);
         add_action('wp_ajax_cmn_seo_proposal_set_status', [$this, 'handle_seo_assistant_set_recommendation_status']);
+        add_action('wp_ajax_cmn_seo_set_recommendation_status', [$this, 'handle_seo_assistant_set_recommendation_status']);
         add_action('wp_ajax_cmn_seo_assistant_apply_approved', [$this, 'handle_seo_assistant_apply_approved']);
         add_action('wp_ajax_cmn_seo_apply_approved', [$this, 'handle_seo_assistant_apply_approved']);
         add_action('wp_ajax_cmn_seo_assistant_start_apply_batch', [$this, 'handle_seo_assistant_start_apply_batch']);
         add_action('wp_ajax_cmn_seo_assistant_apply_next', [$this, 'handle_seo_assistant_apply_next']);
+        add_action('wp_ajax_cmn_seo_apply_next_approved', [$this, 'handle_seo_assistant_apply_next']);
         add_action('wp_ajax_cmn_seo_assistant_get_batch_progress', [$this, 'handle_seo_assistant_get_batch_progress']);
+        add_action('wp_ajax_cmn_seo_get_queue_status', [$this, 'handle_seo_assistant_get_batch_progress']);
         add_action('wp_ajax_cmn_seo_assistant_rollback_last_batch', [$this, 'handle_seo_assistant_rollback_last_batch']);
         add_action('wp_ajax_cmn_seo_assistant_discover_pages', [$this, 'handle_seo_assistant_discover_pages']);
+        add_action('wp_ajax_cmn_seo_discover_pages', [$this, 'handle_seo_assistant_discover_pages']);
+        add_action('wp_ajax_cmn_seo_scan_pages', [$this, 'handle_seo_assistant_scan']);
         add_action('wp_ajax_cmn_seo_assistant_verify_page', [$this, 'handle_seo_assistant_verify_page']);
         add_action('wp_ajax_cmn_save_staff_nav_state', [$this, 'handle_save_staff_nav_state']);
         add_action('wp_ajax_cmn_save_staff_nav_order', [$this, 'handle_save_staff_nav_order']);
