@@ -28903,6 +28903,9 @@ global $wpdb;
         $recipient_email = sanitize_email((string) ($log_row['recipient_email'] ?? ''));
         $related_entity_type = sanitize_key((string) ($log_row['related_entity_type'] ?? ''));
         $related_entity_id = max(0, (int) ($log_row['related_entity_id'] ?? 0));
+        if ($recipient_email !== '' && !$this->is_email_domain_deliverable($recipient_email)) {
+            return ['status' => 'skipped', 'message' => 'Recipient domain is not resolvable; skipped resend.', 'resent_log_id' => 0];
+        }
         if ($template_key !== '' && $recipient_email !== '' && $this->email_log_has_success_for_template_recipient($template_key, $recipient_email, $related_entity_type, $related_entity_id, $log_id)) {
             return ['status' => 'skipped', 'message' => 'A successful send already exists for this template and recipient.', 'resent_log_id' => 0];
         }
