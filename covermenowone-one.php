@@ -945,6 +945,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_booking_feedback_submit', [$this, 'handle_booking_feedback_submit']);
         add_action('wp_ajax_cmn_email_template_preview', [$this, 'handle_email_template_preview']);
         add_action('wp_ajax_cmn_email_template_send_test', [$this, 'handle_email_template_send_test']);
+        add_action('wp_ajax_cmn_resend_failed_emails', [$this, 'handle_resend_failed_emails']);
         add_action('admin_post_cmn_staff_update_candidate_pay', [$this, 'handle_staff_update_candidate_pay']);
         add_action('admin_post_cmn_open_booking_thread', [$this, 'handle_open_booking_thread']);
         add_action('admin_post_cmn_set_booking_thread_status', [$this, 'handle_set_booking_thread_status']);
@@ -7704,6 +7705,7 @@ global $wpdb;
                 'system.upgrade.run',
                 'system.seo.manage',
                 'system.email.manage',
+                'system.email.resend_failed',
             ],
             'cmn_admin' => [
                 'portal.staff.view',
@@ -7712,6 +7714,7 @@ global $wpdb;
                 'system.upgrade.run',
                 'system.seo.manage',
                 'system.email.manage',
+                'system.email.resend_failed',
             ],
             // Staff-manager equivalent roles keep support-board visibility without admin-only upgrade capability.
             'cmn_staff' => [
@@ -8324,6 +8327,12 @@ global $wpdb;
             return true;
         }
         if ($ability === 'system.email.manage') {
+            if ($actor_user_id < 1 || !$this->is_admin_user($actor_user_id)) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'system.email.resend_failed') {
             if ($actor_user_id < 1 || !$this->is_admin_user($actor_user_id)) {
                 return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
             }
@@ -28492,6 +28501,157 @@ global $wpdb;
         return $count > 0;
     }
 
+    private function get_failed_email_logs_batch_for_resend($limit = 25, $cursor = 0) {
+        global $wpdb;
+        $limit = max(1, min(50, (int) $limit));
+        $cursor = max(0, (int) $cursor);
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'id') || !self::table_has_column($table, 'recipient_email')) {
+            return [];
+        }
+        $status_column = self::table_has_column($table, 'status')
+            ? 'status'
+            : (self::table_has_column($table, 'send_status') ? 'send_status' : '');
+        if ($status_column === '') {
+            return [];
+        }
+
+        $sql = "
+            SELECT id
+            FROM {$table}
+            WHERE {$status_column} = %s
+              AND id > %d
+            ORDER BY id ASC
+            LIMIT %d
+        ";
+        $rows = (array) $wpdb->get_results($wpdb->prepare($sql, 'failed', $cursor, $limit), ARRAY_A);
+        $result = [];
+        foreach ($rows as $row) {
+            $log_id = max(0, (int) ($row['id'] ?? 0));
+            if ($log_id < 1) {
+                continue;
+            }
+            $entry = $this->get_email_log_entry_by_id($log_id);
+            if (!empty($entry)) {
+                $result[] = $entry;
+            }
+        }
+        return $result;
+    }
+
+    private function has_failed_email_logs_after_cursor($cursor = 0) {
+        global $wpdb;
+        $cursor = max(0, (int) $cursor);
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'id') || !self::table_has_column($table, 'recipient_email')) {
+            return false;
+        }
+        $status_column = self::table_has_column($table, 'status')
+            ? 'status'
+            : (self::table_has_column($table, 'send_status') ? 'send_status' : '');
+        if ($status_column === '') {
+            return false;
+        }
+        $count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+             FROM {$table}
+             WHERE {$status_column} = %s
+               AND id > %d",
+            'failed',
+            $cursor
+        ));
+        return $count > 0;
+    }
+
+    private function update_email_log_resend_attempt_tracking($log_id, $result_status, $message = '', $actor_user_id = 0, $resent_log_id = 0, $mode = '') {
+        global $wpdb;
+        $log_id = max(0, (int) $log_id);
+        if ($log_id < 1) {
+            return 0;
+        }
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'id')) {
+            return 0;
+        }
+
+        $row = $this->get_email_log_entry_by_id($log_id);
+        if (empty($row)) {
+            return 0;
+        }
+        $now = current_time('mysql');
+        $result_status = sanitize_key((string) $result_status);
+        if (!in_array($result_status, ['sent', 'failed', 'skipped'], true)) {
+            $result_status = 'failed';
+        }
+        $message = sanitize_text_field((string) $message);
+        $mode = sanitize_key((string) $mode);
+        $resent_log_id = max(0, (int) $resent_log_id);
+        $actor_user_id = max(0, (int) $actor_user_id);
+
+        $metadata = [];
+        $metadata_raw = (string) ($row['metadata'] ?? '');
+        if ($metadata_raw !== '') {
+            $decoded = json_decode($metadata_raw, true);
+            if (is_array($decoded)) {
+                $metadata = $decoded;
+            }
+        }
+        $attempt_count = max(0, (int) ($metadata['resend_attempt_count'] ?? 0)) + 1;
+        $metadata['resend_attempt_count'] = $attempt_count;
+        $metadata['resend_last_attempt_at'] = $now;
+        $metadata['resend_last_result'] = $result_status;
+        if ($message !== '') {
+            $metadata['resend_last_error'] = $message;
+        }
+        if ($mode !== '') {
+            $metadata['resend_last_mode'] = $mode;
+        }
+        if ($actor_user_id > 0) {
+            $metadata['resend_last_actor_user_id'] = $actor_user_id;
+        }
+        if ($resent_log_id > 0) {
+            $metadata['resend_last_log_id'] = $resent_log_id;
+        }
+        $metadata_json = $this->encode_email_log_metadata_json($metadata);
+
+        $update_data = [];
+        $update_format = [];
+        if (self::table_has_column($table, 'metadata')) {
+            $update_data['metadata'] = $metadata_json !== '' ? $metadata_json : null;
+            $update_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'meta_json')) {
+            $update_data['meta_json'] = $metadata_json !== '' ? $metadata_json : null;
+            $update_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'attempt_count')) {
+            $update_data['attempt_count'] = $attempt_count;
+            $update_format[] = '%d';
+        }
+        if (self::table_has_column($table, 'attempts')) {
+            $update_data['attempts'] = $attempt_count;
+            $update_format[] = '%d';
+        }
+        if (self::table_has_column($table, 'last_attempt_at')) {
+            $update_data['last_attempt_at'] = $now;
+            $update_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'updated_at')) {
+            $update_data['updated_at'] = $now;
+            $update_format[] = '%s';
+        }
+        if (!empty($update_data)) {
+            $wpdb->update($table, $update_data, ['id' => $log_id], $update_format, ['%d']);
+        }
+
+        if ($result_status === 'sent') {
+            $this->email_log_update_status($log_id, 'sent', '');
+        } elseif ($result_status === 'failed') {
+            $this->email_log_update_status($log_id, 'failed', $message);
+        }
+        return $attempt_count;
+    }
+
     private function resolve_candidate_context_for_email_log(array $log_row) {
         $candidate_id = 0;
         if (($log_row['related_entity_type'] ?? '') === 'candidate') {
@@ -28703,6 +28863,114 @@ global $wpdb;
         ];
     }
 
+    public function handle_resend_failed_emails() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'system.email.resend_failed',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_resend_failed_emails',
+            'nonce_field' => 'nonce',
+            'nonce_field_candidates' => ['cmn_nonce', '_wpnonce', 'security'],
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'rate_limit_bucket' => 'cmn_resend_failed_' . max(0, $actor_user_id),
+            'rate_limit_max' => 20,
+            'rate_limit_window' => 300,
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $limit = (int) ($_POST['limit'] ?? 25);
+        if ($limit < 1) {
+            $limit = 25;
+        }
+        $limit = min(50, $limit);
+        $cursor = max(0, (int) ($_POST['cursor'] ?? 0));
+
+        $rows = $this->get_failed_email_logs_batch_for_resend($limit, $cursor);
+        $processed = 0;
+        $success = 0;
+        $failed = 0;
+        $skipped = 0;
+        $last_id = $cursor;
+        $attempts = [];
+
+        foreach ($rows as $row) {
+            $log_id = max(0, (int) ($row['id'] ?? 0));
+            if ($log_id < 1) {
+                continue;
+            }
+            $current_row = $this->get_email_log_entry_by_id($log_id);
+            if (empty($current_row)) {
+                continue;
+            }
+            $processed++;
+            $last_id = max($last_id, $log_id);
+            $result = $this->retry_failed_email_log_row((array) $current_row, $actor_user_id, 'bulk_button');
+            $result_status = sanitize_key((string) ($result['status'] ?? 'failed'));
+            if (!in_array($result_status, ['sent', 'failed', 'skipped'], true)) {
+                $result_status = 'failed';
+            }
+            $result_message = sanitize_text_field((string) ($result['message'] ?? 'Resend attempt completed.'));
+            $resent_log_id = max(0, (int) ($result['resent_log_id'] ?? 0));
+
+            $attempt_count = (int) $this->update_email_log_resend_attempt_tracking($log_id, $result_status, $result_message, $actor_user_id, $resent_log_id, 'bulk_button');
+            $this->add_audit_log('email_log_resend_attempt', 'email_log', (string) $log_id, [
+                'result' => $result_status,
+                'message' => $result_message,
+                'resent_log_id' => $resent_log_id,
+                'mode' => 'bulk_button',
+                'attempt_count' => $attempt_count,
+            ], $actor_user_id);
+
+            if ($result_status === 'sent') {
+                $success++;
+            } elseif ($result_status === 'skipped') {
+                $skipped++;
+            } else {
+                $failed++;
+            }
+
+            $attempts[] = [
+                'log_id' => $log_id,
+                'result' => $result_status,
+                'message' => $result_message,
+                'resent_log_id' => $resent_log_id,
+                'attempt_count' => $attempt_count,
+            ];
+        }
+
+        $has_more = $this->has_failed_email_logs_after_cursor($last_id);
+        $summary = sprintf(
+            'Resent %d / %d (success %d, failed %d, skipped %d).',
+            $processed,
+            $limit,
+            $success,
+            $failed,
+            $skipped
+        );
+
+        wp_send_json_success([
+            'processed' => $processed,
+            'requested_limit' => $limit,
+            'success' => $success,
+            'failed' => $failed,
+            'skipped' => $skipped,
+            'cursor_start' => $cursor,
+            'last_id' => $last_id,
+            'has_more' => $has_more,
+            'order' => 'oldest_first',
+            'summary' => $summary,
+            'attempts' => $attempts,
+        ]);
+    }
+
     public function handle_email_log_resend() {
         $actor_user_id = (int) get_current_user_id();
         $guard = $this->cmn_endpoint_guard([
@@ -28745,6 +29013,7 @@ global $wpdb;
             $status = 'error';
         }
         $message = sanitize_text_field((string) ($result['message'] ?? 'Unable to retry email log entry.'));
+        $this->update_email_log_resend_attempt_tracking($email_log_id, $status, $message, $actor_user_id, max(0, (int) ($result['resent_log_id'] ?? 0)), 'single');
         $this->add_audit_log('email_log_resend_requested', 'email_log', (string) $email_log_id, [
             'status' => $status,
             'message' => $message,
@@ -28800,8 +29069,17 @@ global $wpdb;
         $skipped = 0;
         foreach ($rows as $row) {
             $processed++;
+            $row_log_id = max(0, (int) ($row['id'] ?? 0));
             $result = $this->retry_failed_email_log_row((array) $row, $actor_user_id, 'bulk_since');
             $result_status = sanitize_key((string) ($result['status'] ?? 'failed'));
+            $result_message = sanitize_text_field((string) ($result['message'] ?? 'Resend attempt completed.'));
+            $this->update_email_log_resend_attempt_tracking($row_log_id, $result_status, $result_message, $actor_user_id, max(0, (int) ($result['resent_log_id'] ?? 0)), 'bulk_since');
+            $this->add_audit_log('email_log_resend_attempt', 'email_log', (string) $row_log_id, [
+                'result' => $result_status,
+                'message' => $result_message,
+                'resent_log_id' => max(0, (int) ($result['resent_log_id'] ?? 0)),
+                'mode' => 'bulk_since',
+            ], $actor_user_id);
             if ($result_status === 'sent') {
                 $sent++;
             } elseif ($result_status === 'skipped') {
@@ -47666,6 +47944,8 @@ global $wpdb;
             $active_sender_rows = array_values(array_filter((array) $sender_rows, function ($row) {
                 return !empty($row['is_active']) && $this->sanitize_mail_header_email((string) ($row['email_address'] ?? '')) !== '';
             }));
+            $email_resend_failed_nonce = $is_admin ? wp_create_nonce('cmn_resend_failed_emails') : '';
+            $email_resend_failed_limit = 25;
             ?>
             <section class="cmn-panel-card cmn-panel-card-wide">
                 <h3>Email Logs</h3>
@@ -47725,6 +48005,16 @@ global $wpdb;
                             </label>
                             <button class="cmn-ghost" type="submit">Backfill Candidate Emails</button>
                         </form>
+                    </div>
+                    <div class="cmn-form-actions" style="margin-top:8px;">
+                        <div class="cmn-form" data-cmn-resend-failed-root data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" data-nonce="<?php echo esc_attr($email_resend_failed_nonce); ?>" data-default-limit="<?php echo esc_attr((string) $email_resend_failed_limit); ?>">
+                            <button class="cmn-primary" type="button" data-cmn-resend-failed-button>Send failed emails</button>
+                            <span class="cmn-muted" data-cmn-resend-failed-status style="display:block; margin-top:8px;">Ready to resend up to <?php echo esc_html((string) $email_resend_failed_limit); ?> failed emails.</span>
+                            <div data-cmn-resend-failed-progress style="display:none; margin-top:8px; width:320px; max-width:100%; height:10px; border:1px solid rgba(255,255,255,0.22); border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden;">
+                                <div data-cmn-resend-failed-progress-bar style="width:0%; height:100%; background:linear-gradient(90deg,#e53935,#ff8a80); transition:width 140ms ease;"></div>
+                            </div>
+                            <span class="cmn-muted" data-cmn-resend-failed-summary style="display:block; margin-top:6px;"></span>
+                        </div>
                     </div>
                 <?php endif; ?>
                 <?php if ($email_log_resend_msg !== '') : ?>
@@ -47843,6 +48133,154 @@ global $wpdb;
                             <a class="cmn-ghost" href="<?php echo esc_url($email_logs_next_page_url); ?>">Next</a>
                         <?php endif; ?>
                     </div>
+                <?php endif; ?>
+                <?php if ($is_admin) : ?>
+                    <script>
+                        (function () {
+                            var root = document.querySelector('[data-cmn-resend-failed-root]');
+                            if (!root || root.dataset.cmnResendBound === '1') {
+                                return;
+                            }
+                            root.dataset.cmnResendBound = '1';
+
+                            var button = root.querySelector('[data-cmn-resend-failed-button]');
+                            var statusNode = root.querySelector('[data-cmn-resend-failed-status]');
+                            var summaryNode = root.querySelector('[data-cmn-resend-failed-summary]');
+                            var progressWrap = root.querySelector('[data-cmn-resend-failed-progress]');
+                            var progressBar = root.querySelector('[data-cmn-resend-failed-progress-bar]');
+                            if (!button || !statusNode || !summaryNode || !progressWrap || !progressBar) {
+                                return;
+                            }
+
+                            var ajaxUrl = String(root.getAttribute('data-ajax-url') || '');
+                            var nonce = String(root.getAttribute('data-nonce') || '');
+                            var defaultLimit = parseInt(root.getAttribute('data-default-limit') || '25', 10);
+                            if (!isFinite(defaultLimit) || defaultLimit < 1) {
+                                defaultLimit = 25;
+                            }
+                            defaultLimit = Math.min(50, defaultLimit);
+
+                            var inFlight = false;
+                            var setProgress = function (processed, total, okCount, failCount, skipCount) {
+                                var safeTotal = total > 0 ? total : 1;
+                                var percent = Math.max(0, Math.min(100, Math.round((processed / safeTotal) * 100)));
+                                progressWrap.style.display = 'block';
+                                progressBar.style.width = percent + '%';
+                                statusNode.textContent = 'Resent ' + processed + ' / ' + total + ' (success ' + okCount + ', failed ' + failCount + ', skipped ' + skipCount + ')';
+                            };
+                            var setSummary = function (text, state) {
+                                var cssClass = 'cmn-muted';
+                                if (state === 'success') {
+                                    cssClass = 'cmn-register-success';
+                                } else if (state === 'warning') {
+                                    cssClass = 'cmn-register-warning';
+                                } else if (state === 'error') {
+                                    cssClass = 'cmn-register-error';
+                                }
+                                summaryNode.className = cssClass;
+                                summaryNode.textContent = text;
+                            };
+
+                            button.addEventListener('click', function () {
+                                if (inFlight) {
+                                    return;
+                                }
+                                if (!window.confirm('Resend up to ' + defaultLimit + ' failed emails now?')) {
+                                    return;
+                                }
+                                inFlight = true;
+                                button.disabled = true;
+                                setSummary('', '');
+                                progressWrap.style.display = 'block';
+                                progressBar.style.width = '0%';
+                                var processedTotal = 0;
+                                var successTotal = 0;
+                                var failedTotal = 0;
+                                var skippedTotal = 0;
+                                var cursor = 0;
+                                var batchSize = Math.min(5, defaultLimit);
+
+                                var completeRun = function (state, message) {
+                                    if (!message) {
+                                        message = 'Resend complete.';
+                                    }
+                                    setSummary(message, state);
+                                    button.disabled = false;
+                                    inFlight = false;
+                                };
+
+                                var runStep = function () {
+                                    var remaining = defaultLimit - processedTotal;
+                                    if (remaining <= 0) {
+                                        completeRun('success', 'Resend complete. Processed ' + processedTotal + ' email(s).');
+                                        return;
+                                    }
+
+                                    var params = new URLSearchParams();
+                                    params.set('action', 'cmn_resend_failed_emails');
+                                    params.set('nonce', nonce);
+                                    params.set('limit', String(Math.min(batchSize, remaining)));
+                                    params.set('cursor', String(cursor));
+
+                                    window.fetch(ajaxUrl, {
+                                        method: 'POST',
+                                        credentials: 'same-origin',
+                                        headers: {
+                                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                                        },
+                                        body: params.toString()
+                                    }).then(function (response) {
+                                        return response.text().then(function (text) {
+                                            var payload = {};
+                                            try {
+                                                payload = text ? JSON.parse(text) : {};
+                                            } catch (parseError) {
+                                                payload = { success: false, data: { message: 'Invalid server response.' } };
+                                            }
+                                            if (!response.ok || !payload || payload.success !== true) {
+                                                var errorMsg = 'Resend request failed.';
+                                                if (payload && payload.data && payload.data.error && payload.data.error.message) {
+                                                    errorMsg = String(payload.data.error.message);
+                                                } else if (payload && payload.data && payload.data.message) {
+                                                    errorMsg = String(payload.data.message);
+                                                }
+                                                throw new Error(errorMsg);
+                                            }
+                                            return payload.data || {};
+                                        });
+                                    }).then(function (data) {
+                                        var processed = parseInt(data.processed || 0, 10);
+                                        var sent = parseInt(data.success || 0, 10);
+                                        var failed = parseInt(data.failed || 0, 10);
+                                        var skipped = parseInt(data.skipped || 0, 10);
+                                        var lastId = parseInt(data.last_id || cursor, 10);
+                                        var hasMore = !!data.has_more;
+                                        processedTotal += isFinite(processed) ? processed : 0;
+                                        successTotal += isFinite(sent) ? sent : 0;
+                                        failedTotal += isFinite(failed) ? failed : 0;
+                                        skippedTotal += isFinite(skipped) ? skipped : 0;
+                                        if (isFinite(lastId)) {
+                                            cursor = Math.max(cursor, lastId);
+                                        }
+                                        setProgress(processedTotal, defaultLimit, successTotal, failedTotal, skippedTotal);
+
+                                        if ((isFinite(processed) ? processed : 0) < 1 || !hasMore || processedTotal >= defaultLimit) {
+                                            var finalState = failedTotal > 0 ? 'warning' : 'success';
+                                            var finalMessage = 'Resend complete: success ' + successTotal + ', failed ' + failedTotal + ', skipped ' + skippedTotal + '.';
+                                            completeRun(finalState, finalMessage);
+                                            return;
+                                        }
+                                        runStep();
+                                    }).catch(function (error) {
+                                        completeRun('error', error && error.message ? error.message : 'Resend failed.');
+                                    });
+                                };
+
+                                setProgress(0, defaultLimit, 0, 0, 0);
+                                runStep();
+                            });
+                        })();
+                    </script>
                 <?php endif; ?>
             </section>
         <?php else : ?>
@@ -116756,6 +117194,8 @@ if (!function_exists('cmn_can')) {
             case 'system.seo.manage':
                 return $is_admin;
             case 'system.email.manage':
+                return $is_admin;
+            case 'system.email.resend_failed':
                 return $is_admin;
 
             case 'rewards.view_self':
