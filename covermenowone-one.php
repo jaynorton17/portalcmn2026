@@ -971,6 +971,8 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_email_template_save', [$this, 'handle_email_template_save']);
         add_action('admin_post_cmn_email_centre_send_test', [$this, 'handle_email_centre_send_test']);
         add_action('admin_post_cmn_email_log_resend', [$this, 'handle_email_log_resend']);
+        add_action('admin_post_cmn_email_log_retry_failed_since', [$this, 'handle_email_log_retry_failed_since']);
+        add_action('admin_post_cmn_email_log_backfill_candidate', [$this, 'handle_email_log_backfill_candidate']);
         add_action('admin_post_cmn_regenerate_marketing_runner_token', [$this, 'handle_regenerate_marketing_runner_token']);
         add_action('admin_post_nopriv_cmn_marketing_runner', [$this, 'handle_marketing_runner']);
         add_action('admin_post_cmn_marketing_runner', [$this, 'handle_marketing_runner']);
@@ -7701,6 +7703,7 @@ global $wpdb;
                 'system.after_booking_support.view',
                 'system.upgrade.run',
                 'system.seo.manage',
+                'system.email.manage',
             ],
             'cmn_admin' => [
                 'portal.staff.view',
@@ -7708,6 +7711,7 @@ global $wpdb;
                 'system.after_booking_support.view',
                 'system.upgrade.run',
                 'system.seo.manage',
+                'system.email.manage',
             ],
             // Staff-manager equivalent roles keep support-board visibility without admin-only upgrade capability.
             'cmn_staff' => [
@@ -8314,6 +8318,12 @@ global $wpdb;
             return true;
         }
         if ($ability === 'system.seo.manage') {
+            if ($actor_user_id < 1 || !$this->is_admin_user($actor_user_id)) {
+                return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
+            }
+            return true;
+        }
+        if ($ability === 'system.email.manage') {
             if ($actor_user_id < 1 || !$this->is_admin_user($actor_user_id)) {
                 return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
             }
@@ -20151,6 +20161,153 @@ global $wpdb;
         return 'CoverMeNow Support';
     }
 
+    private function get_authorized_mail_from_email() {
+        $from_email = '';
+        if (defined('CMN_MAIL_FROM_EMAIL')) {
+            $from_email = sanitize_email((string) CMN_MAIL_FROM_EMAIL);
+        }
+        if (!$this->is_valid_covermenow_sender_email($from_email)) {
+            $option_email = sanitize_email((string) get_option('cmn_mail_from_email', ''));
+            if ($this->is_valid_covermenow_sender_email($option_email)) {
+                $from_email = $option_email;
+            }
+        }
+        if (!$this->is_valid_covermenow_sender_email($from_email)) {
+            $fallback = sanitize_email((string) $this->get_support_from_email());
+            if ($this->is_valid_covermenow_sender_email($fallback)) {
+                $from_email = $fallback;
+            }
+        }
+        if (!$this->is_valid_covermenow_sender_email($from_email)) {
+            $from_email = 'support@covermenow.co.uk';
+        }
+        return $from_email;
+    }
+
+    private function get_authorized_mail_from_name() {
+        $from_name = '';
+        if (defined('CMN_MAIL_FROM_NAME')) {
+            $from_name = $this->sanitize_mail_header_text((string) CMN_MAIL_FROM_NAME);
+        }
+        if ($from_name === '') {
+            $from_name = $this->sanitize_mail_header_text((string) get_option('cmn_mail_from_name', ''));
+        }
+        if ($from_name === '') {
+            $from_name = 'CoverMeNow ONE';
+        }
+        return $from_name;
+    }
+
+    private function get_mail_context_reply_to_email() {
+        $reply_to = '';
+        if (!empty($GLOBALS['cmn_candidate_mail_context'])) {
+            $reply_to = sanitize_email((string) $this->get_candidate_from_email());
+        } elseif (!empty($GLOBALS['cmn_school_mail_context'])) {
+            $reply_to = sanitize_email((string) $this->get_school_from_email());
+        } elseif (!empty($GLOBALS['cmn_support_mail_context'])) {
+            $reply_to = sanitize_email((string) $this->get_support_from_email());
+        }
+        $authorized = strtolower($this->get_authorized_mail_from_email());
+        if ($reply_to === '' || strtolower($reply_to) === $authorized) {
+            return '';
+        }
+        return $reply_to;
+    }
+
+    private function get_active_smtp_username_for_mail_context() {
+        $smtp_user = '';
+        if (!empty($GLOBALS['cmn_candidate_mail_context']) && defined('CMN_SMTP_USERNAME')) {
+            $smtp_user = (string) CMN_SMTP_USERNAME;
+        } elseif (!empty($GLOBALS['cmn_school_mail_context']) && defined('CMN_SCHOOL_SMTP_USERNAME')) {
+            $smtp_user = (string) CMN_SCHOOL_SMTP_USERNAME;
+        } elseif (!empty($GLOBALS['cmn_support_mail_context'])) {
+            if (defined('CMN_SUPPORT_SMTP_USERNAME')) {
+                $smtp_user = (string) CMN_SUPPORT_SMTP_USERNAME;
+            } elseif (defined('CMN_SCHOOL_SMTP_USERNAME')) {
+                $smtp_user = (string) CMN_SCHOOL_SMTP_USERNAME;
+            }
+        }
+        return sanitize_text_field($smtp_user);
+    }
+
+    private function mask_mail_identity_value($value) {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return '';
+        }
+        if (strpos($value, '@') !== false) {
+            $parts = explode('@', $value, 2);
+            $local = (string) ($parts[0] ?? '');
+            $domain = (string) ($parts[1] ?? '');
+            if ($local === '') {
+                return '***@' . $domain;
+            }
+            $visible_prefix = substr($local, 0, 1);
+            $visible_suffix = strlen($local) > 2 ? substr($local, -1) : '';
+            return $visible_prefix . '***' . $visible_suffix . '@' . $domain;
+        }
+        if (strlen($value) <= 4) {
+            return str_repeat('*', strlen($value));
+        }
+        return substr($value, 0, 2) . str_repeat('*', max(2, strlen($value) - 4)) . substr($value, -2);
+    }
+
+    private function normalize_headers_with_authorized_sender(array $headers, $reply_to = '') {
+        $normalized = [];
+        foreach ($headers as $line) {
+            $line = trim((string) $line);
+            if ($line === '') {
+                continue;
+            }
+            $header_name = strtolower((string) strtok($line, ':'));
+            if (in_array($header_name, ['from', 'reply-to', 'return-path'], true)) {
+                continue;
+            }
+            $normalized[] = $line;
+        }
+
+        $from_email = $this->get_authorized_mail_from_email();
+        $from_name = $this->get_authorized_mail_from_name();
+        $normalized[] = 'From: ' . $from_name . ' <' . $from_email . '>';
+        if ($reply_to !== '' && strtolower($reply_to) !== strtolower($from_email)) {
+            $normalized[] = 'Reply-To: ' . $reply_to;
+        }
+        $normalized[] = 'Return-Path: <' . $from_email . '>';
+
+        return $normalized;
+    }
+
+    private function apply_authorized_sender_to_phpmailer($phpmailer, $reply_to_email = '', $reply_to_name = '') {
+        if (!is_object($phpmailer)) {
+            return;
+        }
+        $from_email = $this->get_authorized_mail_from_email();
+        $from_name = $this->get_authorized_mail_from_name();
+        if ($from_email === '') {
+            return;
+        }
+        $reply_to_email = sanitize_email((string) $reply_to_email);
+        $reply_to_name = $this->sanitize_mail_header_text((string) $reply_to_name);
+        if ($reply_to_name === '') {
+            $reply_to_name = $from_name;
+        }
+
+        try {
+            if (method_exists($phpmailer, 'setFrom')) {
+                $phpmailer->setFrom($from_email, $from_name, false);
+            }
+            $phpmailer->Sender = $from_email;
+            if (method_exists($phpmailer, 'clearReplyTos')) {
+                $phpmailer->clearReplyTos();
+            }
+            if ($reply_to_email !== '' && strtolower($reply_to_email) !== strtolower($from_email) && method_exists($phpmailer, 'addReplyTo')) {
+                $phpmailer->addReplyTo($reply_to_email, $reply_to_name);
+            }
+        } catch (Throwable $throwable) {
+            error_log('CMN SMTP sender normalization error: ' . sanitize_text_field((string) $throwable->getMessage()));
+        }
+    }
+
     private function begin_candidate_mail_context() {
         if (!empty($GLOBALS['cmn_school_mail_context']) || !empty($GLOBALS['cmn_support_mail_context'])) {
             $this->log_mail_context_error('Attempted to set candidate context while another mail context is active.');
@@ -20882,10 +21039,11 @@ global $wpdb;
             $phpmailer->SMTPAuth = true;
             $phpmailer->Username = CMN_SMTP_USERNAME;
             $phpmailer->Password = CMN_SMTP_PASSWORD;
-            if (defined('CMN_SMTP_FROM_EMAIL') && defined('CMN_SMTP_FROM_NAME')) {
-                $phpmailer->setFrom(CMN_SMTP_FROM_EMAIL, CMN_SMTP_FROM_NAME, false);
-                $phpmailer->addReplyTo(CMN_SMTP_FROM_EMAIL, CMN_SMTP_FROM_NAME);
-            }
+            $this->apply_authorized_sender_to_phpmailer(
+                $phpmailer,
+                (string) $this->get_candidate_from_email(),
+                (string) $this->get_candidate_from_name()
+            );
             return;
         }
         if (!empty($GLOBALS['cmn_school_mail_context'])) {
@@ -20899,10 +21057,11 @@ global $wpdb;
             $phpmailer->SMTPAuth = true;
             $phpmailer->Username = CMN_SCHOOL_SMTP_USERNAME;
             $phpmailer->Password = CMN_SCHOOL_SMTP_PASSWORD;
-            if (defined('CMN_SCHOOL_SMTP_FROM_EMAIL') && defined('CMN_SCHOOL_SMTP_FROM_NAME')) {
-                $phpmailer->setFrom(CMN_SCHOOL_SMTP_FROM_EMAIL, CMN_SCHOOL_SMTP_FROM_NAME, false);
-                $phpmailer->addReplyTo(CMN_SCHOOL_SMTP_FROM_EMAIL, CMN_SCHOOL_SMTP_FROM_NAME);
-            }
+            $this->apply_authorized_sender_to_phpmailer(
+                $phpmailer,
+                (string) $this->get_school_from_email(),
+                (string) $this->get_school_from_name()
+            );
             return;
         }
         if (!empty($GLOBALS['cmn_support_mail_context'])) {
@@ -20922,52 +21081,20 @@ global $wpdb;
             $phpmailer->SMTPAuth = true;
             $phpmailer->Username = $smtp_username;
             $phpmailer->Password = $smtp_password;
-
-            $from_email = sanitize_email((string) $this->get_support_from_email());
-            $from_name = sanitize_text_field((string) $this->get_support_from_name());
-            if ($from_email !== '') {
-                $phpmailer->setFrom($from_email, $from_name !== '' ? $from_name : 'CoverMeNow Support', false);
-                $phpmailer->addReplyTo($from_email, $from_name !== '' ? $from_name : 'CoverMeNow Support');
-            }
+            $this->apply_authorized_sender_to_phpmailer(
+                $phpmailer,
+                (string) $this->get_support_from_email(),
+                (string) $this->get_support_from_name()
+            );
         }
     }
 
     public function filter_mail_from($from) {
-        if (!empty($GLOBALS['cmn_candidate_mail_context']) && !empty($GLOBALS['cmn_school_mail_context'])) {
-            $this->log_mail_context_error('Both mail contexts active during wp_mail_from. Using candidate sender.');
-        }
-        if (!empty($GLOBALS['cmn_support_mail_context']) && (!empty($GLOBALS['cmn_candidate_mail_context']) || !empty($GLOBALS['cmn_school_mail_context']))) {
-            $this->log_mail_context_error('Support mail context active during wp_mail_from with another context.');
-        }
-        if (!empty($GLOBALS['cmn_candidate_mail_context'])) {
-            return $this->get_candidate_from_email();
-        }
-        if (!empty($GLOBALS['cmn_school_mail_context'])) {
-            return $this->get_school_from_email();
-        }
-        if (!empty($GLOBALS['cmn_support_mail_context'])) {
-            return $this->get_support_from_email();
-        }
-        return $from;
+        return $this->get_authorized_mail_from_email();
     }
 
     public function filter_mail_from_name($name) {
-        if (!empty($GLOBALS['cmn_candidate_mail_context']) && !empty($GLOBALS['cmn_school_mail_context'])) {
-            $this->log_mail_context_error('Both mail contexts active during wp_mail_from_name. Using candidate sender.');
-        }
-        if (!empty($GLOBALS['cmn_support_mail_context']) && (!empty($GLOBALS['cmn_candidate_mail_context']) || !empty($GLOBALS['cmn_school_mail_context']))) {
-            $this->log_mail_context_error('Support mail context active during wp_mail_from_name with another context.');
-        }
-        if (!empty($GLOBALS['cmn_candidate_mail_context'])) {
-            return $this->get_candidate_from_name();
-        }
-        if (!empty($GLOBALS['cmn_school_mail_context'])) {
-            return $this->get_school_from_name();
-        }
-        if (!empty($GLOBALS['cmn_support_mail_context'])) {
-            return $this->get_support_from_name();
-        }
-        return $name;
+        return $this->get_authorized_mail_from_name();
     }
 
     public function handle_candidate_mail_failed($wp_error) {
@@ -21968,6 +22095,20 @@ global $wpdb;
         $now = current_time('mysql');
         $sender_name = $this->sanitize_mail_header_text((string) ($args['sender_name'] ?? ($args['from_name'] ?? '')));
         $from_name = $this->sanitize_mail_header_text((string) ($args['from_name'] ?? $sender_name));
+        $rendered_html_body = '';
+        if (isset($args['rendered_html_body'])) {
+            $rendered_html_body = (string) $args['rendered_html_body'];
+            if (strlen($rendered_html_body) > 200000) {
+                $rendered_html_body = substr($rendered_html_body, 0, 200000);
+            }
+        }
+        $rendered_text_body = '';
+        if (isset($args['rendered_text_body'])) {
+            $rendered_text_body = sanitize_textarea_field((string) $args['rendered_text_body']);
+            if (strlen($rendered_text_body) > 200000) {
+                $rendered_text_body = substr($rendered_text_body, 0, 200000);
+            }
+        }
         if ($from_name === '' && $sender_name !== '') {
             $from_name = $sender_name;
         }
@@ -22044,6 +22185,14 @@ global $wpdb;
         }
         if (self::table_has_column($table, 'send_status') && !isset($insert_data['send_status'])) {
             $insert_data['send_status'] = $status;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'rendered_html_body')) {
+            $insert_data['rendered_html_body'] = $rendered_html_body !== '' ? $rendered_html_body : null;
+            $insert_format[] = '%s';
+        }
+        if (self::table_has_column($table, 'rendered_text_body')) {
+            $insert_data['rendered_text_body'] = $rendered_text_body !== '' ? $rendered_text_body : null;
             $insert_format[] = '%s';
         }
 
@@ -22197,6 +22346,8 @@ global $wpdb;
             self::table_has_column($table, 'related_entity_type') ? 'related_entity_type' : "'' AS related_entity_type",
             self::table_has_column($table, 'related_entity_id') ? 'related_entity_id' : 'NULL AS related_entity_id',
             $metadata_select,
+            self::table_has_column($table, 'rendered_html_body') ? 'rendered_html_body' : "'' AS rendered_html_body",
+            self::table_has_column($table, 'rendered_text_body') ? 'rendered_text_body' : "'' AS rendered_text_body",
             'created_at',
             self::table_has_column($table, 'updated_at') ? 'updated_at' : 'created_at AS updated_at',
         ];
@@ -22276,6 +22427,8 @@ global $wpdb;
             self::table_has_column($table, 'related_entity_type') ? 'related_entity_type' : "'' AS related_entity_type",
             self::table_has_column($table, 'related_entity_id') ? 'related_entity_id' : 'NULL AS related_entity_id',
             $metadata_select,
+            self::table_has_column($table, 'rendered_html_body') ? 'rendered_html_body' : "'' AS rendered_html_body",
+            self::table_has_column($table, 'rendered_text_body') ? 'rendered_text_body' : "'' AS rendered_text_body",
             'created_at',
             self::table_has_column($table, 'updated_at') ? 'updated_at' : 'created_at AS updated_at',
         ];
@@ -22317,6 +22470,8 @@ global $wpdb;
             'related_entity_type' => sanitize_key((string) ($row['related_entity_type'] ?? '')),
             'related_entity_id' => max(0, (int) ($row['related_entity_id'] ?? 0)),
             'metadata' => $metadata_json,
+            'rendered_html_body' => (string) ($row['rendered_html_body'] ?? ''),
+            'rendered_text_body' => (string) ($row['rendered_text_body'] ?? ''),
             'created_at' => sanitize_text_field((string) ($row['created_at'] ?? '')),
             'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
         ];
@@ -23162,6 +23317,10 @@ global $wpdb;
                     'source' => 'wp_mail_hook',
                     'message_token' => $message_token,
                 ],
+                'rendered_html_body' => strpos(strtolower((string) implode("\n", $headers)), 'content-type: text/html') !== false
+                    ? (string) ($mail_data['message'] ?? '')
+                    : '',
+                'rendered_text_body' => trim((string) wp_strip_all_tags((string) ($mail_data['message'] ?? ''))),
             ]);
             if ($log_id > 0) {
                 $log_ids[] = $log_id;
@@ -23208,17 +23367,20 @@ global $wpdb;
         $attachments = is_array($attachments) ? $attachments : [];
         $log_args = is_array($log_args) ? $log_args : [];
 
-        $from_email = $this->sanitize_mail_header_email((string) ($log_args['from_email'] ?? ''));
-        if ($from_email === '') {
-            $from_email = $this->sanitize_mail_header_email((string) $this->get_school_from_email());
+        $header_sender = $this->extract_wp_mail_sender_from_headers_for_logging($headers);
+        $requested_from_email = $this->sanitize_mail_header_email((string) ($log_args['from_email'] ?? (string) ($header_sender['email'] ?? '')));
+        if ($requested_from_email === '') {
+            $requested_from_email = $this->get_mail_context_reply_to_email();
         }
-        if ($from_email === '') {
-            $from_email = 'school@covermenow.co.uk';
+        $requested_from_name = $this->sanitize_mail_header_text((string) ($log_args['from_name'] ?? (string) ($header_sender['name'] ?? '')));
+        $requested_reply_to = $this->sanitize_mail_header_email((string) $this->get_wp_mail_header_value_for_logging($headers, 'Reply-To'));
+        if ($requested_reply_to === '' && $requested_from_email !== '') {
+            $requested_reply_to = $requested_from_email;
         }
-        $from_name = $this->sanitize_mail_header_text((string) ($log_args['from_name'] ?? ''));
-        if ($from_name === '') {
-            $from_name = 'CoverMeNow ONE';
-        }
+
+        $from_email = $this->get_authorized_mail_from_email();
+        $from_name = $this->get_authorized_mail_from_name();
+        $headers = $this->normalize_headers_with_authorized_sender($headers, $requested_reply_to);
 
         $template_key = sanitize_key((string) ($log_args['template_key'] ?? ''));
         $recipient_role = sanitize_key((string) ($log_args['recipient_role'] ?? ''));
@@ -23237,6 +23399,21 @@ global $wpdb;
         $related_entity_type = sanitize_key((string) ($log_args['related_entity_type'] ?? ''));
         $related_entity_id = max(0, (int) ($log_args['related_entity_id'] ?? 0));
         $metadata = is_array($log_args['metadata'] ?? null) ? (array) $log_args['metadata'] : [];
+        $smtp_username = $this->get_active_smtp_username_for_mail_context();
+        if ($requested_from_email !== '') {
+            $metadata['requested_from_email'] = $requested_from_email;
+        }
+        if ($requested_from_name !== '') {
+            $metadata['requested_from_name'] = $requested_from_name;
+        }
+        if ($requested_reply_to !== '') {
+            $metadata['reply_to_email'] = $requested_reply_to;
+        }
+        $metadata['enforced_from_email'] = $from_email;
+        $metadata['enforced_from_name'] = $from_name;
+        if ($smtp_username !== '') {
+            $metadata['smtp_user_masked'] = $this->mask_mail_identity_value($smtp_username);
+        }
         $recipient_user_id = max(0, (int) ($log_args['recipient_user_id'] ?? 0));
         if ($recipient_user_id < 1) {
             $recipient_user_id = $this->resolve_user_id_from_notification_email($recipient_email);
@@ -23289,6 +23466,8 @@ global $wpdb;
                 'related_entity_type' => $related_entity_type !== '' ? $related_entity_type : null,
                 'related_entity_id' => $related_entity_id > 0 ? $related_entity_id : null,
                 'metadata' => $metadata,
+                'rendered_html_body' => strpos(strtolower((string) implode("\n", $headers)), 'content-type: text/html') !== false ? $message_body : '',
+                'rendered_text_body' => trim((string) wp_strip_all_tags($message_body)),
             ]);
             return [
                 'success' => true,
@@ -23329,6 +23508,8 @@ global $wpdb;
             'related_entity_type' => $related_entity_type !== '' ? $related_entity_type : null,
             'related_entity_id' => $related_entity_id > 0 ? $related_entity_id : null,
             'metadata' => $metadata,
+            'rendered_html_body' => strpos(strtolower((string) implode("\n", $headers)), 'content-type: text/html') !== false ? $message_body : '',
+            'rendered_text_body' => trim((string) wp_strip_all_tags($message_body)),
         ]);
 
         $sent = false;
@@ -23359,6 +23540,16 @@ global $wpdb;
         if ($log_id > 0) {
             $this->email_log_update_status($log_id, $sent ? 'sent' : 'failed', $mail_error);
         }
+
+        $this->add_audit_log('email_send_attempt', 'email', (string) $log_id, [
+            'template_key' => $template_key,
+            'recipient_email' => $recipient_email,
+            'recipient_role' => $recipient_role,
+            'from_email' => $from_email,
+            'smtp_user' => $smtp_username !== '' ? $this->mask_mail_identity_value($smtp_username) : '',
+            'result' => $sent ? 'sent' : 'failed',
+            'error_message' => $mail_error,
+        ], (int) get_current_user_id());
 
         return [
             'success' => $sent,
@@ -28118,6 +28309,355 @@ global $wpdb;
         wp_send_json_success(['weights' => $weights, 'history_count' => count($history)]);
     }
 
+    private function get_email_centre_logs_redirect_url() {
+        $default = add_query_arg([
+            'view' => 'email-centre',
+            'cmn_email_centre_tab' => 'logs',
+        ], $this->get_portal_base_url());
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        if ($redirect === '') {
+            $redirect = wp_get_referer();
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            return $default;
+        }
+        $validated = wp_validate_redirect($redirect, $default);
+        return is_string($validated) && $validated !== '' ? $validated : $default;
+    }
+
+    private function parse_email_retry_since_value($value) {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return '';
+        }
+        $formats = [
+            'Y-m-d\TH:i',
+            'Y-m-d H:i:s',
+            'Y-m-d H:i',
+            'Y-m-d',
+        ];
+        foreach ($formats as $format) {
+            $dt = DateTimeImmutable::createFromFormat($format, $raw, wp_timezone());
+            if ($dt instanceof DateTimeImmutable) {
+                if ($format === 'Y-m-d') {
+                    $dt = $dt->setTime(0, 0, 0);
+                }
+                return $dt->format('Y-m-d H:i:s');
+            }
+        }
+        try {
+            $dt = new DateTimeImmutable($raw, wp_timezone());
+            return $dt->format('Y-m-d H:i:s');
+        } catch (Throwable $throwable) {
+            return '';
+        }
+    }
+
+    private function get_failed_email_logs_since($since_mysql, $limit = 100) {
+        global $wpdb;
+        $limit = max(1, min(200, (int) $limit));
+        $since_mysql = sanitize_text_field((string) $since_mysql);
+        if ($since_mysql === '' || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $since_mysql)) {
+            return [];
+        }
+
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'id') || !self::table_has_column($table, 'recipient_email')) {
+            return [];
+        }
+        $status_column = self::table_has_column($table, 'status')
+            ? 'status'
+            : (self::table_has_column($table, 'send_status') ? 'send_status' : '');
+        if ($status_column === '') {
+            return [];
+        }
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT id
+             FROM {$table}
+             WHERE {$status_column} = %s
+               AND created_at >= %s
+             ORDER BY id ASC
+             LIMIT %d",
+            'failed',
+            $since_mysql,
+            $limit
+        ), ARRAY_A);
+        $result = [];
+        foreach ($rows as $row) {
+            $log_id = max(0, (int) ($row['id'] ?? 0));
+            if ($log_id < 1) {
+                continue;
+            }
+            $entry = $this->get_email_log_entry_by_id($log_id);
+            if (!empty($entry)) {
+                $result[] = $entry;
+            }
+        }
+        return $result;
+    }
+
+    private function email_log_has_success_for_template_recipient($template_key, $recipient_email, $related_entity_type = '', $related_entity_id = 0, $ignore_log_id = 0) {
+        global $wpdb;
+        $template_key = sanitize_key((string) $template_key);
+        $recipient_email = sanitize_email((string) $recipient_email);
+        $related_entity_type = sanitize_key((string) $related_entity_type);
+        $related_entity_id = max(0, (int) $related_entity_id);
+        $ignore_log_id = max(0, (int) $ignore_log_id);
+
+        if ($template_key === '' || $recipient_email === '') {
+            return false;
+        }
+
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'template_key') || !self::table_has_column($table, 'recipient_email')) {
+            return false;
+        }
+        $status_column = self::table_has_column($table, 'status')
+            ? 'status'
+            : (self::table_has_column($table, 'send_status') ? 'send_status' : '');
+        if ($status_column === '') {
+            return false;
+        }
+
+        $where = [
+            'template_key = %s',
+            'recipient_email = %s',
+            "{$status_column} = %s",
+        ];
+        $params = [$template_key, $recipient_email, 'sent'];
+
+        if ($related_entity_type !== '' && self::table_has_column($table, 'related_entity_type')) {
+            $where[] = 'related_entity_type = %s';
+            $params[] = $related_entity_type;
+        }
+        if ($related_entity_id > 0 && self::table_has_column($table, 'related_entity_id')) {
+            $where[] = 'related_entity_id = %d';
+            $params[] = $related_entity_id;
+        }
+        if ($ignore_log_id > 0) {
+            $where[] = 'id <> %d';
+            $params[] = $ignore_log_id;
+        }
+
+        $count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+             FROM {$table}
+             WHERE " . implode(' AND ', $where),
+            $params
+        ));
+        return $count > 0;
+    }
+
+    private function resolve_candidate_context_for_email_log(array $log_row) {
+        $candidate_id = 0;
+        if (($log_row['related_entity_type'] ?? '') === 'candidate') {
+            $candidate_id = max(0, (int) ($log_row['related_entity_id'] ?? 0));
+        }
+        $recipient_user_id = max(0, (int) ($log_row['recipient_user_id'] ?? 0));
+        $recipient_email = sanitize_email((string) ($log_row['recipient_email'] ?? ''));
+
+        if ($candidate_id < 1 && $recipient_user_id > 0) {
+            $candidate_id = (int) $this->get_candidate_id_for_user($recipient_user_id);
+        }
+        if ($candidate_id < 1 && $recipient_email !== '') {
+            $candidate_post = get_posts([
+                'post_type' => 'cmn_candidate',
+                'posts_per_page' => 1,
+                'fields' => 'ids',
+                'meta_query' => [
+                    [
+                        'key' => 'cmn_email',
+                        'value' => $recipient_email,
+                    ],
+                ],
+            ]);
+            if (!empty($candidate_post[0])) {
+                $candidate_id = (int) $candidate_post[0];
+            }
+        }
+        if ($recipient_user_id < 1 && $candidate_id > 0) {
+            $recipient_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        }
+        if ($recipient_email === '' && $candidate_id > 0) {
+            $recipient_email = $this->get_candidate_notification_email($candidate_id, $recipient_user_id);
+        }
+        $candidate_name = $candidate_id > 0 ? sanitize_text_field((string) get_the_title($candidate_id)) : '';
+        if ($candidate_name === '' && $recipient_user_id > 0) {
+            $user = get_user_by('id', $recipient_user_id);
+            if ($user instanceof WP_User) {
+                $candidate_name = sanitize_text_field((string) $user->display_name);
+            }
+        }
+        return [
+            'candidate_id' => $candidate_id,
+            'candidate_user_id' => $recipient_user_id,
+            'candidate_email' => $recipient_email,
+            'candidate_name' => $candidate_name,
+        ];
+    }
+
+    private function retry_failed_email_log_without_rendered_payload(array $log_row, $actor_user_id = 0, $mode = 'single') {
+        $template_key = sanitize_key((string) ($log_row['template_key'] ?? ''));
+        $recipient_email = sanitize_email((string) ($log_row['recipient_email'] ?? ''));
+        $subject = sanitize_text_field((string) ($log_row['subject'] ?? 'CoverMeNow ONE update'));
+        $related_entity_type = sanitize_key((string) ($log_row['related_entity_type'] ?? ''));
+        $related_entity_id = max(0, (int) ($log_row['related_entity_id'] ?? 0));
+        $log_id = max(0, (int) ($log_row['id'] ?? 0));
+
+        if ($template_key === 'candidate_verification') {
+            $candidate_context = $this->resolve_candidate_context_for_email_log($log_row);
+            $candidate_user_id = max(0, (int) ($candidate_context['candidate_user_id'] ?? 0));
+            $candidate_email = sanitize_email((string) ($candidate_context['candidate_email'] ?? ''));
+            if ($candidate_user_id < 1 || $candidate_email === '') {
+                return ['status' => 'failed', 'message' => 'Candidate context is missing for verification resend.', 'resent_log_id' => 0];
+            }
+            if ($this->email_log_has_success_for_template_recipient($template_key, $candidate_email, 'candidate', (int) ($candidate_context['candidate_id'] ?? 0), $log_id)) {
+                return ['status' => 'skipped', 'message' => 'Verification email already sent successfully.', 'resent_log_id' => 0];
+            }
+            $this->send_candidate_verification_email($candidate_user_id, (string) ($candidate_context['candidate_name'] ?? ''), $candidate_email);
+            return ['status' => 'sent', 'message' => 'Verification email resent.', 'resent_log_id' => 0];
+        }
+
+        if (in_array($template_key, ['candidate_pending_review', 'candidate_approved'], true)) {
+            $candidate_context = $this->resolve_candidate_context_for_email_log($log_row);
+            $candidate_id = max(0, (int) ($candidate_context['candidate_id'] ?? 0));
+            $candidate_user_id = max(0, (int) ($candidate_context['candidate_user_id'] ?? 0));
+            if ($candidate_id < 1 || $candidate_user_id < 1) {
+                return ['status' => 'failed', 'message' => 'Candidate lifecycle context missing.', 'resent_log_id' => 0];
+            }
+            $event = $template_key === 'candidate_approved' ? 'approved' : 'pending_review';
+            if (!$this->enqueue_candidate_lifecycle_email($candidate_id, $candidate_user_id, $event, 'email_log_retry_' . sanitize_key((string) $mode))) {
+                return ['status' => 'failed', 'message' => 'Unable to queue lifecycle email.', 'resent_log_id' => 0];
+            }
+            $this->process_candidate_email_outbox_queue('manual', (int) $actor_user_id, 10);
+            return ['status' => 'sent', 'message' => 'Lifecycle email queued for retry.', 'resent_log_id' => 0];
+        }
+
+        if ($template_key === 'candidate_status_update') {
+            if ($recipient_email === '') {
+                return ['status' => 'failed', 'message' => 'Recipient email is missing.', 'resent_log_id' => 0];
+            }
+            if ($this->email_log_has_success_for_template_recipient($template_key, $recipient_email, $related_entity_type, $related_entity_id, $log_id)) {
+                return ['status' => 'skipped', 'message' => 'Status update already sent successfully.', 'resent_log_id' => 0];
+            }
+            $message = "Hi,\n\nYour CoverMeNow candidate status has been updated.\n\nIf you have any questions, please contact support:\n" . add_query_arg(['candidate' => 'support'], $this->get_portal_base_url());
+            $sent = $this->send_candidate_email($recipient_email, $subject !== '' ? $subject : 'Candidate status update', $message, [
+                'type' => 'candidate_status_update',
+                'related_candidate_id' => $related_entity_id,
+            ]);
+            return [
+                'status' => $sent ? 'sent' : 'failed',
+                'message' => $sent ? 'Candidate status update resent.' : 'Failed to resend candidate status update.',
+                'resent_log_id' => 0,
+            ];
+        }
+
+        if (in_array($template_key, ['candidate_registration', 'candidate_registration_admin'], true)) {
+            $candidate_context = $this->resolve_candidate_context_for_email_log($log_row);
+            $candidate_email = sanitize_email((string) ($candidate_context['candidate_email'] ?? ''));
+            $candidate_name = sanitize_text_field((string) ($candidate_context['candidate_name'] ?? ''));
+            $admin_email = $this->get_admin_recipient_email();
+            if ($admin_email === '') {
+                return ['status' => 'failed', 'message' => 'Admin recipient email is not configured.', 'resent_log_id' => 0];
+            }
+            if ($this->email_log_has_success_for_template_recipient('candidate_registration', $admin_email, 'candidate', max(0, (int) ($candidate_context['candidate_id'] ?? 0)), $log_id)) {
+                return ['status' => 'skipped', 'message' => 'Registration notification already sent successfully.', 'resent_log_id' => 0];
+            }
+            $message = "A new candidate registration request was submitted.\n\nCandidate: " . ($candidate_name !== '' ? $candidate_name : 'Unknown') . "\nEmail: " . ($candidate_email !== '' ? $candidate_email : 'Unknown') . "\n\nReview in the CRM.";
+            $sent = $this->send_candidate_email($admin_email, 'New Candidate Registration Request', $message, [
+                'type' => 'candidate_registration',
+                'related_candidate_id' => max(0, (int) ($candidate_context['candidate_id'] ?? 0)),
+            ]);
+            return [
+                'status' => $sent ? 'sent' : 'failed',
+                'message' => $sent ? 'Candidate registration notification resent.' : 'Failed to resend registration notification.',
+                'resent_log_id' => 0,
+            ];
+        }
+
+        return ['status' => 'failed', 'message' => 'No stored payload available for this template.', 'resent_log_id' => 0];
+    }
+
+    private function retry_failed_email_log_row(array $log_row, $actor_user_id = 0, $mode = 'single') {
+        $log_id = max(0, (int) ($log_row['id'] ?? 0));
+        $status = sanitize_key((string) ($log_row['status'] ?? ($log_row['send_status'] ?? '')));
+        if ($log_id < 1) {
+            return ['status' => 'failed', 'message' => 'Invalid email log id.', 'resent_log_id' => 0];
+        }
+        if ($status !== 'failed') {
+            return ['status' => 'skipped', 'message' => 'Only failed logs can be retried.', 'resent_log_id' => 0];
+        }
+
+        $template_key = sanitize_key((string) ($log_row['template_key'] ?? ''));
+        $recipient_email = sanitize_email((string) ($log_row['recipient_email'] ?? ''));
+        $related_entity_type = sanitize_key((string) ($log_row['related_entity_type'] ?? ''));
+        $related_entity_id = max(0, (int) ($log_row['related_entity_id'] ?? 0));
+        if ($template_key !== '' && $recipient_email !== '' && $this->email_log_has_success_for_template_recipient($template_key, $recipient_email, $related_entity_type, $related_entity_id, $log_id)) {
+            return ['status' => 'skipped', 'message' => 'A successful send already exists for this template and recipient.', 'resent_log_id' => 0];
+        }
+
+        $subject = sanitize_text_field((string) ($log_row['subject'] ?? 'CoverMeNow ONE notification'));
+        if ($subject === '') {
+            $subject = 'CoverMeNow ONE notification';
+        }
+        $body_html = (string) ($log_row['rendered_html_body'] ?? '');
+        $body_text = (string) ($log_row['rendered_text_body'] ?? '');
+        if ($body_html === '' && $body_text !== '') {
+            $body_html = wpautop(esc_html($body_text));
+        }
+        if ($body_text === '' && $body_html !== '') {
+            $body_text = trim((string) wp_strip_all_tags($body_html));
+        }
+        if ($body_html === '' && $body_text === '') {
+            return $this->retry_failed_email_log_without_rendered_payload($log_row, $actor_user_id, $mode);
+        }
+        if ($recipient_email === '') {
+            return ['status' => 'failed', 'message' => 'Recipient email is missing.', 'resent_log_id' => 0];
+        }
+
+        $headers = [];
+        if ($body_html !== '') {
+            $headers[] = 'Content-Type: text/html; charset=UTF-8';
+        } else {
+            $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+        }
+        $reply_to = sanitize_email((string) ($log_row['from_email'] ?? ''));
+        $headers = $this->normalize_headers_with_authorized_sender($headers, $reply_to);
+        $module = sanitize_key((string) ($log_row['module'] ?? ''));
+        $recipient_role = sanitize_key((string) ($log_row['recipient_role'] ?? ''));
+        if ($recipient_role === '') {
+            $recipient_role = 'system';
+        }
+        $result = $this->send_wp_mail_with_email_log(
+            $recipient_email,
+            $subject,
+            $body_html !== '' ? $body_html : $body_text,
+            $headers,
+            [],
+            [
+                'template_key' => $template_key,
+                'module' => $module,
+                'recipient_user_id' => max(0, (int) ($log_row['recipient_user_id'] ?? 0)),
+                'recipient_role' => $recipient_role,
+                'from_email' => $reply_to,
+                'from_name' => sanitize_text_field((string) ($log_row['from_name'] ?? '')),
+                'related_entity_type' => $related_entity_type,
+                'related_entity_id' => $related_entity_id,
+                'metadata' => [
+                    'source' => 'email_log_retry',
+                    'resent_from_log_id' => $log_id,
+                    'retry_mode' => sanitize_key((string) $mode),
+                ],
+            ]
+        );
+        $sent = !empty($result['success']);
+        return [
+            'status' => $sent ? 'sent' : 'failed',
+            'message' => $sent ? 'Email resent successfully.' : sanitize_text_field((string) ($result['error_message'] ?? 'Email resend failed.')),
+            'resent_log_id' => max(0, (int) ($result['log_id'] ?? 0)),
+        ];
+    }
+
     public function handle_email_log_resend() {
         $actor_user_id = (int) get_current_user_id();
         $guard = $this->cmn_endpoint_guard([
@@ -28138,16 +28678,257 @@ global $wpdb;
         }
 
         $email_log_id = (int) ($_POST['cmn_email_log_id'] ?? 0);
-        $redirect = wp_get_referer();
-        if (!is_string($redirect) || $redirect === '') {
-            $redirect = add_query_arg(['view' => 'email-centre'], $this->get_portal_base_url());
+        $redirect = $this->get_email_centre_logs_redirect_url();
+        if (!$this->is_admin_user($actor_user_id)) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_email_log_resend_status' => 'error',
+                'cmn_email_log_resend_msg' => rawurlencode('Access denied.'),
+            ], $redirect));
+            exit;
         }
-
+        $row = $this->get_email_log_entry_by_id($email_log_id);
+        if (empty($row)) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_email_log_resend_status' => 'error',
+                'cmn_email_log_resend_msg' => rawurlencode('Email log entry not found.'),
+            ], $redirect));
+            exit;
+        }
+        $result = $this->retry_failed_email_log_row((array) $row, $actor_user_id, 'single');
+        $status = sanitize_key((string) ($result['status'] ?? 'error'));
+        if (!in_array($status, ['sent', 'failed', 'skipped'], true)) {
+            $status = 'error';
+        }
+        $message = sanitize_text_field((string) ($result['message'] ?? 'Unable to retry email log entry.'));
         $this->add_audit_log('email_log_resend_requested', 'email_log', (string) $email_log_id, [
-            'status' => 'not_implemented',
+            'status' => $status,
+            'message' => $message,
+            'resent_log_id' => max(0, (int) ($result['resent_log_id'] ?? 0)),
         ], $actor_user_id);
         wp_safe_redirect(add_query_arg([
-            'cmn_notice' => rawurlencode('Email resend is not yet available for this entry.'),
+            'cmn_email_log_resend_status' => $status === 'sent' ? 'success' : ($status === 'skipped' ? 'warning' : 'error'),
+            'cmn_email_log_resend_msg' => rawurlencode($message),
+        ], $redirect));
+        exit;
+    }
+
+    public function handle_email_log_retry_failed_since() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_email_log_retry_failed_since',
+            'nonce_field' => 'cmn_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $redirect = $this->get_email_centre_logs_redirect_url();
+        if (!$this->is_admin_user($actor_user_id)) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_email_log_retry_since_status' => 'error',
+                'cmn_email_log_retry_since_msg' => rawurlencode('Access denied.'),
+            ], $redirect));
+            exit;
+        }
+        $since_value = $this->parse_email_retry_since_value((string) ($_POST['cmn_retry_failed_since'] ?? ''));
+        if ($since_value === '') {
+            wp_safe_redirect(add_query_arg([
+                'cmn_email_log_retry_since_status' => 'error',
+                'cmn_email_log_retry_since_msg' => rawurlencode('Please provide a valid "retry since" timestamp.'),
+            ], $redirect));
+            exit;
+        }
+
+        $rows = $this->get_failed_email_logs_since($since_value, 100);
+        $processed = 0;
+        $sent = 0;
+        $failed = 0;
+        $skipped = 0;
+        foreach ($rows as $row) {
+            $processed++;
+            $result = $this->retry_failed_email_log_row((array) $row, $actor_user_id, 'bulk_since');
+            $result_status = sanitize_key((string) ($result['status'] ?? 'failed'));
+            if ($result_status === 'sent') {
+                $sent++;
+            } elseif ($result_status === 'skipped') {
+                $skipped++;
+            } else {
+                $failed++;
+            }
+        }
+
+        $message = sprintf(
+            'Retry complete since %s. Processed %d log(s): %d sent, %d failed, %d skipped.',
+            $since_value,
+            $processed,
+            $sent,
+            $failed,
+            $skipped
+        );
+        $this->add_audit_log('email_log_retry_failed_since', 'email_log', $since_value, [
+            'since' => $since_value,
+            'processed' => $processed,
+            'sent' => $sent,
+            'failed' => $failed,
+            'skipped' => $skipped,
+        ], $actor_user_id);
+
+        wp_safe_redirect(add_query_arg([
+            'cmn_email_log_retry_since_status' => $failed > 0 ? 'warning' : 'success',
+            'cmn_email_log_retry_since_msg' => rawurlencode($message),
+        ], $redirect));
+        exit;
+    }
+
+    private function run_candidate_email_backfill_for_email_centre($candidate_id, $actor_user_id = 0) {
+        $candidate_id = max(0, (int) $candidate_id);
+        if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
+            return ['status' => 'error', 'message' => 'Candidate not found.', 'processed' => 0, 'queued' => 0, 'skipped' => 0, 'failed' => 0];
+        }
+
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        $candidate_email = $this->get_candidate_notification_email($candidate_id, $candidate_user_id);
+        $candidate_name = sanitize_text_field((string) get_the_title($candidate_id));
+        if ($candidate_name === '') {
+            $candidate_name = 'there';
+        }
+
+        $processed = 0;
+        $queued = 0;
+        $skipped = 0;
+        $failed = 0;
+
+        $admin_email = $this->get_admin_recipient_email();
+        $targets = [
+            'candidate_registration' => [
+                'recipient' => $admin_email,
+                'send' => function () use ($candidate_id, $candidate_name, $candidate_email, $admin_email) {
+                    if ($admin_email === '') {
+                        return false;
+                    }
+                    $message = "A new candidate registration request was submitted.\n\nCandidate: {$candidate_name}\nEmail: {$candidate_email}\n\nReview in the CRM.";
+                    return (bool) $this->send_candidate_email($admin_email, 'New Candidate Registration Request', $message, [
+                        'type' => 'candidate_registration',
+                        'related_candidate_id' => $candidate_id,
+                    ]);
+                },
+            ],
+            'candidate_verification' => [
+                'recipient' => $candidate_email,
+                'send' => function () use ($candidate_user_id, $candidate_name, $candidate_email) {
+                    if ($candidate_user_id < 1 || $candidate_email === '') {
+                        return false;
+                    }
+                    $this->send_candidate_verification_email($candidate_user_id, $candidate_name, $candidate_email);
+                    return true;
+                },
+            ],
+            'candidate_status_update' => [
+                'recipient' => $candidate_email,
+                'send' => function () use ($candidate_id, $candidate_email) {
+                    if ($candidate_email === '') {
+                        return false;
+                    }
+                    $message = "Your CoverMeNow profile is currently in review.\n\nWe'll notify you once the review is complete.";
+                    return (bool) $this->send_candidate_email($candidate_email, 'Candidate status update', $message, [
+                        'type' => 'candidate_status_update',
+                        'related_candidate_id' => $candidate_id,
+                    ]);
+                },
+            ],
+        ];
+
+        foreach ($targets as $template_key => $config) {
+            $processed++;
+            $recipient = sanitize_email((string) ($config['recipient'] ?? ''));
+            if ($recipient === '') {
+                $failed++;
+                continue;
+            }
+            if ($this->email_log_has_success_for_template_recipient($template_key, $recipient, 'candidate', $candidate_id, 0)) {
+                $skipped++;
+                continue;
+            }
+            $sender = $config['send'] ?? null;
+            $sent = is_callable($sender) ? (bool) call_user_func($sender) : false;
+            if ($sent) {
+                $queued++;
+            } else {
+                $failed++;
+            }
+        }
+
+        $status = $failed > 0 ? 'warning' : 'success';
+        $message = sprintf(
+            'Candidate %d backfill complete: %d processed, %d sent/queued, %d skipped, %d failed.',
+            $candidate_id,
+            $processed,
+            $queued,
+            $skipped,
+            $failed
+        );
+        $this->add_audit_log('email_log_backfill_candidate', 'candidate', (string) $candidate_id, [
+            'processed' => $processed,
+            'sent_or_queued' => $queued,
+            'skipped' => $skipped,
+            'failed' => $failed,
+        ], (int) $actor_user_id);
+        return [
+            'status' => $status,
+            'message' => $message,
+            'processed' => $processed,
+            'queued' => $queued,
+            'skipped' => $skipped,
+            'failed' => $failed,
+        ];
+    }
+
+    public function handle_email_log_backfill_candidate() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'portal.staff.view',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_email_log_backfill_candidate',
+            'nonce_field' => 'cmn_nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $redirect = $this->get_email_centre_logs_redirect_url();
+        if (!$this->is_admin_user($actor_user_id)) {
+            wp_safe_redirect(add_query_arg([
+                'cmn_email_log_backfill_status' => 'error',
+                'cmn_email_log_backfill_msg' => rawurlencode('Access denied.'),
+            ], $redirect));
+            exit;
+        }
+        $candidate_id = max(0, (int) ($_POST['cmn_candidate_id'] ?? 0));
+        $result = $this->run_candidate_email_backfill_for_email_centre($candidate_id, $actor_user_id);
+        $status = sanitize_key((string) ($result['status'] ?? 'error'));
+        if (!in_array($status, ['success', 'warning', 'error'], true)) {
+            $status = 'error';
+        }
+        $message = sanitize_text_field((string) ($result['message'] ?? 'Unable to run candidate email backfill.'));
+        wp_safe_redirect(add_query_arg([
+            'cmn_email_log_backfill_status' => $status,
+            'cmn_email_log_backfill_msg' => rawurlencode($message),
         ], $redirect));
         exit;
     }
@@ -46497,6 +47278,12 @@ global $wpdb;
         $notice_message_raw = isset($_GET['cmn_email_centre_msg']) ? (string) wp_unslash($_GET['cmn_email_centre_msg']) : '';
         $notice_message = sanitize_text_field(rawurldecode($notice_message_raw));
         $notice_class = '';
+        $email_log_resend_status = sanitize_key((string) ($_GET['cmn_email_log_resend_status'] ?? ''));
+        $email_log_resend_msg = sanitize_text_field(rawurldecode((string) wp_unslash($_GET['cmn_email_log_resend_msg'] ?? '')));
+        $email_log_retry_since_status = sanitize_key((string) ($_GET['cmn_email_log_retry_since_status'] ?? ''));
+        $email_log_retry_since_msg = sanitize_text_field(rawurldecode((string) wp_unslash($_GET['cmn_email_log_retry_since_msg'] ?? '')));
+        $email_log_backfill_status = sanitize_key((string) ($_GET['cmn_email_log_backfill_status'] ?? ''));
+        $email_log_backfill_msg = sanitize_text_field(rawurldecode((string) wp_unslash($_GET['cmn_email_log_backfill_msg'] ?? '')));
         if ($notice_message !== '') {
             if ($notice_status === 'success') {
                 $notice_class = 'cmn-register-success';
@@ -46506,6 +47293,16 @@ global $wpdb;
                 $notice_class = 'cmn-register-error';
             }
         }
+        $email_log_notice_class = static function ($status) {
+            $status = sanitize_key((string) $status);
+            if (in_array($status, ['success', 'sent'], true)) {
+                return 'cmn-register-success';
+            }
+            if (in_array($status, ['warning', 'skipped'], true)) {
+                return 'cmn-register-warning';
+            }
+            return 'cmn-register-error';
+        };
 
         $portal_base_url = $this->get_portal_base_url();
         $templates_url = add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_base_url);
@@ -46863,6 +47660,37 @@ global $wpdb;
                         </form>
                     <?php endif; ?>
                 <?php endif; ?>
+                <?php if ($is_admin) : ?>
+                    <div class="cmn-form-actions" style="margin-top:12px;">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form" onsubmit="return window.confirm('Retry all failed emails since the selected timestamp?');">
+                            <?php wp_nonce_field('cmn_email_log_retry_failed_since', 'cmn_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_email_log_retry_failed_since">
+                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($logs_url); ?>">
+                            <label>Retry failed since
+                                <input type="datetime-local" name="cmn_retry_failed_since" required>
+                            </label>
+                            <button class="cmn-ghost" type="submit">Retry Failed Emails</button>
+                        </form>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form">
+                            <?php wp_nonce_field('cmn_email_log_backfill_candidate', 'cmn_nonce'); ?>
+                            <input type="hidden" name="action" value="cmn_email_log_backfill_candidate">
+                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($logs_url); ?>">
+                            <label>Backfill candidate onboarding (ID)
+                                <input type="number" name="cmn_candidate_id" min="1" required placeholder="3500">
+                            </label>
+                            <button class="cmn-ghost" type="submit">Backfill Candidate Emails</button>
+                        </form>
+                    </div>
+                <?php endif; ?>
+                <?php if ($email_log_resend_msg !== '') : ?>
+                    <p class="<?php echo esc_attr($email_log_notice_class($email_log_resend_status)); ?>"><?php echo esc_html($email_log_resend_msg); ?></p>
+                <?php endif; ?>
+                <?php if ($email_log_retry_since_msg !== '') : ?>
+                    <p class="<?php echo esc_attr($email_log_notice_class($email_log_retry_since_status)); ?>"><?php echo esc_html($email_log_retry_since_msg); ?></p>
+                <?php endif; ?>
+                <?php if ($email_log_backfill_msg !== '') : ?>
+                    <p class="<?php echo esc_attr($email_log_notice_class($email_log_backfill_status)); ?>"><?php echo esc_html($email_log_backfill_msg); ?></p>
+                <?php endif; ?>
                 <form method="get" class="cmn-form">
                     <input type="hidden" name="view" value="email-centre">
                     <input type="hidden" name="cmn_email_centre_tab" value="logs">
@@ -46906,11 +47734,12 @@ global $wpdb;
                                 <th>Status</th>
                                 <th>Error</th>
                                 <th>Created</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (!$email_logs) : ?>
-                                <tr><td colspan="9">No email logs yet.</td></tr>
+                                <tr><td colspan="10">No email logs yet.</td></tr>
                             <?php else : ?>
                                 <?php foreach ($email_logs as $log_row) : ?>
                                     <?php
@@ -46937,6 +47766,19 @@ global $wpdb;
                                         <td><?php echo esc_html($send_status !== '' ? $send_status : 'n/a'); ?></td>
                                         <td><?php echo esc_html($send_status === 'failed' && $error_message !== '' ? $error_message : '—'); ?></td>
                                         <td><?php echo esc_html($created_at !== '' ? $created_at : 'n/a'); ?></td>
+                                        <td>
+                                            <?php if ($is_admin && $send_status === 'failed' && $log_id > 0) : ?>
+                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline-form">
+                                                    <?php wp_nonce_field('cmn_email_log_resend', 'cmn_email_log_resend_nonce'); ?>
+                                                    <input type="hidden" name="action" value="cmn_email_log_resend">
+                                                    <input type="hidden" name="cmn_email_log_id" value="<?php echo esc_attr((string) $log_id); ?>">
+                                                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($logs_url); ?>">
+                                                    <button class="cmn-ghost" type="submit">Retry failed email</button>
+                                                </form>
+                                            <?php else : ?>
+                                                <span class="cmn-muted">—</span>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -115823,6 +116665,8 @@ if (!function_exists('cmn_can')) {
             case 'system.upgrade.run':
                 return $is_admin;
             case 'system.seo.manage':
+                return $is_admin;
+            case 'system.email.manage':
                 return $is_admin;
 
             case 'rewards.view_self':
