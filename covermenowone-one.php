@@ -28779,6 +28779,35 @@ global $wpdb;
             ];
         }
 
+        if (in_array($template_key, ['school_partner_confirmation_email', 'school_partner_confirmation_reminder'], true)) {
+            if ($recipient_email === '') {
+                return ['status' => 'failed', 'message' => 'Recipient email is missing.', 'resent_log_id' => 0];
+            }
+            if ($this->email_log_has_success_for_template_recipient($template_key, $recipient_email, $related_entity_type, $related_entity_id, $log_id)) {
+                return ['status' => 'skipped', 'message' => 'A successful send already exists for this template and recipient.', 'resent_log_id' => 0];
+            }
+            $fallback_subject = $subject !== '' ? $subject : ($template_key === 'school_partner_confirmation_reminder'
+                ? "Quick confirmation: yesterday's booking"
+                : "Confirm yesterday's cover booking");
+            $fallback_message = $template_key === 'school_partner_confirmation_reminder'
+                ? "This is a reminder to confirm yesterday's cover booking in your CoverMeNow ONE portal.\n\nIf already completed, please disregard this message."
+                : "Please confirm yesterday's cover booking in your CoverMeNow ONE portal.\n\nIf already completed, please disregard this message.";
+
+            $previous_log_type = $GLOBALS['cmn_school_mail_log_type'] ?? null;
+            $GLOBALS['cmn_school_mail_log_type'] = $template_key;
+            $sent = (bool) $this->send_school_email($recipient_email, $fallback_subject, $fallback_message);
+            if ($previous_log_type !== null) {
+                $GLOBALS['cmn_school_mail_log_type'] = $previous_log_type;
+            } else {
+                unset($GLOBALS['cmn_school_mail_log_type']);
+            }
+            return [
+                'status' => $sent ? 'sent' : 'failed',
+                'message' => $sent ? 'School partner confirmation email resent using template fallback.' : 'Failed to resend school partner confirmation email.',
+                'resent_log_id' => 0,
+            ];
+        }
+
         return ['status' => 'failed', 'message' => 'No stored payload available for this template.', 'resent_log_id' => 0];
     }
 
@@ -28833,6 +28862,30 @@ global $wpdb;
         if ($recipient_role === '') {
             $recipient_role = 'system';
         }
+        $mail_context_scope = '';
+        $mail_context_was_set = false;
+        $mail_context_state = false;
+        $reply_to_normalized = strtolower($reply_to);
+        $candidate_sender = strtolower($this->sanitize_mail_header_email((string) $this->get_candidate_from_email()));
+        $school_sender = strtolower($this->sanitize_mail_header_email((string) $this->get_school_from_email()));
+        $support_sender = strtolower($this->sanitize_mail_header_email((string) $this->get_support_from_email()));
+        if ($recipient_role === 'candidate' || ($candidate_sender !== '' && $reply_to_normalized === $candidate_sender)) {
+            $mail_context_scope = 'candidate';
+            $mail_context_was_set = !empty($GLOBALS['cmn_candidate_mail_context']);
+            $mail_context_state = $this->begin_candidate_mail_context();
+        } elseif (in_array($recipient_role, ['school', 'staff', 'admin'], true) || ($school_sender !== '' && $reply_to_normalized === $school_sender)) {
+            $mail_context_scope = 'school';
+            $mail_context_was_set = !empty($GLOBALS['cmn_school_mail_context']);
+            $mail_context_state = $this->begin_school_mail_context();
+        } elseif ($module === 'support' || strpos($template_key, 'support') !== false || ($support_sender !== '' && $reply_to_normalized === $support_sender)) {
+            $mail_context_scope = 'support';
+            $mail_context_was_set = !empty($GLOBALS['cmn_support_mail_context']);
+            $mail_context_state = $this->begin_support_mail_context();
+        }
+        if ($mail_context_scope !== '' && $mail_context_state === null) {
+            return ['status' => 'failed', 'message' => 'Mail context conflict during retry.', 'resent_log_id' => 0];
+        }
+
         $result = $this->send_wp_mail_with_email_log(
             $recipient_email,
             $subject,
@@ -28855,6 +28908,25 @@ global $wpdb;
                 ],
             ]
         );
+        if ($mail_context_scope === 'candidate') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_candidate_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_candidate_mail_context']);
+            }
+        } elseif ($mail_context_scope === 'school') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_school_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_school_mail_context']);
+            }
+        } elseif ($mail_context_scope === 'support') {
+            if ($mail_context_was_set) {
+                $GLOBALS['cmn_support_mail_context'] = true;
+            } elseif ($mail_context_state) {
+                unset($GLOBALS['cmn_support_mail_context']);
+            }
+        }
         $sent = !empty($result['success']);
         return [
             'status' => $sent ? 'sent' : 'failed',
