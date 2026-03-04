@@ -14109,7 +14109,19 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   var seoAssistantRoots = document.querySelectorAll('[data-seo-assistant-root]');
-  if (seoAssistantRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.seoAssistantNonce) {
+  if (seoAssistantRoots.length) {
+    var seoPortalConfig = (window.cmnPortal && typeof window.cmnPortal === 'object') ? window.cmnPortal : {};
+    var seoGlobalAjaxUrl = String(seoPortalConfig.ajaxUrl || '').trim();
+    var seoGlobalNonce = String(seoPortalConfig.seoAssistantNonce || '').trim();
+    var seoDebugEnabled = !!(seoPortalConfig.debugSeoAssistant || window.CMN_DEBUG_SEO_ASSISTANT);
+    var seoDebugLog = function () {
+      if (!seoDebugEnabled || !window.console || typeof window.console.log !== 'function') {
+        return;
+      }
+      var args = Array.prototype.slice.call(arguments);
+      args.unshift('[CMN SEO Assistant]');
+      window.console.log.apply(window.console, args);
+    };
     var seoEscapeHtml = function (value) {
       return String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
@@ -14168,43 +14180,10 @@ document.addEventListener('DOMContentLoaded', function () {
       };
       return normalized;
     };
-    var seoApiCall = function (action, payload) {
-      var fd = new FormData();
-      fd.append('action', String(action || ''));
-      fd.append('nonce', window.cmnPortal.seoAssistantNonce || '');
-      Object.keys(payload || {}).forEach(function (key) {
-        var value = payload[key];
-        if (Array.isArray(value)) {
-          value.forEach(function (item) {
-            fd.append(String(key) + '[]', item);
-          });
-          return;
-        }
-        if (typeof value !== 'undefined' && value !== null) {
-          fd.append(String(key), value);
-        }
-      });
-      return fetch(window.cmnPortal.ajaxUrl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        body: fd
-      }).then(function (response) {
-        return response.json().catch(function () {
-          return null;
-        }).then(function (json) {
-          if (!json || typeof json !== 'object') {
-            throw new Error('Unexpected server response.');
-          }
-          if (!response.ok || !json.success) {
-            var errorMessage = (json && json.data && json.data.message) ? String(json.data.message) : 'Request failed.';
-            throw new Error(errorMessage);
-          }
-          return (json.data && typeof json.data === 'object') ? json.data : {};
-        });
-      });
-    };
 
     seoAssistantRoots.forEach(function (root) {
+      var seoAjaxUrl = String(root.getAttribute('data-seo-ajax-url') || seoGlobalAjaxUrl).trim();
+      var seoNonce = String(root.getAttribute('data-seo-nonce') || seoGlobalNonce).trim();
       var statusMsg = root.querySelector('[data-seo-status-msg]');
       var allowlistInput = root.querySelector('[data-seo-allowlist-input]');
       var pageList = root.querySelector('[data-seo-page-list]');
@@ -14253,6 +14232,50 @@ document.addEventListener('DOMContentLoaded', function () {
         statusMsg.classList.toggle('is-ok', !isError);
       };
 
+      if (!seoAjaxUrl || !seoNonce) {
+        setStatus('SEO Assistant is unavailable: missing AJAX configuration.', true);
+        seoDebugLog('missing-config', { ajaxUrl: seoAjaxUrl, noncePresent: !!seoNonce });
+        return;
+      }
+
+      var seoApiCall = function (action, payload) {
+        var fd = new FormData();
+        fd.append('action', String(action || ''));
+        fd.append('nonce', seoNonce);
+        Object.keys(payload || {}).forEach(function (key) {
+          var value = payload[key];
+          if (Array.isArray(value)) {
+            value.forEach(function (item) {
+              fd.append(String(key) + '[]', item);
+            });
+            return;
+          }
+          if (typeof value !== 'undefined' && value !== null) {
+            fd.append(String(key), value);
+          }
+        });
+        seoDebugLog('request', { action: String(action || ''), url: seoAjaxUrl });
+        return fetch(seoAjaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (response) {
+          return response.json().catch(function () {
+            return null;
+          }).then(function (json) {
+            if (!json || typeof json !== 'object') {
+              throw new Error('Unexpected server response.');
+            }
+            if (!response.ok || !json.success) {
+              var errorMessage = (json && json.data && json.data.message) ? String(json.data.message) : 'Request failed.';
+              throw new Error(errorMessage);
+            }
+            seoDebugLog('success', { action: String(action || ''), status: response.status });
+            return (json.data && typeof json.data === 'object') ? json.data : {};
+          });
+        });
+      };
+
       var setBusy = function (isBusy) {
         inFlightCount += isBusy ? 1 : -1;
         if (inFlightCount < 0) {
@@ -14265,6 +14288,24 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           button.disabled = disabled;
+        });
+      };
+
+      var runWithBusyButton = function (button, busyLabel, runner) {
+        var originalLabel = '';
+        if (button) {
+          originalLabel = String(button.getAttribute('data-original-label') || button.textContent || '').trim();
+          if (!button.getAttribute('data-original-label')) {
+            button.setAttribute('data-original-label', originalLabel);
+          }
+          button.textContent = String(busyLabel || originalLabel || 'Working...');
+        }
+        setBusy(true);
+        return runner().finally(function () {
+          if (button) {
+            button.textContent = originalLabel || button.textContent;
+          }
+          setBusy(false);
         });
       };
 
@@ -14794,32 +14835,34 @@ document.addEventListener('DOMContentLoaded', function () {
 
       if (saveAllowlistButton && allowlistInput) {
         saveAllowlistButton.addEventListener('click', function () {
-          setBusy(true);
-          seoApiCall('cmn_seo_assistant_save_allowlist', {
-            allowlist: allowlistInput.value || ''
-          }).then(function (data) {
-            state = seoNormalizeState((data && data.state) ? data.state : {});
-            renderAll();
-            setStatus((data && data.message) ? data.message : 'Allowlist saved.', false);
-          }).catch(function (error) {
-            setStatus(error && error.message ? error.message : 'Unable to save allowlist.', true);
-          }).finally(function () {
-            setBusy(false);
+          seoDebugLog('click', { action: 'save_allowlist' });
+          setStatus('Saving allowlist...', false);
+          runWithBusyButton(saveAllowlistButton, 'Saving...', function () {
+            return seoApiCall('cmn_seo_assistant_save_allowlist', {
+              allowlist: allowlistInput.value || ''
+            }).then(function (data) {
+              state = seoNormalizeState((data && data.state) ? data.state : {});
+              renderAll();
+              setStatus((data && data.message) ? data.message : 'Allowlist saved.', false);
+            }).catch(function (error) {
+              setStatus(error && error.message ? error.message : 'Unable to save allowlist.', true);
+            });
           });
         });
       }
 
       if (discoverButton) {
         discoverButton.addEventListener('click', function () {
-          setBusy(true);
-          seoApiCall('cmn_seo_assistant_discover_pages', {}).then(function (data) {
-            state = seoNormalizeState((data && data.state) ? data.state : {});
-            renderAll();
-            setStatus((data && data.message) ? data.message : 'Page discovery complete.', false);
-          }).catch(function (error) {
-            setStatus(error && error.message ? error.message : 'Unable to discover pages.', true);
-          }).finally(function () {
-            setBusy(false);
+          seoDebugLog('click', { action: 'discover_pages' });
+          setStatus('Discovering pages...', false);
+          runWithBusyButton(discoverButton, 'Discovering...', function () {
+            return seoApiCall('cmn_seo_assistant_discover_pages', {}).then(function (data) {
+              state = seoNormalizeState((data && data.state) ? data.state : {});
+              renderAll();
+              setStatus((data && data.message) ? data.message : 'Page discovery complete.', false);
+            }).catch(function (error) {
+              setStatus(error && error.message ? error.message : 'Unable to discover pages.', true);
+            });
           });
         });
       }
@@ -14827,17 +14870,18 @@ document.addEventListener('DOMContentLoaded', function () {
       if (scanButton) {
         scanButton.addEventListener('click', function () {
           var selectedUrls = getSelectedUrls();
-          setBusy(true);
-          seoApiCall('cmn_seo_assistant_scan', {
-            urls: selectedUrls
-          }).then(function (data) {
-            state = seoNormalizeState((data && data.state) ? data.state : {});
-            renderAll();
-            setStatus((data && data.message) ? data.message : 'Scan complete.', false);
-          }).catch(function (error) {
-            setStatus(error && error.message ? error.message : 'Unable to run SEO scan.', true);
-          }).finally(function () {
-            setBusy(false);
+          seoDebugLog('click', { action: 'scan_selected', selectedCount: selectedUrls.length });
+          setStatus('Scanning selected pages...', false);
+          runWithBusyButton(scanButton, 'Scanning...', function () {
+            return seoApiCall('cmn_seo_assistant_scan', {
+              urls: selectedUrls
+            }).then(function (data) {
+              state = seoNormalizeState((data && data.state) ? data.state : {});
+              renderAll();
+              setStatus((data && data.message) ? data.message : 'Scan complete.', false);
+            }).catch(function (error) {
+              setStatus(error && error.message ? error.message : 'Unable to run SEO scan.', true);
+            });
           });
         });
       }

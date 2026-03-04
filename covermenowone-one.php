@@ -37500,7 +37500,12 @@ global $wpdb;
                 </div>
             </div>
         </header>
-        <section class="cmn-dashboard-card cmn-seo-assistant" data-seo-assistant-root data-seo-initial-state="<?php echo esc_attr(wp_json_encode($state_payload)); ?>">
+        <section
+            class="cmn-dashboard-card cmn-seo-assistant"
+            data-seo-assistant-root
+            data-seo-initial-state="<?php echo esc_attr(wp_json_encode($state_payload)); ?>"
+            data-seo-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+            data-seo-nonce="<?php echo esc_attr(wp_create_nonce('cmn_seo_assistant')); ?>">
             <div class="cmn-seo-assistant-actions">
                 <button type="button" class="cmn-ghost" data-seo-discover-pages>Discover Pages</button>
                 <button type="button" class="cmn-primary" data-seo-scan-selected>Scan Selected Pages</button>
