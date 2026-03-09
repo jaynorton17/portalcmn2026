@@ -17749,6 +17749,11 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-brand .cmn-live-brand-accent{color:#ff1f43 !important;-webkit-text-fill-color:#ff1f43;font-weight:900;text-shadow:0 1px 4px rgba(127,29,29,.35)}
 .cmn-live-card-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:56px;padding-right:clamp(112px,34%,140px)}
 .cmn-live-card-body{display:flex;flex:1 1 auto;min-height:0;flex-direction:column;gap:6px}
+.cmn-live-status,
+.cmn-live-presence,
+.cmn-live-charge-rate,
+.cmn-live-strengths-title,
+.cmn-live-skill{display:inline-flex;align-items:center;box-sizing:border-box;border-radius:999px;line-height:1.1}
 .cmn-live-ident{display:flex;align-items:center;gap:10px;min-width:0}
 .cmn-live-ident .cmn-avatar{width:56px;height:56px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid rgba(255,255,255,.22);background:#20182f;display:flex;align-items:center;justify-content:center}
 .cmn-live-ident .cmn-avatar img{width:100%;height:100%;object-fit:contain;object-position:50% 20%;display:block}
@@ -17761,7 +17766,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rating-stars-fill{position:absolute;left:0;top:0;overflow:hidden;color:#facc15}
 .cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:21px;max-width:100%;padding:2px 9px;border-radius:999px;border:1px solid rgba(248,250,252,.48);background:rgba(2,6,12,.84);white-space:nowrap !important;flex-wrap:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;font-weight:800;letter-spacing:.01em}
-.cmn-live-status{position:absolute;top:10px;right:10px;z-index:3;max-width:calc(100% - 128px);padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmn-live-status{position:absolute;top:10px;right:10px;z-index:3;max-width:calc(100% - 132px);min-height:28px;padding:0 12px;font-weight:800;font-size:10.5px;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;justify-content:center;text-transform:uppercase}
 .cmn-live-status.available{
   background:linear-gradient(180deg,#66ff30,#22c55e);
   border:1px solid #bbf7d0;
@@ -17771,9 +17776,9 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
     0 0 42px rgba(34,197,94,.28),
     inset 0 -6px 10px rgba(3,20,11,.16);
 }
-.cmn-live-status.not_responded{background:#9a740d;color:#1f1606}
-.cmn-live-status.not_available{background:#6f7482;color:#fff}
-.cmn-live-presence{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.3);background:rgba(17,14,29,.75);font-size:11px;font-weight:700;letter-spacing:.04em;color:#e2e8f0;text-transform:uppercase}
+.cmn-live-status.not_responded{background:linear-gradient(180deg,#d2a317,#9a740d);border:1px solid rgba(254,240,138,.48);color:#1f1606;box-shadow:0 10px 20px rgba(77,53,6,.18),inset 0 -6px 10px rgba(31,22,6,.12)}
+.cmn-live-status.not_available{background:linear-gradient(180deg,#7b8798,#475569);border:1px solid rgba(226,232,240,.34);color:#fff;box-shadow:0 10px 20px rgba(15,23,42,.18),inset 0 -6px 10px rgba(15,23,42,.16)}
+.cmn-live-presence{gap:8px;min-height:28px;padding:0 12px;border:1px solid rgba(148,163,184,.3);background:rgba(17,14,29,.75);font-size:11px;font-weight:800;letter-spacing:.04em;color:#e2e8f0;text-transform:uppercase;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03)}
 .cmn-live-presence-dot{position:relative;width:10px;height:10px;border-radius:50%;background:#64748b;box-shadow:0 0 0 0 rgba(100,116,139,.35)}
 .cmn-live-presence.is-live{border-color:rgba(16,185,129,.45);background:linear-gradient(90deg,rgba(16,185,129,.18),rgba(16,185,129,.05));color:#d1fae5}
 .cmn-live-presence.is-live .cmn-live-presence-dot{background:#22c55e;box-shadow:0 0 12px rgba(34,197,94,.9)}
@@ -17789,14 +17794,15 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rate span{display:block;font-size:11px;font-weight:500;margin-top:4px}
 .cmn-live-meta-row{display:flex;align-items:center;min-height:28px;padding:6px 10px;border-radius:10px;background:rgba(5,7,12,.66);border:1px solid rgba(255,255,255,.14)}
 .cmn-live-distance{display:block;font-size:12px;line-height:1.3;color:#f8fafc;font-weight:700;letter-spacing:.01em}
-.cmn-live-pills-row{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-top:0}
+.cmn-live-pills-row{display:flex;align-items:flex-start;justify-content:flex-start;column-gap:8px;row-gap:6px;flex-wrap:wrap;margin-top:0}
 .cmn-live-pills-row .cmn-live-presence,
 .cmn-live-pills-row .cmn-live-charge-rate{flex:0 1 auto;max-width:100%}
+.cmn-live-pills-row .cmn-live-charge-rate{margin-left:auto}
 .cmn-live-strengths-row{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:0;padding-top:7px;border-top:1px solid rgba(255,255,255,.22)}
-.cmn-live-strengths-title{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.62);font-size:10.5px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:#f8fafc}
-.cmn-live-charge-rate{display:inline-flex;align-items:center;min-height:26px;padding:0 11px;border-radius:999px;border:1px solid rgba(248,250,252,.52);background:rgba(2,6,12,.86);font-size:11.5px;font-weight:900;color:#f8fafc;letter-spacing:.01em}
+.cmn-live-strengths-title{min-height:26px;padding:0 11px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.62);font-size:10.5px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:#f8fafc}
+.cmn-live-charge-rate{min-height:28px;padding:0 12px;border:1px solid rgba(248,250,252,.52);background:rgba(2,6,12,.86);font-size:11px;font-weight:900;color:#f8fafc;letter-spacing:.03em;white-space:nowrap;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
 .cmn-live-skills{display:flex;gap:6px;row-gap:6px;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;justify-content:flex-start;flex:1 0 60px;width:100%;min-width:0;min-height:60px;max-height:60px;overflow:hidden;margin-top:0;margin-bottom:0;padding-bottom:0;position:relative;z-index:0}
-.cmn-live-skill{display:inline-flex;align-items:center;flex:0 1 auto;max-width:100%;min-width:0;box-sizing:border-box;background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:6px 12px;border-radius:999px;font-size:11px;line-height:1.15;white-space:nowrap;word-break:keep-all;overflow-wrap:normal;overflow:visible;text-overflow:clip}
+.cmn-live-skill{flex:0 1 auto;max-width:100%;min-width:0;min-height:28px;background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:0 12px;font-size:11px;font-weight:700;letter-spacing:.01em;white-space:nowrap;word-break:keep-all;overflow-wrap:normal;overflow:visible;text-overflow:clip;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
 .cmn-live-actions{display:grid;gap:8px;margin-top:auto;padding-top:8px;position:relative;z-index:1}
 .cmn-live-actions-main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:stretch}
 .cmn-live-actions .cmn-live-primary{width:100%;min-height:42px;padding:8px 12px;font-size:13px;font-weight:900}
