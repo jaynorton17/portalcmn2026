@@ -9603,6 +9603,13 @@ global $wpdb;
         if (!is_array($entry) || empty($entry['created_at'])) {
             return false;
         }
+        // Availability rows are already scoped to a specific morning via available_date.
+        // If the candidate has an active row for today or tomorrow, it should stay green
+        // even after the 09:00 reset; the reset is only for stale flags with no dated row.
+        $entry_date = sanitize_text_field((string) ($entry['available_date'] ?? ''));
+        if ($entry_date === $date) {
+            return true;
+        }
         $created_at_ts = $this->parse_mysql_datetime_to_wp_timestamp((string) $entry['created_at']);
         if ($created_at_ts < 1) {
             return false;
@@ -90030,8 +90037,7 @@ global $wpdb;
                     }
                     if (is_array($confirmed_entry) && !empty($confirmed_entry['created_at'])) {
                         $confirmed_at_candidate = sanitize_text_field((string) $confirmed_entry['created_at']);
-                        $confirmed_at_candidate_ts = $this->parse_mysql_datetime_to_wp_timestamp($confirmed_at_candidate);
-                        if ($confirmed_at_candidate_ts >= $live_match_reset_cutoff_ts) {
+                        if ($confirmed_at_candidate !== '') {
                             $confirmed_at_source = $confirmed_at_candidate;
                             break;
                         }
