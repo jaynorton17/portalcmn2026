@@ -15773,7 +15773,7 @@ document.addEventListener('DOMContentLoaded', function () {
         : '<button class="cmn-ghost cmn-live-secondary cmn-live-profile" type="button" disabled>View Profile</button>';
       return '<article class="cmn-live-card'+cardStateClass+'" data-candidate-id="'+item.candidate_id+'">'
         + '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
-        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div>'+ratingMarkup+'</div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
+        + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><div class="cmn-avatar"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"></div><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div>'+ratingMarkup+'</div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
         + '<div class="cmn-live-presence'+(isOnlineNow ? ' is-live' : '')+'"><span class="cmn-live-presence-dot" aria-hidden="true"></span>'+presenceLabel+'</div>'
         + '<div class="cmn-live-strip">'+banner+'</div>'
         + (locationDistanceText ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</span></div>' : '')

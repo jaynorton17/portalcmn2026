@@ -90469,7 +90469,7 @@ global $wpdb;
             $card_state_class = $status === 'available' ? ' is-bookable' : ' is-pending-confirmation';
             return '<article class="cmn-live-card' . esc_attr($card_state_class) . '" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
                 . '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
-                . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div>' . $rating_html . '</div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
+                . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><div class="cmn-avatar"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"></div><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div>' . $rating_html . '</div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
                 . $presence_html
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
                 . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
