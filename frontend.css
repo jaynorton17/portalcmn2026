@@ -17788,7 +17788,10 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rate span{display:block;font-size:11px;font-weight:500;margin-top:4px}
 .cmn-live-meta-row{display:flex;align-items:center;min-height:30px;padding:7px 10px;border-radius:10px;background:rgba(5,7,12,.66);border:1px solid rgba(255,255,255,.14)}
 .cmn-live-distance{display:block;font-size:12px;line-height:1.3;color:#f8fafc;font-weight:700;letter-spacing:.01em}
-.cmn-live-strengths-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:4px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22)}
+.cmn-live-pills-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:4px}
+.cmn-live-pills-row .cmn-live-presence,
+.cmn-live-pills-row .cmn-live-charge-rate{flex:0 1 auto;max-width:100%}
+.cmn-live-strengths-row{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:2px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22)}
 .cmn-live-strengths-title{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.62);font-size:10.5px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:#f8fafc}
 .cmn-live-charge-rate{display:inline-flex;align-items:center;min-height:26px;padding:0 11px;border-radius:999px;border:1px solid rgba(248,250,252,.52);background:rgba(2,6,12,.86);font-size:11.5px;font-weight:900;color:#f8fafc;letter-spacing:.01em}
 .cmn-live-skills{display:flex;gap:6px;row-gap:6px;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;width:100%;min-width:0;min-height:54px;max-height:54px;overflow:hidden;margin-top:0;margin-bottom:10px;padding-bottom:2px;position:relative;z-index:0}
