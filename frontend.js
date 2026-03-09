@@ -3280,9 +3280,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var availabilityDotLabel = document.querySelector('[data-availability-dot-label]');
       var unavailableButton = document.querySelector('[data-availability-unavailable-button]');
       var availabilityImpact = document.querySelector('[data-availability-impact]');
-      var dashboardContactCard = document.querySelector('[data-dashboard-contact-card]') || document.querySelector('.cmn-candidate-section1-contact .cmn-contact-card-preview.cmn-command-card');
-      var dashboardContactAvailability = document.querySelector('[data-dashboard-contact-availability]') || (dashboardContactCard ? dashboardContactCard.querySelector('.cmn-contact-card-preview-state') : null);
-      var dashboardContactTime = document.querySelector('[data-dashboard-contact-time]') || (dashboardContactCard ? dashboardContactCard.querySelector('.cmn-contact-card-preview-time') : null);
+      var dashboardContactCard = document.querySelector('[data-dashboard-contact-card]') || document.querySelector('.cmn-candidate-section1-contact .cmn-live-card');
+      var dashboardContactAvailability = document.querySelector('[data-dashboard-contact-availability]') || (dashboardContactCard ? dashboardContactCard.querySelector('.cmn-live-status') : null);
+      var dashboardContactBanner = document.querySelector('[data-dashboard-contact-banner]') || (dashboardContactCard ? dashboardContactCard.querySelector('.cmn-live-banner') : null);
+      var dashboardContactTime = document.querySelector('[data-dashboard-contact-time]') || (dashboardContactCard ? dashboardContactCard.querySelector('.cmn-live-banner small') : null);
       var dashboardContactInitialConfirmedAt = dashboardContactCard ? String(dashboardContactCard.getAttribute('data-dashboard-contact-confirmed-at') || '').trim() : '';
       var calendarBlocked = availabilityButton.getAttribute('data-calendar-blocked') === '1';
       var availabilityPeriodLabel = availabilityButton.getAttribute('data-availability-period-label') || 'tomorrow morning';
@@ -3446,11 +3447,20 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         var available = !!isAvailable;
         var confirmedAtLabel = formatConfirmedAtLabel(confirmedAtRaw);
+        var availableLabel = String(dashboardContactCard.getAttribute('data-dashboard-contact-available-label') || 'CONFIRMED AVAILABLE');
+        var pendingLabel = String(dashboardContactCard.getAttribute('data-dashboard-contact-pending-label') || 'NOT YET CONFIRMED');
         dashboardContactCard.classList.toggle('is-bookable', available);
         dashboardContactCard.classList.toggle('is-pending-confirmation', !available);
-        dashboardContactAvailability.classList.toggle('is-available', available);
-        dashboardContactAvailability.classList.toggle('is-pending', !available);
-        dashboardContactAvailability.textContent = available ? 'BOOKABLE' : 'NOT YET CONFIRMED';
+        dashboardContactAvailability.classList.remove('available', 'not_responded', 'not_available', 'is-available', 'is-pending');
+        dashboardContactAvailability.classList.add(available ? 'available' : 'not_responded');
+        dashboardContactAvailability.textContent = available ? availableLabel : pendingLabel;
+        if (dashboardContactBanner) {
+          var dashboardBannerTextNode = dashboardContactBanner.childNodes && dashboardContactBanner.childNodes.length ? dashboardContactBanner.childNodes[0] : null;
+          dashboardContactBanner.classList.toggle('is-pending', !available);
+          if (dashboardBannerTextNode) {
+            dashboardBannerTextNode.textContent = available ? 'Available for tomorrow' : 'Not yet confirmed';
+          }
+        }
         if (dashboardContactTime) {
           if (available && confirmedAtLabel) {
             dashboardContactTime.textContent = 'Confirmed at ' + confirmedAtLabel;
@@ -11569,6 +11579,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardAvailabilityToggle = document.querySelector('[data-contact-card-availability-toggle]');
       var contactCardPreviewSkills = document.querySelector('[data-contact-card-preview-skills]');
       var contactCardPreviewAvailability = document.querySelector('[data-contact-card-preview-availability]');
+      var contactCardPreviewBanner = document.querySelector('[data-contact-card-preview-banner]');
       var contactCardPreviewTime = document.querySelector('[data-contact-card-preview-time]');
       var contactCardPreviewCard = document.querySelector('[data-contact-card-preview]');
       var contactCardLiveRow = document.querySelector('[data-contact-card-live-row]');
@@ -11588,7 +11599,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var contactCardInitialLastOnline = String(contactCardSkillPanel.getAttribute('data-contact-card-last-online') || 'Last seen at --:--');
       var contactCardButtonTimeLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-button-time') || '');
       var contactCardPendingLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-pending-label') || 'NOT YET CONFIRMED');
-      var contactCardAvailableLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-available-label') || 'BOOKABLE');
+      var contactCardAvailableLabel = String(contactCardSkillPanel.getAttribute('data-contact-card-available-label') || 'CONFIRMED AVAILABLE');
       var contactCardPendingDetailAttr = contactCardSkillPanel.getAttribute('data-contact-card-pending-detail');
       var contactCardAvailableDetailAttr = contactCardSkillPanel.getAttribute('data-contact-card-available-detail');
       var contactCardPendingDetail = contactCardPendingDetailAttr === null ? 'Awaiting availability confirmation' : String(contactCardPendingDetailAttr);
@@ -11646,18 +11657,25 @@ document.addEventListener('DOMContentLoaded', function () {
           cardNode.classList.toggle('is-pending-confirmation', !isAvailable);
         });
         if (contactCardPreviewAvailability) {
-          contactCardPreviewAvailability.classList.remove('is-available', 'is-pending');
-          contactCardPreviewAvailability.classList.add(isAvailable ? 'is-available' : 'is-pending');
+          contactCardPreviewAvailability.classList.remove('available', 'not_responded', 'not_available', 'is-available', 'is-pending');
+          contactCardPreviewAvailability.classList.add(isAvailable ? 'available' : 'not_responded');
           contactCardPreviewAvailability.textContent = isAvailable ? contactCardAvailableLabel : contactCardPendingLabel;
         }
         contactCardDesignAvailability.forEach(function (stateNode) {
           if (!stateNode) {
             return;
           }
-          stateNode.classList.remove('is-available', 'is-pending');
-          stateNode.classList.add(isAvailable ? 'is-available' : 'is-pending');
+          stateNode.classList.remove('available', 'not_responded', 'not_available', 'is-available', 'is-pending');
+          stateNode.classList.add(isAvailable ? 'available' : 'not_responded');
           stateNode.textContent = isAvailable ? contactCardAvailableLabel : contactCardPendingLabel;
         });
+        if (contactCardPreviewBanner) {
+          var contactCardBannerTextNode = contactCardPreviewBanner.childNodes && contactCardPreviewBanner.childNodes.length ? contactCardPreviewBanner.childNodes[0] : null;
+          contactCardPreviewBanner.classList.toggle('is-pending', !isAvailable);
+          if (contactCardBannerTextNode) {
+            contactCardBannerTextNode.textContent = isAvailable ? 'Available for tomorrow' : 'Not yet confirmed';
+          }
+        }
         if (contactCardPreviewTime) {
           contactCardPreviewTime.hidden = statusDetail === '';
           contactCardPreviewTime.textContent = statusDetail;
@@ -11733,14 +11751,14 @@ document.addEventListener('DOMContentLoaded', function () {
         contactCardPreviewSkills.innerHTML = '';
         if (!selected.length) {
           var placeholderChip = document.createElement('span');
-          placeholderChip.className = 'cmn-contact-card-skill-chip';
-          placeholderChip.textContent = 'Select up to 6 strengths to complete your contact card';
+          placeholderChip.className = 'cmn-live-skill';
+          placeholderChip.textContent = 'Add your key strengths';
           contactCardPreviewSkills.appendChild(placeholderChip);
           return;
         }
         selected.forEach(function (skillText) {
           var chip = document.createElement('span');
-          chip.className = 'cmn-contact-card-skill-chip';
+          chip.className = 'cmn-live-skill';
           chip.textContent = String(skillText);
           contactCardPreviewSkills.appendChild(chip);
         });

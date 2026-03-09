@@ -9722,6 +9722,341 @@ global $wpdb;
         return $this->candidate_has_fresh_live_match_availability_for_date($candidate_id, $target_date, (int) $reset_cutoff_ts);
     }
 
+    private function build_html_attributes(array $attributes) {
+        $parts = [];
+        foreach ($attributes as $name => $value) {
+            $name = trim((string) $name);
+            if ($name === '' || $value === null || $value === false) {
+                continue;
+            }
+            if ($value === true) {
+                $parts[] = esc_attr($name);
+                continue;
+            }
+            $parts[] = sprintf('%s="%s"', esc_attr($name), esc_attr((string) $value));
+        }
+        return $parts ? (' ' . implode(' ', $parts)) : '';
+    }
+
+    private function build_live_card_rating_html($rating_value = 0.0, $rating_label = '', $reviews_count = 0) {
+        $rating_value = (float) $rating_value;
+        $rating_label = sanitize_text_field((string) $rating_label);
+        if ($rating_value <= 0 && $rating_label !== '' && preg_match('/(\d+(?:\.\d+)?)/', $rating_label, $rating_match)) {
+            $rating_value = (float) ($rating_match[1] ?? 0);
+        }
+        if ($rating_value < 0) {
+            $rating_value = 0.0;
+        } elseif ($rating_value > 5) {
+            $rating_value = 5.0;
+        }
+        $reviews_count = max(0, (int) $reviews_count);
+        $rating_fill_percent = max(0.0, min(100.0, ($rating_value / 5) * 100));
+        $rating_value_display = number_format($rating_value, 1);
+        $rating_copy = $reviews_count > 0
+            ? ($rating_value_display . ' (' . $reviews_count . ' review' . ($reviews_count === 1 ? '' : 's') . ')')
+            : 'No feedback yet';
+        $rating_aria_label = $reviews_count > 0
+            ? ($rating_value_display . ' out of 5 stars from ' . $reviews_count . ' review' . ($reviews_count === 1 ? '' : 's'))
+            : 'No feedback yet';
+        $rating_copy_class = $reviews_count > 0 ? 'cmn-live-rating-copy' : 'cmn-live-rating-copy is-empty';
+
+        return '<div class="cmn-live-rating"><span class="cmn-live-rating-stars" role="img" aria-label="' . esc_attr($rating_aria_label) . '"><span class="cmn-live-rating-stars-base">★★★★★</span><span class="cmn-live-rating-stars-fill" style="width:' . esc_attr(number_format((float) $rating_fill_percent, 2, '.', '')) . '%;">★★★★★</span></span><span class="' . esc_attr($rating_copy_class) . '">' . esc_html($rating_copy) . '</span></div>';
+    }
+
+    private function build_live_card_location_label($distance_text = '', $town_city_text = '') {
+        $distance_text = sanitize_text_field((string) $distance_text);
+        $town_city_text = sanitize_text_field((string) $town_city_text);
+
+        if ($distance_text !== '' && preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_text)) {
+            $distance_text = 'Distance unavailable';
+        } elseif ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
+            $distance_text .= ' miles';
+        } elseif ($distance_text !== '') {
+            $has_time_unit = preg_match('/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i', $distance_text);
+            $has_distance_unit = preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_text);
+            if ($has_time_unit) {
+                $distance_text = trim((string) preg_replace('/\s*miles?\b/i', '', $distance_text));
+            } elseif (!$has_distance_unit) {
+                $distance_text .= ' miles';
+            }
+        }
+
+        $distance_with_away = $distance_text;
+        if (
+            $distance_with_away !== ''
+            && !preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_with_away)
+            && preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_with_away)
+            && !preg_match('/\baway\b/i', $distance_with_away)
+        ) {
+            $distance_with_away .= ' away';
+        }
+
+        if ($town_city_text !== '' && $distance_with_away !== '') {
+            return $town_city_text . ' • ' . $distance_with_away;
+        }
+        if ($town_city_text !== '') {
+            return $town_city_text;
+        }
+        return $distance_with_away;
+    }
+
+    private function build_live_card_skills_html(array $skills, $placeholder = '') {
+        $skills = array_values(array_filter(array_map(
+            static function ($skill_item) {
+                return sanitize_text_field((string) $skill_item);
+            },
+            $skills
+        ), static function ($skill_item) {
+            return $skill_item !== '';
+        }));
+
+        if (count($skills) > 6) {
+            $skills = array_slice($skills, 0, 6);
+        }
+
+        if (!$skills && $placeholder !== '') {
+            $skills = [sanitize_text_field((string) $placeholder)];
+        }
+
+        $skills_html = '';
+        foreach ($skills as $skill_text) {
+            $skills_html .= '<span class="cmn-live-skill">' . esc_html($skill_text) . '</span>';
+        }
+
+        return $skills_html;
+    }
+
+    private function render_live_card_action($label, $url, $classes, array $attributes = [], $disabled = false) {
+        $label = sanitize_text_field((string) $label);
+        $url = esc_url((string) $url);
+        $classes = trim((string) $classes);
+        $attributes = array_merge(['class' => $classes], $attributes);
+        if ($url !== '' && !$disabled) {
+            $attributes['href'] = $url;
+            return '<a' . $this->build_html_attributes($attributes) . '>' . esc_html($label) . '</a>';
+        }
+        if ($disabled) {
+            $attributes['disabled'] = true;
+        }
+        return '<button type="button"' . $this->build_html_attributes($attributes) . '>' . esc_html($label) . '</button>';
+    }
+
+    private function render_live_card_shell(array $card) {
+        $root_classes = trim('cmn-live-card ' . (string) ($card['card_state_class'] ?? '') . ' ' . (string) ($card['card_classes'] ?? ''));
+        $root_attributes = (array) ($card['root_attributes'] ?? []);
+        $root_attributes['class'] = preg_replace('/\s+/', ' ', trim($root_classes));
+
+        $photo_url = esc_url((string) ($card['photo_url'] ?? ''));
+        $name = sanitize_text_field((string) ($card['name'] ?? 'Candidate'));
+        if ($name === '') {
+            $name = 'Candidate';
+        }
+        $role_line = sanitize_text_field((string) ($card['role_line'] ?? 'Candidate'));
+        $rating_html = (string) ($card['rating_html'] ?? '');
+        $status_class = sanitize_html_class((string) ($card['status_class'] ?? 'not_responded'));
+        $status_label = sanitize_text_field((string) ($card['status_label'] ?? 'NOT YET CONFIRMED'));
+        $status_attributes = array_merge(['class' => 'cmn-live-status ' . $status_class], (array) ($card['status_attributes'] ?? []));
+        $presence_attributes = array_merge(['class' => 'cmn-live-presence' . (!empty($card['is_live']) ? ' is-live' : '')], (array) ($card['presence_attributes'] ?? []));
+        $presence_text_attributes = (array) ($card['presence_text_attributes'] ?? []);
+        $presence_text = sanitize_text_field((string) ($card['presence_text'] ?? 'Last seen at --:--'));
+        $charge_text = sanitize_text_field((string) ($card['charge_text'] ?? ''));
+        $banner_text = sanitize_text_field((string) ($card['banner_text'] ?? ''));
+        $banner_detail = sanitize_text_field((string) ($card['banner_detail'] ?? ''));
+        $banner_attributes = array_merge(['class' => 'cmn-live-banner' . (!empty($card['banner_is_pending']) ? ' is-pending' : '')], (array) ($card['banner_attributes'] ?? []));
+        $banner_detail_attributes = (array) ($card['banner_detail_attributes'] ?? []);
+        $location_text = sanitize_text_field((string) ($card['location_text'] ?? ''));
+        $strengths_title = sanitize_text_field((string) ($card['strengths_title'] ?? 'Key Deployment Strengths'));
+        $skills_html = (string) ($card['skills_html'] ?? '');
+        $skills_attributes = array_merge(['class' => 'cmn-live-skills'], (array) ($card['skills_attributes'] ?? []));
+        $main_actions_html = trim((string) ($card['main_actions_html'] ?? ''));
+        $tertiary_actions_html = trim((string) ($card['tertiary_actions_html'] ?? ''));
+        $presence_text_html = '<span' . $this->build_html_attributes($presence_text_attributes) . '>' . esc_html($presence_text) . '</span>';
+        $banner_detail_html = '<small' . $this->build_html_attributes($banner_detail_attributes) . ($banner_detail === '' ? ' hidden' : '') . '>' . esc_html($banner_detail) . '</small>';
+
+        return '<article' . $this->build_html_attributes($root_attributes) . '>'
+            . '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
+            . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><div class="cmn-avatar"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($name) . '"></div><div><div class="cmn-live-name">' . esc_html($name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div>' . $rating_html . '</div></div><div' . $this->build_html_attributes($status_attributes) . '>' . esc_html($status_label) . '</div></div>'
+            . '<div class="cmn-live-card-body">'
+            . '<div class="cmn-live-pills-row"><div' . $this->build_html_attributes($presence_attributes) . '><span class="cmn-live-presence-dot" aria-hidden="true"></span>' . $presence_text_html . '</div>' . ($charge_text !== '' ? '<div class="cmn-live-charge-rate">' . esc_html($charge_text) . '</div>' : '') . '</div>'
+            . ($banner_text !== '' ? '<div class="cmn-live-strip"><div' . $this->build_html_attributes($banner_attributes) . '>' . esc_html($banner_text) . $banner_detail_html . '</div></div>' : '')
+            . ($location_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_text) . '</span></div>' : '')
+            . '<div class="cmn-live-strengths-panel"><div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">' . esc_html($strengths_title) . '</div></div><div' . $this->build_html_attributes($skills_attributes) . '>' . $skills_html . '</div></div>'
+            . '<div class="cmn-live-actions"><div class="cmn-live-actions-main">' . $main_actions_html . '</div>' . ($tertiary_actions_html !== '' ? '<div class="cmn-live-actions-tertiary">' . $tertiary_actions_html . '</div>' : '') . '</div>'
+            . '</div>'
+            . '</article>';
+    }
+
+    private function render_school_live_match_card(array $item, $can_request = true) {
+        $candidate_id = (int) ($item['candidate_id'] ?? 0);
+        $first_name = sanitize_text_field((string) ($item['first_name'] ?? 'Candidate'));
+        if ($first_name === '') {
+            $first_name = 'Candidate';
+        }
+        $status = sanitize_html_class((string) ($item['status'] ?? 'not_responded'));
+        if (!in_array($status, ['available', 'not_responded', 'not_available'], true)) {
+            $status = 'not_responded';
+        }
+
+        $effective_offer_state = sanitize_key((string) ($item['offer_state'] ?? ''));
+        $offer_expires_at = sanitize_text_field((string) ($item['offer_expires_at'] ?? ''));
+        if ($effective_offer_state === self::OFFER_STATE_OFFERED && $offer_expires_at !== '') {
+            $offer_expires_ts = strtotime($offer_expires_at . ' UTC');
+            if ($offer_expires_ts !== false && $offer_expires_ts <= time()) {
+                $effective_offer_state = self::OFFER_STATE_EXPIRED;
+            }
+        }
+
+        $primary_button_label = 'Book Now';
+        $primary_button_class = ' is-default';
+        $primary_button_disabled = !$can_request;
+        $primary_button_href = '';
+        $offer_chat_url = esc_url((string) ($item['offer_chat_url'] ?? ''));
+        if ($effective_offer_state === self::OFFER_STATE_OFFERED) {
+            $primary_button_label = 'Booking Pending';
+            $primary_button_class = ' is-pending';
+            $primary_button_disabled = true;
+        } elseif ($effective_offer_state === self::OFFER_STATE_ACCEPTED) {
+            $primary_button_label = 'Booking Accepted';
+            $primary_button_class = ' is-accepted';
+            $primary_button_href = $offer_chat_url;
+            $primary_button_disabled = $primary_button_href === '';
+        } elseif ($effective_offer_state === self::OFFER_STATE_DECLINED) {
+            $primary_button_label = 'Booking Declined';
+            $primary_button_class = ' is-declined';
+            $primary_button_disabled = false;
+        } elseif ($effective_offer_state === self::OFFER_STATE_EXPIRED) {
+            $primary_button_label = 'Book Again';
+            $primary_button_class = ' is-retry';
+            $primary_button_disabled = !$can_request;
+        }
+
+        $primary_button_html = $this->render_live_card_action(
+            $primary_button_label,
+            $primary_button_href,
+            'cmn-primary cmn-live-primary' . $primary_button_class,
+            [
+                'data-live-action' => 'book_now',
+                'data-live-offer-state' => $effective_offer_state,
+            ] + ($primary_button_href !== '' ? ['data-live-chat-url' => $primary_button_href] : []),
+            $primary_button_disabled
+        );
+
+        $documents_download_url = esc_url((string) ($item['documents_download_url'] ?? ''));
+        $profile_url = esc_url((string) ($item['profile_url'] ?? '#'));
+        $main_actions_html = $primary_button_html
+            . $this->render_live_card_action('Download Documents', $documents_download_url, 'cmn-ghost cmn-live-secondary cmn-live-documents', ['class' => 'cmn-ghost cmn-live-secondary cmn-live-documents'], $documents_download_url === '')
+            . $this->render_live_card_action('View Profile', $profile_url !== '#' ? $profile_url : '', 'cmn-ghost cmn-live-secondary cmn-live-profile', ['class' => 'cmn-ghost cmn-live-secondary cmn-live-profile'], $profile_url === '' || $profile_url === '#');
+
+        $is_shortlisted = !empty($item['is_shortlisted']);
+        $tertiary_actions_html = $this->render_live_card_action($is_shortlisted ? 'Shortlisted' : 'Shortlist', '', 'cmn-live-tertiary cmn-btn-mini', [
+                'class' => 'cmn-live-tertiary cmn-btn-mini',
+                'data-live-action' => 'shortlist_toggle',
+            ])
+            . $this->render_live_card_action('Not Suitable', '', 'cmn-live-not-interest cmn-live-tertiary cmn-btn-mini', [
+                'class' => 'cmn-live-not-interest cmn-live-tertiary cmn-btn-mini',
+                'data-live-action' => 'not_interested',
+            ]);
+
+        $banner_text = 'Not yet confirmed';
+        $banner_detail = '';
+        $banner_is_pending = true;
+        if ($status === 'available') {
+            $banner_text = 'Available for tomorrow';
+            $banner_detail = sanitize_text_field((string) ($item['confirmed_at'] ?? ''));
+            if ($banner_detail !== '') {
+                $banner_detail = 'Confirmed at ' . $banner_detail;
+            }
+            $banner_is_pending = false;
+        } elseif ($status === 'not_available') {
+            $banner_text = 'Marked unavailable';
+        }
+
+        return $this->render_live_card_shell([
+            'card_state_class' => $status === 'available' ? 'is-bookable' : 'is-pending-confirmation',
+            'photo_url' => (string) ($item['photo_url'] ?? ''),
+            'name' => $first_name,
+            'role_line' => (string) ($item['role_line'] ?? 'Candidate'),
+            'rating_html' => $this->build_live_card_rating_html((float) ($item['rating'] ?? 0), (string) ($item['rating_label'] ?? ''), (int) ($item['reviews'] ?? 0)),
+            'status_class' => $status,
+            'status_label' => (string) ($item['status_label'] ?? ($status === 'available' ? 'CONFIRMED AVAILABLE' : 'NOT YET CONFIRMED')),
+            'root_attributes' => [
+                'data-candidate-id' => (string) $candidate_id,
+            ],
+            'presence_text' => !empty($item['is_physically_online']) ? 'ONLINE NOW' : (string) ($item['presence_label'] ?? 'Last seen at --:--'),
+            'is_live' => !empty($item['is_physically_online']),
+            'charge_text' => 'Charge Rate £' . (string) ((int) round((float) ($item['day_rate'] ?? 160))),
+            'banner_text' => $banner_text,
+            'banner_detail' => $banner_detail,
+            'banner_is_pending' => $banner_is_pending,
+            'location_text' => $this->build_live_card_location_label((string) ($item['distance'] ?? ''), (string) ($item['town_city'] ?? '')),
+            'skills_html' => $this->build_live_card_skills_html((array) ($item['skills'] ?? []), 'Classroom Management'),
+            'main_actions_html' => $main_actions_html,
+            'tertiary_actions_html' => $tertiary_actions_html,
+        ]);
+    }
+
+    private function render_candidate_profile_live_card(array $data) {
+        $candidate_id = (int) ($data['candidate_id'] ?? 0);
+        $show_available = !empty($data['show_available']);
+        $status_class = $show_available ? 'available' : 'not_responded';
+        $status_label = sanitize_text_field((string) ($data['availability_label'] ?? ($show_available ? 'CONFIRMED AVAILABLE' : 'NOT YET CONFIRMED')));
+        $status_detail = sanitize_text_field((string) ($data['status_detail'] ?? ''));
+        $profile_name = sanitize_text_field((string) ($data['display_name'] ?? 'Candidate'));
+        if ($profile_name === '') {
+            $profile_name = 'Candidate';
+        }
+
+        $location_text = sanitize_text_field((string) ($data['location_text'] ?? ''));
+        if ($location_text === '') {
+            $location_text = 'Location not set';
+        }
+
+        $day_rate_value = isset($data['day_rate_value']) && is_numeric($data['day_rate_value']) ? (float) $data['day_rate_value'] : 0.0;
+        $charge_text = $day_rate_value > 0
+            ? ('Your Day Rate £' . rtrim(rtrim(number_format($day_rate_value, 2, '.', ''), '0'), '.'))
+            : 'Your Day Rate Not set';
+
+        $main_actions_html = $this->render_live_card_action('Manage Availability', (string) ($data['calendar_url'] ?? ''), 'cmn-primary cmn-live-primary is-default')
+            . $this->render_live_card_action('Update Documents', (string) ($data['documents_url'] ?? ''), 'cmn-ghost cmn-live-secondary cmn-live-documents')
+            . $this->render_live_card_action('Edit Profile', (string) ($data['profile_url'] ?? ''), 'cmn-ghost cmn-live-secondary cmn-live-profile');
+
+        $tertiary_actions_html = $this->render_live_card_action('Edit Strengths', (string) ($data['contact_card_url'] ?? ''), 'cmn-live-tertiary cmn-btn-mini')
+            . $this->render_live_card_action('Candidate Finance', (string) ($data['finance_url'] ?? ''), 'cmn-live-tertiary cmn-btn-mini');
+
+        $root_attributes = (array) ($data['root_attributes'] ?? []);
+        if ($candidate_id > 0 && !isset($root_attributes['data-candidate-id'])) {
+            $root_attributes['data-candidate-id'] = (string) $candidate_id;
+        }
+
+        return $this->render_live_card_shell([
+            'card_state_class' => $show_available ? 'is-bookable' : 'is-pending-confirmation',
+            'card_classes' => 'cmn-live-card--candidate',
+            'photo_url' => (string) ($data['photo_url'] ?? ''),
+            'name' => $profile_name,
+            'role_line' => (string) ($data['role_line'] ?? 'Candidate'),
+            'rating_html' => $this->build_live_card_rating_html((float) ($data['rating_value'] ?? 0), (string) ($data['rating_label'] ?? ''), (int) ($data['reviews_count'] ?? 0)),
+            'status_class' => $status_class,
+            'status_label' => $status_label,
+            'status_attributes' => (array) ($data['status_attributes'] ?? []),
+            'root_attributes' => $root_attributes,
+            'presence_text' => !empty($data['is_online']) ? 'ONLINE NOW' : (string) ($data['presence_label'] ?? 'Last seen at --:--'),
+            'is_live' => !empty($data['is_online']),
+            'presence_attributes' => (array) ($data['presence_attributes'] ?? []),
+            'presence_text_attributes' => (array) ($data['presence_text_attributes'] ?? []),
+            'charge_text' => $charge_text,
+            'banner_text' => $show_available ? 'Available for tomorrow' : 'Not yet confirmed',
+            'banner_detail' => $status_detail,
+            'banner_is_pending' => !$show_available,
+            'banner_attributes' => (array) ($data['banner_attributes'] ?? []),
+            'banner_detail_attributes' => (array) ($data['banner_detail_attributes'] ?? []),
+            'location_text' => $location_text,
+            'skills_html' => $this->build_live_card_skills_html((array) ($data['skills'] ?? []), 'Add your key strengths'),
+            'skills_attributes' => (array) ($data['skills_attributes'] ?? []),
+            'main_actions_html' => $main_actions_html,
+            'tertiary_actions_html' => $tertiary_actions_html,
+        ]);
+    }
+
     private function get_candidate_availability_entry_for_dates(array $candidate_ids, array $dates) {
         $candidate_ids = array_values(array_unique(array_filter(array_map('intval', $candidate_ids), static function ($candidate_id) {
             return $candidate_id > 0;
@@ -77170,7 +77505,7 @@ global $wpdb;
         $contact_card_compliance_complete = empty($completion_missing_items);
         $contact_card_profile_completion_pct = max(0, min(100, (int) round((float) $completion_percent)));
         $contact_card_status_pending_label = 'NOT YET CONFIRMED';
-        $contact_card_status_available_label = 'BOOKABLE';
+        $contact_card_status_available_label = 'CONFIRMED AVAILABLE';
         $contact_card_status_pending_detail = '';
         $contact_card_availability_label = $contact_card_show_available ? $contact_card_status_available_label : $contact_card_status_pending_label;
         $contact_card_button_time_label = $already_marked && $availability_confirmed_time_label !== ''
@@ -77423,6 +77758,35 @@ global $wpdb;
         ], $portal_url);
         $candidate_finance_bank_url = $candidate_finance_url . '#cmn-candidate-bank-details';
         $candidate_finance_ack_url = $candidate_finance_url . '#cmn-candidate-compliance-ack';
+        $contact_card_location_source = trim((string) ($profile_town !== '' ? $profile_town : $profile_location));
+        $contact_card_location_text = $this->build_live_card_location_label(
+            $contact_card_distance_label !== 'Not set' ? $contact_card_distance_label : '',
+            $contact_card_location_source
+        );
+        $candidate_day_rate_raw = $candidate_id > 0 ? (string) get_post_meta($candidate_id, 'cmn_default_rate', true) : '';
+        $candidate_day_rate_value = is_numeric($candidate_day_rate_raw) ? round((float) $candidate_day_rate_raw, 2) : 0.0;
+        $candidate_profile_live_card_common = [
+            'candidate_id' => $candidate_id,
+            'display_name' => $contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate',
+            'photo_url' => $profile_photo_url,
+            'role_line' => $contact_card_primary_role,
+            'rating_value' => 0.0,
+            'rating_label' => 'No feedback yet',
+            'reviews_count' => 0,
+            'show_available' => $contact_card_show_available,
+            'availability_label' => $contact_card_availability_label,
+            'status_detail' => $contact_card_status_detail,
+            'is_online' => $contact_card_is_online_now,
+            'presence_label' => $contact_card_last_online_label,
+            'location_text' => $contact_card_location_text,
+            'skills' => $saved_contact_card_skills,
+            'day_rate_value' => $candidate_day_rate_value,
+            'calendar_url' => $candidate_calendar_url,
+            'documents_url' => $candidate_profile_documents_url,
+            'profile_url' => $candidate_profile_personal_url,
+            'contact_card_url' => $candidate_profile_contact_card_url,
+            'finance_url' => $candidate_finance_url,
+        ];
         $weekly_expected_has_bank_hold = $weekly_expected_is_hold && stripos((string) $weekly_expected_display, 'bank details') !== false;
 
         $completion_missing_map = [
@@ -77555,6 +77919,9 @@ global $wpdb;
         $feedback_score_label = $feedback_has_reviews
             ? number_format(round($feedback_score_raw, 1), 1) . ' out of 5 stars'
             : 'NA - Feedback not yet received';
+        $candidate_profile_live_card_common['rating_value'] = $feedback_score_raw;
+        $candidate_profile_live_card_common['rating_label'] = $feedback_score_label;
+        $candidate_profile_live_card_common['reviews_count'] = $feedback_count_total;
         $nav_items = [
             'dashboard' => 'Dashboard',
             'profile' => 'My Hub',
@@ -78144,57 +78511,32 @@ global $wpdb;
                                             </label>
                                         </div>
                                     </div>
-                                    <div class="cmn-contact-card-preview cmn-command-card <?php echo $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation'; ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-contact-card-preview data-contact-card-is-online="<?php echo $contact_card_is_online_now ? '1' : '0'; ?>">
-                                        <div class="cmn-command-card-accent" aria-hidden="true"></div>
-                                        <div class="cmn-command-card-head">
-                                            <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
-                                            <span class="cmn-command-head-presence <?php echo $contact_card_is_online_now ? 'is-live' : 'is-offline'; ?>" data-contact-card-head-presence>
-                                                <span class="cmn-command-head-presence-dot" aria-hidden="true"></span>
-                                                <span data-contact-card-head-presence-text><?php echo esc_html($contact_card_is_online_now ? 'ONLINE' : $contact_card_last_online_label); ?></span>
-                                            </span>
-                                        </div>
-                                        <div class="cmn-command-identity">
-                                            <div class="cmn-contact-card-preview-photo-wrap">
-                                                <div class="cmn-contact-card-preview-photo">
-                                                    <img src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name !== '' ? $profile_name : 'Candidate'); ?> profile photo" data-contact-card-preview-photo>
-                                                </div>
-                                            </div>
-                                            <div class="cmn-command-identity-main">
-                                                <strong data-contact-card-preview-name><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></strong>
-                                                <div class="cmn-contact-card-preview-stars" aria-label="Feedback score">
-                                                    <span class="cmn-contact-card-preview-stars-track">★★★★★</span>
-                                                    <span class="cmn-contact-card-preview-stars-fill" style="width: <?php echo esc_attr(number_format($contact_card_feedback_percent, 2, '.', '')); ?>%;">★★★★★</span>
-                                                </div>
-                                                <span class="cmn-contact-card-preview-score" data-contact-card-preview-score><?php echo esc_html($contact_card_feedback_text); ?></span>
-                                            </div>
-                                            <div class="cmn-command-identity-trust">
-                                                <span class="cmn-command-inline-trust <?php echo $contact_card_verified_bundle ? 'is-ok' : 'is-pending'; ?>">
-                                                    <?php echo esc_html($contact_card_verified_bundle ? 'ID & DBS Verified' : 'ID / DBS Pending'); ?>
-                                                </span>
-                                                <span class="cmn-command-inline-trust <?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>">
-                                                    <?php echo esc_html($contact_card_compliance_complete ? 'Fully Compliant' : 'Compliance In Progress'); ?>
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div class="cmn-command-meta cmn-contact-card-meta-pills">
-                                            <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-role>Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
-                                            <span class="cmn-contact-card-preview-meta-pill" data-contact-card-preview-distance>Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
-                                        </div>
-                                        <div class="cmn-command-status-wrap">
-                                            <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-contact-card-preview-availability><?php echo esc_html($contact_card_availability_label); ?></span>
-                                            <span class="cmn-contact-card-preview-time" data-contact-card-preview-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
-                                        </div>
-                                        <div class="cmn-command-strengths-title">KEY DEPLOYMENT STRENGTHS</div>
-                                        <div class="cmn-contact-card-preview-skills" data-contact-card-preview-skills>
-                                            <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
-                                                <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
-                                            <?php endforeach; ?>
-                                        </div>
-                                        <div class="cmn-contact-card-preview-actions">
-                                            <button class="cmn-ghost cmn-btn-mini" type="button">View profile</button>
-                                            <button class="cmn-primary cmn-btn-mini" type="button">Book now</button>
-                                        </div>
-                                    </div>
+                                    <?php
+                                    echo $this->render_candidate_profile_live_card(array_merge($candidate_profile_live_card_common, [
+                                        'root_attributes' => [
+                                            'data-contact-card-preview' => true,
+                                            'data-contact-card-is-online' => $contact_card_is_online_now ? '1' : '0',
+                                        ],
+                                        'status_attributes' => [
+                                            'data-contact-card-preview-availability' => true,
+                                        ],
+                                        'presence_attributes' => [
+                                            'data-contact-card-head-presence' => true,
+                                        ],
+                                        'presence_text_attributes' => [
+                                            'data-contact-card-head-presence-text' => true,
+                                        ],
+                                        'banner_attributes' => [
+                                            'data-contact-card-preview-banner' => true,
+                                        ],
+                                        'banner_detail_attributes' => [
+                                            'data-contact-card-preview-time' => true,
+                                        ],
+                                        'skills_attributes' => [
+                                            'data-contact-card-preview-skills' => true,
+                                        ],
+                                    ]));
+                                    ?>
                                 </article>
                                 <article class="cmn-dashboard-card cmn-contact-card-tab-tile cmn-contact-card-tab-tile--skills" data-contact-card-skill-panel
                                          data-contact-card-selected="<?php echo esc_attr(wp_json_encode($saved_contact_card_skills)); ?>"
@@ -79844,57 +80186,25 @@ global $wpdb;
                                 </div>
                             </div>
                             <article class="cmn-dashboard-card cmn-contact-card-tab-tile cmn-contact-card-tab-tile--preview cmn-candidate-section1-contact">
-                                <div class="cmn-contact-card-preview cmn-command-card <?php echo $contact_card_show_available ? 'is-bookable' : 'is-pending-confirmation'; ?><?php echo $contact_card_is_online_now ? ' is-live' : ''; ?>" data-dashboard-contact-card data-dashboard-contact-confirmed-at="<?php echo esc_attr((string) $availability_confirmed_time_label); ?>">
-                                    <div class="cmn-command-card-accent" aria-hidden="true"></div>
-                                    <div class="cmn-command-card-head">
-                                        <div class="cmn-command-brand">CoverMeNow <span>ONE</span></div>
-                                        <span class="cmn-command-head-presence <?php echo $contact_card_is_online_now ? 'is-live' : 'is-offline'; ?>">
-                                            <span class="cmn-command-head-presence-dot" aria-hidden="true"></span>
-                                            <span><?php echo esc_html($contact_card_is_online_now ? 'ONLINE' : $contact_card_last_online_label); ?></span>
-                                        </span>
-                                    </div>
-                                    <div class="cmn-command-identity">
-                                        <div class="cmn-contact-card-preview-photo-wrap">
-                                            <div class="cmn-contact-card-preview-photo">
-                                                <img src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_name !== '' ? $profile_name : 'Candidate'); ?> profile photo">
-                                            </div>
-                                        </div>
-                                        <div class="cmn-command-identity-main">
-                                            <strong><?php echo esc_html($contact_card_display_name !== '' ? $contact_card_display_name : 'Candidate'); ?></strong>
-                                            <div class="cmn-contact-card-preview-stars" aria-label="Feedback score">
-                                                <span class="cmn-contact-card-preview-stars-track">★★★★★</span>
-                                                <span class="cmn-contact-card-preview-stars-fill" style="width: <?php echo esc_attr(number_format($contact_card_feedback_percent, 2, '.', '')); ?>%;">★★★★★</span>
-                                            </div>
-                                            <span class="cmn-contact-card-preview-score"><?php echo esc_html($contact_card_feedback_text); ?></span>
-                                        </div>
-                                        <div class="cmn-command-identity-trust">
-                                            <span class="cmn-command-inline-trust <?php echo $contact_card_verified_bundle ? 'is-ok' : 'is-pending'; ?>">
-                                                <?php echo esc_html($contact_card_verified_bundle ? 'ID & DBS Verified' : 'ID / DBS Pending'); ?>
-                                            </span>
-                                            <span class="cmn-command-inline-trust <?php echo $contact_card_compliance_complete ? 'is-ok' : 'is-pending'; ?>">
-                                                <?php echo esc_html($contact_card_compliance_complete ? 'Fully Compliant' : 'Compliance In Progress'); ?>
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div class="cmn-command-meta cmn-contact-card-meta-pills">
-                                        <span class="cmn-contact-card-preview-meta-pill">Primary role: <?php echo esc_html($contact_card_primary_role); ?></span>
-                                        <span class="cmn-contact-card-preview-meta-pill">Distance from school: <?php echo esc_html($contact_card_distance_label); ?></span>
-                                    </div>
-                                    <div class="cmn-command-status-wrap">
-                                        <span class="cmn-contact-card-preview-state <?php echo esc_attr($contact_card_availability_class); ?>" data-dashboard-contact-availability><?php echo esc_html($contact_card_availability_label); ?></span>
-                                        <span class="cmn-contact-card-preview-time" data-dashboard-contact-time<?php echo $contact_card_status_detail !== '' ? '' : ' hidden'; ?>><?php echo esc_html($contact_card_status_detail); ?></span>
-                                    </div>
-                                    <div class="cmn-command-strengths-title">KEY DEPLOYMENT STRENGTHS</div>
-                                    <div class="cmn-contact-card-preview-skills">
-                                        <?php foreach ($contact_card_skill_preview as $skill_chip) : ?>
-                                            <span class="cmn-contact-card-skill-chip"><?php echo esc_html($skill_chip); ?></span>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <div class="cmn-contact-card-preview-actions">
-                                        <button class="cmn-ghost cmn-btn-mini" type="button">View profile</button>
-                                        <button class="cmn-primary cmn-btn-mini" type="button">Book now</button>
-                                    </div>
-                                </div>
+                                <?php
+                                echo $this->render_candidate_profile_live_card(array_merge($candidate_profile_live_card_common, [
+                                    'root_attributes' => [
+                                        'data-dashboard-contact-card' => true,
+                                        'data-dashboard-contact-confirmed-at' => (string) $availability_confirmed_time_label,
+                                        'data-dashboard-contact-available-label' => $contact_card_status_available_label,
+                                        'data-dashboard-contact-pending-label' => $contact_card_status_pending_label,
+                                    ],
+                                    'status_attributes' => [
+                                        'data-dashboard-contact-availability' => true,
+                                    ],
+                                    'banner_attributes' => [
+                                        'data-dashboard-contact-banner' => true,
+                                    ],
+                                    'banner_detail_attributes' => [
+                                        'data-dashboard-contact-time' => true,
+                                    ],
+                                ]));
+                                ?>
                             </article>
                         </div>
                         <div class="cmn-candidate-summary-strip" data-candidate-summary-strip>
@@ -90405,165 +90715,8 @@ global $wpdb;
             ],
             'can_request' => $can_request ? 1 : 0,
         ];
-        $render_live_match_card = static function($item, $can_request = true) {
-            if (!is_array($item)) {
-                return '';
-            }
-            $candidate_id = (int) ($item['candidate_id'] ?? 0);
-            $first_name = sanitize_text_field((string) ($item['first_name'] ?? 'Candidate'));
-            if ($first_name === '') {
-                $first_name = 'Candidate';
-            }
-            $photo_url = esc_url((string) ($item['photo_url'] ?? ''));
-            $role_line = sanitize_text_field((string) ($item['role_line'] ?? 'Candidate'));
-            $status = sanitize_html_class((string) ($item['status'] ?? 'not_responded'));
-            if (!in_array($status, ['available', 'not_responded', 'not_available'], true)) {
-                $status = 'not_responded';
-            }
-            $status_label = sanitize_text_field((string) ($item['status_label'] ?? 'NOT YET CONFIRMED'));
-            $day_rate = (int) round((float) ($item['day_rate'] ?? 160));
-            $profile_url = esc_url((string) ($item['profile_url'] ?? '#'));
-            $is_shortlisted = !empty($item['is_shortlisted']);
-            $is_physically_online = !empty($item['is_physically_online']);
-            $presence_label = sanitize_text_field((string) ($item['presence_label'] ?? 'Last seen at --:--'));
-            $confirmed_at = sanitize_text_field((string) ($item['confirmed_at'] ?? ''));
-            $distance_text = sanitize_text_field((string) ($item['distance'] ?? ''));
-            $town_city_text = sanitize_text_field((string) ($item['town_city'] ?? ''));
-            $rating_label = sanitize_text_field((string) ($item['rating_label'] ?? (number_format((float) ($item['rating'] ?? 0), 2) . ' out of 5 stars')));
-            $documents_download_url = esc_url((string) ($item['documents_download_url'] ?? ''));
-            $profile_url = esc_url((string) ($item['profile_url'] ?? '#'));
-            $rating_value = (float) ($item['rating'] ?? 0);
-            if ($rating_value <= 0 && $rating_label !== '' && preg_match('/(\d+(?:\.\d+)?)/', $rating_label, $rating_match)) {
-                $rating_value = (float) ($rating_match[1] ?? 0);
-            }
-            if ($rating_value < 0) {
-                $rating_value = 0.0;
-            } elseif ($rating_value > 5) {
-                $rating_value = 5.0;
-            }
-            $reviews_count = max(0, (int) ($item['reviews'] ?? 0));
-            $rating_fill_percent = max(0.0, min(100.0, ($rating_value / 5) * 100));
-            $rating_value_display = number_format($rating_value, 1);
-            $rating_copy = $reviews_count > 0
-                ? ($rating_value_display . ' (' . $reviews_count . ' review' . ($reviews_count === 1 ? '' : 's') . ')')
-                : 'No feedback yet';
-            $rating_aria_label = $reviews_count > 0
-                ? ($rating_value_display . ' out of 5 stars from ' . $reviews_count . ' review' . ($reviews_count === 1 ? '' : 's'))
-                : 'No feedback yet';
-            $rating_copy_class = $reviews_count > 0 ? 'cmn-live-rating-copy' : 'cmn-live-rating-copy is-empty';
-            $rating_html = '<div class="cmn-live-rating"><span class="cmn-live-rating-stars" role="img" aria-label="' . esc_attr($rating_aria_label) . '"><span class="cmn-live-rating-stars-base">★★★★★</span><span class="cmn-live-rating-stars-fill" style="width:' . esc_attr(number_format((float) $rating_fill_percent, 2, '.', '')) . '%;">★★★★★</span></span><span class="' . esc_attr($rating_copy_class) . '">' . esc_html($rating_copy) . '</span></div>';
-            $skills = array_values(array_filter(array_map(
-                static function ($skill_item) {
-                    return sanitize_text_field((string) $skill_item);
-                },
-                (array) ($item['skills'] ?? [])
-            ), static function ($skill_item) {
-                return $skill_item !== '';
-            }));
-            if (count($skills) > 6) {
-                $skills = array_slice($skills, 0, 6);
-            }
-            if (!$skills) {
-                $skills = ['Classroom Management', 'Communication', 'First Aid'];
-            }
-            $skills_html = '';
-            foreach ($skills as $skill_text) {
-                $skills_html .= '<span class="cmn-live-skill">' . esc_html($skill_text) . '</span>';
-            }
-            if ($distance_text !== '' && preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_text)) {
-                $distance_text = 'Distance unavailable';
-            } elseif ($distance_text !== '' && preg_match('/^\d+(\.\d+)?$/', $distance_text)) {
-                $distance_text .= ' miles';
-            } elseif ($distance_text !== '') {
-                $has_time_unit = preg_match('/\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b/i', $distance_text);
-                $has_distance_unit = preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_text);
-                if ($has_time_unit) {
-                    $distance_text = trim((string) preg_replace('/\s*miles?\b/i', '', $distance_text));
-                } elseif (!$has_distance_unit) {
-                    $distance_text .= ' miles';
-                }
-            }
-            $distance_with_away = $distance_text;
-            if (
-                $distance_with_away !== ''
-                && !preg_match('/\b(unavailable|unknown|n\/a|pending)\b/i', $distance_with_away)
-                && preg_match('/\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i', $distance_with_away)
-                && !preg_match('/\baway\b/i', $distance_with_away)
-            ) {
-                $distance_with_away .= ' away';
-            }
-            $location_distance_text = '';
-            if ($town_city_text !== '' && $distance_with_away !== '') {
-                $location_distance_text = $town_city_text . ' • ' . $distance_with_away;
-            } elseif ($town_city_text !== '') {
-                $location_distance_text = $town_city_text;
-            } else {
-                $location_distance_text = $distance_with_away;
-            }
-            $offer_state = sanitize_key((string) ($item['offer_state'] ?? ''));
-            $offer_expires_at = sanitize_text_field((string) ($item['offer_expires_at'] ?? ''));
-            $offer_chat_url = esc_url((string) ($item['offer_chat_url'] ?? ''));
-            $offer_booking_id = (int) ($item['offer_booking_id'] ?? 0);
-            $effective_offer_state = $offer_state;
-            if ($effective_offer_state === self::OFFER_STATE_OFFERED && $offer_expires_at !== '') {
-                $offer_expires_ts = strtotime($offer_expires_at . ' UTC');
-                if ($offer_expires_ts !== false && $offer_expires_ts <= time()) {
-                    $effective_offer_state = self::OFFER_STATE_EXPIRED;
-                }
-            }
-            if ($status === 'available') {
-                $banner_html = '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>';
-            } elseif ($status === 'not_available') {
-                $banner_html = '<div class="cmn-live-banner is-pending">Marked unavailable</div>';
-            } else {
-                $banner_html = '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
-            }
-            $primary_button_label = 'Book Now';
-            $primary_button_class = ' is-default';
-            $primary_button_disabled = !$can_request;
-            $primary_button_href = '';
-            if ($effective_offer_state === self::OFFER_STATE_OFFERED) {
-                $primary_button_label = 'Booking Pending';
-                $primary_button_class = ' is-pending';
-                $primary_button_disabled = true;
-            } elseif ($effective_offer_state === self::OFFER_STATE_ACCEPTED) {
-                $primary_button_label = 'Booking Accepted';
-                $primary_button_class = ' is-accepted';
-                $primary_button_href = $offer_chat_url;
-                $primary_button_disabled = $primary_button_href === '';
-            } elseif ($effective_offer_state === self::OFFER_STATE_DECLINED) {
-                $primary_button_label = 'Booking Declined';
-                $primary_button_class = ' is-declined';
-                $primary_button_disabled = false;
-            } elseif ($effective_offer_state === self::OFFER_STATE_EXPIRED) {
-                $primary_button_label = 'Book Again';
-                $primary_button_class = ' is-retry';
-                $primary_button_disabled = !$can_request;
-            }
-            if ($primary_button_href !== '' && !$primary_button_disabled) {
-                $primary_button_html = '<a class="cmn-primary cmn-live-primary' . esc_attr($primary_button_class) . '" data-live-action="book_now" data-live-offer-state="' . esc_attr($effective_offer_state) . '" data-live-chat-url="' . esc_url($primary_button_href) . '" href="' . esc_url($primary_button_href) . '">' . esc_html($primary_button_label) . '</a>';
-            } else {
-                $primary_button_html = '<button class="cmn-primary cmn-live-primary' . esc_attr($primary_button_class) . '" data-live-action="book_now" data-live-offer-state="' . esc_attr($effective_offer_state) . '"' . ($primary_button_href !== '' ? ' data-live-chat-url="' . esc_url($primary_button_href) . '"' : '') . ($primary_button_disabled ? ' disabled' : '') . '>' . esc_html($primary_button_label) . '</button>';
-            }
-            $documents_button_html = $documents_download_url !== ''
-                ? '<a class="cmn-ghost cmn-live-secondary cmn-live-documents" href="' . $documents_download_url . '">Download Documents</a>'
-                : '<button class="cmn-ghost cmn-live-secondary cmn-live-documents" type="button" disabled>Download Documents</button>';
-            $profile_button_html = $profile_url !== '' && $profile_url !== '#'
-                ? '<a class="cmn-ghost cmn-live-secondary cmn-live-profile" href="' . $profile_url . '">View Profile</a>'
-                : '<button class="cmn-ghost cmn-live-secondary cmn-live-profile" type="button" disabled>View Profile</button>';
-            $presence_html = '<div class="cmn-live-presence' . ($is_physically_online ? ' is-live' : '') . '"><span class="cmn-live-presence-dot" aria-hidden="true"></span>' . esc_html($is_physically_online ? 'ONLINE NOW' : $presence_label) . '</div>';
-            $card_state_class = $status === 'available' ? ' is-bookable' : ' is-pending-confirmation';
-            return '<article class="cmn-live-card' . esc_attr($card_state_class) . '" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
-                . '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
-                . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><div class="cmn-avatar"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"></div><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div>' . $rating_html . '</div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
-                . '<div class="cmn-live-card-body">'
-                . '<div class="cmn-live-pills-row">' . $presence_html . '<div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
-                . '<div class="cmn-live-strip">' . $banner_html . '</div>'
-                . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
-                . '<div class="cmn-live-strengths-panel"><div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div></div><div class="cmn-live-skills">' . $skills_html . '</div></div>'
-                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main">' . $primary_button_html . $documents_button_html . $profile_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
-                . '</div>'
-                . '</article>';
+        $render_live_match_card = function($item, $can_request = true) {
+            return $this->render_school_live_match_card((array) $item, $can_request);
         };
         $get_visible_window_for_carousel = static function(array $rows, $center_index = 0, $limit = 3) {
             $total_rows = count($rows);

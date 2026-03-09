@@ -17816,6 +17816,24 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(5,18,10,.88);border-color:rgba(236,253,245,.84);color:#fff !important;-webkit-text-fill-color:#fff}
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary{background:rgba(3,10,6,.42);border-color:rgba(220,252,231,.24);color:rgba(248,250,252,.92) !important;-webkit-text-fill-color:rgba(248,250,252,.92)}
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary:focus-visible{background:rgba(5,18,10,.58);border-color:rgba(220,252,231,.42);color:#fff !important;-webkit-text-fill-color:#fff}
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-live-card--candidate{
+  transform:none !important;
+  min-height:auto;
+  height:100%;
+}
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-live-card--candidate:hover{
+  transform:none !important;
+}
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-contact-card-tab-tile--preview,
+body.cmn-portal-page .cmn-candidate-section1-contact{
+  overflow:visible;
+}
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-live-card--candidate .cmn-live-card-row{
+  padding-right:clamp(112px,34%,140px);
+}
+body.cmn-portal-page :is(.cmn-candidate-main--profile, .cmn-candidate-main--dashboard) .cmn-live-card--candidate .cmn-live-actions{
+  margin-top:auto;
+}
 .cmn-live-dots{text-align:center;margin-top:10px}
 .cmn-live-dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#6e637a;margin:0 5px;cursor:pointer;border:0;padding:0}
 .cmn-live-dot.is-active{background:#ff1f43;box-shadow:0 0 0 3px rgba(255,31,67,.2)}
