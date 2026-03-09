@@ -17747,7 +17747,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-brand{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:800;letter-spacing:.02em;color:#f8fafc}
 .cmn-live-brand .cmn-live-brand-main{color:#fff !important;-webkit-text-fill-color:#fff;text-shadow:0 1px 5px rgba(2,6,12,.45)}
 .cmn-live-brand .cmn-live-brand-accent{color:#ff1f43 !important;-webkit-text-fill-color:#ff1f43;font-weight:900;text-shadow:0 1px 4px rgba(127,29,29,.35)}
-.cmn-live-card-row{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:56px;padding-right:clamp(112px,34%,140px)}
+.cmn-live-card-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:56px;padding-right:clamp(112px,34%,140px)}
 .cmn-live-ident{display:flex;align-items:center;gap:10px;min-width:0}
 .cmn-live-ident .cmn-avatar{width:56px;height:56px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid rgba(255,255,255,.22);background:#20182f;display:flex;align-items:center;justify-content:center}
 .cmn-live-ident .cmn-avatar img{width:100%;height:100%;object-fit:contain;object-position:50% 20%;display:block}
@@ -17760,7 +17760,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rating-stars-fill{position:absolute;left:0;top:0;overflow:hidden;color:#facc15}
 .cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:21px;max-width:100%;padding:2px 9px;border-radius:999px;border:1px solid rgba(248,250,252,.48);background:rgba(2,6,12,.84);white-space:nowrap !important;flex-wrap:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;font-weight:800;letter-spacing:.01em}
-.cmn-live-status{position:absolute;top:-2px;right:-2px;z-index:2;max-width:calc(100% - 126px);padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmn-live-status{position:absolute;top:10px;right:10px;z-index:3;max-width:calc(100% - 128px);padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cmn-live-status.available{
   background:linear-gradient(180deg,#66ff30,#22c55e);
   border:1px solid #bbf7d0;
