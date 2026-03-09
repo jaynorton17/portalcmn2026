@@ -17579,10 +17579,10 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-not-interested-copy span{font-size:11px;color:#cfd3db}
 .cmn-live-not-interested-item .cmn-ghost{min-height:30px;padding:6px 10px;font-size:12px;white-space:nowrap}
 .cmn-live-visibility-note{margin:0 0 12px;padding:8px 12px;border-radius:10px;background:rgba(13,16,27,.7);border:1px solid rgba(255,255,255,.12);font-size:12px;color:#d6d8df}
-.cmn-live-carousel-wrap{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr) 52px;align-items:stretch;gap:10px;isolation:isolate;padding-inline:clamp(24px,3vw,40px)}
-.cmn-live-carousel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:stretch;perspective:1400px;perspective-origin:50% 42%;overflow:visible}
+.cmn-live-carousel-wrap{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr) 52px;align-items:stretch;gap:8px;isolation:isolate;padding-inline:clamp(16px,2vw,28px)}
+.cmn-live-carousel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:stretch;perspective:1400px;perspective-origin:50% 42%;overflow:visible}
 .cmn-live-arrow{position:relative;z-index:80;pointer-events:auto;width:52px;min-height:100%;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid rgba(255,255,255,.24);background:rgba(10,8,20,.9);color:#fff;font-size:26px;line-height:1;cursor:pointer}
-.cmn-live-card{position:relative;z-index:1;transform:translateY(0) scale(1);transform-origin:center top;background:linear-gradient(180deg,rgba(197,17,47,.95),rgba(102,7,28,.96));border:1px solid rgba(255,71,99,.65);border-radius:18px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.35);padding:12px;display:flex;flex-direction:column;gap:10px;min-height:100%;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease,opacity .22s ease,filter .22s ease}
+.cmn-live-card{position:relative;z-index:1;transform:translateY(0) scale(1);transform-origin:center top;background:linear-gradient(180deg,rgba(197,17,47,.95),rgba(102,7,28,.96));border:1px solid rgba(255,71,99,.65);border-radius:18px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.35);padding:10px;display:flex;flex-direction:column;gap:8px;min-height:100%;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease,opacity .22s ease,filter .22s ease}
 .cmn-live-card.is-bookable{
   z-index:3;
   transform:translateY(-10px) scale(1.05);
@@ -17747,7 +17747,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-brand{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:800;letter-spacing:.02em;color:#f8fafc}
 .cmn-live-brand .cmn-live-brand-main{color:#fff !important;-webkit-text-fill-color:#fff;text-shadow:0 1px 5px rgba(2,6,12,.45)}
 .cmn-live-brand .cmn-live-brand-accent{color:#ff1f43 !important;-webkit-text-fill-color:#ff1f43;font-weight:900;text-shadow:0 1px 4px rgba(127,29,29,.35)}
-.cmn-live-card-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.cmn-live-card-row{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:56px;padding-right:clamp(112px,34%,140px)}
 .cmn-live-ident{display:flex;align-items:center;gap:10px;min-width:0}
 .cmn-live-ident .cmn-avatar{width:56px;height:56px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid rgba(255,255,255,.22);background:#20182f;display:flex;align-items:center;justify-content:center}
 .cmn-live-ident .cmn-avatar img{width:100%;height:100%;object-fit:contain;object-position:50% 20%;display:block}
@@ -17760,13 +17760,11 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-rating-stars-fill{position:absolute;left:0;top:0;overflow:hidden;color:#facc15}
 .cmn-live-rating-copy{font-size:11px;font-weight:700;color:inherit;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cmn-live-rating-copy.is-empty{display:inline-flex;align-items:center;min-height:21px;max-width:100%;padding:2px 9px;border-radius:999px;border:1px solid rgba(248,250,252,.48);background:rgba(2,6,12,.84);white-space:nowrap !important;flex-wrap:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;font-weight:800;letter-spacing:.01em}
-.cmn-live-status{padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap}
+.cmn-live-status{position:absolute;top:-2px;right:-2px;z-index:2;max-width:calc(100% - 126px);padding:6px 10px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cmn-live-status.available{
   background:linear-gradient(180deg,#66ff30,#22c55e);
   border:1px solid #bbf7d0;
   color:#052e16;
-  margin-top:-6px;
-  margin-right:-3px;
   box-shadow:
     0 0 24px rgba(57,255,20,.72),
     0 0 42px rgba(34,197,94,.28),
@@ -17793,9 +17791,9 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-strengths-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:4px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22)}
 .cmn-live-strengths-title{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.62);font-size:10.5px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:#f8fafc}
 .cmn-live-charge-rate{display:inline-flex;align-items:center;min-height:26px;padding:0 11px;border-radius:999px;border:1px solid rgba(248,250,252,.52);background:rgba(2,6,12,.86);font-size:11.5px;font-weight:900;color:#f8fafc;letter-spacing:.01em}
-.cmn-live-skills{display:flex;gap:6px;row-gap:6px;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;width:100%;min-width:0;min-height:58px;max-height:58px;overflow:hidden;margin-top:0;margin-bottom:10px;padding-bottom:2px;position:relative;z-index:0}
+.cmn-live-skills{display:flex;gap:6px;row-gap:6px;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;width:100%;min-width:0;min-height:54px;max-height:54px;overflow:hidden;margin-top:0;margin-bottom:10px;padding-bottom:2px;position:relative;z-index:0}
 .cmn-live-skill{display:inline-flex;align-items:center;flex:1 1 calc(33.333% - 6px);max-width:calc(33.333% - 6px);min-width:0;box-sizing:border-box;background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:6px 10px;border-radius:999px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cmn-live-actions{display:grid;gap:8px;margin-top:12px;position:relative;z-index:1}
+.cmn-live-actions{display:grid;gap:8px;margin-top:auto;padding-top:10px;position:relative;z-index:1}
 .cmn-live-actions-main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:stretch}
 .cmn-live-actions .cmn-live-primary{width:100%;min-height:42px;padding:8px 12px;font-size:13px;font-weight:900}
 .cmn-live-actions [data-live-action="book_now"]{background:linear-gradient(180deg,#67e454,#22c55e);border:1px solid #14532d;color:#111 !important;-webkit-text-fill-color:#111;font-weight:900}
@@ -17844,8 +17842,8 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
   70%{transform:translate(-50%,-50%) scale(2);opacity:0}
   100%{transform:translate(-50%,-50%) scale(2);opacity:0}
 }
-@media (max-width:1200px){.cmn-live-carousel-wrap{padding-inline:24px}.cmn-live-carousel{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-card.is-bookable{transform:translateY(-8px) scale(1.04)}.cmn-live-card.is-bookable:hover{transform:translateY(-10px) scale(1.045)}.cmn-live-card.is-pending-confirmation{transform:translateY(3px) scale(1.04);opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-kpi:nth-child(2){border-right:0}.cmn-live-skills{min-height:54px;max-height:54px}}
-@media (max-width:760px){.cmn-live-matches-head{padding-right:0}.cmn-live-filter-btn{position:static;margin-bottom:10px}.cmn-live-carousel-wrap{grid-template-columns:1fr;padding-inline:12px}.cmn-live-arrow{min-height:38px;width:100%}.cmn-live-carousel{grid-template-columns:1fr}.cmn-live-card.is-bookable,.cmn-live-card.is-bookable:hover,.cmn-live-card.is-pending-confirmation{transform:none}.cmn-live-card.is-pending-confirmation{opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:1fr}.cmn-live-kpi{border-right:0}.cmn-live-actions-main{grid-template-columns:1fr}.cmn-live-actions-main .cmn-live-primary{grid-column:auto}.cmn-live-actions-tertiary{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-offer-modal{padding:10px}}
+@media (max-width:1200px){.cmn-live-carousel-wrap{padding-inline:18px}.cmn-live-carousel{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-card.is-bookable{transform:translateY(-8px) scale(1.04)}.cmn-live-card.is-bookable:hover{transform:translateY(-10px) scale(1.045)}.cmn-live-card.is-pending-confirmation{transform:translateY(3px) scale(1.04);opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-kpi:nth-child(2){border-right:0}.cmn-live-skills{min-height:54px;max-height:54px}}
+@media (max-width:760px){.cmn-live-matches-head{padding-right:0}.cmn-live-filter-btn{position:static;margin-bottom:10px}.cmn-live-carousel-wrap{grid-template-columns:1fr;padding-inline:10px}.cmn-live-arrow{min-height:38px;width:100%}.cmn-live-carousel{grid-template-columns:1fr}.cmn-live-card.is-bookable,.cmn-live-card.is-bookable:hover,.cmn-live-card.is-pending-confirmation{transform:none}.cmn-live-card.is-pending-confirmation{opacity:1;filter:none}.cmn-live-kpis{grid-template-columns:1fr}.cmn-live-kpi{border-right:0}.cmn-live-card-row{padding-right:120px}.cmn-live-actions-main{grid-template-columns:1fr}.cmn-live-actions-main .cmn-live-primary{grid-column:auto}.cmn-live-actions-tertiary{grid-template-columns:repeat(2,minmax(0,1fr))}.cmn-live-offer-modal{padding:10px}}
 
 /* Finance overlap hard-fix + unified portal format pass */
 body.cmn-portal-page .cmn-candidate-main .cmn-candidate-finance-row {
