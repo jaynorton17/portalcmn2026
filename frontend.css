@@ -17606,45 +17606,52 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
     0 0 86px rgba(22,163,74,.32),
     inset 0 0 0 1px rgba(187,247,208,.24);
 }
-.cmn-live-card.is-bookable,
+.cmn-live-card.is-bookable{
+  color:#f8fafc;
+}
 .cmn-live-card.is-bookable .cmn-live-name,
-.cmn-live-card.is-bookable .cmn-live-role,
 .cmn-live-card.is-bookable .cmn-live-rating,
 .cmn-live-card.is-bookable .cmn-live-rating-copy,
-.cmn-live-card.is-bookable .cmn-live-strengths-title,
-.cmn-live-card.is-bookable .cmn-live-status.available,
-.cmn-live-card.is-bookable .cmn-live-banner,
-.cmn-live-card.is-bookable .cmn-live-banner small,
 .cmn-live-card.is-bookable .cmn-live-rate,
 .cmn-live-card.is-bookable .cmn-live-rate span,
+.cmn-live-card.is-bookable .cmn-live-strengths-title,
 .cmn-live-card.is-bookable .cmn-live-charge-rate,
 .cmn-live-card.is-bookable .cmn-live-skill,
 .cmn-live-card.is-bookable .cmn-live-presence,
 .cmn-live-card.is-bookable .cmn-live-presence.is-live,
-.cmn-live-card.is-bookable .cmn-live-actions .cmn-primary,
-.cmn-live-card.is-bookable .cmn-live-actions .cmn-ghost{
-  color:#000 !important;
-  -webkit-text-fill-color:#000;
+.cmn-live-card.is-bookable .cmn-live-meta-row,
+.cmn-live-card.is-bookable .cmn-live-distance,
+.cmn-live-card.is-bookable .cmn-live-offer{
+  color:#f8fafc !important;
+  -webkit-text-fill-color:#f8fafc;
+}
+.cmn-live-card.is-bookable .cmn-live-role{
+  color:#ecfccb !important;
+  -webkit-text-fill-color:#ecfccb;
+  text-shadow:0 1px 6px rgba(2,6,12,.42);
+}
+.cmn-live-card.is-bookable .cmn-live-status.available,
+.cmn-live-card.is-bookable .cmn-live-banner,
+.cmn-live-card.is-bookable .cmn-live-banner small,
+.cmn-live-card.is-bookable .cmn-live-actions [data-live-action="book_now"]{
+  color:#052e16 !important;
+  -webkit-text-fill-color:#052e16;
 }
 .cmn-live-card.is-bookable .cmn-live-rating-stars-base{
-  color:rgba(0,0,0,.32) !important;
-  -webkit-text-fill-color:rgba(0,0,0,.32);
+  color:rgba(248,250,252,.28) !important;
+  -webkit-text-fill-color:rgba(248,250,252,.28);
 }
 .cmn-live-card.is-bookable .cmn-live-rating-stars-fill{
-  color:#000 !important;
-  -webkit-text-fill-color:#000;
+  color:#fde047 !important;
+  -webkit-text-fill-color:#fde047;
 }
 .cmn-live-card.is-bookable .cmn-live-rate,
 .cmn-live-card.is-bookable .cmn-live-charge-rate,
 .cmn-live-card.is-bookable .cmn-live-skill,
 .cmn-live-card.is-bookable .cmn-live-presence,
 .cmn-live-card.is-bookable .cmn-live-presence.is-live{
-  background:rgba(255,255,255,.72);
-  border-color:rgba(0,0,0,.22);
-}
-.cmn-live-card.is-bookable .cmn-live-role{
-  background:rgba(255,255,255,.72);
-  border-color:rgba(0,0,0,.22);
+  background:rgba(2,6,12,.74);
+  border-color:rgba(248,250,252,.28);
 }
 .cmn-live-card.is-bookable .cmn-live-meta-row{
   background:rgba(5,7,12,.72);
@@ -17793,8 +17800,10 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-actions-tertiary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .cmn-live-actions .cmn-live-tertiary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:30px;padding:4px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.44);background:rgba(2,6,12,.12);color:rgba(226,232,240,.82) !important;-webkit-text-fill-color:rgba(226,232,240,.82);font-size:11px;font-weight:650;letter-spacing:.02em}
 .cmn-live-actions .cmn-live-tertiary:hover,.cmn-live-actions .cmn-live-tertiary:focus-visible{border-color:rgba(226,232,240,.82);background:rgba(51,65,85,.36);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc}
-.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary{background:rgba(255,255,255,.9);border-color:rgba(5,46,22,.48);color:#04170b !important;-webkit-text-fill-color:#04170b}
-.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:focus-visible{background:#fff;border-color:#052e16;color:#000 !important;-webkit-text-fill-color:#000}
+.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary{background:rgba(3,10,6,.72);border-color:rgba(220,252,231,.54);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;box-shadow:0 2px 0 rgba(2,6,12,.34)}
+.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(5,18,10,.88);border-color:rgba(236,253,245,.84);color:#fff !important;-webkit-text-fill-color:#fff}
+.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary{background:rgba(3,10,6,.42);border-color:rgba(220,252,231,.24);color:rgba(248,250,252,.92) !important;-webkit-text-fill-color:rgba(248,250,252,.92)}
+.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary:focus-visible{background:rgba(5,18,10,.58);border-color:rgba(220,252,231,.42);color:#fff !important;-webkit-text-fill-color:#fff}
 .cmn-live-offer{margin-top:0;min-height:16px;font-weight:700;font-size:12px;color:#fffab4}
 .cmn-live-offer.is-active{padding-top:2px}
 .cmn-live-offer-state{display:inline-flex;align-items:center;gap:6px}
