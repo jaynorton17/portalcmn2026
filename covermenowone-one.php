@@ -1296,13 +1296,11 @@ final class CMN_One_Plugin {
             wp_schedule_event((int) $candidate->getTimestamp(), 'daily', self::SCHOOL_PARTNER_CONFIRMATION_REMINDER_CRON_HOOK);
         }
         if (!wp_next_scheduled(self::SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK)) {
-            $tz = wp_timezone();
-            $reference = new DateTimeImmutable('now', $tz);
-            $candidate = $reference->setTime(9, 0, 0);
-            if ($reference >= $candidate) {
-                $candidate = $candidate->modify('+1 day')->setTime(9, 0, 0);
-            }
-            wp_schedule_event((int) $candidate->getTimestamp(), 'daily', self::SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK);
+            wp_schedule_event(
+                $this->get_next_school_live_match_daily_reset_timestamp((int) current_time('timestamp')),
+                'daily',
+                self::SCHOOL_LIVE_MATCH_DAILY_RESET_CRON_HOOK
+            );
         }
     }
 
@@ -9558,9 +9556,9 @@ global $wpdb;
         }
         $tz = wp_timezone();
         $reference = (new DateTimeImmutable('@' . max(1, $reference_ts)))->setTimezone($tz);
-        $candidate = $reference->setTime(9, 0, 0);
+        $candidate = $reference->setTime(10, 0, 0);
         if ($reference >= $candidate) {
-            $candidate = $candidate->modify('+1 day')->setTime(9, 0, 0);
+            $candidate = $candidate->modify('+1 day')->setTime(10, 0, 0);
         }
         return (int) $candidate->getTimestamp();
     }
@@ -9572,7 +9570,7 @@ global $wpdb;
         }
         $tz = wp_timezone();
         $reference = (new DateTimeImmutable('@' . max(1, $reference_ts)))->setTimezone($tz);
-        return (int) $reference->setTime(9, 0, 0)->getTimestamp();
+        return (int) $reference->setTime(10, 0, 0)->getTimestamp();
     }
 
     private function parse_mysql_datetime_to_wp_timestamp($raw_datetime) {
@@ -9592,29 +9590,15 @@ global $wpdb;
     private function candidate_has_fresh_live_match_availability_for_date($candidate_id, $date, $reset_cutoff_ts) {
         $candidate_id = (int) $candidate_id;
         $date = sanitize_text_field((string) $date);
-        $reset_cutoff_ts = (int) $reset_cutoff_ts;
         if ($candidate_id < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             return false;
-        }
-        if ($reset_cutoff_ts < 1) {
-            $reset_cutoff_ts = $this->get_school_live_match_day_reset_cutoff_timestamp();
         }
         $entry = $this->get_candidate_availability_entry($candidate_id, $date);
         if (!is_array($entry) || empty($entry['created_at'])) {
             return false;
         }
-        // Availability rows are already scoped to a specific morning via available_date.
-        // If the candidate has an active row for today or tomorrow, it should stay green
-        // even after the 09:00 reset; the reset is only for stale flags with no dated row.
         $entry_date = sanitize_text_field((string) ($entry['available_date'] ?? ''));
-        if ($entry_date === $date) {
-            return true;
-        }
-        $created_at_ts = $this->parse_mysql_datetime_to_wp_timestamp((string) $entry['created_at']);
-        if ($created_at_ts < 1) {
-            return false;
-        }
-        return $created_at_ts >= $reset_cutoff_ts;
+        return $entry_date === $date;
     }
 
     public function run_school_live_match_daily_reset_cron() {
@@ -9712,35 +9696,22 @@ global $wpdb;
         return false;
     }
 
-    private function candidate_has_valid_live_match_green_state($candidate_id, $today, $tomorrow, $reset_cutoff_ts = null) {
+    private function candidate_has_valid_live_match_green_state($candidate_id, $target_date, $reset_cutoff_ts = null) {
         $candidate_id = (int) $candidate_id;
+        $target_date = sanitize_text_field((string) $target_date);
         if ($candidate_id < 1) {
             return false;
         }
-        $reset_cutoff_ts = (int) $reset_cutoff_ts;
-        if ($reset_cutoff_ts < 1) {
-            $reset_cutoff_ts = $this->get_school_live_match_day_reset_cutoff_timestamp();
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
+            return false;
         }
-        $dates = [];
-        foreach ([$today, $tomorrow] as $date_raw) {
-            $date = sanitize_text_field((string) $date_raw);
-            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-                continue;
-            }
-            $dates[$date] = $date;
-            if ($this->candidate_has_confirmed_booking_for_date($candidate_id, $date)) {
-                return true;
-            }
-        }
-        if ($this->candidate_has_confirmed_request_for_dates($candidate_id, array_values($dates))) {
+        if ($this->candidate_has_confirmed_booking_for_date($candidate_id, $target_date)) {
             return true;
         }
-        foreach (array_values($dates) as $date) {
-            if ($this->candidate_has_fresh_live_match_availability_for_date($candidate_id, $date, $reset_cutoff_ts)) {
-                return true;
-            }
+        if ($this->candidate_has_confirmed_request_for_dates($candidate_id, [$target_date])) {
+            return true;
         }
-        return false;
+        return $this->candidate_has_fresh_live_match_availability_for_date($candidate_id, $target_date, (int) $reset_cutoff_ts);
     }
 
     private function get_candidate_availability_entry_for_dates(array $candidate_ids, array $dates) {
@@ -9772,49 +9743,49 @@ global $wpdb;
         return null;
     }
 
-    private function resolve_school_live_match_display_state(array $candidate_ids, $target_date, $today, $tomorrow, $reset_cutoff_ts, $is_shortlisted = false) {
+    private function resolve_school_live_match_display_state(array $candidate_ids, $target_date, $is_shortlisted = false) {
         $target_date = sanitize_text_field((string) $target_date);
-        $today = sanitize_text_field((string) $today);
-        $tomorrow = sanitize_text_field((string) $tomorrow);
         $candidate_ids = array_values(array_unique(array_filter(array_map('intval', $candidate_ids), static function ($candidate_id) {
             return $candidate_id > 0;
         })));
 
-        $dates_to_check = [];
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
-            $dates_to_check[] = $target_date;
-        }
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $today)) {
-            $dates_to_check[] = $today;
-        }
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $tomorrow)) {
-            $dates_to_check[] = $tomorrow;
-        }
-        $dates_to_check = array_values(array_unique($dates_to_check));
-
-        $availability_entry = $this->get_candidate_availability_entry_for_dates($candidate_ids, $dates_to_check);
+        $availability_entry = $this->get_candidate_availability_entry_for_dates($candidate_ids, [$target_date]);
         $confirmed_at_raw = is_array($availability_entry) ? sanitize_text_field((string) ($availability_entry['created_at'] ?? '')) : '';
         $matched_date = is_array($availability_entry) ? sanitize_text_field((string) ($availability_entry['available_date'] ?? '')) : '';
-        $availability_confirmed = $confirmed_at_raw !== '';
-
-        if (!$availability_confirmed && $candidate_ids) {
+        $immediate_next_day_activation = ($confirmed_at_raw !== '' && $matched_date === $target_date);
+        $confirmed_available = $immediate_next_day_activation;
+        if (!$confirmed_available && $candidate_ids) {
             foreach ($candidate_ids as $candidate_id) {
-                if ($this->candidate_has_valid_live_match_green_state((int) $candidate_id, $today, $tomorrow, $reset_cutoff_ts)) {
-                    $availability_confirmed = true;
+                if ($this->candidate_has_valid_live_match_green_state((int) $candidate_id, $target_date)) {
+                    $confirmed_available = true;
                     break;
                 }
             }
         }
+        $calendar_signal = $this->get_candidate_calendar_signal_for_date($candidate_ids, $target_date);
+        $unavailable_explicit = ($calendar_signal === 'unavailable');
+        $availability_unknown = !$confirmed_available && $calendar_signal === 'unknown';
 
-        $status = $availability_confirmed ? 'available' : 'not_responded';
-        $status_label = $availability_confirmed ? 'CONFIRMED AVAILABLE' : 'NOT RESPONDED';
-        $display_state = $availability_confirmed
-            ? 'available_confirmed'
-            : ($is_shortlisted ? 'shortlisted' : 'not_responded');
-        $sort_priority = $availability_confirmed ? 1 : ($is_shortlisted ? 2 : 3);
+        $status = 'not_responded';
+        $status_label = 'NOT YET CONFIRMED';
+        $display_state = $availability_unknown ? 'availability_unknown' : 'calendar_available';
+        $sort_priority = $is_shortlisted ? 2 : 3;
+        if ($unavailable_explicit && !$confirmed_available) {
+            $status = 'not_available';
+            $status_label = 'NOT AVAILABLE';
+            $display_state = 'unavailable_explicit';
+            $sort_priority = 4;
+        } elseif ($confirmed_available) {
+            $status = 'available';
+            $status_label = 'CONFIRMED AVAILABLE';
+            $display_state = 'confirmed_available';
+            $sort_priority = 1;
+        } elseif ($is_shortlisted) {
+            $display_state = 'shortlisted';
+        }
 
         return [
-            'availability_confirmed' => $availability_confirmed ? 1 : 0,
+            'availability_confirmed' => $confirmed_available ? 1 : 0,
             'display_state' => $display_state,
             'status' => $status,
             'status_label' => $status_label,
@@ -9824,6 +9795,11 @@ global $wpdb;
                 ? $this->parse_mysql_datetime_to_wp_timestamp($confirmed_at_raw)
                 : 0,
             'matched_availability_date' => $matched_date,
+            'immediate_next_day_activation' => $immediate_next_day_activation ? 1 : 0,
+            'calendar_availability' => $calendar_signal,
+            'availability_unknown' => $availability_unknown ? 1 : 0,
+            'unavailable_explicit' => $unavailable_explicit ? 1 : 0,
+            'confirmed_available' => $confirmed_available ? 1 : 0,
         ];
     }
 
@@ -9850,16 +9826,16 @@ global $wpdb;
         try {
             $tz = wp_timezone();
             $now = new DateTimeImmutable('now', $tz);
-            $today = $now->format('Y-m-d');
-            $tomorrow = $now->modify('+1 day')->format('Y-m-d');
-            $reset_cutoff_ts = $this->get_school_live_match_day_reset_cutoff_timestamp((int) $now->getTimestamp());
+            $availability_cycle = $this->get_candidate_immediate_availability_cycle($now);
+            $today = sanitize_text_field((string) ($availability_cycle['today'] ?? $now->format('Y-m-d')));
+            $target_date = sanitize_text_field((string) ($availability_cycle['target_date'] ?? $today));
             $last_run_date = sanitize_text_field((string) get_option('cmn_school_live_match_reset_last_run_date', ''));
             if (!$force && $last_run_date === $today) {
                 return [
                     'status' => 'skipped',
                     'message' => 'Daily live match reset already completed today.',
                     'today' => $today,
-                    'tomorrow' => $tomorrow,
+                    'target_date' => $target_date,
                     'post_flags_reset' => 0,
                     'user_flags_reset' => 0,
                     'skipped_valid' => 0,
@@ -9917,7 +9893,7 @@ global $wpdb;
                 if ($candidate_id < 1) {
                     continue;
                 }
-                if ($this->candidate_has_valid_live_match_green_state($candidate_id, $today, $tomorrow, $reset_cutoff_ts)) {
+                if ($this->candidate_has_valid_live_match_green_state($candidate_id, $target_date)) {
                     $skipped_valid++;
                     continue;
                 }
@@ -9940,7 +9916,7 @@ global $wpdb;
                 'status' => 'success',
                 'message' => 'Live match card states reset.',
                 'today' => $today,
-                'tomorrow' => $tomorrow,
+                'target_date' => $target_date,
                 'post_flags_reset' => $post_flags_reset,
                 'user_flags_reset' => $user_flags_reset,
                 'skipped_valid' => $skipped_valid,
@@ -9954,7 +9930,7 @@ global $wpdb;
             $this->add_audit_log('school_live_match_daily_reset', 'system', 'school_live_matches', [
                 'trigger' => $trigger,
                 'today' => $today,
-                'tomorrow' => $tomorrow,
+                'target_date' => $target_date,
                 'post_flags_reset' => $post_flags_reset,
                 'user_flags_reset' => $user_flags_reset,
                 'skipped_valid' => $skipped_valid,
@@ -34254,11 +34230,8 @@ global $wpdb;
                 $skipped++;
                 continue;
             }
-            if ($this->is_candidate_unavailable($candidate_id, $requested_date)) {
-                $skipped++;
-                continue;
-            }
-            if (!$this->has_candidate_availability($candidate_id, $requested_date)) {
+            $request_availability = $this->get_candidate_request_availability_signal($candidate_id, $requested_date);
+            if (!empty($request_availability['unavailable_explicit'])) {
                 $skipped++;
                 continue;
             }
@@ -51510,40 +51483,16 @@ global $wpdb;
         }
         $photo_url = esc_url($this->get_school_live_match_photo_url($candidate_profile_id));
 
-        $today = current_time('Y-m-d');
-        $tomorrow = $this->get_tomorrow_date();
-        $is_candidate_unavailable = static function($unavailable_today, $unavailable_tomorrow) {
-            return $unavailable_today && $unavailable_tomorrow;
-        };
-        $unavailable_today = $this->is_candidate_unavailable($candidate_profile_id, $today);
-        $unavailable_tomorrow = $tomorrow !== '' ? $this->is_candidate_unavailable($candidate_profile_id, $tomorrow) : false;
-        if ($candidate_profile_id !== $candidate_id) {
-            $unavailable_today = $unavailable_today && $this->is_candidate_unavailable($candidate_id, $today);
-            if ($tomorrow !== '') {
-                $unavailable_tomorrow = $unavailable_tomorrow && $this->is_candidate_unavailable($candidate_id, $tomorrow);
-            }
-        }
-        $availability_status_class = 'cmn-live-status not_responded';
-        $availability_status_label = 'NOT RESPONDED';
-        if ($is_candidate_unavailable($unavailable_today, $unavailable_tomorrow)) {
-            $availability_status_class = 'cmn-live-status not_available';
-            $availability_status_label = 'NOT AVAILABLE';
-        } else {
-            $available_now = $this->has_candidate_availability($candidate_profile_id, $today);
-            if (!$available_now && $candidate_profile_id !== $candidate_id) {
-                $available_now = $this->has_candidate_availability($candidate_id, $today);
-            }
-            if (!$available_now && $tomorrow !== '') {
-                $available_now = $this->has_candidate_availability($candidate_profile_id, $tomorrow);
-                if (!$available_now && $candidate_profile_id !== $candidate_id) {
-                    $available_now = $this->has_candidate_availability($candidate_id, $tomorrow);
-                }
-            }
-            if ($available_now) {
-                $availability_status_class = 'cmn-live-status available';
-                $availability_status_label = 'AVAILABLE NOW';
-            }
-        }
+        $availability_cycle = $this->get_candidate_immediate_availability_cycle();
+        $target_date = sanitize_text_field((string) ($availability_cycle['target_date'] ?? current_time('Y-m-d')));
+        $state_candidate_ids = array_values(array_unique(array_filter([
+            (int) $candidate_profile_id,
+            (int) $candidate_id,
+        ])));
+        $display_state = $this->resolve_school_live_match_display_state($state_candidate_ids, $target_date, false);
+        $availability_status_key = sanitize_key((string) ($display_state['status'] ?? 'not_responded'));
+        $availability_status_class = 'cmn-live-status ' . $availability_status_key;
+        $availability_status_label = sanitize_text_field((string) ($display_state['status_label'] ?? 'NOT YET CONFIRMED'));
 
         $skills = $this->get_candidate_live_match_skills($candidate_profile_id, 12);
         if (!$skills && $candidate_profile_id !== $candidate_id) {
@@ -70554,54 +70503,57 @@ global $wpdb;
         return $now->modify('+1 day')->format('Y-m-d');
     }
 
-    private function get_candidate_availability_window(DateTime $now = null) {
+    private function get_candidate_immediate_availability_cycle($reference = null) {
         $tz = wp_timezone();
-        if (!$now) {
-            $now = new DateTime('now', $tz);
+        if ($reference instanceof DateTimeImmutable) {
+            $now = $reference->setTimezone($tz);
+        } elseif ($reference instanceof DateTime) {
+            $now = (new DateTimeImmutable('@' . (int) $reference->getTimestamp()))->setTimezone($tz);
+        } else {
+            $now = new DateTimeImmutable('now', $tz);
         }
 
-        $target = $this->get_next_weekday_date((clone $now));
-        $window_open = (clone $target)->modify('-1 day')->setTime(19, 0, 0);
-        $window_close = (clone $target)->setTime(7, 30, 0);
-        $is_open = ($now >= $window_open && $now <= $window_close);
-        $next_press_label = 'PRESS FROM ' . strtoupper((clone $window_open)->format('l')) . ' @ 7PM';
+        $today = $now->format('Y-m-d');
+        $tomorrow = $now->modify('+1 day')->format('Y-m-d');
+        $today_reset = $now->setTime(10, 0, 0);
+        $weekday = (int) $now->format('N');
+
+        if ($weekday <= 5 && $now < $today_reset) {
+            $target = $now->setTime(0, 0, 0);
+        } else {
+            $target = $now->setTime(0, 0, 0)->modify('+1 day');
+            while ((int) $target->format('N') > 5) {
+                $target = $target->modify('+1 day');
+            }
+        }
+
+        $window_open = $target->modify('-1 day')->setTime(17, 0, 0);
+        $window_close = $target->setTime(10, 0, 0);
+        $is_open = ($now >= $window_open && $now < $window_close);
+        $target_date = $target->format('Y-m-d');
+        $next_press_label = 'PRESS FROM ' . strtoupper($window_open->format('l')) . ' @ 5PM';
+        $availability_label = 'Available ' . date_i18n('l', $target->getTimestamp()) . ' Morning';
+        if ($target_date === $today) {
+            $availability_label = 'Available This Morning';
+        } elseif ($target_date === $tomorrow) {
+            $availability_label = 'Available Tomorrow Morning';
+        }
 
         return [
             'is_open' => $is_open,
-            'target_date' => $target->format('Y-m-d'),
+            'target_date' => $target_date,
+            'today' => $today,
+            'tomorrow' => $tomorrow,
             'window_open_at' => $window_open->format(DateTime::ATOM),
             'window_close_at' => $window_close->format(DateTime::ATOM),
             'next_press_label' => $next_press_label,
-            'closed_message' => 'You can confirm availability from 7:00pm on the previous day until 7:30am.',
+            'closed_message' => 'You can confirm availability from 5:00pm on the previous day until 10:00am.',
+            'availability_label' => $availability_label,
         ];
     }
 
-    private function get_next_weekday_date(DateTime $from) {
-        $candidate = clone $from;
-        $weekday = (int) $candidate->format('N');
-        $hour = (int) $candidate->format('G');
-        $minute = (int) $candidate->format('i');
-
-        // Weekend always targets Monday morning.
-        if ($weekday >= 6) {
-            while ((int) $candidate->format('N') !== 1) {
-                $candidate->modify('+1 day');
-            }
-            return $candidate;
-        }
-
-        // On weekdays, "this morning" window is until 7:30am.
-        $is_morning_window = ($hour < 7) || ($hour === 7 && $minute <= 30);
-        if ($is_morning_window) {
-            return $candidate;
-        }
-
-        // Otherwise, target next weekday morning.
-        $candidate->modify('+1 day');
-        while ((int) $candidate->format('N') > 5) {
-            $candidate->modify('+1 day');
-        }
-        return $candidate;
+    private function get_candidate_availability_window(DateTime $now = null) {
+        return $this->get_candidate_immediate_availability_cycle($now);
     }
 
     private function get_availability_period_label($target_date, DateTime $now = null) {
@@ -70650,6 +70602,87 @@ global $wpdb;
             $date
         ), ARRAY_A);
         return is_array($row) && $row ? $row : null;
+    }
+
+    private function get_candidate_calendar_status_for_date($candidate_id, $date) {
+        $candidate_id = (int) $candidate_id;
+        $date = sanitize_text_field((string) $date);
+        if ($candidate_id < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return 'unknown';
+        }
+        global $wpdb;
+        $table = $this->get_candidate_calendar_table();
+        if (!$table) {
+            return 'unknown';
+        }
+        $status = sanitize_key((string) $wpdb->get_var($wpdb->prepare(
+            "SELECT status FROM {$table} WHERE candidate_id = %d AND date = %s LIMIT 1",
+            $candidate_id,
+            $date
+        )));
+        if (in_array($status, ['available', 'unavailable'], true)) {
+            return $status;
+        }
+        return 'unknown';
+    }
+
+    private function get_candidate_calendar_signal_for_date(array $candidate_ids, $date) {
+        $candidate_ids = array_values(array_unique(array_filter(array_map('intval', $candidate_ids), static function ($candidate_id) {
+            return $candidate_id > 0;
+        })));
+        $date = sanitize_text_field((string) $date);
+        if (!$candidate_ids || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return 'unknown';
+        }
+
+        $signal = 'unknown';
+        foreach ($candidate_ids as $candidate_id) {
+            $candidate_signal = $this->get_candidate_calendar_status_for_date((int) $candidate_id, $date);
+            if ($candidate_signal === 'unavailable') {
+                return 'unavailable';
+            }
+            if ($candidate_signal === 'available') {
+                $signal = 'available';
+            }
+        }
+
+        return $signal;
+    }
+
+    private function get_candidate_request_availability_signal($candidate_id, $requested_date) {
+        $candidate_id = (int) $candidate_id;
+        $requested_date = sanitize_text_field((string) $requested_date);
+        if ($candidate_id < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $requested_date)) {
+            return [
+                'state' => 'availability_unknown',
+                'calendar_availability' => 'unknown',
+                'confirmed_available' => false,
+                'unavailable_explicit' => false,
+            ];
+        }
+
+        $calendar_signal = $this->get_candidate_calendar_status_for_date($candidate_id, $requested_date);
+        $unavailable_explicit = ($calendar_signal === 'unavailable');
+        $confirmed_available = $this->has_candidate_availability($candidate_id, $requested_date);
+        if (!$confirmed_available && $this->candidate_has_confirmed_booking_for_date($candidate_id, $requested_date)) {
+            $confirmed_available = true;
+        }
+
+        $state = 'availability_unknown';
+        if ($unavailable_explicit) {
+            $state = 'unavailable_explicit';
+        } elseif ($confirmed_available) {
+            $state = 'confirmed_available';
+        } elseif ($calendar_signal === 'available') {
+            $state = 'calendar_available';
+        }
+
+        return [
+            'state' => $state,
+            'calendar_availability' => $calendar_signal,
+            'confirmed_available' => $confirmed_available,
+            'unavailable_explicit' => $unavailable_explicit,
+        ];
     }
 
     private function is_candidate_unavailable($candidate_id, $date) {
@@ -73061,7 +73094,7 @@ global $wpdb;
             $tz = wp_timezone();
             $now = new DateTime('now', $tz);
             $hour = (int) $now->format('G');
-            if ($hour !== 18 && $hour !== 19) {
+            if ($hour !== 16 && $hour !== 17) {
                 return;
             }
             $slot = (string) $hour;
@@ -73112,10 +73145,10 @@ global $wpdb;
                     $display_name = 'there';
                 }
 
-                if ($hour === 18) {
+                if ($hour === 16) {
                     $subject = 'Availability reminder for tomorrow';
-                    $message = "Hi {$display_name},\n\nYou can confirm your availability for {$target_label} after 7pm.\n\nOpen your dashboard:\n{$dashboard_link}{$demand_line}\n\nCoverMeNow ONE";
-                    $bell_message = "Reminder: confirm your availability after 7pm for {$target_label}.";
+                    $message = "Hi {$display_name},\n\nYou can confirm your availability for {$target_label} after 5pm.\n\nOpen your dashboard:\n{$dashboard_link}{$demand_line}\n\nCoverMeNow ONE";
+                    $bell_message = "Reminder: confirm your availability after 5pm for {$target_label}.";
                 } else {
                     $subject = 'Confirm your availability now';
                     $message = "Hi {$display_name},\n\nYou can now confirm your availability for {$target_label}.\n\nOpen your dashboard:\n{$dashboard_link}{$demand_line}\n\nCoverMeNow ONE";
@@ -79738,7 +79771,7 @@ global $wpdb;
                         $target_label = date_i18n('l, F jS', strtotime($target_date));
                         $target_heading_day = date_i18n('l', strtotime($target_date));
                         $availability_heading = sprintf('Be First in Search for %s Morning', $target_heading_day);
-                        $closed_message = !empty($availability_window['closed_message']) ? (string) $availability_window['closed_message'] : 'You can confirm availability from 7:00pm on the previous day until 7:30am.';
+                        $closed_message = !empty($availability_window['closed_message']) ? (string) $availability_window['closed_message'] : 'You can confirm availability from 5:00pm on the previous day until 10:00am.';
                         $availability_next_press_label = !empty($availability_window['next_press_label']) ? (string) $availability_window['next_press_label'] : '';
                         $availability_subtext = $availability_allowed ? 'Confirm availability for ' . $target_label . '.' : $closed_message;
                         $availability_button_helper = '';
@@ -89331,7 +89364,7 @@ global $wpdb;
         <section class="cmn-portal">
             <header class="cmn-portal-header">
                 <h2>Available Tomorrow</h2>
-                <p>These candidates switched on availability between 7pm and 8am.</p>
+                <p>These candidates have confirmed availability for the active next-morning cycle (5pm open, 10am reset).</p>
             </header>
             <div class="cmn-wall">
                 <?php echo $this->render_available_candidates_wall(); ?>
@@ -90005,8 +90038,10 @@ global $wpdb;
 
     private function render_school_live_matches_panel($school_id, $availability_candidates, $can_request, $school_ready_responses, $availability_label) {
         $school_id = (int) $school_id;
-        $today = current_time('Y-m-d');
-        $tomorrow = $this->get_tomorrow_date();
+        $availability_cycle = $this->get_candidate_immediate_availability_cycle();
+        $today = sanitize_text_field((string) ($availability_cycle['today'] ?? current_time('Y-m-d')));
+        $tomorrow = sanitize_text_field((string) ($availability_cycle['tomorrow'] ?? $this->get_tomorrow_date()));
+        $target_date = sanitize_text_field((string) ($availability_cycle['target_date'] ?? $tomorrow));
         $visibility_reasons = [
             'hidden_not_interested' => 0,
             'marked_unavailable' => 0,
@@ -90034,7 +90069,11 @@ global $wpdb;
                 $visibility_reasons['hidden_not_interested']++;
                 continue;
             }
-            if ($this->is_candidate_unavailable($visibility_candidate_id, $today) && $this->is_candidate_unavailable($visibility_candidate_id, $tomorrow)) {
+            if (
+                $this->is_candidate_unavailable($visibility_candidate_id, $today)
+                && $this->is_candidate_unavailable($visibility_candidate_id, $tomorrow)
+                && $this->is_candidate_unavailable($visibility_candidate_id, $target_date)
+            ) {
                 $visibility_reasons['marked_unavailable']++;
                 continue;
             }
@@ -90065,14 +90104,17 @@ global $wpdb;
                 if ($candidate_status === 'rejected') {
                     continue;
                 }
-                if ($this->is_candidate_unavailable($candidate_id, $today) && $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
+                if (
+                    $this->is_candidate_unavailable($candidate_id, $today)
+                    && $this->is_candidate_unavailable($candidate_id, $tomorrow)
+                    && $this->is_candidate_unavailable($candidate_id, $target_date)
+                ) {
                     continue;
                 }
-                $target_date = !$this->is_candidate_unavailable($candidate_id, $today) ? $today : $tomorrow;
                 $candidates[] = [
                     'post' => $fallback_post,
                     'created_at' => current_time('mysql'),
-                    'availability_label' => 'Not Responded',
+                    'availability_label' => 'Not Yet Confirmed',
                     'availability_date' => $target_date,
                     'is_confirmed' => false,
                 ];
@@ -90099,8 +90141,9 @@ global $wpdb;
         $available_now_count = 0;
         $not_responded_count = 0;
         $shortlisted_count = 0;
-        $target_date = current_time('Y-m-d');
-        $live_match_reset_cutoff_ts = $this->get_school_live_match_day_reset_cutoff_timestamp();
+        $live_match_cycle = $this->get_candidate_immediate_availability_cycle();
+        $target_date = sanitize_text_field((string) ($live_match_cycle['target_date'] ?? current_time('Y-m-d')));
+        $live_match_availability_label = sanitize_text_field((string) ($live_match_cycle['availability_label'] ?? 'Available Tomorrow Morning'));
         $distance_school_user_id = 0;
         if ($school_id > 0) {
             $distance_school_user_ids = $this->get_school_user_ids_for_school_request($school_id);
@@ -90121,11 +90164,7 @@ global $wpdb;
             if ($candidate_id_for_offer < 1) {
                 continue;
             }
-            $candidate_target_date = sanitize_text_field((string) ($candidate_row_for_offer['availability_date'] ?? ''));
-            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $candidate_target_date)) {
-                $candidate_target_date = $target_date;
-            }
-            $candidate_target_dates_for_offer[$candidate_id_for_offer] = $candidate_target_date;
+            $candidate_target_dates_for_offer[$candidate_id_for_offer] = $target_date;
         }
         $offer_state_map = $this->get_school_live_offer_state_map($school_id, $candidate_target_dates_for_offer);
         $rendered_identity_keys = [];
@@ -90181,15 +90220,6 @@ global $wpdb;
             $rating = $this->get_candidate_average_rating_payload($candidate_user_id);
             $name_parts = preg_split('/\s+/', trim((string) $candidate->post_title));
             $first_name = $name_parts ? (string) $name_parts[0] : (string) $candidate->post_title;
-            $item_availability_date = sanitize_text_field((string) ($item['availability_date'] ?? ''));
-            $availability_dates_for_check = [];
-            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $item_availability_date)) {
-                $availability_dates_for_check[] = $item_availability_date;
-            }
-            $availability_dates_for_check[] = $today;
-            $availability_dates_for_check[] = $tomorrow;
-            $availability_dates_for_check = array_values(array_unique(array_filter($availability_dates_for_check)));
-
             $state_candidate_ids = array_values(array_unique(array_filter([
                 (int) $candidate_profile_id,
                 (int) $candidate_id,
@@ -90201,14 +90231,11 @@ global $wpdb;
             }
             $display_state = $this->resolve_school_live_match_display_state(
                 $state_candidate_ids,
-                (string) ($item['availability_date'] ?? ''),
-                $today,
-                $tomorrow,
-                $live_match_reset_cutoff_ts,
+                $target_date,
                 $is_shortlisted
             );
             $status_key = sanitize_key((string) ($display_state['status'] ?? 'not_responded'));
-            if (!in_array($status_key, ['available', 'not_responded'], true)) {
+            if (!in_array($status_key, ['available', 'not_responded', 'not_available'], true)) {
                 $status_key = 'not_responded';
             }
             $confirmed_at_source = sanitize_text_field((string) ($display_state['last_available_confirmation_at'] ?? ''));
@@ -90287,16 +90314,21 @@ global $wpdb;
                 'rating_label' => number_format((float) ($rating['avg_rating'] ?? 0), 2) . ' out of 5 stars',
                 'reviews' => (int) ($rating['feedback_count'] ?? 0),
                 'status' => $status_key,
-                'status_label' => sanitize_text_field((string) ($display_state['status_label'] ?? ($status_key === 'available' ? 'CONFIRMED AVAILABLE' : 'NOT RESPONDED'))),
+                'status_label' => sanitize_text_field((string) ($display_state['status_label'] ?? ($status_key === 'available' ? 'CONFIRMED AVAILABLE' : 'NOT YET CONFIRMED'))),
                 'availability_confirmed' => !empty($display_state['availability_confirmed']) ? 1 : 0,
                 'display_state' => sanitize_key((string) ($display_state['display_state'] ?? 'not_responded')),
                 'sort_priority' => (int) ($display_state['sort_priority'] ?? 3),
+                'immediate_next_day_activation' => !empty($display_state['immediate_next_day_activation']) ? 1 : 0,
+                'calendar_availability' => sanitize_key((string) ($display_state['calendar_availability'] ?? 'unknown')),
+                'availability_unknown' => !empty($display_state['availability_unknown']) ? 1 : 0,
+                'unavailable_explicit' => !empty($display_state['unavailable_explicit']) ? 1 : 0,
+                'confirmed_available' => !empty($display_state['confirmed_available']) ? 1 : 0,
                 'last_available_confirmation_at' => sanitize_text_field((string) ($display_state['last_available_confirmation_at'] ?? $confirmed_at_source)),
                 'last_available_confirmation_at_ts' => (int) ($display_state['last_available_confirmation_at_ts'] ?? 0),
                 'distance' => $distance_label,
                 'distance_miles' => isset($distance_payload['distance_miles']) ? (float) $distance_payload['distance_miles'] : null,
                 'town_city' => $candidate_town_city,
-                'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
+                'availability_label' => (string) ($item['availability_label'] ?? $live_match_availability_label),
                 'confirmed_at' => $confirmed_at_label,
                 'day_rate' => round($day_rate, 0),
                 'skills' => $this->get_candidate_live_match_skills($candidate_profile_id, 6),
@@ -90362,7 +90394,7 @@ global $wpdb;
             if (!in_array($status, ['available', 'not_responded', 'not_available'], true)) {
                 $status = 'not_responded';
             }
-            $status_label = sanitize_text_field((string) ($item['status_label'] ?? 'NOT RESPONDED'));
+            $status_label = sanitize_text_field((string) ($item['status_label'] ?? 'NOT YET CONFIRMED'));
             $day_rate = (int) round((float) ($item['day_rate'] ?? 160));
             $profile_url = esc_url((string) ($item['profile_url'] ?? '#'));
             $is_shortlisted = !empty($item['is_shortlisted']);
@@ -90453,9 +90485,13 @@ global $wpdb;
                     $effective_offer_state = self::OFFER_STATE_EXPIRED;
                 }
             }
-            $banner_html = $status === 'available'
-                ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
-                : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
+            if ($status === 'available') {
+                $banner_html = '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>';
+            } elseif ($status === 'not_available') {
+                $banner_html = '<div class="cmn-live-banner is-pending">Marked unavailable</div>';
+            } else {
+                $banner_html = '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
+            }
             $primary_button_label = 'Book Now';
             $primary_button_class = ' is-default';
             $primary_button_disabled = !$can_request;
@@ -90612,7 +90648,7 @@ global $wpdb;
                     </select>
                 </label>
                 <label>Availability
-                    <select data-live-filter-availability><option value="all">Now / Morning / Afternoon / Tomorrow</option><option value="available">Now</option><option value="not_responded">Not Responded</option></select>
+                    <select data-live-filter-availability><option value="all">Now / Morning / Afternoon / Tomorrow</option><option value="available">Now</option><option value="not_responded">Not Yet Confirmed</option></select>
                 </label>
                 <label><input type="checkbox" data-live-filter-dbs> DBS verified</label>
                 <label><input type="checkbox" data-live-filter-id> ID verified</label>
@@ -90657,71 +90693,14 @@ global $wpdb;
     }
 
     private function get_school_dashboard_available_candidates($school_id = 0, $limit = 24) {
-        $today = function_exists('cmn_today_ymd') ? cmn_today_ymd() : current_time('Y-m-d');
-        if (function_exists('cmn_now')) {
-            $tomorrow = cmn_now()->setTimezone(wp_timezone())->modify('+1 day')->format('Y-m-d');
-        } else {
-            $tomorrow = $this->get_tomorrow_date();
-        }
-
-        // School live matches should reflect real candidate availability globally,
-        // not only pre-assigned candidate lists.
-        $today_rows = $today ? $this->get_available_candidates_with_times($today, 0, $limit) : [];
-        $tomorrow_rows = $tomorrow ? $this->get_available_candidates_with_times($tomorrow, 0, $limit) : [];
-
+        $availability_cycle = $this->get_candidate_immediate_availability_cycle();
+        $today = sanitize_text_field((string) ($availability_cycle['today'] ?? current_time('Y-m-d')));
+        $tomorrow = sanitize_text_field((string) ($availability_cycle['tomorrow'] ?? $this->get_tomorrow_date()));
+        $target_date = sanitize_text_field((string) ($availability_cycle['target_date'] ?? $tomorrow));
+        $availability_label = sanitize_text_field((string) ($availability_cycle['availability_label'] ?? 'Available Tomorrow Morning'));
         $out = [];
         $seen = [];
         $seen_identity = [];
-
-        foreach ($today_rows as $item) {
-            $post = $item['post'] ?? null;
-            $candidate_id = ($post && isset($post->ID)) ? (int) $post->ID : 0;
-            $candidate_identity_key = $this->get_candidate_identity_key($candidate_id);
-            if (
-                $candidate_id < 1
-                || isset($seen[$candidate_id])
-                || ($candidate_identity_key !== '' && isset($seen_identity[$candidate_identity_key]))
-                || $this->is_candidate_unavailable($candidate_id, $today)
-            ) {
-                continue;
-            }
-            $item['availability_label'] = 'Available This Morning';
-            $item['availability_date'] = $today;
-            $item['is_confirmed'] = true;
-            $out[] = $item;
-            $seen[$candidate_id] = true;
-            if ($candidate_identity_key !== '') {
-                $seen_identity[$candidate_identity_key] = true;
-            }
-            if ($limit > 0 && count($out) >= $limit) {
-                return $out;
-            }
-        }
-
-        foreach ($tomorrow_rows as $item) {
-            $post = $item['post'] ?? null;
-            $candidate_id = ($post && isset($post->ID)) ? (int) $post->ID : 0;
-            $candidate_identity_key = $this->get_candidate_identity_key($candidate_id);
-            if (
-                $candidate_id < 1
-                || isset($seen[$candidate_id])
-                || ($candidate_identity_key !== '' && isset($seen_identity[$candidate_identity_key]))
-                || $this->is_candidate_unavailable($candidate_id, $tomorrow)
-            ) {
-                continue;
-            }
-            $item['availability_label'] = 'Available Tomorrow Morning';
-            $item['availability_date'] = $tomorrow;
-            $item['is_confirmed'] = true;
-            $out[] = $item;
-            $seen[$candidate_id] = true;
-            if ($candidate_identity_key !== '') {
-                $seen_identity[$candidate_identity_key] = true;
-            }
-            if ($limit > 0 && count($out) >= $limit) {
-                break;
-            }
-        }
 
         $base_candidate_ids = get_posts([
             'post_type' => 'cmn_candidate',
@@ -90742,20 +90721,26 @@ global $wpdb;
             if ($candidate_status === 'rejected') {
                 continue;
             }
-            if ($this->is_candidate_unavailable($candidate_id, $today) && $this->is_candidate_unavailable($candidate_id, $tomorrow)) {
+            if (
+                $this->is_candidate_unavailable($candidate_id, $today)
+                && $this->is_candidate_unavailable($candidate_id, $tomorrow)
+                && $this->is_candidate_unavailable($candidate_id, $target_date)
+            ) {
                 continue;
             }
             $candidate_post = get_post($candidate_id);
             if (!$candidate_post) {
                 continue;
             }
-            $target_date = !$this->is_candidate_unavailable($candidate_id, $today) ? $today : $tomorrow;
+            $availability_entry = $this->get_candidate_availability_entry($candidate_id, $target_date);
             $out[] = [
                 'post' => $candidate_post,
-                'created_at' => current_time('mysql'),
-                'availability_label' => 'Not Responded',
+                'created_at' => is_array($availability_entry) && !empty($availability_entry['created_at'])
+                    ? sanitize_text_field((string) $availability_entry['created_at'])
+                    : current_time('mysql'),
+                'availability_label' => $availability_label,
                 'availability_date' => $target_date,
-                'is_confirmed' => false,
+                'is_confirmed' => is_array($availability_entry) && !empty($availability_entry['created_at']),
             ];
             $seen[$candidate_id] = true;
             if ($candidate_identity_key !== '') {
@@ -92506,7 +92491,7 @@ global $wpdb;
         echo '<div class="cmn-grid">';
         echo '<div class="cmn-card"><h2>Pending Approvals</h2><p>Schools and candidates awaiting review.</p></div>';
         echo '<div class="cmn-card"><h2>Bookings Today</h2><p>Urgent booking requests to action.</p></div>';
-        echo '<div class="cmn-card"><h2>Available Tomorrow</h2><p>Candidates toggled on between 7pm and 8am.</p></div>';
+        echo '<div class="cmn-card"><h2>Available Tomorrow</h2><p>Candidates confirm availability from 5pm and reset at 10am.</p></div>';
         echo '<div class="cmn-card"><h2>Marketing Performance</h2><p>Campaign reach and conversions.</p></div>';
         echo '<div class="cmn-card"><h2>Finance Snapshot</h2><p>Monthly revenue and outstanding invoices.</p></div>';
         echo '</div>';
@@ -100666,7 +100651,7 @@ p{margin:0;line-height:1.5}
             if ($value === '1') {
                 $admin_email = get_option('admin_email');
                 $subject = 'Candidate Available Tomorrow';
-                $message = "Candidate {$candidate[0]->post_title} has marked available tomorrow.\n\nReview in the CRM.";
+                $message = "Candidate {$candidate[0]->post_title} has confirmed availability for the next morning.\n\nReview in the CRM.";
                 wp_mail($admin_email, $subject, $message);
             }
         }
@@ -100756,7 +100741,7 @@ p{margin:0;line-height:1.5}
         $already_marked = $this->has_candidate_availability($candidate_id, $target_date);
         $period_label = $this->get_availability_period_label($target_date, $now);
         if (!$allowed) {
-            $closed_message = !empty($availability_window['closed_message']) ? (string) $availability_window['closed_message'] : 'You can confirm availability from 7:00pm on the previous day until 7:30am.';
+            $closed_message = !empty($availability_window['closed_message']) ? (string) $availability_window['closed_message'] : 'You can confirm availability from 5:00pm on the previous day until 10:00am.';
             wp_send_json_error([
                 'message' => $closed_message,
                 'available' => $already_marked,
@@ -106195,12 +106180,8 @@ p{margin:0;line-height:1.5}
                 wp_redirect(add_query_arg(['cmn_request_msg' => rawurlencode("Booking blocked by rate guardrails ({$status_label}). Admin override required.")], $redirect));
                 exit;
             }
-            if (!$this->has_candidate_availability($candidate_id, $requested_date)) {
-                $redirect = wp_get_referer() ?: home_url('/portal');
-                wp_redirect(add_query_arg(['cmn_request_msg' => rawurlencode('Candidate is no longer marked available.')], $redirect));
-                exit;
-            }
-            if ($this->is_candidate_unavailable($candidate_id, $requested_date)) {
+            $request_availability = $this->get_candidate_request_availability_signal($candidate_id, $requested_date);
+            if (!empty($request_availability['unavailable_explicit'])) {
                 $redirect = wp_get_referer() ?: home_url('/portal');
                 wp_redirect(add_query_arg(['cmn_request_msg' => rawurlencode('Candidate marked unavailable in calendar.')], $redirect));
                 exit;

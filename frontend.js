@@ -3297,7 +3297,7 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
           var openLabelDay = new Date(openAtTs).toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
           if (openLabelDay) {
-            availabilityNextOpenLabel = 'Confirm from ' + openLabelDay + ' 7:00PM';
+            availabilityNextOpenLabel = 'Confirm from ' + openLabelDay + ' 5:00PM';
           }
         } catch (e) {}
       }
@@ -3357,7 +3357,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         var toClose = Math.max(0, Math.floor((closeAtTs - nowMs) / 1000));
         if (toClose <= 0) {
-          countdownEl.textContent = 'Window closed at 7:30am.';
+          countdownEl.textContent = 'Window closed at 10:00am.';
           return;
         }
         var h = Math.floor(toClose / 3600);
@@ -3400,7 +3400,7 @@ document.addEventListener('DOMContentLoaded', function () {
       maybeUnlockAvailabilityButton();
       if (availabilityButton.disabled && !calendarBlocked) {
         if (availabilityHelper && !availabilityHelper.textContent.trim()) {
-          availabilityHelper.textContent = 'You can confirm availability from 7:00pm on the previous day until 7:30am.';
+          availabilityHelper.textContent = 'You can confirm availability from 5:00pm on the previous day until 10:00am.';
         }
       }
       if (availabilityButton.disabled && !Number.isNaN(unlockAtTs)) {
@@ -3572,7 +3572,7 @@ document.addEventListener('DOMContentLoaded', function () {
               if (!wasAvailable && isNowAvailable) {
                 openCenteredPortalPrompt({
                   tone: 'success',
-                  message: "Great job! We will let schools know you're available tomorrow morning! Be sure to checking the portal from 6am as you only have 15 minutes to confirm a booking",
+                  message: "Great job! We will let schools know you're available for the next morning. Keep checking the portal in case a school sends a booking.",
                   primaryLabel: "I'll be awake and checking the portal",
                 });
               }
@@ -15022,7 +15022,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var steps = [
       { key: 'bell', title: 'Notifications', text: 'Check this bell for updates and booking messages.' },
       { key: 'logout-top', title: 'Logout', text: 'Use this to safely sign out of your account.' },
-      { key: 'availability-button', title: 'Availability Button', text: 'This is the most important action. Confirm your morning availability from 7pm until 8:00am.' },
+      { key: 'availability-button', title: 'Availability Button', text: 'This is the most important action. Confirm your next-morning availability from 5pm until 10:00am.' },
       { key: 'upcoming-bookings', title: 'Upcoming Booking', text: 'Your next confirmed booking appears here.' },
       { key: 'booking-history', title: 'Booking History', text: 'Review your recent bookings quickly.' },
       { key: 'availability-planner', title: 'Availability Planner', text: 'Set Mon-Fri availability and use bulk range tools.' },
@@ -15300,7 +15300,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var tabDefs = [
       {key:'all', label:'All Candidates'},
       {key:'available', label:'Available Now'},
-      {key:'not_responded', label:'Not Responded'},
+      {key:'not_responded', label:'Not Yet Confirmed'},
       {key:'shortlist', label:'Shortlist'}
     ];
 
@@ -15358,6 +15358,10 @@ document.addEventListener('DOMContentLoaded', function () {
       return datasetAll.filter(function(item){
         if (tab === 'all') return true;
         if (tab === 'shortlist') return !!item.is_shortlisted;
+        if (tab === 'not_responded') {
+          var status = String((item && item.status) || '');
+          return status === 'not_responded' || status === 'not_available';
+        }
         return item.status === tab;
       });
     };
@@ -15767,9 +15771,12 @@ document.addEventListener('DOMContentLoaded', function () {
       var ratingMarkup = resolveRatingMarkup(item);
       var isBookable = item.status === 'available';
       var cardStateClass = isBookable ? ' is-bookable' : ' is-pending-confirmation';
-      var banner = item.status === 'available'
-        ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' + (item.confirmed_at || '--:--') + '</small></div>'
-        : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
+      var banner = '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
+      if (item.status === 'available') {
+        banner = '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' + (item.confirmed_at || '--:--') + '</small></div>';
+      } else if (item.status === 'not_available') {
+        banner = '<div class="cmn-live-banner is-pending">Marked unavailable</div>';
+      }
       var locationDistanceText = resolveLocationDistanceText(item);
       var rawSkills = Array.isArray(item.skills) ? item.skills : [];
       var skills = rawSkills.map(function(skillItem){
@@ -15810,9 +15817,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var renderTabs = function(){
       var counts = {all:0,available:0,not_responded:0,shortlist:0};
-      datasetAll.forEach(function(item){ counts.all += 1; if (item.status === 'available') counts.available += 1; if (item.status === 'not_responded') counts.not_responded += 1; if (item.is_shortlisted) counts.shortlist += 1; });
+      datasetAll.forEach(function(item){
+        var status = String((item && item.status) || '');
+        counts.all += 1;
+        if (status === 'available') counts.available += 1;
+        if (status === 'not_responded' || status === 'not_available') counts.not_responded += 1;
+        if (item.is_shortlisted) counts.shortlist += 1;
+      });
       tabsEl.innerHTML = tabDefs.map(function(t){ return '<button class="cmn-live-tab'+(t.key===tab?' is-active':'')+'" data-live-tab="'+t.key+'">'+t.label+' ('+(counts[t.key]||0)+')</button>'; }).join('');
-      kpis.innerHTML = '<div class="cmn-live-kpi"><strong>'+counts.all+'</strong>Candidates Found</div><div class="cmn-live-kpi"><strong>'+counts.available+'</strong>Available Now</div><div class="cmn-live-kpi"><strong>'+counts.not_responded+'</strong>Not Responded</div><div class="cmn-live-kpi"><strong>12 min</strong>Avg response time</div>';
+      kpis.innerHTML = '<div class="cmn-live-kpi"><strong>'+counts.all+'</strong>Candidates Found</div><div class="cmn-live-kpi"><strong>'+counts.available+'</strong>Available Now</div><div class="cmn-live-kpi"><strong>'+counts.not_responded+'</strong>Not Yet Confirmed</div><div class="cmn-live-kpi"><strong>12 min</strong>Avg response time</div>';
     };
 
     var render = function(){
