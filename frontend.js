@@ -15780,11 +15780,11 @@ document.addEventListener('DOMContentLoaded', function () {
         + (locationDistanceText ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</span></div>' : '')
         + '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">KEY DEPLOYMENT STRENGTHS</div></div>'
         + '<div class="cmn-live-skills">'+skillsHtml+'</div>'
-        + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'
         + '<div class="cmn-live-actions">'
         + '<div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button>'+documentsButton+profileButton+'</div>'
         + '<div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div>'
         + '</div>'
+        + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'
         + '</div>'
         + '</article>';
     };
