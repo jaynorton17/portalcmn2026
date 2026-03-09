@@ -15947,18 +15947,6 @@ document.addEventListener('DOMContentLoaded', function () {
         render();
       }
     });
-    if (prevArrow) {
-      prevArrow.addEventListener('click', function(e){
-        e.preventDefault();
-        advanceLive(-1);
-      });
-    }
-    if (nextArrow) {
-      nextArrow.addEventListener('click', function(e){
-        e.preventDefault();
-        advanceLive(1);
-      });
-    }
     if (root) {
       root.setAttribute('data-live-nav-bound', '1');
     }
