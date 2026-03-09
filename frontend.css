@@ -17799,12 +17799,14 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-actions .cmn-live-primary.is-default:focus-visible,
 .cmn-live-actions .cmn-live-primary.is-retry:hover,
 .cmn-live-actions .cmn-live-primary.is-retry:focus-visible{background:linear-gradient(180deg,#ff284d,#d81333);border-color:#a4112d;color:#fff !important;-webkit-text-fill-color:#fff;transform:translateY(-1px)}
-.cmn-live-actions .cmn-live-primary.is-pending{background:linear-gradient(180deg,#475569,#334155);border:1px solid rgba(226,232,240,.24);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;box-shadow:0 4px 0 rgba(15,23,42,.24);cursor:not-allowed}
+.cmn-live-actions .cmn-live-primary.is-pending{background:linear-gradient(180deg,#f8c748,#d89b11);border:1px solid rgba(120,53,15,.38);color:#241400 !important;-webkit-text-fill-color:#241400;box-shadow:0 4px 0 rgba(120,53,15,.18);cursor:wait}
+.cmn-live-actions .cmn-live-primary.is-pending:hover,
+.cmn-live-actions .cmn-live-primary.is-pending:focus-visible{background:linear-gradient(180deg,#ffd86a,#e0a81f);border-color:rgba(120,53,15,.46);color:#241400 !important;-webkit-text-fill-color:#241400;transform:none}
 .cmn-live-actions .cmn-live-primary.is-accepted{background:linear-gradient(180deg,#22c55e,#15803d);border:1px solid rgba(187,247,208,.42);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;box-shadow:0 4px 0 rgba(5,46,22,.26)}
 .cmn-live-actions .cmn-live-primary.is-accepted:hover,
 .cmn-live-actions .cmn-live-primary.is-accepted:focus-visible{background:linear-gradient(180deg,#32d06b,#1a8e46);border-color:rgba(220,252,231,.58);color:#fff !important;-webkit-text-fill-color:#fff;transform:translateY(-1px)}
 .cmn-live-actions .cmn-live-primary.is-declined{background:linear-gradient(180deg,#991b1b,#7f1d1d);border:1px solid rgba(254,202,202,.3);color:#fef2f2 !important;-webkit-text-fill-color:#fef2f2;box-shadow:0 4px 0 rgba(69,10,10,.24)}
-.cmn-live-actions .cmn-live-primary[disabled]{opacity:1}
+.cmn-live-actions .cmn-live-primary[disabled]{opacity:1;transform:none}
 .cmn-live-actions .cmn-live-secondary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:7px 10px;border:1.5px solid rgba(241,245,249,.72);background:rgba(15,23,42,.84);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.01em;box-shadow:0 2px 0 rgba(2,6,12,.3);transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease}
 .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(30,41,59,.95);border-color:#f8fafc;transform:translateY(-1px);box-shadow:0 4px 0 rgba(2,6,12,.34)}
 .cmn-live-actions-tertiary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
