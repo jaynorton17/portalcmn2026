@@ -9743,6 +9743,90 @@ global $wpdb;
         return false;
     }
 
+    private function get_candidate_availability_entry_for_dates(array $candidate_ids, array $dates) {
+        $candidate_ids = array_values(array_unique(array_filter(array_map('intval', $candidate_ids), static function ($candidate_id) {
+            return $candidate_id > 0;
+        })));
+        $dates = array_values(array_unique(array_filter(array_map(static function ($date) {
+            return sanitize_text_field((string) $date);
+        }, $dates), static function ($date) {
+            return preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date) === 1;
+        })));
+
+        if (!$candidate_ids || !$dates) {
+            return null;
+        }
+
+        foreach ($dates as $date) {
+            foreach ($candidate_ids as $candidate_id) {
+                $entry = $this->get_candidate_availability_entry((int) $candidate_id, (string) $date);
+                if (!is_array($entry) || empty($entry['created_at'])) {
+                    continue;
+                }
+                $entry['candidate_id'] = (int) $candidate_id;
+                $entry['available_date'] = sanitize_text_field((string) ($entry['available_date'] ?? $date));
+                return $entry;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolve_school_live_match_display_state(array $candidate_ids, $target_date, $today, $tomorrow, $reset_cutoff_ts, $is_shortlisted = false) {
+        $target_date = sanitize_text_field((string) $target_date);
+        $today = sanitize_text_field((string) $today);
+        $tomorrow = sanitize_text_field((string) $tomorrow);
+        $candidate_ids = array_values(array_unique(array_filter(array_map('intval', $candidate_ids), static function ($candidate_id) {
+            return $candidate_id > 0;
+        })));
+
+        $dates_to_check = [];
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $target_date)) {
+            $dates_to_check[] = $target_date;
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $today)) {
+            $dates_to_check[] = $today;
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $tomorrow)) {
+            $dates_to_check[] = $tomorrow;
+        }
+        $dates_to_check = array_values(array_unique($dates_to_check));
+
+        $availability_entry = $this->get_candidate_availability_entry_for_dates($candidate_ids, $dates_to_check);
+        $confirmed_at_raw = is_array($availability_entry) ? sanitize_text_field((string) ($availability_entry['created_at'] ?? '')) : '';
+        $matched_date = is_array($availability_entry) ? sanitize_text_field((string) ($availability_entry['available_date'] ?? '')) : '';
+        $availability_confirmed = $confirmed_at_raw !== '';
+
+        if (!$availability_confirmed && $candidate_ids) {
+            foreach ($candidate_ids as $candidate_id) {
+                if ($this->candidate_has_valid_live_match_green_state((int) $candidate_id, $today, $tomorrow, $reset_cutoff_ts)) {
+                    $availability_confirmed = true;
+                    break;
+                }
+            }
+        }
+
+        $status = $availability_confirmed ? 'available' : 'not_responded';
+        $status_label = $availability_confirmed ? 'CONFIRMED AVAILABLE' : 'NOT RESPONDED';
+        $display_state = $availability_confirmed
+            ? 'available_confirmed'
+            : ($is_shortlisted ? 'shortlisted' : 'not_responded');
+        $sort_priority = $availability_confirmed ? 1 : ($is_shortlisted ? 2 : 3);
+
+        return [
+            'availability_confirmed' => $availability_confirmed ? 1 : 0,
+            'display_state' => $display_state,
+            'status' => $status,
+            'status_label' => $status_label,
+            'sort_priority' => $sort_priority,
+            'last_available_confirmation_at' => $confirmed_at_raw,
+            'last_available_confirmation_at_ts' => $confirmed_at_raw !== ''
+                ? $this->parse_mysql_datetime_to_wp_timestamp($confirmed_at_raw)
+                : 0,
+            'matched_availability_date' => $matched_date,
+        ];
+    }
+
     private function run_school_live_match_daily_reset_job($trigger = 'cron', $actor_user_id = 0, $force = false) {
         $trigger = sanitize_key((string) $trigger);
         if ($trigger === '') {
@@ -90016,35 +90100,31 @@ global $wpdb;
             $availability_dates_for_check[] = $tomorrow;
             $availability_dates_for_check = array_values(array_unique(array_filter($availability_dates_for_check)));
 
-            // Canonical card state: confirmed availability should be reflected consistently across candidate + school cards.
-            $is_confirmed = false;
-            $confirmed_at_source = sanitize_text_field((string) ($item['created_at'] ?? ''));
             $state_candidate_ids = array_values(array_unique(array_filter([
                 (int) $candidate_profile_id,
                 (int) $candidate_id,
             ])));
-            foreach ($state_candidate_ids as $state_candidate_id) {
-                if ($this->candidate_has_valid_live_match_green_state($state_candidate_id, $today, $tomorrow, $live_match_reset_cutoff_ts)) {
-                    $is_confirmed = true;
-                    break;
-                }
+            $shortlisted_ids = (array) get_post_meta($school_id, 'cmn_shortlisted_candidate_ids', true);
+            $is_shortlisted = in_array($candidate_id, array_map('intval', $shortlisted_ids), true);
+            if ($is_shortlisted) {
+                $shortlisted_count++;
             }
-            if ($is_confirmed && $availability_dates_for_check) {
-                foreach ($availability_dates_for_check as $check_date) {
-                    $confirmed_entry = $this->get_candidate_availability_entry($candidate_profile_id, $check_date);
-                    if ((!is_array($confirmed_entry) || empty($confirmed_entry['created_at'])) && $candidate_profile_id !== $candidate_id) {
-                        $confirmed_entry = $this->get_candidate_availability_entry($candidate_id, $check_date);
-                    }
-                    if (is_array($confirmed_entry) && !empty($confirmed_entry['created_at'])) {
-                        $confirmed_at_candidate = sanitize_text_field((string) $confirmed_entry['created_at']);
-                        if ($confirmed_at_candidate !== '') {
-                            $confirmed_at_source = $confirmed_at_candidate;
-                            break;
-                        }
-                    }
-                }
+            $display_state = $this->resolve_school_live_match_display_state(
+                $state_candidate_ids,
+                (string) ($item['availability_date'] ?? ''),
+                $today,
+                $tomorrow,
+                $live_match_reset_cutoff_ts,
+                $is_shortlisted
+            );
+            $status_key = sanitize_key((string) ($display_state['status'] ?? 'not_responded'));
+            if (!in_array($status_key, ['available', 'not_responded'], true)) {
+                $status_key = 'not_responded';
             }
-            $status_key = $is_confirmed ? 'available' : 'not_responded';
+            $confirmed_at_source = sanitize_text_field((string) ($display_state['last_available_confirmation_at'] ?? ''));
+            if ($confirmed_at_source === '') {
+                $confirmed_at_source = sanitize_text_field((string) ($item['created_at'] ?? ''));
+            }
             $candidate_presence_snapshot = $candidate_user_id > 0
                 ? $this->get_candidate_presence_snapshot($candidate_user_id)
                 : ['is_online' => false, 'last_online_label' => 'Last seen at --:--'];
@@ -90054,11 +90134,6 @@ global $wpdb;
                 $available_now_count++;
             } else {
                 $not_responded_count++;
-            }
-            $shortlisted_ids = (array) get_post_meta($school_id, 'cmn_shortlisted_candidate_ids', true);
-            $is_shortlisted = in_array($candidate_id, array_map('intval', $shortlisted_ids), true);
-            if ($is_shortlisted) {
-                $shortlisted_count++;
             }
             $rate_entry = $this->get_candidate_role_rate_entry($candidate_id, $role_primary);
             $day_rate = isset($rate_entry['school_charge_rate']) ? (float) $rate_entry['school_charge_rate'] : 0;
@@ -90116,13 +90191,20 @@ global $wpdb;
                 'photo_url' => $this->get_school_live_match_photo_url($candidate_profile_id),
                 'profile_url' => $this->get_school_candidate_profile_url($candidate_id, get_current_user_id()),
                 'documents_download_url' => $this->get_school_candidate_documents_download_url($candidate_id, get_current_user_id()),
+                'candidate_email' => sanitize_email((string) get_post_meta($candidate_profile_id > 0 ? $candidate_profile_id : $candidate_id, 'cmn_email', true)),
                 'role_line' => trim($role_primary . ($role_secondary !== '' ? ' • ' . $role_secondary : '')),
                 'rating' => round((float) ($rating['avg_rating'] ?? 0), 1),
                 'rating_label' => number_format((float) ($rating['avg_rating'] ?? 0), 2) . ' out of 5 stars',
                 'reviews' => (int) ($rating['feedback_count'] ?? 0),
                 'status' => $status_key,
-                'status_label' => $status_key === 'available' ? 'AVAILABLE NOW' : 'NOT RESPONDED',
+                'status_label' => sanitize_text_field((string) ($display_state['status_label'] ?? ($status_key === 'available' ? 'CONFIRMED AVAILABLE' : 'NOT RESPONDED'))),
+                'availability_confirmed' => !empty($display_state['availability_confirmed']) ? 1 : 0,
+                'display_state' => sanitize_key((string) ($display_state['display_state'] ?? 'not_responded')),
+                'sort_priority' => (int) ($display_state['sort_priority'] ?? 3),
+                'last_available_confirmation_at' => sanitize_text_field((string) ($display_state['last_available_confirmation_at'] ?? $confirmed_at_source)),
+                'last_available_confirmation_at_ts' => (int) ($display_state['last_available_confirmation_at_ts'] ?? 0),
                 'distance' => $distance_label,
+                'distance_miles' => isset($distance_payload['distance_miles']) ? (float) $distance_payload['distance_miles'] : null,
                 'town_city' => $candidate_town_city,
                 'availability_label' => (string) ($item['availability_label'] ?? 'Available This Morning'),
                 'confirmed_at' => $confirmed_at_label,
@@ -90143,23 +90225,25 @@ global $wpdb;
             }
         }
         usort($all, static function($a, $b){
-            $a_online = !empty($a['is_physically_online']) ? 1 : 0;
-            $b_online = !empty($b['is_physically_online']) ? 1 : 0;
-            if ($a_online !== $b_online) {
-                return ($a_online > $b_online) ? -1 : 1;
+            $a_priority = (int) ($a['sort_priority'] ?? 999);
+            $b_priority = (int) ($b['sort_priority'] ?? 999);
+            if ($a_priority !== $b_priority) {
+                return $a_priority <=> $b_priority;
             }
-            if (($a['status'] ?? '') !== ($b['status'] ?? '')) {
-                return (($a['status'] ?? '') === 'available') ? -1 : 1;
+            $a_confirmed_ts = (int) ($a['last_available_confirmation_at_ts'] ?? 0);
+            $b_confirmed_ts = (int) ($b['last_available_confirmation_at_ts'] ?? 0);
+            if ($a_confirmed_ts !== $b_confirmed_ts) {
+                return ($a_confirmed_ts > $b_confirmed_ts) ? -1 : 1;
             }
-            $a_rating = (float) ($a['rating'] ?? 0);
-            $b_rating = (float) ($b['rating'] ?? 0);
-            if ($a_rating !== $b_rating) {
-                return ($a_rating > $b_rating) ? -1 : 1;
+            $a_distance = isset($a['distance_miles']) && is_numeric($a['distance_miles']) ? (float) $a['distance_miles'] : INF;
+            $b_distance = isset($b['distance_miles']) && is_numeric($b['distance_miles']) ? (float) $b['distance_miles'] : INF;
+            if ($a_distance !== $b_distance) {
+                return ($a_distance < $b_distance) ? -1 : 1;
             }
-            $a_reviews = (int) ($a['reviews'] ?? 0);
-            $b_reviews = (int) ($b['reviews'] ?? 0);
-            if ($a_reviews !== $b_reviews) {
-                return ($a_reviews > $b_reviews) ? -1 : 1;
+            $a_candidate_id = (int) ($a['candidate_id'] ?? 0);
+            $b_candidate_id = (int) ($b['candidate_id'] ?? 0);
+            if ($a_candidate_id !== $b_candidate_id) {
+                return ($a_candidate_id > $b_candidate_id) ? -1 : 1;
             }
             return strcmp((string) ($a['first_name'] ?? ''), (string) ($b['first_name'] ?? ''));
         });
