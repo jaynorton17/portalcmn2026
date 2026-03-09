@@ -1137,6 +1137,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_match_rollback_weights', [$this, 'handle_match_rollback_weights']);
         add_action('admin_post_cmn_candidate_download_doc', [$this, 'handle_candidate_download_doc']);
         add_action('admin_post_cmn_download_candidate_documents', [$this, 'handle_download_candidate_documents']);
+        add_action('admin_post_nopriv_cmn_download_candidate_documents', [$this, 'handle_download_candidate_documents']);
         add_filter('upload_size_limit', [$this, 'filter_candidate_upload_size_limit'], 20);
         add_filter('wp_handle_upload_prefilter', [$this, 'prefilter_candidate_doc_upload']);
         add_filter('authenticate', [$this, 'block_deactivated_staff_login'], 30, 3);
@@ -8299,7 +8300,14 @@ global $wpdb;
             return true;
         }
         if ($ability === 'school.candidate.documents.download') {
-            if ($actor_user_id < 1 || !$this->is_school_user($actor_user_id)) {
+            if (
+                $actor_user_id < 1
+                || (
+                    !$this->is_school_user($actor_user_id)
+                    && !$this->is_staff_user($actor_user_id)
+                    && !$this->is_admin_user($actor_user_id)
+                )
+            ) {
                 return new WP_Error('cmn_forbidden', 'Access denied.', ['status' => 403]);
             }
             return true;
@@ -67618,6 +67626,24 @@ global $wpdb;
         return true;
     }
 
+    private function cmn_user_can_download_candidate_documents($actor_user_id, $candidate_id) {
+        $actor_user_id = (int) $actor_user_id;
+        $candidate_id = (int) $candidate_id;
+        if ($actor_user_id < 1 || $candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
+            return false;
+        }
+
+        if ($this->is_admin_user($actor_user_id) || $this->is_staff_user($actor_user_id)) {
+            return true;
+        }
+
+        if ($this->is_school_user($actor_user_id)) {
+            return $this->cmn_school_can_download_candidate_documents($actor_user_id, $candidate_id);
+        }
+
+        return false;
+    }
+
     private function get_school_candidate_documents_download_url($candidate_id, $school_user_id = 0) {
         $candidate_id = (int) $candidate_id;
         $school_user_id = (int) $school_user_id;
@@ -102909,9 +102935,9 @@ p{margin:0;line-height:1.5}
             wp_die('Unauthorized.', 'Unauthorized', ['response' => 403]);
         }
 
-        $school_user_id = (int) get_current_user_id();
+        $actor_user_id = (int) get_current_user_id();
         $candidate_id = isset($_REQUEST['candidate_id']) ? (int) $_REQUEST['candidate_id'] : 0;
-        $nonce_action = 'cmn_download_candidate_documents_' . $candidate_id . '_' . $school_user_id;
+        $nonce_action = 'cmn_download_candidate_documents_' . $candidate_id . '_' . $actor_user_id;
 
         $guard_result = $this->cmn_endpoint_guard([
             'ability_required' => 'school.candidate.documents.download',
@@ -102923,7 +102949,7 @@ p{margin:0;line-height:1.5}
             'writes_state' => false,
             'transport' => 'download',
             'context' => [
-                'actor_user_id' => $school_user_id,
+                'actor_user_id' => $actor_user_id,
             ],
         ], static function () {
             return true;
@@ -102932,17 +102958,10 @@ p{margin:0;line-height:1.5}
             return;
         }
 
-        $school_view_check = $this->cmn_policy_require_ability('portal.school.view', [
-            'actor_user_id' => $school_user_id,
-        ]);
-        if (is_wp_error($school_view_check)) {
-            wp_die('Access denied.', 'Forbidden', ['response' => 403]);
-        }
-
         if ($candidate_id < 1 || get_post_type($candidate_id) !== 'cmn_candidate') {
             wp_die('Candidate not found.', 'Not found', ['response' => 404]);
         }
-        if (!$this->cmn_school_can_download_candidate_documents($school_user_id, $candidate_id)) {
+        if (!$this->cmn_user_can_download_candidate_documents($actor_user_id, $candidate_id)) {
             wp_die('Access denied.', 'Forbidden', ['response' => 403]);
         }
 
