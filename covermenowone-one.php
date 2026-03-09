@@ -11253,43 +11253,133 @@ global $wpdb;
         if (!$user_id) {
             return 0;
         }
-        $mapped = get_user_meta($user_id, 'cmn_school_id', true);
-        if ($mapped) {
-            $school_id = (int) $mapped;
-            if ($school_id > 0 && $this->is_school_user($user_id)) {
-                $state_result = $this->ensure_school_partner_state_for_user((int) $user_id);
-                if (is_wp_error($state_result) && defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log('CMN school partner state ensure failed (resolve mapped): ' . $state_result->get_error_message());
-                }
-            }
-            return $school_id;
-        }
         $user = get_user_by('id', $user_id);
         if (!$user) {
             return 0;
         }
-        $school = get_posts([
+        $mapped_school_id = (int) get_user_meta($user_id, 'cmn_school_id', true);
+        $resolved_school_id = $this->resolve_best_school_id_for_user($user_id, $user, $mapped_school_id);
+        if ($resolved_school_id < 1) {
+            return 0;
+        }
+        if ($mapped_school_id !== $resolved_school_id) {
+            update_user_meta($user_id, 'cmn_school_id', $resolved_school_id);
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[CMN_SCHOOL_RESOLVE] ' . wp_json_encode([
+                    'user_id' => (int) $user_id,
+                    'old_school_id' => $mapped_school_id,
+                    'new_school_id' => $resolved_school_id,
+                ]));
+            }
+        }
+        if ($this->is_school_user($user_id)) {
+            $state_result = $this->ensure_school_partner_state_for_user((int) $user_id);
+            if (is_wp_error($state_result) && defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('CMN school partner state ensure failed (resolve best): ' . $state_result->get_error_message());
+            }
+        }
+        return $resolved_school_id;
+    }
+
+    private function resolve_best_school_id_for_user($user_id, $user = null, $mapped_school_id = 0) {
+        $user_id = (int) $user_id;
+        $mapped_school_id = (int) $mapped_school_id;
+        if ($user_id < 1) {
+            return 0;
+        }
+        if (!($user instanceof WP_User)) {
+            $user = get_user_by('id', $user_id);
+        }
+        if (!($user instanceof WP_User)) {
+            return $mapped_school_id > 0 ? $mapped_school_id : 0;
+        }
+
+        $user_email = sanitize_email((string) $user->user_email);
+        $candidate_ids = [];
+        if ($mapped_school_id > 0 && get_post_type($mapped_school_id) === 'cmn_school') {
+            $candidate_ids[] = $mapped_school_id;
+        }
+
+        $meta_query = ['relation' => 'OR'];
+        foreach (['cmn_email', 'cmn_primary_contact_email', 'cmn_contact1_email', 'cmn_contact2_email', 'cmn_contact3_email'] as $meta_key) {
+            $meta_query[] = [
+                'key' => $meta_key,
+                'value' => $user_email,
+            ];
+        }
+        $email_school_ids = get_posts([
             'post_type' => 'cmn_school',
-            'posts_per_page' => 1,
-            'meta_query' => [
-                [
-                    'key' => 'cmn_email',
-                    'value' => $user->user_email,
-                ],
-            ],
+            'post_status' => ['publish', 'private', 'draft'],
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'meta_query' => $meta_query,
         ]);
-        if ($school) {
-            $school_id = (int) $school[0]->ID;
-            if ($school_id > 0 && $this->is_school_user($user_id)) {
-                update_user_meta($user_id, 'cmn_school_id', $school_id);
-                $state_result = $this->ensure_school_partner_state_for_user((int) $user_id);
-                if (is_wp_error($state_result) && defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log('CMN school partner state ensure failed (resolve by email): ' . $state_result->get_error_message());
+        foreach ((array) $email_school_ids as $email_school_id) {
+            $email_school_id = (int) $email_school_id;
+            if ($email_school_id > 0) {
+                $candidate_ids[] = $email_school_id;
+            }
+        }
+
+        $candidate_ids = array_values(array_unique(array_filter(array_map('intval', $candidate_ids))));
+        if (!$candidate_ids) {
+            return $mapped_school_id > 0 ? $mapped_school_id : 0;
+        }
+
+        $best_school_id = 0;
+        $best_score = null;
+        foreach ($candidate_ids as $candidate_school_id) {
+            if (get_post_type($candidate_school_id) !== 'cmn_school') {
+                continue;
+            }
+            $score = 0;
+            $request_status = (string) $this->get_school_access_request_status($candidate_school_id);
+            if ($request_status === 'approved') {
+                $score += 1000;
+            } elseif ($request_status === 'pending') {
+                $score += 300;
+            } elseif ($request_status === 'more_info_needed') {
+                $score += 150;
+            }
+
+            $cmn_status = sanitize_key((string) get_post_meta($candidate_school_id, 'cmn_status', true));
+            if ($cmn_status === 'client') {
+                $score += 500;
+            }
+
+            $pipeline_stage = sanitize_key((string) get_post_meta($candidate_school_id, 'cmn_pipeline_stage', true));
+            if ($pipeline_stage !== '' && $pipeline_stage !== 'lost') {
+                $score += 60;
+            }
+
+            if ($this->get_school_canonical_postcode_for_distance($candidate_school_id, 0) !== '') {
+                $score += 120;
+            }
+            if (trim((string) get_post_meta($candidate_school_id, 'cmn_address_line1', true)) !== '') {
+                $score += 40;
+            }
+            if (trim((string) get_post_meta($candidate_school_id, 'cmn_town', true)) !== '') {
+                $score += 20;
+            }
+
+            foreach (['cmn_email', 'cmn_primary_contact_email', 'cmn_contact1_email', 'cmn_contact2_email', 'cmn_contact3_email'] as $meta_key) {
+                if ($user_email !== '' && sanitize_email((string) get_post_meta($candidate_school_id, $meta_key, true)) === $user_email) {
+                    $score += 80;
+                    break;
                 }
             }
-            return $school_id;
+
+            if ($mapped_school_id > 0 && $candidate_school_id === $mapped_school_id) {
+                $score += 5;
+            }
+
+            if ($best_score === null || $score > $best_score || ($score === $best_score && $candidate_school_id > $best_school_id)) {
+                $best_score = $score;
+                $best_school_id = $candidate_school_id;
+            }
         }
-        return 0;
+
+        return $best_school_id > 0 ? $best_school_id : ($mapped_school_id > 0 ? $mapped_school_id : 0);
     }
 
     private function get_school_team_additional_user_limit() {
