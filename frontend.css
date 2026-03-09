@@ -17620,8 +17620,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-bookable .cmn-live-presence,
 .cmn-live-card.is-bookable .cmn-live-presence.is-live,
 .cmn-live-card.is-bookable .cmn-live-meta-row,
-.cmn-live-card.is-bookable .cmn-live-distance,
-.cmn-live-card.is-bookable .cmn-live-offer{
+.cmn-live-card.is-bookable .cmn-live-distance{
   color:#f8fafc !important;
   -webkit-text-fill-color:#f8fafc;
 }
@@ -17632,8 +17631,7 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 }
 .cmn-live-card.is-bookable .cmn-live-status.available,
 .cmn-live-card.is-bookable .cmn-live-banner,
-.cmn-live-card.is-bookable .cmn-live-banner small,
-.cmn-live-card.is-bookable .cmn-live-actions [data-live-action="book_now"]{
+.cmn-live-card.is-bookable .cmn-live-banner small{
   color:#052e16 !important;
   -webkit-text-fill-color:#052e16;
 }
@@ -17683,7 +17681,6 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-bookable .cmn-live-presence,
 .cmn-live-card.is-bookable .cmn-live-presence.is-live,
 .cmn-live-card.is-bookable .cmn-live-meta-row,
-.cmn-live-card.is-bookable .cmn-live-offer,
 .cmn-live-card.is-bookable .cmn-live-distance{
   color:#f8fafc !important;
   -webkit-text-fill-color:#f8fafc;
@@ -17716,22 +17713,6 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-bookable .cmn-live-meta-row{
   background:rgba(5,7,12,.74);
   border-color:rgba(248,250,252,.22);
-}
-.cmn-live-card.is-bookable .cmn-live-offer{
-  color:#ecfccb;
-  -webkit-text-fill-color:#ecfccb;
-}
-.cmn-live-card.is-bookable .cmn-live-offer-state.is-offered{
-  color:#fef08a;
-}
-.cmn-live-card.is-bookable .cmn-live-offer-state.is-accepted{
-  color:#dcfce7;
-}
-.cmn-live-card.is-bookable .cmn-live-offer-state.is-declined{
-  color:#fee2e2;
-}
-.cmn-live-card.is-bookable .cmn-live-offer-state.is-expired{
-  color:#fecaca;
 }
 .cmn-live-card.is-pending-confirmation{z-index:1;transform:translateY(4px) scale(1.05);opacity:1;filter:none;background:linear-gradient(180deg,rgba(98,71,9,.92),rgba(54,38,7,.96));border-color:rgba(181,136,18,.3);box-shadow:0 10px 24px rgba(24,18,4,.28),0 0 8px rgba(181,136,18,.14)}
 @media (min-width:1201px){
@@ -17809,10 +17790,21 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-charge-rate{min-height:28px;padding:0 12px;border:1px solid rgba(248,250,252,.52);background:rgba(2,6,12,.86);font-size:11px;font-weight:900;color:#f8fafc;letter-spacing:.03em;white-space:nowrap;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
 .cmn-live-skills{display:flex;gap:5px;row-gap:5px;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;justify-content:flex-start;flex:1 0 57px;width:100%;min-width:0;min-height:57px;max-height:57px;overflow:hidden;margin-top:0;margin-bottom:0;padding-bottom:0;position:relative;z-index:0}
 .cmn-live-skill{flex:0 1 auto;max-width:100%;min-width:0;min-height:26px;background:rgba(15,23,42,.9);border:1px solid rgba(255,255,255,.16);padding:0 10px;font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;word-break:keep-all;overflow-wrap:normal;overflow:visible;text-overflow:clip;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
-.cmn-live-actions{display:grid;gap:6px;margin-top:auto;padding-top:6px;position:relative;z-index:1}
+.cmn-live-actions{display:grid;gap:6px;margin-top:auto;padding-top:4px;padding-bottom:0;position:relative;z-index:1}
 .cmn-live-actions-main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:stretch}
-.cmn-live-actions .cmn-live-primary{width:100%;min-height:42px;padding:8px 12px;font-size:13px;font-weight:900}
-.cmn-live-actions [data-live-action="book_now"]{background:linear-gradient(180deg,#67e454,#22c55e);border:1px solid #14532d;color:#111 !important;-webkit-text-fill-color:#111;font-weight:900}
+.cmn-live-actions .cmn-live-primary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:8px 12px;font-size:13px;font-weight:900;text-align:center;text-decoration:none}
+.cmn-live-actions .cmn-live-primary.is-default,
+.cmn-live-actions .cmn-live-primary.is-retry{background:linear-gradient(180deg,#ff1239,#cf0f2b);border:1px solid #8f1028;color:#fff !important;-webkit-text-fill-color:#fff;box-shadow:0 4px 0 rgba(73,8,22,.34)}
+.cmn-live-actions .cmn-live-primary.is-default:hover,
+.cmn-live-actions .cmn-live-primary.is-default:focus-visible,
+.cmn-live-actions .cmn-live-primary.is-retry:hover,
+.cmn-live-actions .cmn-live-primary.is-retry:focus-visible{background:linear-gradient(180deg,#ff284d,#d81333);border-color:#a4112d;color:#fff !important;-webkit-text-fill-color:#fff;transform:translateY(-1px)}
+.cmn-live-actions .cmn-live-primary.is-pending{background:linear-gradient(180deg,#475569,#334155);border:1px solid rgba(226,232,240,.24);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;box-shadow:0 4px 0 rgba(15,23,42,.24);cursor:not-allowed}
+.cmn-live-actions .cmn-live-primary.is-accepted{background:linear-gradient(180deg,#22c55e,#15803d);border:1px solid rgba(187,247,208,.42);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;box-shadow:0 4px 0 rgba(5,46,22,.26)}
+.cmn-live-actions .cmn-live-primary.is-accepted:hover,
+.cmn-live-actions .cmn-live-primary.is-accepted:focus-visible{background:linear-gradient(180deg,#32d06b,#1a8e46);border-color:rgba(220,252,231,.58);color:#fff !important;-webkit-text-fill-color:#fff;transform:translateY(-1px)}
+.cmn-live-actions .cmn-live-primary.is-declined{background:linear-gradient(180deg,#991b1b,#7f1d1d);border:1px solid rgba(254,202,202,.3);color:#fef2f2 !important;-webkit-text-fill-color:#fef2f2;box-shadow:0 4px 0 rgba(69,10,10,.24)}
+.cmn-live-actions .cmn-live-primary[disabled]{opacity:1}
 .cmn-live-actions .cmn-live-secondary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:7px 10px;border:1.5px solid rgba(241,245,249,.72);background:rgba(15,23,42,.84);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.01em;box-shadow:0 2px 0 rgba(2,6,12,.3);transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease}
 .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(30,41,59,.95);border-color:#f8fafc;transform:translateY(-1px);box-shadow:0 4px 0 rgba(2,6,12,.34)}
 .cmn-live-actions-tertiary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
@@ -17822,14 +17814,6 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(5,18,10,.88);border-color:rgba(236,253,245,.84);color:#fff !important;-webkit-text-fill-color:#fff}
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary{background:rgba(3,10,6,.42);border-color:rgba(220,252,231,.24);color:rgba(248,250,252,.92) !important;-webkit-text-fill-color:rgba(248,250,252,.92)}
 .cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary:hover,.cmn-live-card.is-bookable .cmn-live-actions .cmn-live-tertiary:focus-visible{background:rgba(5,18,10,.58);border-color:rgba(220,252,231,.42);color:#fff !important;-webkit-text-fill-color:#fff}
-.cmn-live-offer{margin-top:4px;min-height:0;font-weight:700;font-size:12px;color:#fffab4}
-.cmn-live-offer:empty{display:none}
-.cmn-live-offer.is-active{padding-top:2px}
-.cmn-live-offer-state{display:inline-flex;align-items:center;gap:6px}
-.cmn-live-offer-state.is-offered{color:#fde68a}
-.cmn-live-offer-state.is-accepted{color:#bbf7d0;text-decoration:none}
-.cmn-live-offer-state.is-declined{color:#fecaca}
-.cmn-live-offer-state.is-expired{color:#fca5a5}
 .cmn-live-dots{text-align:center;margin-top:10px}
 .cmn-live-dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#6e637a;margin:0 5px;cursor:pointer;border:0;padding:0}
 .cmn-live-dot.is-active{background:#ff1f43;box-shadow:0 0 0 3px rgba(255,31,67,.2)}

@@ -15441,33 +15441,66 @@ document.addEventListener('DOMContentLoaded', function () {
       return townCity || distanceWithAway;
     };
 
-    var resolveOfferMarkup = function(item){
+    var getEffectiveOfferState = function(item){
       var state = normalizeOfferState(item && item.offer_state);
       var expiresAt = parseUtcMysqlDate(item && item.offer_expires_at);
-      var chatUrl = String((item && item.offer_chat_url) || '').trim();
       if (state === LIVE_OFFER_STATES.OFFERED) {
-        if (expiresAt) {
-          var seconds = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-          if (seconds <= 0) {
-            return '<span class="cmn-live-offer-state is-expired">Offer expired</span>';
-          }
-          return '<span class="cmn-live-offer-state is-offered">Offer expires in ' + formatCountdown(seconds) + '</span>';
+        if (expiresAt && expiresAt.getTime() <= Date.now()) {
+          return LIVE_OFFER_STATES.EXPIRED;
         }
-        return '<span class="cmn-live-offer-state is-offered">Offer sent - awaiting response</span>';
       }
-      if (state === LIVE_OFFER_STATES.ACCEPTED) {
-        if (chatUrl) {
-          return '<a class="cmn-live-offer-state is-accepted" href="' + escapeHtml(chatUrl) + '">Accepted - Open chat</a>';
-        }
-        return '<span class="cmn-live-offer-state is-accepted">Accepted</span>';
+      return state;
+    };
+
+    var resolvePrimaryBookingAction = function(item){
+      var state = getEffectiveOfferState(item);
+      var chatUrl = String((item && item.offer_chat_url) || '').trim();
+      var disabled = !canRequest;
+      var label = 'Book Now';
+      var className = ' is-default';
+      var href = '';
+
+      if (state === LIVE_OFFER_STATES.OFFERED) {
+        label = 'Booking Pending';
+        className = ' is-pending';
+        disabled = true;
+      } else if (state === LIVE_OFFER_STATES.ACCEPTED) {
+        label = 'Booking Accepted';
+        className = ' is-accepted';
+        href = chatUrl;
+        disabled = !chatUrl;
+      } else if (state === LIVE_OFFER_STATES.DECLINED) {
+        label = 'Booking Declined';
+        className = ' is-declined';
+        disabled = false;
+      } else if (state === LIVE_OFFER_STATES.EXPIRED) {
+        label = 'Book Again';
+        className = ' is-retry';
+        disabled = !canRequest;
       }
-      if (state === LIVE_OFFER_STATES.DECLINED) {
-        return '<span class="cmn-live-offer-state is-declined">Declined by candidate</span>';
+
+      return {
+        state: state,
+        label: label,
+        className: className,
+        disabled: !!disabled,
+        href: href
+      };
+    };
+
+    var renderPrimaryBookingAction = function(item){
+      var actionState = resolvePrimaryBookingAction(item);
+      var attrs = ' class="cmn-primary cmn-live-primary' + actionState.className + '" data-live-action="book_now" data-live-offer-state="' + escapeHtml(actionState.state || '') + '"';
+      if (actionState.href) {
+        attrs += ' data-live-chat-url="' + escapeHtml(actionState.href) + '"';
       }
-      if (state === LIVE_OFFER_STATES.EXPIRED) {
-        return '<span class="cmn-live-offer-state is-expired">No response in time</span>';
+      if (actionState.href && !actionState.disabled) {
+        return '<a' + attrs + ' href="' + escapeHtml(actionState.href) + '">' + escapeHtml(actionState.label) + '</a>';
       }
-      return '';
+      if (actionState.disabled) {
+        attrs += ' disabled';
+      }
+      return '<button type="button"' + attrs + '>' + escapeHtml(actionState.label) + '</button>';
     };
 
     var syncOfferTicker = function(){
@@ -15475,27 +15508,10 @@ document.addEventListener('DOMContentLoaded', function () {
         window.clearInterval(offerTickerId);
         offerTickerId = null;
       }
-      if (!carousel) {
-        return;
-      }
       var activeRows = 0;
-      Array.prototype.slice.call(carousel.querySelectorAll('.cmn-live-card')).forEach(function(card){
-        var candidateId = parseInt(String(card.getAttribute('data-candidate-id') || '0'), 10) || 0;
-        if (!candidateId) {
-          return;
-        }
-        var item = findItemByCandidateId(candidateId);
-        if (!item) {
-          return;
-        }
-        var offerEl = card.querySelector('[data-live-offer]');
-        if (!offerEl) {
-          return;
-        }
-        var markup = resolveOfferMarkup(item);
-        offerEl.innerHTML = markup;
-        var state = normalizeOfferState(item.offer_state);
-        offerEl.classList.toggle('is-active', markup !== '');
+      var changed = false;
+      datasetAll.forEach(function(item){
+        var state = normalizeOfferState(item && item.offer_state);
         if (state === LIVE_OFFER_STATES.OFFERED) {
           var expiresAt = parseUtcMysqlDate(item.offer_expires_at);
           if (expiresAt && expiresAt.getTime() > Date.now()) {
@@ -15503,9 +15519,13 @@ document.addEventListener('DOMContentLoaded', function () {
           } else if (expiresAt && expiresAt.getTime() <= Date.now()) {
             item.offer_state = LIVE_OFFER_STATES.EXPIRED;
             item.offer_expires_at = '';
+            changed = true;
           }
         }
       });
+      if (changed) {
+        render();
+      }
       if (activeRows > 0) {
         offerTickerId = window.setInterval(syncOfferTicker, 1000);
       }
@@ -15771,6 +15791,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var profileButton = profileUrl
         ? '<a class="cmn-ghost cmn-live-secondary cmn-live-profile" href="' + profileUrl + '">View Profile</a>'
         : '<button class="cmn-ghost cmn-live-secondary cmn-live-profile" type="button" disabled>View Profile</button>';
+      var primaryBookingAction = renderPrimaryBookingAction(item);
       return '<article class="cmn-live-card'+cardStateClass+'" data-candidate-id="'+item.candidate_id+'">'
         + '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
         + '<div class="cmn-live-card-row"><div class="cmn-live-ident"><div class="cmn-avatar"><img class="cmn-live-avatar" src="'+item.photo_url+'" alt="'+item.first_name+'"></div><div><div class="cmn-live-name">'+item.first_name+'</div><div class="cmn-live-role">'+item.role_line+'</div>'+ratingMarkup+'</div></div><div class="cmn-live-status '+item.status+'">'+item.status_label+'</div></div>'
@@ -15780,10 +15801,9 @@ document.addEventListener('DOMContentLoaded', function () {
         + (locationDistanceText ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">'+escapeHtml(locationDistanceText)+'</span></div>' : '')
         + '<div class="cmn-live-strengths-panel"><div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div></div><div class="cmn-live-skills">'+skillsHtml+'</div></div>'
         + '<div class="cmn-live-actions">'
-        + '<div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"'+(canRequest ? '' : ' disabled')+'>Book Now</button>'+documentsButton+profileButton+'</div>'
+        + '<div class="cmn-live-actions-main">' + primaryBookingAction + documentsButton + profileButton + '</div>'
         + '<div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">'+(item.is_shortlisted ? 'Shortlisted':'Shortlist')+'</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div>'
         + '</div>'
-        + '<div class="cmn-live-offer" data-live-offer>'+resolveOfferMarkup(item)+'</div>'
         + '</div>'
         + '</article>';
     };
@@ -15901,9 +15921,18 @@ document.addEventListener('DOMContentLoaded', function () {
       var action = actionBtn.getAttribute('data-live-action') || '';
       var current = datasetAll.find(function(item){ return Number(item.candidate_id) === candidateId; }) || null;
       if (action === 'book_now') {
-        if (current) {
-          openOfferModal(current);
+        if (!current) {
+          return;
         }
+        var bookState = resolvePrimaryBookingAction(current);
+        if (bookState.state === LIVE_OFFER_STATES.ACCEPTED && bookState.href) {
+          window.location.href = bookState.href;
+          return;
+        }
+        if (bookState.state === LIVE_OFFER_STATES.OFFERED || actionBtn.disabled) {
+          return;
+        }
+        openOfferModal(current);
         return;
       }
       var extra = current ? {requested_date: (current.target_date || '')} : {};

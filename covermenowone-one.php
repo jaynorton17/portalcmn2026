@@ -90446,19 +90446,43 @@ global $wpdb;
             $offer_expires_at = sanitize_text_field((string) ($item['offer_expires_at'] ?? ''));
             $offer_chat_url = esc_url((string) ($item['offer_chat_url'] ?? ''));
             $offer_booking_id = (int) ($item['offer_booking_id'] ?? 0);
-            $offer_initial_text = '';
-            if ($offer_state === self::OFFER_STATE_OFFERED) {
-                $offer_initial_text = 'Offer sent - awaiting response.';
-            } elseif ($offer_state === self::OFFER_STATE_ACCEPTED) {
-                $offer_initial_text = $offer_chat_url !== '' ? 'Accepted - open chat.' : 'Accepted.';
-            } elseif ($offer_state === self::OFFER_STATE_DECLINED) {
-                $offer_initial_text = 'Declined by candidate.';
-            } elseif ($offer_state === self::OFFER_STATE_EXPIRED) {
-                $offer_initial_text = 'No response in time.';
+            $effective_offer_state = $offer_state;
+            if ($effective_offer_state === self::OFFER_STATE_OFFERED && $offer_expires_at !== '') {
+                $offer_expires_ts = strtotime($offer_expires_at . ' UTC');
+                if ($offer_expires_ts !== false && $offer_expires_ts <= time()) {
+                    $effective_offer_state = self::OFFER_STATE_EXPIRED;
+                }
             }
             $banner_html = $status === 'available'
                 ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' . esc_html($confirmed_at !== '' ? $confirmed_at : '--:--') . '</small></div>'
                 : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
+            $primary_button_label = 'Book Now';
+            $primary_button_class = ' is-default';
+            $primary_button_disabled = !$can_request;
+            $primary_button_href = '';
+            if ($effective_offer_state === self::OFFER_STATE_OFFERED) {
+                $primary_button_label = 'Booking Pending';
+                $primary_button_class = ' is-pending';
+                $primary_button_disabled = true;
+            } elseif ($effective_offer_state === self::OFFER_STATE_ACCEPTED) {
+                $primary_button_label = 'Booking Accepted';
+                $primary_button_class = ' is-accepted';
+                $primary_button_href = $offer_chat_url;
+                $primary_button_disabled = $primary_button_href === '';
+            } elseif ($effective_offer_state === self::OFFER_STATE_DECLINED) {
+                $primary_button_label = 'Booking Declined';
+                $primary_button_class = ' is-declined';
+                $primary_button_disabled = false;
+            } elseif ($effective_offer_state === self::OFFER_STATE_EXPIRED) {
+                $primary_button_label = 'Book Again';
+                $primary_button_class = ' is-retry';
+                $primary_button_disabled = !$can_request;
+            }
+            if ($primary_button_href !== '' && !$primary_button_disabled) {
+                $primary_button_html = '<a class="cmn-primary cmn-live-primary' . esc_attr($primary_button_class) . '" data-live-action="book_now" data-live-offer-state="' . esc_attr($effective_offer_state) . '" data-live-chat-url="' . esc_url($primary_button_href) . '" href="' . esc_url($primary_button_href) . '">' . esc_html($primary_button_label) . '</a>';
+            } else {
+                $primary_button_html = '<button class="cmn-primary cmn-live-primary' . esc_attr($primary_button_class) . '" data-live-action="book_now" data-live-offer-state="' . esc_attr($effective_offer_state) . '"' . ($primary_button_href !== '' ? ' data-live-chat-url="' . esc_url($primary_button_href) . '"' : '') . ($primary_button_disabled ? ' disabled' : '') . '>' . esc_html($primary_button_label) . '</button>';
+            }
             $documents_button_html = $documents_download_url !== ''
                 ? '<a class="cmn-ghost cmn-live-secondary cmn-live-documents" href="' . $documents_download_url . '">Download Documents</a>'
                 : '<button class="cmn-ghost cmn-live-secondary cmn-live-documents" type="button" disabled>Download Documents</button>';
@@ -90475,8 +90499,7 @@ global $wpdb;
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
                 . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
                 . '<div class="cmn-live-strengths-panel"><div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">Key Deployment Strengths</div></div><div class="cmn-live-skills">' . $skills_html . '</div></div>'
-                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button>' . $documents_button_html . $profile_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
-                . '<div class="cmn-live-offer" data-live-offer data-offer-state="' . esc_attr($offer_state) . '" data-offer-expires-at="' . esc_attr($offer_expires_at) . '" data-offer-chat-url="' . esc_url($offer_chat_url) . '" data-offer-booking-id="' . esc_attr((string) $offer_booking_id) . '">' . esc_html($offer_initial_text) . '</div>'
+                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main">' . $primary_button_html . $documents_button_html . $profile_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
                 . '</div>'
                 . '</article>';
         };
