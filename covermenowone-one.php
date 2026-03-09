@@ -90470,13 +90470,15 @@ global $wpdb;
             return '<article class="cmn-live-card' . esc_attr($card_state_class) . '" data-candidate-id="' . esc_attr((string) $candidate_id) . '">'
                 . '<div class="cmn-live-brand"><span class="cmn-live-brand-main">CoverMeNow</span> <span class="cmn-live-brand-accent">ONE</span></div>'
                 . '<div class="cmn-live-card-row"><div class="cmn-live-ident"><div class="cmn-avatar"><img class="cmn-live-avatar" src="' . $photo_url . '" alt="' . esc_attr($first_name) . '"></div><div><div class="cmn-live-name">' . esc_html($first_name) . '</div><div class="cmn-live-role">' . esc_html($role_line) . '</div>' . $rating_html . '</div></div><div class="cmn-live-status ' . esc_attr($status) . '">' . esc_html($status_label) . '</div></div>'
+                . '<div class="cmn-live-card-body">'
+                . '<div class="cmn-live-pills-row">' . $presence_html . '<div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-strip">' . $banner_html . '</div>'
                 . ($location_distance_text !== '' ? '<div class="cmn-live-meta-row"><span class="cmn-live-distance">' . esc_html($location_distance_text) . '</span></div>' : '')
-                . '<div class="cmn-live-pills-row">' . $presence_html . '<div class="cmn-live-charge-rate">Charge Rate £' . esc_html((string) $day_rate) . '</div></div>'
                 . '<div class="cmn-live-strengths-row"><div class="cmn-live-strengths-title">KEY DEPLOYMENT STRENGTHS</div></div>'
                 . '<div class="cmn-live-skills">' . $skills_html . '</div>'
-                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button>' . $documents_button_html . $profile_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
                 . '<div class="cmn-live-offer" data-live-offer data-offer-state="' . esc_attr($offer_state) . '" data-offer-expires-at="' . esc_attr($offer_expires_at) . '" data-offer-chat-url="' . esc_url($offer_chat_url) . '" data-offer-booking-id="' . esc_attr((string) $offer_booking_id) . '">' . esc_html($offer_initial_text) . '</div>'
+                . '<div class="cmn-live-actions"><div class="cmn-live-actions-main"><button class="cmn-primary cmn-live-primary" data-live-action="book_now"' . ($can_request ? '' : ' disabled') . '>Book Now</button>' . $documents_button_html . $profile_button_html . '</div><div class="cmn-live-actions-tertiary"><button class="cmn-live-tertiary cmn-btn-mini" data-live-action="shortlist_toggle">' . ($is_shortlisted ? 'Shortlisted' : 'Shortlist') . '</button><button class="cmn-live-not-interest cmn-live-tertiary cmn-btn-mini" data-live-action="not_interested">Not Suitable</button></div></div>'
+                . '</div>'
                 . '</article>';
         };
         $get_visible_window_for_carousel = static function(array $rows, $center_index = 0, $limit = 3) {
