@@ -17782,9 +17782,9 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-strengths-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:4px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22)}
 .cmn-live-strengths-title{display:inline-flex;align-items:center;min-height:24px;padding:0 10px;border-radius:999px;border:1px solid rgba(248,250,252,.34);background:rgba(2,6,12,.62);font-size:10.5px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:#f8fafc}
 .cmn-live-charge-rate{display:inline-flex;align-items:center;min-height:26px;padding:0 11px;border-radius:999px;border:1px solid rgba(248,250,252,.52);background:rgba(2,6,12,.86);font-size:11.5px;font-weight:900;color:#f8fafc;letter-spacing:.01em}
-.cmn-live-skills{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start;min-height:58px;max-height:58px;overflow:hidden;margin-top:0}
-.cmn-live-skill{display:inline-flex;align-items:center;flex:1 1 calc(33.333% - 6px);max-width:calc(33.333% - 6px);background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:6px 10px;border-radius:999px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cmn-live-actions{display:grid;gap:8px;margin-top:auto}
+.cmn-live-skills{display:flex;gap:6px;row-gap:6px;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;width:100%;min-width:0;min-height:58px;max-height:58px;overflow:hidden;margin-top:0;margin-bottom:10px;padding-bottom:2px;position:relative;z-index:0}
+.cmn-live-skill{display:inline-flex;align-items:center;flex:1 1 calc(33.333% - 6px);max-width:calc(33.333% - 6px);min-width:0;box-sizing:border-box;background:rgba(17,14,29,.82);border:1px solid rgba(255,255,255,.17);padding:6px 10px;border-radius:999px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmn-live-actions{display:grid;gap:8px;margin-top:12px;position:relative;z-index:1}
 .cmn-live-actions-main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:stretch}
 .cmn-live-actions .cmn-live-primary{width:100%;min-height:42px;padding:8px 12px;font-size:13px;font-weight:900}
 .cmn-live-actions [data-live-action="book_now"]{background:linear-gradient(180deg,#67e454,#22c55e);border:1px solid #14532d;color:#111 !important;-webkit-text-fill-color:#111;font-weight:900}
