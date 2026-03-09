@@ -17763,6 +17763,8 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
   background:linear-gradient(180deg,#66ff30,#22c55e);
   border:1px solid #bbf7d0;
   color:#052e16;
+  margin-top:-6px;
+  margin-right:-3px;
   box-shadow:
     0 0 24px rgba(57,255,20,.72),
     0 0 42px rgba(34,197,94,.28),
