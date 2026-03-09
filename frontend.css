@@ -17670,6 +17670,57 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
   background:rgba(2,6,12,.82);
   border-color:rgba(248,250,252,.42);
 }
+.cmn-live-card.is-bookable .cmn-live-strengths-title,
+.cmn-live-card.is-bookable .cmn-live-charge-rate,
+.cmn-live-card.is-bookable .cmn-live-skill,
+.cmn-live-card.is-bookable .cmn-live-presence,
+.cmn-live-card.is-bookable .cmn-live-presence.is-live,
+.cmn-live-card.is-bookable .cmn-live-meta-row,
+.cmn-live-card.is-bookable .cmn-live-offer,
+.cmn-live-card.is-bookable .cmn-live-distance{
+  color:#f8fafc !important;
+  -webkit-text-fill-color:#f8fafc;
+}
+.cmn-live-card.is-bookable .cmn-live-strengths-title{
+  background:rgba(2,6,12,.78);
+  border-color:rgba(248,250,252,.44);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+}
+.cmn-live-card.is-bookable .cmn-live-charge-rate{
+  background:rgba(2,6,12,.88);
+  border-color:rgba(248,250,252,.56);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+}
+.cmn-live-card.is-bookable .cmn-live-skill{
+  background:rgba(5,7,12,.78);
+  border-color:rgba(248,250,252,.24);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+}
+.cmn-live-card.is-bookable .cmn-live-presence,
+.cmn-live-card.is-bookable .cmn-live-presence.is-live{
+  background:rgba(5,7,12,.72);
+  border-color:rgba(248,250,252,.24);
+}
+.cmn-live-card.is-bookable .cmn-live-meta-row{
+  background:rgba(5,7,12,.74);
+  border-color:rgba(248,250,252,.22);
+}
+.cmn-live-card.is-bookable .cmn-live-offer{
+  color:#ecfccb;
+  -webkit-text-fill-color:#ecfccb;
+}
+.cmn-live-card.is-bookable .cmn-live-offer-state.is-offered{
+  color:#fef08a;
+}
+.cmn-live-card.is-bookable .cmn-live-offer-state.is-accepted{
+  color:#dcfce7;
+}
+.cmn-live-card.is-bookable .cmn-live-offer-state.is-declined{
+  color:#fee2e2;
+}
+.cmn-live-card.is-bookable .cmn-live-offer-state.is-expired{
+  color:#fecaca;
+}
 .cmn-live-card.is-pending-confirmation{z-index:1;transform:translateY(4px) scale(1.05);opacity:1;filter:none;background:linear-gradient(180deg,rgba(98,71,9,.92),rgba(54,38,7,.96));border-color:rgba(181,136,18,.3);box-shadow:0 10px 24px rgba(24,18,4,.28),0 0 8px rgba(181,136,18,.14)}
 @media (min-width:1201px){
   .cmn-live-carousel .cmn-live-card:not(:nth-child(2)){
