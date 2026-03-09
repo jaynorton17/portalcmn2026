@@ -16761,10 +16761,10 @@ body.cmn-portal-page :is(.cmn-candidate-portal.cmn-portal-light, .cmn-school-por
 }
 
 body.cmn-portal-page :is(.cmn-candidate-portal.cmn-portal-light, .cmn-school-portal.cmn-portal-light) :is(
-  .cmn-primary,
+  .cmn-primary:not(.cmn-live-primary),
   .cmn-btn-primary,
-  button.cmn-primary,
-  a.cmn-primary
+  button.cmn-primary:not(.cmn-live-primary),
+  a.cmn-primary:not(.cmn-live-primary)
 ) {
   min-height: 42px;
   border-radius: 10px;
@@ -16777,16 +16777,16 @@ body.cmn-portal-page :is(.cmn-candidate-portal.cmn-portal-light, .cmn-school-por
 }
 
 body.cmn-portal-page :is(.cmn-candidate-portal.cmn-portal-light, .cmn-school-portal.cmn-portal-light) :is(
-  .cmn-primary,
+  .cmn-primary:not(.cmn-live-primary),
   .cmn-btn-primary,
-  button.cmn-primary,
-  a.cmn-primary
+  button.cmn-primary:not(.cmn-live-primary),
+  a.cmn-primary:not(.cmn-live-primary)
 ):hover,
 body.cmn-portal-page :is(.cmn-candidate-portal.cmn-portal-light, .cmn-school-portal.cmn-portal-light) :is(
-  .cmn-primary,
+  .cmn-primary:not(.cmn-live-primary),
   .cmn-btn-primary,
-  button.cmn-primary,
-  a.cmn-primary
+  button.cmn-primary:not(.cmn-live-primary),
+  a.cmn-primary:not(.cmn-live-primary)
 ):focus-visible {
   background: var(--accent-red-hover) !important;
   transform: translateY(-1px);
@@ -17794,18 +17794,18 @@ body.cmn-portal-page .cmn-candidate-main--profile .cmn-inline-edit-form {
 .cmn-live-actions-main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:stretch}
 .cmn-live-actions .cmn-live-primary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:8px 12px;font-size:13px;font-weight:900;text-align:center;text-decoration:none}
 .cmn-live-actions .cmn-live-primary.is-default,
-.cmn-live-actions .cmn-live-primary.is-retry{background:linear-gradient(180deg,#ff1239,#cf0f2b);border:1px solid #8f1028;color:#fff !important;-webkit-text-fill-color:#fff;box-shadow:0 4px 0 rgba(73,8,22,.34)}
+.cmn-live-actions .cmn-live-primary.is-retry{background:linear-gradient(180deg,#ff1239,#cf0f2b) !important;border:1px solid #8f1028 !important;color:#fff !important;-webkit-text-fill-color:#fff;box-shadow:0 4px 0 rgba(73,8,22,.34) !important}
 .cmn-live-actions .cmn-live-primary.is-default:hover,
 .cmn-live-actions .cmn-live-primary.is-default:focus-visible,
 .cmn-live-actions .cmn-live-primary.is-retry:hover,
-.cmn-live-actions .cmn-live-primary.is-retry:focus-visible{background:linear-gradient(180deg,#ff284d,#d81333);border-color:#a4112d;color:#fff !important;-webkit-text-fill-color:#fff;transform:translateY(-1px)}
-.cmn-live-actions .cmn-live-primary.is-pending{background:linear-gradient(180deg,#f8c748,#d89b11);border:1px solid rgba(120,53,15,.38);color:#241400 !important;-webkit-text-fill-color:#241400;box-shadow:0 4px 0 rgba(120,53,15,.18);cursor:wait}
+.cmn-live-actions .cmn-live-primary.is-retry:focus-visible{background:linear-gradient(180deg,#ff284d,#d81333) !important;border-color:#a4112d !important;color:#fff !important;-webkit-text-fill-color:#fff;transform:translateY(-1px)}
+.cmn-live-actions .cmn-live-primary.is-pending{background:linear-gradient(180deg,#f8c748,#d89b11) !important;border:1px solid rgba(120,53,15,.38) !important;color:#241400 !important;-webkit-text-fill-color:#241400;box-shadow:0 4px 0 rgba(120,53,15,.18) !important;cursor:wait}
 .cmn-live-actions .cmn-live-primary.is-pending:hover,
-.cmn-live-actions .cmn-live-primary.is-pending:focus-visible{background:linear-gradient(180deg,#ffd86a,#e0a81f);border-color:rgba(120,53,15,.46);color:#241400 !important;-webkit-text-fill-color:#241400;transform:none}
-.cmn-live-actions .cmn-live-primary.is-accepted{background:linear-gradient(180deg,#22c55e,#15803d);border:1px solid rgba(187,247,208,.42);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;box-shadow:0 4px 0 rgba(5,46,22,.26)}
+.cmn-live-actions .cmn-live-primary.is-pending:focus-visible{background:linear-gradient(180deg,#ffd86a,#e0a81f) !important;border-color:rgba(120,53,15,.46) !important;color:#241400 !important;-webkit-text-fill-color:#241400;transform:none}
+.cmn-live-actions .cmn-live-primary.is-accepted{background:linear-gradient(180deg,#22c55e,#15803d) !important;border:1px solid rgba(187,247,208,.42) !important;color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;box-shadow:0 4px 0 rgba(5,46,22,.26) !important}
 .cmn-live-actions .cmn-live-primary.is-accepted:hover,
-.cmn-live-actions .cmn-live-primary.is-accepted:focus-visible{background:linear-gradient(180deg,#32d06b,#1a8e46);border-color:rgba(220,252,231,.58);color:#fff !important;-webkit-text-fill-color:#fff;transform:translateY(-1px)}
-.cmn-live-actions .cmn-live-primary.is-declined{background:linear-gradient(180deg,#991b1b,#7f1d1d);border:1px solid rgba(254,202,202,.3);color:#fef2f2 !important;-webkit-text-fill-color:#fef2f2;box-shadow:0 4px 0 rgba(69,10,10,.24)}
+.cmn-live-actions .cmn-live-primary.is-accepted:focus-visible{background:linear-gradient(180deg,#32d06b,#1a8e46) !important;border-color:rgba(220,252,231,.58) !important;color:#fff !important;-webkit-text-fill-color:#fff;transform:translateY(-1px)}
+.cmn-live-actions .cmn-live-primary.is-declined{background:linear-gradient(180deg,#991b1b,#7f1d1d) !important;border:1px solid rgba(254,202,202,.3) !important;color:#fef2f2 !important;-webkit-text-fill-color:#fef2f2;box-shadow:0 4px 0 rgba(69,10,10,.24) !important}
 .cmn-live-actions .cmn-live-primary[disabled]{opacity:1;transform:none}
 .cmn-live-actions .cmn-live-secondary{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:7px 10px;border:1.5px solid rgba(241,245,249,.72);background:rgba(15,23,42,.84);color:#f8fafc !important;-webkit-text-fill-color:#f8fafc;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.01em;box-shadow:0 2px 0 rgba(2,6,12,.3);transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease}
 .cmn-live-actions .cmn-live-secondary:hover,.cmn-live-actions .cmn-live-secondary:focus-visible{background:rgba(30,41,59,.95);border-color:#f8fafc;transform:translateY(-1px);box-shadow:0 4px 0 rgba(2,6,12,.34)}
