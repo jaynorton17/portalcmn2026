@@ -6578,6 +6578,69 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   gap: 8px;
 }
 
+.cmn-school-lead-quick-actions {
+  position: relative;
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-school-lead-quick-actions__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-lead-modal-card {
+  width: min(660px, calc(100vw - 28px));
+  max-height: calc(100vh - 44px);
+  overflow: auto;
+}
+
+.cmn-school-lead-form {
+  display: grid;
+  gap: 10px;
+}
+
+.cmn-school-lead-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.cmn-school-lead-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cmn-school-lead-notes-list {
+  margin: 0;
+}
+
+.cmn-school-lead-note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-lead-notes-actions {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-lead-notes-list--all {
+  margin-top: 10px;
+}
+
 .cmn-school-profile-grid .cmn-school-tab-panel--contacts select {
   color: #f8fafc !important;
   background: rgba(255, 255, 255, 0.06) !important;

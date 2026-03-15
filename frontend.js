@@ -2782,6 +2782,246 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var schoolLeadOverviewRoots = document.querySelectorAll('[data-school-lead-overview]');
+  if (schoolLeadOverviewRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl) {
+    schoolLeadOverviewRoots.forEach(function (root) {
+      var ajaxUrl = String(window.cmnPortal.ajaxUrl || '').trim();
+      if (!ajaxUrl) {
+        return;
+      }
+      var schoolId = String(root.getAttribute('data-school-id') || '').trim();
+      var schoolPid = String(root.getAttribute('data-school-pid') || '').trim();
+      var nonce = String(root.getAttribute('data-school-lead-nonce') || window.cmnPortal.schoolLeadNonce || '').trim();
+      if (!schoolId || !schoolPid || !nonce) {
+        return;
+      }
+
+      var editModal = root.querySelector('[data-school-lead-edit-modal]');
+      var noteModal = root.querySelector('[data-school-lead-note-modal]');
+      var editOpenBtn = root.querySelector('[data-school-lead-open-edit]');
+      var noteOpenBtn = root.querySelector('[data-school-lead-open-note]');
+      var editCloseBtns = Array.prototype.slice.call(root.querySelectorAll('[data-school-lead-close-edit]'));
+      var noteCloseBtns = Array.prototype.slice.call(root.querySelectorAll('[data-school-lead-close-note]'));
+      var editForm = root.querySelector('[data-school-lead-edit-form]');
+      var noteForm = root.querySelector('[data-school-lead-note-form]');
+      var editFeedback = root.querySelector('[data-school-lead-edit-feedback]');
+      var noteFeedback = root.querySelector('[data-school-lead-note-feedback]');
+      var notesList = document.querySelector('[data-school-lead-notes-list]');
+      var notesAllList = document.querySelector('[data-school-lead-notes-all]');
+      var notesExpandBtn = document.querySelector('[data-school-lead-notes-expand]');
+      var fieldTargets = document.querySelectorAll('[data-school-overview-field]');
+
+      var typeLabels = {
+        general: 'General',
+        call: 'Call',
+        email: 'Email',
+        meeting: 'Meeting'
+      };
+
+      var setFeedback = function (target, message) {
+        if (target) {
+          target.textContent = message || '';
+        }
+      };
+
+      var openModal = function (modalEl) {
+        if (!modalEl) {
+          return;
+        }
+        modalEl.hidden = false;
+        modalEl.classList.add('is-open');
+        document.body.classList.add('cmn-support-modal-lock');
+      };
+
+      var closeModal = function (modalEl) {
+        if (!modalEl) {
+          return;
+        }
+        modalEl.hidden = true;
+        modalEl.classList.remove('is-open');
+        if (!root.querySelector('.cmn-modal.is-open')) {
+          document.body.classList.remove('cmn-support-modal-lock');
+        }
+      };
+
+      if (editOpenBtn && editModal) {
+        editOpenBtn.addEventListener('click', function () {
+          setFeedback(editFeedback, '');
+          openModal(editModal);
+        });
+      }
+      if (noteOpenBtn && noteModal) {
+        noteOpenBtn.addEventListener('click', function () {
+          setFeedback(noteFeedback, '');
+          openModal(noteModal);
+        });
+      }
+
+      editCloseBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          closeModal(editModal);
+        });
+      });
+      noteCloseBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          closeModal(noteModal);
+        });
+      });
+
+      [editModal, noteModal].forEach(function (modalEl) {
+        if (!modalEl) {
+          return;
+        }
+        modalEl.addEventListener('click', function (event) {
+          if (event.target === modalEl) {
+            closeModal(modalEl);
+          }
+        });
+      });
+
+      var normalizeFieldDisplay = function (value) {
+        var normalized = String(value || '').trim();
+        return normalized ? normalized : '—';
+      };
+
+      var updateOverviewFields = function (values) {
+        if (!values || typeof values !== 'object') {
+          return;
+        }
+        fieldTargets.forEach(function (node) {
+          var key = String(node.getAttribute('data-school-overview-field') || '').trim();
+          if (!key || !Object.prototype.hasOwnProperty.call(values, key)) {
+            return;
+          }
+          node.textContent = normalizeFieldDisplay(values[key]);
+        });
+        if (editForm) {
+          Object.keys(values).forEach(function (key) {
+            var input = editForm.querySelector('[name="' + key + '"]');
+            if (!input) {
+              return;
+            }
+            input.value = String(values[key] || '');
+          });
+        }
+      };
+
+      var createNoteMarkup = function (note) {
+        var li = document.createElement('li');
+        li.setAttribute('data-school-lead-note-id', String(note && note.id ? note.id : ''));
+        var noteType = String(note && note.type ? note.type : 'general').toLowerCase();
+        var noteTypeLabel = typeLabels[noteType] || 'General';
+        var noteBody = String(note && note.body ? note.body : '');
+        var noteAuthor = String(note && note.author_name ? note.author_name : 'System');
+        var noteCreatedLabel = String(note && note.created_label ? note.created_label : '');
+        var head = document.createElement('div');
+        head.className = 'cmn-school-lead-note-head';
+        head.innerHTML = '<strong>' + escapeHtml(noteTypeLabel) + '</strong>'
+          + '<span class="cmn-muted">' + escapeHtml(noteAuthor + (noteCreatedLabel ? ' · ' + noteCreatedLabel : '')) + '</span>';
+        var body = document.createElement('div');
+        body.textContent = noteBody;
+        li.appendChild(head);
+        li.appendChild(body);
+        return li;
+      };
+
+      var prependNote = function (note) {
+        if (!notesList || !note) {
+          return;
+        }
+        var emptyEl = notesList.querySelector('[data-school-lead-notes-empty]');
+        if (emptyEl) {
+          emptyEl.remove();
+        }
+        notesList.insertBefore(createNoteMarkup(note), notesList.firstChild || null);
+      };
+
+      var ajaxSubmit = function (action, values) {
+        var formData = new FormData();
+        formData.append('action', action);
+        formData.append('school_id', schoolId);
+        formData.append('pid', schoolPid);
+        formData.append('nonce', nonce);
+        Object.keys(values || {}).forEach(function (key) {
+          formData.append(key, values[key]);
+        });
+        return fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: formData
+        }).then(function (response) {
+          return response.json().catch(function () {
+            return null;
+          }).then(function (json) {
+            if (!json || typeof json !== 'object') {
+              throw new Error('Unexpected server response.');
+            }
+            if (!response.ok || !json.success) {
+              var errorMessage = (json && json.data && json.data.message) ? String(json.data.message) : 'Request failed.';
+              throw new Error(errorMessage);
+            }
+            return (json.data && typeof json.data === 'object') ? json.data : {};
+          });
+        });
+      };
+
+      if (editForm) {
+        editForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          setFeedback(editFeedback, 'Saving...');
+          var formData = new FormData(editForm);
+          var values = {};
+          formData.forEach(function (value, key) {
+            values[key] = value;
+          });
+          ajaxSubmit('cmn_school_update_details', values).then(function (data) {
+            updateOverviewFields(data && data.values ? data.values : {});
+            setFeedback(editFeedback, (data && data.message) ? data.message : 'School lead details updated.');
+            window.setTimeout(function () {
+              closeModal(editModal);
+            }, 300);
+          }).catch(function (error) {
+            setFeedback(editFeedback, error && error.message ? error.message : 'Unable to save school lead details.');
+          });
+        });
+      }
+
+      if (noteForm) {
+        noteForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          setFeedback(noteFeedback, 'Saving...');
+          var formData = new FormData(noteForm);
+          var values = {};
+          formData.forEach(function (value, key) {
+            values[key] = value;
+          });
+          ajaxSubmit('cmn_school_add_note', values).then(function (data) {
+            if (data && data.note) {
+              prependNote(data.note);
+            }
+            if (noteForm) {
+              noteForm.reset();
+            }
+            setFeedback(noteFeedback, (data && data.message) ? data.message : 'School lead note added.');
+            window.setTimeout(function () {
+              closeModal(noteModal);
+            }, 300);
+          }).catch(function (error) {
+            setFeedback(noteFeedback, error && error.message ? error.message : 'Unable to save school lead note.');
+          });
+        });
+      }
+
+      if (notesExpandBtn && notesAllList) {
+        notesExpandBtn.addEventListener('click', function () {
+          var shouldShow = !!notesAllList.hidden;
+          notesAllList.hidden = !shouldShow;
+          notesExpandBtn.textContent = shouldShow ? 'Hide extra notes' : 'View all notes';
+        });
+      }
+    });
+  }
+
   var confirmForms = document.querySelectorAll('form[data-confirm]');
   if (confirmForms.length) {
     confirmForms.forEach(function (form) {
@@ -14586,7 +14826,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var appliedHint = isApplied ? ' title="Already applied"' : '';
         return ''
           + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="approved" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '"' + (approveDisabled ? ' disabled' : '') + appliedHint + '>Approve</button>'
-          + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="rejected" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '"' + (denyDisabled ? ' disabled' : '') + appliedHint + '>Deny</button>';
+          + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="rejected" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '"' + (denyDisabled ? ' disabled' : '') + appliedHint + '>Reject</button>';
       };
 
       var renderRecommendations = function () {
@@ -14850,83 +15090,78 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       };
 
-      if (saveAllowlistButton && allowlistInput) {
-        saveAllowlistButton.addEventListener('click', function () {
-          seoDebugLog('click', { action: 'save_allowlist' });
-          setStatus('Saving allowlist...', false);
-          runWithBusyButton(saveAllowlistButton, 'Saving...', function () {
-            return seoApiCall('cmn_seo_assistant_save_allowlist', {
-              allowlist: allowlistInput.value || ''
-            }).then(function (data) {
-              state = seoNormalizeState((data && data.state) ? data.state : {});
-              renderAll();
-              setStatus((data && data.message) ? data.message : 'Allowlist saved.', false);
-            }).catch(function (error) {
-              setStatus(error && error.message ? error.message : 'Unable to save allowlist.', true);
-            });
-          });
-        });
-      }
-
-      if (discoverButton) {
-        discoverButton.addEventListener('click', function () {
-          seoDebugLog('click', { action: 'discover_pages' });
-          setStatus('Discovering pages...', false);
-          runWithBusyButton(discoverButton, 'Discovering...', function () {
-            return seoApiCall('cmn_seo_discover_pages', {}).then(function (data) {
-              state = seoNormalizeState((data && data.state) ? data.state : {});
-              renderAll();
-              setStatus((data && data.message) ? data.message : 'Page discovery complete.', false);
-            }).catch(function (error) {
-              setStatus(error && error.message ? error.message : 'Unable to discover pages.', true);
-            });
-          });
-        });
-      }
-
-      if (scanButton) {
-        scanButton.addEventListener('click', function () {
-          var selectedUrls = getSelectedUrls();
-          seoDebugLog('click', { action: 'scan_selected', selectedCount: selectedUrls.length });
-          setStatus('Scanning selected pages...', false);
-          runWithBusyButton(scanButton, 'Scanning...', function () {
-            return seoApiCall('cmn_seo_scan_pages', {
-              urls: selectedUrls
-            }).then(function (data) {
-              state = seoNormalizeState((data && data.state) ? data.state : {});
-              renderAll();
-              setStatus((data && data.message) ? data.message : 'Scan complete.', false);
-            }).catch(function (error) {
-              setStatus(error && error.message ? error.message : 'Unable to run SEO scan.', true);
-            });
-          });
-        });
-      }
-
-      if (applyButton) {
-        applyButton.addEventListener('click', function () {
-          runApplyApprovedWithProgress();
-        });
-      }
-
-      if (rollbackButton) {
-        rollbackButton.addEventListener('click', function () {
-          if (applyInProgress) {
-            return;
-          }
-          setBusy(true);
-          seoApiCall('cmn_seo_assistant_rollback_last_batch', {}).then(function (data) {
+      var handleSaveAllowlist = function () {
+        if (!saveAllowlistButton || !allowlistInput) {
+          return;
+        }
+        seoDebugLog('click', { action: 'save_allowlist' });
+        setStatus('Saving allowlist...', false);
+        runWithBusyButton(saveAllowlistButton, 'Saving...', function () {
+          return seoApiCall('cmn_seo_assistant_save_allowlist', {
+            allowlist: allowlistInput.value || ''
+          }).then(function (data) {
             state = seoNormalizeState((data && data.state) ? data.state : {});
             renderAll();
-            setStatus((data && data.message) ? data.message : 'Rollback complete.', false);
-            appendApplyLog('ROLLBACK: Applied=' + String((data && data.rolled_back_count) || 0) + ' Failed=' + String((data && data.failed_count) || 0), 'skip');
+            setStatus((data && data.message) ? data.message : 'Allowlist saved.', false);
           }).catch(function (error) {
-            setStatus(error && error.message ? error.message : 'Unable to roll back last batch.', true);
-          }).finally(function () {
-            setBusy(false);
+            setStatus(error && error.message ? error.message : 'Unable to save allowlist.', true);
           });
         });
-      }
+      };
+
+      var handleDiscoverPages = function () {
+        if (!discoverButton) {
+          return;
+        }
+        seoDebugLog('click', { action: 'discover_pages' });
+        setStatus('Discovering pages...', false);
+        runWithBusyButton(discoverButton, 'Discovering...', function () {
+          return seoApiCall('cmn_seo_discover_pages', {}).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            setStatus((data && data.message) ? data.message : 'Page discovery complete.', false);
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to discover pages.', true);
+          });
+        });
+      };
+
+      var handleScanSelectedPages = function () {
+        if (!scanButton) {
+          return;
+        }
+        var selectedUrls = getSelectedUrls();
+        seoDebugLog('click', { action: 'scan_selected', selectedCount: selectedUrls.length });
+        setStatus('Scanning selected pages...', false);
+        runWithBusyButton(scanButton, 'Scanning...', function () {
+          return seoApiCall('cmn_seo_scan_pages', {
+            urls: selectedUrls
+          }).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            setStatus((data && data.message) ? data.message : 'Scan complete.', false);
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to run SEO scan.', true);
+          });
+        });
+      };
+
+      var handleRollbackBatch = function () {
+        if (!rollbackButton || applyInProgress) {
+          return;
+        }
+        setBusy(true);
+        seoApiCall('cmn_seo_assistant_rollback_last_batch', {}).then(function (data) {
+          state = seoNormalizeState((data && data.state) ? data.state : {});
+          renderAll();
+          setStatus((data && data.message) ? data.message : 'Rollback complete.', false);
+          appendApplyLog('ROLLBACK: Applied=' + String((data && data.rolled_back_count) || 0) + ' Failed=' + String((data && data.failed_count) || 0), 'skip');
+        }).catch(function (error) {
+          setStatus(error && error.message ? error.message : 'Unable to roll back last batch.', true);
+        }).finally(function () {
+          setBusy(false);
+        });
+      };
 
       if (pageSearchInput) {
         pageSearchInput.addEventListener('input', function () {
@@ -14954,6 +15189,22 @@ document.addEventListener('DOMContentLoaded', function () {
       });
 
       root.addEventListener('click', function (event) {
+        var topActionButton = event.target && event.target.closest ? event.target.closest('[data-seo-save-allowlist], [data-seo-discover-pages], [data-seo-scan-selected], [data-seo-apply-approved], [data-seo-rollback-last-batch]') : null;
+        if (topActionButton) {
+          event.preventDefault();
+          if (topActionButton.matches('[data-seo-save-allowlist]')) {
+            handleSaveAllowlist();
+          } else if (topActionButton.matches('[data-seo-discover-pages]')) {
+            handleDiscoverPages();
+          } else if (topActionButton.matches('[data-seo-scan-selected]')) {
+            handleScanSelectedPages();
+          } else if (topActionButton.matches('[data-seo-apply-approved]')) {
+            runApplyApprovedWithProgress();
+          } else if (topActionButton.matches('[data-seo-rollback-last-batch]')) {
+            handleRollbackBatch();
+          }
+          return;
+        }
         var pageNavButton = event.target && event.target.closest ? event.target.closest('[data-seo-page-nav]') : null;
         if (pageNavButton) {
           event.preventDefault();

@@ -887,6 +887,8 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_notifications_clear_all', [$this, 'handle_notifications_clear_all']);
         add_action('wp_ajax_cmn_notifications_mark_read', [$this, 'handle_notifications_mark_read']);
         add_action('wp_ajax_cmn_school_contact_search', [$this, 'handle_school_contact_search_ajax']);
+        add_action('wp_ajax_cmn_school_update_details', [$this, 'handle_school_update_details_ajax']);
+        add_action('wp_ajax_cmn_school_add_note', [$this, 'handle_school_add_note_ajax']);
         add_action('wp_ajax_cmn_notifications_mark_selected_read', [$this, 'handle_notifications_mark_selected_read']);
         add_action('wp_ajax_cmn_notifications_delete_selected', [$this, 'handle_notifications_delete_selected']);
         add_action('wp_ajax_cmn_notifications_poll', [$this, 'handle_notifications_poll']);
@@ -7803,6 +7805,7 @@ global $wpdb;
             'bookingFeedbackNonce' => wp_create_nonce('cmn_booking_feedback'),
             'staffNavNonce' => wp_create_nonce('cmn_staff_nav'),
             'staffPresenceNonce' => wp_create_nonce('cmn_staff_presence'),
+            'schoolLeadNonce' => wp_create_nonce('cmn_school_lead_actions'),
             'isStaffUser' => $this->is_staff_user() ? 1 : 0,
             'isCandidateUser' => $this->is_candidate_user() ? 1 : 0,
             'systemHealthNonce' => wp_create_nonce('cmn_system_health'),
@@ -27456,6 +27459,433 @@ global $wpdb;
             ];
         }
         wp_send_json_success(['results' => $results]);
+    }
+
+    private function get_school_lead_domain_for_post($school_post_id) {
+        $school_post_id = (int) $school_post_id;
+        if ($school_post_id < 1 || get_post_type($school_post_id) !== 'cmn_school') {
+            return '';
+        }
+        $domain = strtolower(trim((string) get_post_meta($school_post_id, 'cmn_school_email_domain', true)));
+        if ($domain === '') {
+            $domain = $this->get_email_domain((string) get_post_meta($school_post_id, 'cmn_email', true));
+        }
+        return strtolower(trim((string) $domain));
+    }
+
+    private function is_school_lead_record($school_post_id) {
+        $school_post_id = (int) $school_post_id;
+        if ($school_post_id < 1 || get_post_type($school_post_id) !== 'cmn_school') {
+            return false;
+        }
+        $status_key = sanitize_key((string) get_post_meta($school_post_id, 'cmn_status', true));
+        if ($status_key === '') {
+            return false;
+        }
+        return in_array($status_key, ['lead', 'pending', 'prospect', 'needs_attention', 'new'], true);
+    }
+
+    private function resolve_school_lead_context_from_request($actor_user_id = 0) {
+        $actor_user_id = (int) $actor_user_id;
+        if ($actor_user_id < 1) {
+            $actor_user_id = (int) get_current_user_id();
+        }
+        $school_identifier = sanitize_text_field((string) ($_POST['school_id'] ?? $_POST['cmn_school_id'] ?? ''));
+        $requested_pid = max(0, (int) ($_POST['pid'] ?? $_POST['school_pid'] ?? 0));
+        $school_post_id = (int) $this->resolve_school_identifier($school_identifier, $requested_pid);
+        if ($school_post_id < 1 || get_post_type($school_post_id) !== 'cmn_school') {
+            return new WP_Error('cmn_school_not_found', 'School lead record not found.', ['status' => 404]);
+        }
+        if (!$this->user_can_access_school($school_post_id, $actor_user_id)) {
+            return new WP_Error('cmn_school_access_denied', 'Access denied for this school lead.', ['status' => 403]);
+        }
+        if (!$this->is_school_lead_record($school_post_id)) {
+            return new WP_Error('cmn_school_not_lead', 'This record is not an editable school lead.', ['status' => 400]);
+        }
+        $school_code = trim((string) get_post_meta($school_post_id, 'cmn_school_id', true));
+        if ($school_code === '') {
+            $school_code = (string) $school_post_id;
+        }
+        return [
+            'school_post_id' => $school_post_id,
+            'school_identifier' => $school_identifier,
+            'school_code' => $school_code,
+            'school_domain' => $this->get_school_lead_domain_for_post($school_post_id),
+            'status' => sanitize_key((string) get_post_meta($school_post_id, 'cmn_status', true)),
+        ];
+    }
+
+    private function normalize_school_lead_note_type($raw_type) {
+        $type = sanitize_key((string) $raw_type);
+        if (in_array($type, ['general', 'call', 'email', 'meeting'], true)) {
+            return $type;
+        }
+        return 'general';
+    }
+
+    private function get_school_lead_notes($school_post_id, $limit = 10) {
+        $school_post_id = (int) $school_post_id;
+        $limit = max(1, min(200, (int) $limit));
+        if ($school_post_id < 1) {
+            return [];
+        }
+        $rows = get_post_meta($school_post_id, 'cmn_school_lead_notes', true);
+        if (!is_array($rows)) {
+            return [];
+        }
+        $notes = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $note_id = sanitize_key((string) ($row['id'] ?? ''));
+            if ($note_id === '') {
+                $note_id = 'leadnote_' . wp_generate_password(10, false, false);
+            }
+            $created_at = sanitize_text_field((string) ($row['created_at'] ?? ''));
+            if ($created_at === '' || strtotime($created_at) === false) {
+                $created_at = current_time('mysql');
+            }
+            $author_user_id = max(0, (int) ($row['author_user_id'] ?? 0));
+            $author_name = sanitize_text_field((string) ($row['author_name'] ?? ''));
+            if ($author_name === '' && $author_user_id > 0) {
+                $author_user = get_user_by('id', $author_user_id);
+                if ($author_user instanceof WP_User) {
+                    $author_name = sanitize_text_field((string) $author_user->display_name);
+                }
+            }
+            if ($author_name === '') {
+                $author_name = 'System';
+            }
+            $notes[] = [
+                'id' => $note_id,
+                'type' => $this->normalize_school_lead_note_type((string) ($row['type'] ?? 'general')),
+                'body' => sanitize_textarea_field((string) ($row['body'] ?? '')),
+                'author_user_id' => $author_user_id,
+                'author_name' => $author_name,
+                'created_at' => $created_at,
+            ];
+        }
+        usort($notes, static function ($a, $b) {
+            $a_time = strtotime((string) ($a['created_at'] ?? '')) ?: 0;
+            $b_time = strtotime((string) ($b['created_at'] ?? '')) ?: 0;
+            if ($a_time === $b_time) {
+                return 0;
+            }
+            return ($a_time > $b_time) ? -1 : 1;
+        });
+        return array_slice($notes, 0, $limit);
+    }
+
+    private function save_school_lead_notes($school_post_id, array $notes) {
+        $school_post_id = (int) $school_post_id;
+        if ($school_post_id < 1) {
+            return false;
+        }
+        $sanitized_notes = [];
+        foreach ($notes as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $note_id = sanitize_key((string) ($row['id'] ?? ''));
+            if ($note_id === '') {
+                $note_id = 'leadnote_' . wp_generate_password(10, false, false);
+            }
+            $created_at = sanitize_text_field((string) ($row['created_at'] ?? ''));
+            if ($created_at === '' || strtotime($created_at) === false) {
+                $created_at = current_time('mysql');
+            }
+            $sanitized_notes[] = [
+                'id' => $note_id,
+                'type' => $this->normalize_school_lead_note_type((string) ($row['type'] ?? 'general')),
+                'body' => sanitize_textarea_field((string) ($row['body'] ?? '')),
+                'author_user_id' => max(0, (int) ($row['author_user_id'] ?? 0)),
+                'author_name' => sanitize_text_field((string) ($row['author_name'] ?? '')),
+                'created_at' => $created_at,
+            ];
+        }
+        if (count($sanitized_notes) > 250) {
+            $sanitized_notes = array_slice($sanitized_notes, -250);
+        }
+        return update_post_meta($school_post_id, 'cmn_school_lead_notes', $sanitized_notes);
+    }
+
+    private function build_school_lead_note_response_item(array $note_row) {
+        $created_at = sanitize_text_field((string) ($note_row['created_at'] ?? ''));
+        $created_ts = strtotime($created_at);
+        return [
+            'id' => sanitize_key((string) ($note_row['id'] ?? '')),
+            'type' => $this->normalize_school_lead_note_type((string) ($note_row['type'] ?? 'general')),
+            'body' => sanitize_textarea_field((string) ($note_row['body'] ?? '')),
+            'author_user_id' => max(0, (int) ($note_row['author_user_id'] ?? 0)),
+            'author_name' => sanitize_text_field((string) ($note_row['author_name'] ?? 'System')),
+            'created_at' => $created_at,
+            'created_label' => $created_ts ? date_i18n('M j, Y g:ia', $created_ts) : $created_at,
+        ];
+    }
+
+    public function handle_school_update_details_ajax() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_lead_actions',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $staff_guard = $this->cmn_policy_require_ability('portal.staff.view', [
+            'actor_user_id' => $actor_user_id,
+            'transport' => 'ajax',
+            'endpoint' => 'cmn_school_update_details',
+        ]);
+        if (is_wp_error($staff_guard)) {
+            wp_send_json_error(['message' => $staff_guard->get_error_message()], (int) ($staff_guard->get_error_data()['status'] ?? 403));
+        }
+
+        $context = $this->resolve_school_lead_context_from_request($actor_user_id);
+        if (is_wp_error($context)) {
+            wp_send_json_error(['message' => $context->get_error_message()], (int) ($context->get_error_data()['status'] ?? 400));
+        }
+        $school_post_id = (int) ($context['school_post_id'] ?? 0);
+        if ($school_post_id < 1) {
+            wp_send_json_error(['message' => 'School lead could not be resolved.'], 404);
+        }
+
+        $field_map = [
+            'school_name' => ['type' => 'post_title'],
+            'postcode' => ['type' => 'post_meta', 'meta_key' => 'cmn_postcode'],
+            'address_line1' => ['type' => 'post_meta', 'meta_key' => 'cmn_address_line1'],
+            'address_line2' => ['type' => 'post_meta', 'meta_key' => 'cmn_address_line2'],
+            'town_city' => ['type' => 'post_meta', 'meta_key' => 'cmn_town'],
+            'county' => ['type' => 'post_meta', 'meta_key' => 'cmn_county'],
+            'phone' => ['type' => 'post_meta', 'meta_key' => 'cmn_phone'],
+            'email' => ['type' => 'post_meta', 'meta_key' => 'cmn_email'],
+        ];
+
+        $sanitize_input_value = static function ($field_key, $raw_value) {
+            $value = sanitize_text_field((string) $raw_value);
+            if ($field_key === 'email') {
+                return sanitize_email((string) $raw_value);
+            }
+            if ($field_key === 'postcode') {
+                $value = strtoupper(preg_replace('/\s+/', ' ', trim((string) $value)));
+            }
+            return $value;
+        };
+
+        $current_values = [];
+        foreach ($field_map as $field_key => $field_config) {
+            if ((string) ($field_config['type'] ?? '') === 'post_title') {
+                $current_values[$field_key] = sanitize_text_field((string) get_the_title($school_post_id));
+            } else {
+                $meta_key = (string) ($field_config['meta_key'] ?? '');
+                $current_values[$field_key] = $meta_key !== ''
+                    ? sanitize_text_field((string) get_post_meta($school_post_id, $meta_key, true))
+                    : '';
+            }
+        }
+
+        $incoming_values = $current_values;
+        foreach ($field_map as $field_key => $field_config) {
+            if (!array_key_exists($field_key, $_POST)) {
+                continue;
+            }
+            $incoming_values[$field_key] = $sanitize_input_value($field_key, wp_unslash((string) $_POST[$field_key]));
+        }
+
+        if ($incoming_values['email'] !== '' && !is_email($incoming_values['email'])) {
+            wp_send_json_error(['message' => 'Please provide a valid email address.'], 400);
+        }
+        if ($incoming_values['postcode'] !== '' && strlen((string) $incoming_values['postcode']) < 3) {
+            wp_send_json_error(['message' => 'Please provide a valid postcode.'], 400);
+        }
+
+        $changed_fields = [];
+        $before_values = [];
+        $after_values = [];
+
+        if ($incoming_values['school_name'] !== $current_values['school_name'] && $incoming_values['school_name'] !== '') {
+            wp_update_post([
+                'ID' => $school_post_id,
+                'post_title' => $incoming_values['school_name'],
+            ]);
+            $changed_fields[] = 'school_name';
+            $before_values['school_name'] = $current_values['school_name'];
+            $after_values['school_name'] = $incoming_values['school_name'];
+        }
+
+        foreach ($field_map as $field_key => $field_config) {
+            if ((string) ($field_config['type'] ?? '') !== 'post_meta') {
+                continue;
+            }
+            $meta_key = (string) ($field_config['meta_key'] ?? '');
+            if ($meta_key === '') {
+                continue;
+            }
+            $current_value = (string) ($current_values[$field_key] ?? '');
+            $incoming_value = (string) ($incoming_values[$field_key] ?? '');
+            if ($incoming_value === $current_value) {
+                continue;
+            }
+            if ($incoming_value === '') {
+                delete_post_meta($school_post_id, $meta_key);
+            } else {
+                update_post_meta($school_post_id, $meta_key, $incoming_value);
+            }
+            $changed_fields[] = $field_key;
+            $before_values[$field_key] = $current_value;
+            $after_values[$field_key] = $incoming_value;
+        }
+
+        if (in_array('email', $changed_fields, true)) {
+            $email_domain = $this->get_email_domain((string) $incoming_values['email']);
+            if ($email_domain !== '') {
+                $previous_domain = (string) get_post_meta($school_post_id, 'cmn_school_email_domain', true);
+                update_post_meta($school_post_id, 'cmn_school_email_domain', $email_domain);
+                $changed_fields[] = 'school_email_domain';
+                $before_values['school_email_domain'] = $previous_domain;
+                $after_values['school_email_domain'] = $email_domain;
+            }
+        }
+
+        $updated_values = [
+            'school_name' => sanitize_text_field((string) get_the_title($school_post_id)),
+            'postcode' => sanitize_text_field((string) get_post_meta($school_post_id, 'cmn_postcode', true)),
+            'address_line1' => sanitize_text_field((string) get_post_meta($school_post_id, 'cmn_address_line1', true)),
+            'address_line2' => sanitize_text_field((string) get_post_meta($school_post_id, 'cmn_address_line2', true)),
+            'town_city' => sanitize_text_field((string) get_post_meta($school_post_id, 'cmn_town', true)),
+            'county' => sanitize_text_field((string) get_post_meta($school_post_id, 'cmn_county', true)),
+            'phone' => sanitize_text_field((string) get_post_meta($school_post_id, 'cmn_phone', true)),
+            'email' => sanitize_email((string) get_post_meta($school_post_id, 'cmn_email', true)),
+        ];
+
+        $this->add_audit_log('school_lead_updated', 'school', (string) $school_post_id, [
+            'fields_changed' => array_values(array_unique($changed_fields)),
+            'before' => $before_values,
+            'after' => $after_values,
+            'school_status' => sanitize_key((string) ($context['status'] ?? '')),
+        ], $actor_user_id);
+
+        wp_send_json_success([
+            'message' => empty($changed_fields) ? 'No changes detected.' : 'School lead details updated.',
+            'school_id' => $school_post_id,
+            'fields_changed' => array_values(array_unique($changed_fields)),
+            'values' => $updated_values,
+        ]);
+    }
+
+    public function handle_school_add_note_ajax() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_lead_actions',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $staff_guard = $this->cmn_policy_require_ability('portal.staff.view', [
+            'actor_user_id' => $actor_user_id,
+            'transport' => 'ajax',
+            'endpoint' => 'cmn_school_add_note',
+        ]);
+        if (is_wp_error($staff_guard)) {
+            wp_send_json_error(['message' => $staff_guard->get_error_message()], (int) ($staff_guard->get_error_data()['status'] ?? 403));
+        }
+
+        $context = $this->resolve_school_lead_context_from_request($actor_user_id);
+        if (is_wp_error($context)) {
+            wp_send_json_error(['message' => $context->get_error_message()], (int) ($context->get_error_data()['status'] ?? 400));
+        }
+        $school_post_id = (int) ($context['school_post_id'] ?? 0);
+        if ($school_post_id < 1) {
+            wp_send_json_error(['message' => 'School lead could not be resolved.'], 404);
+        }
+
+        $note_body = sanitize_textarea_field((string) wp_unslash((string) ($_POST['note_body'] ?? '')));
+        if ($note_body === '') {
+            wp_send_json_error(['message' => 'Please enter a note before saving.'], 400);
+        }
+        $note_type = $this->normalize_school_lead_note_type((string) ($_POST['note_type'] ?? 'general'));
+
+        $actor_name = 'Staff';
+        if ($actor_user_id > 0) {
+            $actor_user = get_user_by('id', $actor_user_id);
+            if ($actor_user instanceof WP_User && !empty($actor_user->display_name)) {
+                $actor_name = sanitize_text_field((string) $actor_user->display_name);
+            }
+        }
+
+        $note_row = [
+            'id' => 'leadnote_' . wp_generate_password(10, false, false),
+            'type' => $note_type,
+            'body' => $note_body,
+            'author_user_id' => $actor_user_id,
+            'author_name' => $actor_name,
+            'created_at' => current_time('mysql'),
+        ];
+
+        $existing_notes = $this->get_school_lead_notes($school_post_id, 250);
+        array_unshift($existing_notes, $note_row);
+        $this->save_school_lead_notes($school_post_id, $existing_notes);
+
+        $school_domain = sanitize_text_field((string) ($context['school_domain'] ?? ''));
+        if ($school_domain !== '') {
+            $subject_map = [
+                'general' => 'Lead note added',
+                'call' => 'Lead call note',
+                'email' => 'Lead email note',
+                'meeting' => 'Lead meeting note',
+            ];
+            $activity_type = in_array($note_type, ['call', 'email'], true) ? $note_type : 'note';
+            $this->insert_activity_row([
+                'entity_type' => 'school',
+                'entity_ref' => $school_domain,
+                'activity_type' => $activity_type,
+                'subject' => (string) ($subject_map[$note_type] ?? 'Lead note added'),
+                'notes' => $note_body,
+                'created_by' => $actor_user_id,
+                'assigned_to_user_id' => $actor_user_id,
+                'assigned_to_school_domain' => $school_domain,
+            ]);
+        }
+
+        $note_response = $this->build_school_lead_note_response_item($note_row);
+        $note_excerpt = function_exists('mb_substr')
+            ? mb_substr($note_body, 0, 120)
+            : substr($note_body, 0, 120);
+        $this->add_audit_log('school_lead_note_added', 'school', (string) $school_post_id, [
+            'note_id' => (string) ($note_response['id'] ?? ''),
+            'note_type' => $note_type,
+            'note_excerpt' => $note_excerpt,
+            'school_status' => sanitize_key((string) ($context['status'] ?? '')),
+        ], $actor_user_id);
+
+        wp_send_json_success([
+            'message' => 'School lead note added.',
+            'school_id' => $school_post_id,
+            'note' => $note_response,
+            'notes_count' => count($existing_notes),
+        ]);
     }
 
     public function handle_save_staff_nav_state() {
@@ -51128,6 +51558,26 @@ global $wpdb;
                 'timeline' => (int) count($activities),
                 'contacts' => (int) count($contacts),
             ];
+            $is_school_lead_record = $this->is_school_lead_record($school_id);
+            $school_lead_notes = $this->get_school_lead_notes($school_id, 250);
+            $school_lead_notes_preview = array_slice($school_lead_notes, 0, 10);
+            $school_lead_note_type_labels = [
+                'general' => 'General',
+                'call' => 'Call',
+                'email' => 'Email',
+                'meeting' => 'Meeting',
+            ];
+            $school_lead_field_values = [
+                'school_name' => sanitize_text_field((string) $school->post_title),
+                'postcode' => sanitize_text_field((string) $meta('cmn_postcode')),
+                'address_line1' => sanitize_text_field((string) $meta('cmn_address_line1')),
+                'address_line2' => sanitize_text_field((string) $meta('cmn_address_line2')),
+                'town_city' => sanitize_text_field((string) $meta('cmn_town')),
+                'county' => sanitize_text_field((string) $meta('cmn_county')),
+                'phone' => sanitize_text_field((string) $meta('cmn_phone')),
+                'email' => sanitize_email((string) $meta('cmn_email')),
+            ];
+            $school_lead_actions_nonce = wp_create_nonce('cmn_school_lead_actions');
 
             error_log('[CMN_SCHOOL_VIEW] ' . wp_json_encode([
                 'stage' => 'panels_start',
@@ -51149,7 +51599,7 @@ global $wpdb;
         ?>
         <header class="cmn-school-header cmn-school-profile-header">
             <div class="cmn-school-profile-header-main">
-                <h2><?php echo esc_html($school->post_title); ?></h2>
+                <h2><span data-school-overview-field="school_name"><?php echo esc_html($school->post_title); ?></span></h2>
                 <p>School profile</p>
             </div>
             <div class="cmn-school-profile-status">
@@ -51196,6 +51646,89 @@ global $wpdb;
         <?php if ($request_msg) : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($request_msg); ?></strong></div>
         <?php endif; ?>
+        <?php if ($is_school_lead_record) : ?>
+        <section class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-lead-quick-actions"
+                 data-school-lead-overview="1"
+                 data-school-id="<?php echo esc_attr((string) $school_code); ?>"
+                 data-school-pid="<?php echo esc_attr((string) $school_id); ?>"
+                 data-school-lead-nonce="<?php echo esc_attr($school_lead_actions_nonce); ?>">
+            <div class="cmn-school-lead-quick-actions__head">
+                <h3>Quick Actions</h3>
+                <div class="cmn-school-profile-quick-actions">
+                    <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-open-edit>Edit details</button>
+                    <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-open-note>Add note</button>
+                </div>
+            </div>
+            <p class="cmn-muted">Update core lead details or add notes without leaving Overview.</p>
+
+            <div class="cmn-modal" data-school-lead-edit-modal hidden>
+                <div class="cmn-modal-content cmn-school-lead-modal-card" role="dialog" aria-modal="true" aria-label="Edit school lead details">
+                    <div class="cmn-modal-header">
+                        <h3>Edit details</h3>
+                        <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-close-edit>Close</button>
+                    </div>
+                    <form class="cmn-form cmn-school-lead-form" data-school-lead-edit-form>
+                        <label>School name
+                            <input type="text" name="school_name" value="<?php echo esc_attr((string) ($school_lead_field_values['school_name'] ?? '')); ?>">
+                        </label>
+                        <label>Postcode
+                            <input type="text" name="postcode" value="<?php echo esc_attr((string) ($school_lead_field_values['postcode'] ?? '')); ?>">
+                        </label>
+                        <label>Address line 1
+                            <input type="text" name="address_line1" value="<?php echo esc_attr((string) ($school_lead_field_values['address_line1'] ?? '')); ?>">
+                        </label>
+                        <label>Address line 2
+                            <input type="text" name="address_line2" value="<?php echo esc_attr((string) ($school_lead_field_values['address_line2'] ?? '')); ?>">
+                        </label>
+                        <label>Town / City
+                            <input type="text" name="town_city" value="<?php echo esc_attr((string) ($school_lead_field_values['town_city'] ?? '')); ?>">
+                        </label>
+                        <label>County
+                            <input type="text" name="county" value="<?php echo esc_attr((string) ($school_lead_field_values['county'] ?? '')); ?>">
+                        </label>
+                        <label>Phone
+                            <input type="text" name="phone" value="<?php echo esc_attr((string) ($school_lead_field_values['phone'] ?? '')); ?>">
+                        </label>
+                        <label>Email
+                            <input type="email" name="email" value="<?php echo esc_attr((string) ($school_lead_field_values['email'] ?? '')); ?>">
+                        </label>
+                        <div class="cmn-school-lead-modal-actions">
+                            <button class="cmn-ghost" type="button" data-school-lead-close-edit>Cancel</button>
+                            <button class="cmn-primary" type="submit">Save details</button>
+                        </div>
+                        <p class="cmn-muted" data-school-lead-edit-feedback aria-live="polite"></p>
+                    </form>
+                </div>
+            </div>
+
+            <div class="cmn-modal" data-school-lead-note-modal hidden>
+                <div class="cmn-modal-content cmn-school-lead-modal-card" role="dialog" aria-modal="true" aria-label="Add school lead note">
+                    <div class="cmn-modal-header">
+                        <h3>Add note</h3>
+                        <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-close-note>Close</button>
+                    </div>
+                    <form class="cmn-form cmn-school-lead-form" data-school-lead-note-form>
+                        <label>Type
+                            <select name="note_type">
+                                <option value="general">General</option>
+                                <option value="call">Call</option>
+                                <option value="email">Email</option>
+                                <option value="meeting">Meeting</option>
+                            </select>
+                        </label>
+                        <label>Note
+                            <textarea name="note_body" rows="4" required placeholder="Add your note"></textarea>
+                        </label>
+                        <div class="cmn-school-lead-modal-actions">
+                            <button class="cmn-ghost" type="button" data-school-lead-close-note>Cancel</button>
+                            <button class="cmn-primary" type="submit">Save note</button>
+                        </div>
+                        <p class="cmn-muted" data-school-lead-note-feedback aria-live="polite"></p>
+                    </form>
+                </div>
+            </div>
+        </section>
+        <?php endif; ?>
         <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview<?php echo $active_profile_tab === 'overview' ? '' : ' cmn-school-tab-panel-hidden'; ?>">
             <?php if ($watchdog('panel_timeline')) { return ob_get_clean(); } ?>
             <?php error_log('[CMN_SCHOOL_VIEW] panel_start timeline school_id=' . (int) $school_id); ?>
@@ -51241,9 +51774,9 @@ global $wpdb;
                     <div><strong>Request Status:</strong> <span class="cmn-status-chip <?php echo esc_attr($request_status_class); ?>"><?php echo esc_html($request_status_label); ?></span></div>
                     <div><strong>School ID:</strong> <?php echo esc_html($display($meta('cmn_school_id'))); ?></div>
                     <div><strong>Location:</strong> <?php echo esc_html($display($meta('cmn_location'))); ?></div>
-                    <div><strong>Phone:</strong> <?php echo esc_html($display($meta('cmn_phone'))); ?></div>
+                    <div><strong>Phone:</strong> <span data-school-overview-field="phone"><?php echo esc_html($display($meta('cmn_phone'))); ?></span></div>
                     <div><strong>Switchboard:</strong> <?php echo esc_html($display($meta('cmn_switchboard'))); ?></div>
-                    <div><strong>Email:</strong> <?php echo esc_html($display($meta('cmn_email'))); ?></div>
+                    <div><strong>Email:</strong> <span data-school-overview-field="email"><?php echo esc_html($display($meta('cmn_email'))); ?></span></div>
                     <div><strong>Email Greeting Name:</strong> <?php echo esc_html($display($meta('cmn_email_name'))); ?></div>
                     <div><strong>Website:</strong> <?php echo esc_html($display($meta('cmn_website'))); ?></div>
                     <div><strong>Account Manager:</strong> <?php echo esc_html($display($meta('cmn_account_manager'))); ?></div>
@@ -51390,15 +51923,78 @@ global $wpdb;
                 <h3>Address</h3>
                 <div class="cmn-meta-grid">
                     <div><strong>House / Number:</strong> <?php echo esc_html($display($meta('cmn_house_number'))); ?></div>
-                    <div><strong>Address Line 1:</strong> <?php echo esc_html($display($meta('cmn_address_line1'))); ?></div>
-                    <div><strong>Address Line 2:</strong> <?php echo esc_html($display($meta('cmn_address_line2'))); ?></div>
+                    <div><strong>Address Line 1:</strong> <span data-school-overview-field="address_line1"><?php echo esc_html($display($meta('cmn_address_line1'))); ?></span></div>
+                    <div><strong>Address Line 2:</strong> <span data-school-overview-field="address_line2"><?php echo esc_html($display($meta('cmn_address_line2'))); ?></span></div>
                     <div><strong>Address Line 3:</strong> <?php echo esc_html($display($meta('cmn_address_line3'))); ?></div>
-                    <div><strong>Town:</strong> <?php echo esc_html($display($meta('cmn_town'))); ?></div>
-                    <div><strong>County:</strong> <?php echo esc_html($display($meta('cmn_county'))); ?></div>
-                    <div><strong>Postcode:</strong> <?php echo esc_html($display($meta('cmn_postcode'))); ?></div>
+                    <div><strong>Town:</strong> <span data-school-overview-field="town_city"><?php echo esc_html($display($meta('cmn_town'))); ?></span></div>
+                    <div><strong>County:</strong> <span data-school-overview-field="county"><?php echo esc_html($display($meta('cmn_county'))); ?></span></div>
+                    <div><strong>Postcode:</strong> <span data-school-overview-field="postcode"><?php echo esc_html($display($meta('cmn_postcode'))); ?></span></div>
                 </div>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end address school_id=' . (int) $school_id); ?>
             </div>
+            <?php if ($is_school_lead_record) : ?>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-lead-notes">
+                <h3>Notes</h3>
+                <ul class="cmn-activity-list cmn-school-lead-notes-list" data-school-lead-notes-list>
+                    <?php if ($school_lead_notes_preview) : ?>
+                        <?php foreach ($school_lead_notes_preview as $lead_note_row) : ?>
+                            <?php
+                            $lead_note_type = $this->normalize_school_lead_note_type((string) ($lead_note_row['type'] ?? 'general'));
+                            $lead_note_type_label = (string) ($school_lead_note_type_labels[$lead_note_type] ?? 'General');
+                            $lead_note_created_at = sanitize_text_field((string) ($lead_note_row['created_at'] ?? ''));
+                            $lead_note_created_ts = strtotime($lead_note_created_at);
+                            $lead_note_author = sanitize_text_field((string) ($lead_note_row['author_name'] ?? 'System'));
+                            ?>
+                            <li data-school-lead-note-id="<?php echo esc_attr(sanitize_key((string) ($lead_note_row['id'] ?? ''))); ?>">
+                                <div class="cmn-school-lead-note-head">
+                                    <strong><?php echo esc_html($lead_note_type_label); ?></strong>
+                                    <span class="cmn-muted">
+                                        <?php echo esc_html($lead_note_author); ?>
+                                        <?php if ($lead_note_created_ts) : ?>
+                                            · <?php echo esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)); ?>
+                                        <?php endif; ?>
+                                    </span>
+                                </div>
+                                <div><?php echo esc_html((string) ($lead_note_row['body'] ?? '')); ?></div>
+                            </li>
+                        <?php endforeach; ?>
+                    <?php else : ?>
+                        <li class="cmn-muted" data-school-lead-notes-empty>No notes yet.</li>
+                    <?php endif; ?>
+                </ul>
+                <div class="cmn-school-lead-notes-actions">
+                    <?php if (count($school_lead_notes) > count($school_lead_notes_preview)) : ?>
+                        <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-notes-expand>View all notes</button>
+                    <?php endif; ?>
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_tab_url('activity')); ?>">View activity tab</a>
+                </div>
+                <?php if (count($school_lead_notes) > count($school_lead_notes_preview)) : ?>
+                    <ul class="cmn-activity-list cmn-school-lead-notes-list cmn-school-lead-notes-list--all" data-school-lead-notes-all hidden>
+                        <?php foreach (array_slice($school_lead_notes, count($school_lead_notes_preview)) as $lead_note_row) : ?>
+                            <?php
+                            $lead_note_type = $this->normalize_school_lead_note_type((string) ($lead_note_row['type'] ?? 'general'));
+                            $lead_note_type_label = (string) ($school_lead_note_type_labels[$lead_note_type] ?? 'General');
+                            $lead_note_created_at = sanitize_text_field((string) ($lead_note_row['created_at'] ?? ''));
+                            $lead_note_created_ts = strtotime($lead_note_created_at);
+                            $lead_note_author = sanitize_text_field((string) ($lead_note_row['author_name'] ?? 'System'));
+                            ?>
+                            <li data-school-lead-note-id="<?php echo esc_attr(sanitize_key((string) ($lead_note_row['id'] ?? ''))); ?>">
+                                <div class="cmn-school-lead-note-head">
+                                    <strong><?php echo esc_html($lead_note_type_label); ?></strong>
+                                    <span class="cmn-muted">
+                                        <?php echo esc_html($lead_note_author); ?>
+                                        <?php if ($lead_note_created_ts) : ?>
+                                            · <?php echo esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)); ?>
+                                        <?php endif; ?>
+                                    </span>
+                                </div>
+                                <div><?php echo esc_html((string) ($lead_note_row['body'] ?? '')); ?></div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
                 <h3>Activity Quick Actions</h3>
                 <div class="cmn-school-profile-summary-strip">
