@@ -14695,6 +14695,7 @@ global $wpdb;
             $browsers_path . '/chromium_headless_shell-*/chrome-linux/headless_shell',
             $browsers_path . '/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell',
             $browsers_path . '/chromium-*/chrome-linux/chrome',
+            $browsers_path . '/chromium-*/chrome-linux64/chrome',
         ] as $pattern) {
             $matches = glob($pattern) ?: [];
             sort($matches);
