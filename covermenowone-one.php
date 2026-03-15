@@ -14685,6 +14685,29 @@ global $wpdb;
         return $default;
     }
 
+    private function discover_cv_pdf_renderer_chromium_path($browsers_path) {
+        $browsers_path = trim((string) $browsers_path);
+        if ($browsers_path === '' || !is_dir($browsers_path)) {
+            return '';
+        }
+
+        foreach ([
+            $browsers_path . '/chromium_headless_shell-*/chrome-linux/headless_shell',
+            $browsers_path . '/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell',
+            $browsers_path . '/chromium-*/chrome-linux/chrome',
+        ] as $pattern) {
+            $matches = glob($pattern) ?: [];
+            sort($matches);
+            foreach ($matches as $match) {
+                if (is_file($match) && is_readable($match)) {
+                    return (string) $match;
+                }
+            }
+        }
+
+        return '';
+    }
+
     private function get_cv_pdf_renderer_config() {
         $uploads = wp_upload_dir();
         $uploads_base = isset($uploads['basedir']) ? (string) $uploads['basedir'] : '';
@@ -14699,13 +14722,20 @@ global $wpdb;
 
         $default_node_modules_path = trailingslashit($runtime_dir) . 'node_modules';
         $default_browsers_path = trailingslashit($runtime_dir) . 'playwright-browsers';
-        $default_mode = is_dir($default_node_modules_path) ? 'playwright' : '';
+        $default_library_path = trailingslashit($runtime_dir) . 'lib';
+        $default_tmp_dir = trailingslashit($runtime_dir) . 'tmp';
+        $default_mode = '';
 
         $mode = strtolower(trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_RENDERER', 'CMN_CV_PDF_RENDERER', $default_mode)));
         $node_bin = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_NODE_BIN', 'CMN_CV_PDF_NODE_BIN', 'node'));
-        $chromium_path = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_CHROMIUM_PATH', 'CMN_CV_PDF_CHROMIUM_PATH', ''));
         $node_modules_path = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_NODE_MODULES', 'CMN_CV_PDF_NODE_MODULES', $default_node_modules_path));
         $browsers_path = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_BROWSERS_PATH', 'CMN_CV_PDF_BROWSERS_PATH', $default_browsers_path));
+        $chromium_path = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_CHROMIUM_PATH', 'CMN_CV_PDF_CHROMIUM_PATH', ''));
+        if ($chromium_path === '') {
+            $chromium_path = $this->discover_cv_pdf_renderer_chromium_path($browsers_path);
+        }
+        $library_path = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_LIBRARY_PATH', 'CMN_CV_PDF_LIBRARY_PATH', $default_library_path));
+        $tmp_dir = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_TMPDIR', 'CMN_CV_PDF_TMPDIR', $default_tmp_dir));
         $timeout_seconds = (int) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_TIMEOUT', 'CMN_CV_PDF_TIMEOUT', 60);
         if ($timeout_seconds < 10) {
             $timeout_seconds = 10;
@@ -14718,6 +14748,8 @@ global $wpdb;
             'runtime_dir' => $runtime_dir,
             'node_modules_path' => $node_modules_path,
             'browsers_path' => $browsers_path,
+            'library_path' => $library_path,
+            'tmp_dir' => $tmp_dir,
             'timeout_seconds' => $timeout_seconds,
             'script_path' => plugin_dir_path(__FILE__) . 'tools/cv-pdf-renderer/render.js',
         ];
@@ -14825,9 +14857,23 @@ global $wpdb;
         if ($browsers_path !== '') {
             $env['PLAYWRIGHT_BROWSERS_PATH'] = $browsers_path;
         }
+        $library_path = trim((string) ($config['library_path'] ?? ''));
+        if ($library_path !== '') {
+            $existing_library_path = getenv('LD_LIBRARY_PATH');
+            $env['LD_LIBRARY_PATH'] = $existing_library_path ? ($library_path . PATH_SEPARATOR . $existing_library_path) : $library_path;
+            $env['CMN_CV_PDF_LIBRARY_PATH'] = $library_path;
+        }
         $chromium_path = trim((string) ($config['chromium_path'] ?? ''));
         if ($chromium_path !== '') {
             $env['CMN_CV_PDF_CHROMIUM_PATH'] = $chromium_path;
+        }
+        $tmp_dir = trim((string) ($config['tmp_dir'] ?? ''));
+        if ($tmp_dir !== '') {
+            if (!is_dir($tmp_dir)) {
+                wp_mkdir_p($tmp_dir);
+            }
+            $env['TMPDIR'] = $tmp_dir;
+            $env['CMN_CV_PDF_TMPDIR'] = $tmp_dir;
         }
 
         $command = escapeshellarg($node_bin)

@@ -2,7 +2,7 @@
 
 const fs = require('fs/promises');
 const path = require('path');
-const { chromium } = require('playwright');
+const { chromium: playwrightChromium } = require('playwright');
 const { PDFDocument } = require('pdf-lib');
 
 function parseArgs(argv) {
@@ -81,9 +81,10 @@ async function renderImageFallbackPdf(page, outputPath) {
 
 async function renderPdf(inputPath, outputPath, chromiumPath) {
   const html = await fs.readFile(inputPath, 'utf8');
-  const browser = await chromium.launch({
+  const resolvedChromiumPath = chromiumPath || '';
+  const browser = await playwrightChromium.launch({
     headless: true,
-    executablePath: chromiumPath || undefined,
+    executablePath: resolvedChromiumPath || undefined,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
