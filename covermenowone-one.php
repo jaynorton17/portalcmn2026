@@ -849,6 +849,7 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_resend_candidate_verification', [$this, 'handle_resend_candidate_verification']);
         add_action('admin_post_cmn_toggle_availability', [$this, 'handle_toggle_availability']);
         add_action('admin_post_cmn_save_calendar', [$this, 'handle_save_calendar']);
+        add_action('admin_post_cmn_school_add_note', [$this, 'handle_school_add_note_post']);
         add_action('admin_post_cmn_save_candidate_bank_details', [$this, 'handle_save_candidate_bank_details']);
         add_action('admin_post_cmn_candidate_accept_compliance_ack', [$this, 'handle_candidate_accept_compliance_ack']);
         add_action('admin_post_cmn_candidate_generate_remittance_pdf', [$this, 'handle_candidate_generate_remittance_pdf']);
@@ -28218,46 +28219,19 @@ global $wpdb;
         ]);
     }
 
-    public function handle_school_add_note_ajax() {
-        $actor_user_id = (int) get_current_user_id();
-        $guard = $this->cmn_endpoint_guard([
-            'ability_required' => 'partner.admin.mutate',
-            'nonce_mode' => 'required',
-            'nonce_action' => 'cmn_school_lead_actions',
-            'nonce_field' => 'nonce',
-            'writes_state' => true,
-            'transport' => 'ajax',
-            'context' => [
-                'actor_user_id' => $actor_user_id,
-            ],
-        ], function () {
-            return true;
-        });
-        if ($guard !== true) {
-            return;
-        }
-
-        $staff_guard = $this->cmn_policy_require_ability('portal.staff.view', [
-            'actor_user_id' => $actor_user_id,
-            'transport' => 'ajax',
-            'endpoint' => 'cmn_school_add_note',
-        ]);
-        if (is_wp_error($staff_guard)) {
-            wp_send_json_error(['message' => $staff_guard->get_error_message()], (int) ($staff_guard->get_error_data()['status'] ?? 403));
-        }
-
+    private function persist_school_lead_note_from_request($actor_user_id = 0) {
+        $actor_user_id = (int) $actor_user_id;
         $context = $this->resolve_school_lead_context_from_request($actor_user_id);
         if (is_wp_error($context)) {
-            wp_send_json_error(['message' => $context->get_error_message()], (int) ($context->get_error_data()['status'] ?? 400));
+            return $context;
         }
         $school_post_id = (int) ($context['school_post_id'] ?? 0);
         if ($school_post_id < 1) {
-            wp_send_json_error(['message' => 'School lead could not be resolved.'], 404);
+            return new WP_Error('cmn_school_not_found', 'School lead could not be resolved.', ['status' => 404]);
         }
-
         $note_body = sanitize_textarea_field((string) wp_unslash((string) ($_POST['note_body'] ?? '')));
         if ($note_body === '') {
-            wp_send_json_error(['message' => 'Please enter a note before saving.'], 400);
+            return new WP_Error('cmn_school_note_empty', 'Please enter a note before saving.', ['status' => 400]);
         }
         $note_type = $this->normalize_school_lead_note_type((string) ($_POST['note_type'] ?? 'general'));
 
@@ -28297,7 +28271,7 @@ global $wpdb;
                 'existing_notes_count' => count($existing_notes),
                 'persisted_notes_count' => count($persisted_notes),
             ]);
-            wp_send_json_error(['message' => 'School lead note could not be saved. Please try again.'], 500);
+            return new WP_Error('cmn_school_note_persist_failed', 'School lead note could not be saved. Please try again.', ['status' => 500]);
         }
 
         $school_domain = sanitize_text_field((string) ($context['school_domain'] ?? ''));
@@ -28332,12 +28306,104 @@ global $wpdb;
             'school_status' => sanitize_key((string) ($context['status'] ?? '')),
         ], $actor_user_id);
 
-        wp_send_json_success([
+        return [
             'message' => 'School lead note added.',
             'school_id' => $school_post_id,
             'note' => $note_response,
             'notes_count' => count($persisted_notes),
+            'context' => $context,
+        ];
+    }
+
+    public function handle_school_add_note_ajax() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_lead_actions',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'ajax',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $staff_guard = $this->cmn_policy_require_ability('portal.staff.view', [
+            'actor_user_id' => $actor_user_id,
+            'transport' => 'ajax',
+            'endpoint' => 'cmn_school_add_note',
         ]);
+        if (is_wp_error($staff_guard)) {
+            wp_send_json_error(['message' => $staff_guard->get_error_message()], (int) ($staff_guard->get_error_data()['status'] ?? 403));
+        }
+
+        $result = $this->persist_school_lead_note_from_request($actor_user_id);
+        if (is_wp_error($result)) {
+            wp_send_json_error(['message' => $result->get_error_message()], (int) ($result->get_error_data()['status'] ?? 400));
+        }
+
+        wp_send_json_success([
+            'message' => (string) ($result['message'] ?? 'School lead note added.'),
+            'school_id' => (int) ($result['school_id'] ?? 0),
+            'note' => $result['note'] ?? null,
+            'notes_count' => (int) ($result['notes_count'] ?? 0),
+        ]);
+    }
+
+    public function handle_school_add_note_post() {
+        $actor_user_id = (int) get_current_user_id();
+        $guard = $this->cmn_endpoint_guard([
+            'ability_required' => 'partner.admin.mutate',
+            'nonce_mode' => 'required',
+            'nonce_action' => 'cmn_school_lead_actions',
+            'nonce_field' => 'nonce',
+            'writes_state' => true,
+            'transport' => 'admin_post',
+            'context' => [
+                'actor_user_id' => $actor_user_id,
+            ],
+        ], function () {
+            return true;
+        });
+        if ($guard !== true) {
+            return;
+        }
+
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        if ($redirect !== '') {
+            $redirect = wp_validate_redirect($redirect, $this->get_portal_base_url());
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = wp_get_referer();
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = add_query_arg(['view' => 'schools'], $this->get_portal_base_url());
+        }
+
+        $staff_guard = $this->cmn_policy_require_ability('portal.staff.view', [
+            'actor_user_id' => $actor_user_id,
+            'transport' => 'admin_post',
+            'endpoint' => 'cmn_school_add_note',
+        ]);
+        if (is_wp_error($staff_guard)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode($staff_guard->get_error_message())], $redirect));
+            exit;
+        }
+
+        $result = $this->persist_school_lead_note_from_request($actor_user_id);
+        if (is_wp_error($result)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode($result->get_error_message())], $redirect));
+            exit;
+        }
+
+        wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode((string) ($result['message'] ?? 'School lead note added.'))], $redirect));
+        exit;
     }
 
     public function handle_save_staff_nav_state() {
@@ -51965,6 +52031,7 @@ global $wpdb;
             $feedback_summary = $this->get_feedback_summary_for_entity('school', (int) $school_id);
             $convert_msg = isset($_GET['cmn_convert_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_convert_msg'])) : '';
             $request_msg = isset($_GET['cmn_school_request_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_request_msg'])) : '';
+            $school_note_msg = isset($_GET['cmn_school_note_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_note_msg'])) : '';
             $allowed_profile_tabs = ['overview', 'contacts', 'activity', 'bookings', 'commercial', 'marketing', 'documents', 'settings'];
             $active_profile_tab = isset($_GET['cmn_school_tab']) ? sanitize_key((string) $_GET['cmn_school_tab']) : 'overview';
             if (!in_array($active_profile_tab, $allowed_profile_tabs, true)) {
@@ -52102,6 +52169,9 @@ global $wpdb;
         <?php if ($request_msg) : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($request_msg); ?></strong></div>
         <?php endif; ?>
+        <?php if ($school_note_msg) : ?>
+            <div class="cmn-panel-card"><strong><?php echo esc_html($school_note_msg); ?></strong></div>
+        <?php endif; ?>
         <?php if ($is_school_lead_record) : ?>
         <section class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-lead-quick-actions"
                  data-school-lead-overview="1"
@@ -52163,7 +52233,12 @@ global $wpdb;
                         <h3>Add note</h3>
                         <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-close-note>Close</button>
                     </div>
-                    <form class="cmn-form cmn-school-lead-form" data-school-lead-note-form>
+                    <form class="cmn-form cmn-school-lead-form" data-school-lead-note-form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <input type="hidden" name="action" value="cmn_school_add_note">
+                        <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_code); ?>">
+                        <input type="hidden" name="pid" value="<?php echo esc_attr((string) $school_id); ?>">
+                        <input type="hidden" name="nonce" value="<?php echo esc_attr($school_lead_actions_nonce); ?>">
+                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($build_tab_url('overview')); ?>">
                         <label>Type
                             <select name="note_type">
                                 <option value="general">General</option>

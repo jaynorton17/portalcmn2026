@@ -2942,7 +2942,16 @@ document.addEventListener('DOMContentLoaded', function () {
         formData.append('school_id', schoolId);
         formData.append('pid', schoolPid);
         formData.append('nonce', nonce);
+        var reservedKeys = {
+          action: true,
+          school_id: true,
+          pid: true,
+          nonce: true
+        };
         Object.keys(values || {}).forEach(function (key) {
+          if (reservedKeys[key]) {
+            return;
+          }
           formData.append(key, values[key]);
         });
         return fetch(ajaxUrl, {
