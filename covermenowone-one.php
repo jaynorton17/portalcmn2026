@@ -13194,11 +13194,7 @@ global $wpdb;
             }
             $portal_mode = !empty($payload['portal_mode']);
 
-            $plain_text = trim((string) wp_strip_all_tags($html_content));
-            if ($plain_text === '') {
-                $plain_text = 'CoverMeNow CV export';
-            }
-            $pdf_binary = $this->generate_cv_converter_pdf_binary($base_name, $plain_text);
+            $pdf_binary = $this->generate_cv_converter_pdf_binary($base_name, $html_content);
             $pdf_filename = $base_name . '.pdf';
             $html_filename = $base_name . '.html';
             $pdf_base64 = base64_encode($pdf_binary);
@@ -14670,63 +14666,241 @@ global $wpdb;
   </style></head><body><article class="page"><header class="header-band"><div class="header-inner"><h1 class="candidate-name" contenteditable="true">' . $candidate_name . '</h1><p class="candidate-title" contenteditable="true">' . $candidate_title . '</p><p class="header-location" contenteditable="true">' . $location . '</p></div></header><div class="logo-shell">' . $logo_html . '</div><main class="body-grid"><aside class="sidebar"><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">KEY INFO</span></h3><div class="divider"></div><ul class="clean-list">' . $key_info_items . '</ul></section><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">STRENGTHS</span></h3><div class="divider"></div><ul class="clean-list">' . $strength_items . '</ul></section><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">SKILLS</span></h3><div class="divider"></div><ul class="clean-list">' . $skills_items . '</ul></section><section class="section section-contact"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">CONTACT</span></h3><div class="divider"></div><ul class="clean-list">' . $contact_items . '</ul></section></aside><section class="main-column"><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">PROFILE</span></h3><div class="divider"></div><p class="paragraph" contenteditable="true">' . $profile_text . '</p></section><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">WORK EXPERIENCE</span></h3><div class="divider"></div>' . $experience_html . '</section><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">EDUCATION</span></h3><div class="divider"></div>' . $education_html . '</section></section></main><footer class="footer-band"><p class="footer-cta" contenteditable="true">' . $footer_cta_text . '</p><p class="footer-contact" contenteditable="true">' . $phone . ' | ' . $email . '</p></footer></article></body></html>';
     }
 
-    private function generate_cv_converter_pdf_binary($title, $plain_text) {
+    private function generate_cv_converter_pdf_escape_text($value) {
+        $value = html_entity_decode((string) $value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (function_exists('iconv')) {
+            $converted = @iconv('UTF-8', 'Windows-1252//TRANSLIT//IGNORE', $value);
+            if ($converted !== false) {
+                $value = (string) $converted;
+            }
+        }
+        $value = preg_replace('/[^\x09\x0A\x0D\x20-\x7E\x80-\xFF]/', '', (string) $value);
+        return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], (string) $value);
+    }
+
+    private function generate_cv_converter_pdf_wrap_line($line, $max_chars = 92) {
+        $line = trim((string) $line);
+        $max_chars = max(20, (int) $max_chars);
+        if ($line === '') {
+            return [''];
+        }
+        $words = preg_split('/\s+/u', $line) ?: [];
+        $wrapped = [];
+        $current = '';
+        foreach ($words as $word) {
+            $word = trim((string) $word);
+            if ($word === '') {
+                continue;
+            }
+            $candidate = $current === '' ? $word : ($current . ' ' . $word);
+            $candidate_len = function_exists('mb_strlen') ? mb_strlen($candidate) : strlen($candidate);
+            if ($candidate_len <= $max_chars) {
+                $current = $candidate;
+                continue;
+            }
+            if ($current !== '') {
+                $wrapped[] = $current;
+                $current = '';
+            }
+            $word_len = function_exists('mb_strlen') ? mb_strlen($word) : strlen($word);
+            if ($word_len <= $max_chars) {
+                $current = $word;
+                continue;
+            }
+            while ($word !== '') {
+                $slice = function_exists('mb_substr') ? mb_substr($word, 0, $max_chars) : substr($word, 0, $max_chars);
+                $wrapped[] = $slice;
+                $word = function_exists('mb_substr') ? mb_substr($word, $max_chars) : substr($word, $max_chars);
+            }
+        }
+        if ($current !== '') {
+            $wrapped[] = $current;
+        }
+        return $wrapped ?: [''];
+    }
+
+    private function generate_cv_converter_pdf_lines_from_html($title, $html_content) {
         $title = trim((string) $title);
         if ($title === '') {
             $title = 'CoverMeNow CV';
         }
-        $text = preg_replace('/\s+/', ' ', (string) $plain_text);
-        $text = trim((string) $text);
-        if ($text === '') {
-            $text = 'CoverMeNow CV export';
+        $html_content = trim((string) $html_content);
+        if ($html_content === '') {
+            return [$title, '', 'CoverMeNow CV export'];
         }
-        $lines = preg_split('/(?<=[\.\!\?])\s+/', $text) ?: [];
-        $lines = array_values(array_filter(array_map('trim', $lines), static function ($line) {
-            return $line !== '';
-        }));
-        if (!$lines) {
-            $lines = [$text];
-        }
-        $lines = array_slice($lines, 0, 36);
-        $escaped_lines = array_map(static function ($line) {
-            $line = function_exists('mb_substr') ? mb_substr((string) $line, 0, 110) : substr((string) $line, 0, 110);
-            $line = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $line);
-            return $line;
-        }, $lines);
 
-        $stream_lines = [];
-        $stream_lines[] = 'BT';
-        $stream_lines[] = '/F1 12 Tf';
-        $stream_lines[] = '50 790 Td';
-        foreach ($escaped_lines as $idx => $line) {
-            if ($idx > 0) {
-                $stream_lines[] = 'T*';
+        $lines = [];
+        $push_line = static function (&$target, $line, $blank_before = false, $blank_after = false) {
+            $line = html_entity_decode((string) $line, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $line = preg_replace('/\s+/u', ' ', $line);
+            $line = trim((string) $line);
+            if ($line === '') {
+                if (!$target || end($target) !== '') {
+                    $target[] = '';
+                }
+                return;
             }
-            $stream_lines[] = '(' . $line . ') Tj';
+            if ($blank_before && $target && end($target) !== '') {
+                $target[] = '';
+            }
+            if (!$target || end($target) !== $line) {
+                $target[] = $line;
+            }
+            if ($blank_after) {
+                $target[] = '';
+            }
+        };
+
+        $previous_use_errors = libxml_use_internal_errors(true);
+        $dom = new DOMDocument();
+        $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>' . $html_content, LIBXML_NOERROR | LIBXML_NOWARNING);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous_use_errors);
+
+        if ($loaded) {
+            $xpath = new DOMXPath($dom);
+
+            foreach ([
+                '//*[contains(concat(" ", normalize-space(@class), " "), " candidate-name ")]',
+                '//*[contains(concat(" ", normalize-space(@class), " "), " candidate-title ")]',
+                '//*[contains(concat(" ", normalize-space(@class), " "), " header-location ")]',
+            ] as $header_query) {
+                $nodes = $xpath->query($header_query);
+                if (!($nodes instanceof DOMNodeList)) {
+                    continue;
+                }
+                foreach ($nodes as $node) {
+                    $push_line($lines, $node->textContent, false, false);
+                }
+            }
+
+            $content_query = '//*[contains(concat(" ", normalize-space(@class), " "), " section-title ")'
+                . ' or contains(concat(" ", normalize-space(@class), " "), " entry-company ")'
+                . ' or contains(concat(" ", normalize-space(@class), " "), " entry-role ")'
+                . ' or contains(concat(" ", normalize-space(@class), " "), " entry-date ")'
+                . ' or contains(concat(" ", normalize-space(@class), " "), " paragraph ")'
+                . ' or self::li]';
+            $nodes = $xpath->query($content_query);
+            if ($nodes instanceof DOMNodeList) {
+                foreach ($nodes as $node) {
+                    $class_attr = '';
+                    if ($node instanceof DOMElement && $node->hasAttribute('class')) {
+                        $class_attr = (string) $node->getAttribute('class');
+                    }
+                    $class_name = ' ' . preg_replace('/\s+/', ' ', $class_attr) . ' ';
+                    $text = (string) $node->textContent;
+                    if (strpos($class_name, ' section-title ') !== false) {
+                        $push_line($lines, strtoupper($text), true, false);
+                        continue;
+                    }
+                    if ($node->nodeName === 'li') {
+                        $push_line($lines, '• ' . $text, false, false);
+                        continue;
+                    }
+                    if (strpos($class_name, ' entry-company ') !== false) {
+                        $push_line($lines, $text, true, false);
+                        continue;
+                    }
+                    $push_line($lines, $text, false, false);
+                }
+            }
         }
-        $stream_lines[] = 'ET';
-        $stream = implode("\n", $stream_lines) . "\n";
+
+        if (!$lines) {
+            $fallback_text = trim((string) wp_strip_all_tags($html_content));
+            if ($fallback_text === '') {
+                $fallback_text = 'CoverMeNow CV export';
+            }
+            return [$title, '', $fallback_text];
+        }
+
+        return $lines;
+    }
+
+    private function generate_cv_converter_pdf_binary($title, $html_content) {
+        $title = trim((string) $title);
+        if ($title === '') {
+            $title = 'CoverMeNow CV';
+        }
+        $raw_lines = $this->generate_cv_converter_pdf_lines_from_html($title, $html_content);
+        $wrapped_lines = [];
+        foreach ($raw_lines as $line) {
+            if (trim((string) $line) === '') {
+                if (!$wrapped_lines || end($wrapped_lines) !== '') {
+                    $wrapped_lines[] = '';
+                }
+                continue;
+            }
+            foreach ($this->generate_cv_converter_pdf_wrap_line((string) $line, 92) as $wrapped_line) {
+                $wrapped_lines[] = $wrapped_line;
+            }
+        }
+        if (!$wrapped_lines) {
+            $wrapped_lines = [$title, '', 'CoverMeNow CV export'];
+        }
+
+        $wrapped_lines = array_slice($wrapped_lines, 0, 260);
+        $pages = array_chunk($wrapped_lines, 46);
+        if (!$pages) {
+            $pages = [[$title, '', 'CoverMeNow CV export']];
+        }
+
+        $font_object_number = 3;
+        $page_object_numbers = [];
+        $content_object_numbers = [];
+        $next_object_number = 4;
+        foreach ($pages as $_page) {
+            $page_object_numbers[] = $next_object_number++;
+            $content_object_numbers[] = $next_object_number++;
+        }
 
         $objects = [];
-        $objects[] = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-        $objects[] = "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
-        $objects[] = "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n";
-        $objects[] = "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
-        $objects[] = "5 0 obj\n<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "endstream\nendobj\n";
+        $objects[1] = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+        $kids = array_map(static function ($object_number) {
+            return $object_number . ' 0 R';
+        }, $page_object_numbers);
+        $objects[2] = "2 0 obj\n<< /Type /Pages /Kids [" . implode(' ', $kids) . "] /Count " . count($page_object_numbers) . " >>\nendobj\n";
+        $objects[$font_object_number] = "3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
 
+        foreach ($pages as $page_index => $page_lines) {
+            $page_object_number = $page_object_numbers[$page_index];
+            $content_object_number = $content_object_numbers[$page_index];
+
+            $stream_lines = [];
+            $stream_lines[] = 'BT';
+            $stream_lines[] = '/F1 11 Tf';
+            $stream_lines[] = '14 TL';
+            $stream_lines[] = '50 792 Td';
+            foreach (array_values($page_lines) as $line_index => $line) {
+                if ($line_index > 0) {
+                    $stream_lines[] = 'T*';
+                }
+                $stream_lines[] = '(' . $this->generate_cv_converter_pdf_escape_text((string) $line) . ') Tj';
+            }
+            $stream_lines[] = 'ET';
+            $stream = implode("\n", $stream_lines) . "\n";
+
+            $objects[$page_object_number] = $page_object_number . " 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 {$font_object_number} 0 R >> >> /Contents {$content_object_number} 0 R >>\nendobj\n";
+            $objects[$content_object_number] = $content_object_number . " 0 obj\n<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "endstream\nendobj\n";
+        }
+
+        ksort($objects);
         $pdf = "%PDF-1.4\n";
         $offsets = [0];
-        foreach ($objects as $object) {
-            $offsets[] = strlen($pdf);
-            $pdf .= $object;
+        foreach ($objects as $object_number => $object_body) {
+            $offsets[$object_number] = strlen($pdf);
+            $pdf .= $object_body;
         }
         $xref_offset = strlen($pdf);
-        $pdf .= "xref\n0 " . (count($objects) + 1) . "\n";
+        $max_object_number = max(array_keys($objects));
+        $pdf .= "xref\n0 " . ($max_object_number + 1) . "\n";
         $pdf .= "0000000000 65535 f \n";
-        for ($i = 1; $i <= count($objects); $i++) {
-            $pdf .= sprintf("%010d 00000 n \n", (int) $offsets[$i]);
+        for ($i = 1; $i <= $max_object_number; $i++) {
+            $offset = isset($offsets[$i]) ? (int) $offsets[$i] : 0;
+            $in_use = isset($offsets[$i]) ? 'n' : 'f';
+            $pdf .= sprintf("%010d 00000 %s \n", $offset, $in_use);
         }
-        $pdf .= "trailer\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n" . $xref_offset . "\n%%EOF";
+        $pdf .= "trailer\n<< /Size " . ($max_object_number + 1) . " /Root 1 0 R >>\nstartxref\n" . $xref_offset . "\n%%EOF";
         return $pdf;
     }
 
@@ -68616,13 +68790,72 @@ global $wpdb;
         return $map[$mime] ?? 'bin';
     }
 
+    private function cmn_get_candidate_documents_zip_surname($candidate_id) {
+        $candidate_id = (int) $candidate_id;
+        if ($candidate_id < 1) {
+            return 'CANDIDATE';
+        }
+
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        $surname = $candidate_user_id > 0 ? sanitize_text_field((string) get_user_meta($candidate_user_id, 'last_name', true)) : '';
+        if ($surname === '') {
+            $title = trim((string) get_the_title($candidate_id));
+            if ($title !== '') {
+                $parts = preg_split('/\s+/', $title) ?: [];
+                if ($parts) {
+                    $surname = (string) end($parts);
+                }
+            }
+        }
+
+        $surname = strtoupper((string) preg_replace('/[^A-Za-z0-9 _-]+/', ' ', $surname));
+        $surname = trim((string) preg_replace('/\s+/', ' ', $surname));
+        if ($surname === '') {
+            $surname = 'CANDIDATE_' . $candidate_id;
+        }
+
+        return $surname;
+    }
+
+    private function cmn_build_candidate_documents_zip_entry_name($candidate_id, $entry_label, $extension) {
+        $surname = $this->cmn_get_candidate_documents_zip_surname((int) $candidate_id);
+        $entry_label = trim((string) preg_replace('/\s+/', ' ', preg_replace('/[^A-Za-z0-9 ]+/', ' ', (string) $entry_label)));
+        if ($entry_label === '') {
+            $entry_label = 'DOCUMENT';
+        }
+        $extension = strtolower((string) preg_replace('/[^a-z0-9]/', '', (string) $extension));
+        if ($extension === '') {
+            $extension = 'bin';
+        }
+        return $surname . ' ' . $entry_label . '.' . $extension;
+    }
+
+    private function cmn_is_valid_formatted_cv_pdf_for_documents_zip($attachment_id) {
+        $attachment_id = (int) $attachment_id;
+        if ($attachment_id < 1 || get_post_type($attachment_id) !== 'attachment') {
+            return false;
+        }
+        if (strtolower((string) get_post_mime_type($attachment_id)) !== 'application/pdf') {
+            return false;
+        }
+        $file_path = (string) get_attached_file($attachment_id);
+        if ($file_path === '' || !is_file($file_path) || !is_readable($file_path)) {
+            return false;
+        }
+        $file_size = @filesize($file_path);
+        if ($file_size === false || (int) $file_size < 3000) {
+            return false;
+        }
+        return true;
+    }
+
     private function cmn_add_candidate_attachment_to_documents_zip($zip, $attachment_id, $entry_label, $candidate_id, &$missing_notes = [], $missing_message = '') {
         if (!is_object($zip) || !method_exists($zip, 'addFile')) {
             return;
         }
         $attachment_id = (int) $attachment_id;
         $candidate_id = (int) $candidate_id;
-        $entry_label = preg_replace('/[^A-Za-z0-9_]/', '', (string) $entry_label);
+        $entry_label = trim((string) preg_replace('/\s+/', ' ', preg_replace('/[^A-Za-z0-9 ]+/', ' ', (string) $entry_label)));
         if ($entry_label === '') {
             $entry_label = 'Document';
         }
@@ -68640,7 +68873,7 @@ global $wpdb;
             return;
         }
         $extension = $this->cmn_resolve_attachment_extension_for_documents_zip($attachment_id, $file_path);
-        $entry_name = 'Candidate_' . $candidate_id . '_' . $entry_label . '.' . $extension;
+        $entry_name = $this->cmn_build_candidate_documents_zip_entry_name($candidate_id, $entry_label, $extension);
         if (!$zip->addFile($file_path, $entry_name)) {
             $missing_notes[] = $missing_message;
         }
@@ -68684,14 +68917,19 @@ global $wpdb;
         );
 
         $formatted_status = $this->get_candidate_cv_formatted_status($candidate_id);
-        $this->cmn_add_candidate_attachment_to_documents_zip(
-            $zip,
-            (int) ($formatted_status['attachment_id'] ?? 0),
-            'CoverMeNow_CV',
-            $candidate_id,
-            $missing_notes,
-            'CoverMeNow-generated CV is missing.'
-        );
+        $formatted_attachment_id = (int) ($formatted_status['attachment_id'] ?? 0);
+        if ($this->cmn_is_valid_formatted_cv_pdf_for_documents_zip($formatted_attachment_id)) {
+            $this->cmn_add_candidate_attachment_to_documents_zip(
+                $zip,
+                $formatted_attachment_id,
+                'CMN CV',
+                $candidate_id,
+                $missing_notes,
+                'CoverMeNow-generated CV is missing or invalid.'
+            );
+        } else {
+            $missing_notes[] = 'CoverMeNow-generated CV is missing or invalid.';
+        }
 
         $dbs_status = $this->get_candidate_doc_status($candidate_id, $candidate_user_id, 'dbs');
         $this->cmn_add_candidate_attachment_to_documents_zip(
