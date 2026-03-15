@@ -28054,6 +28054,121 @@ global $wpdb;
         return array_slice($visible_notes, 0, $limit);
     }
 
+    private function get_school_note_type_from_activity_type($activity_type) {
+        $activity_type = $this->normalize_activity_type($activity_type);
+        if ($activity_type === 'call') {
+            return 'call';
+        }
+        if ($activity_type === 'email') {
+            return 'email';
+        }
+        return 'general';
+    }
+
+    private function get_school_note_body_from_activity_fields($activity_type, $subject, $notes) {
+        $activity_type = $this->normalize_activity_type($activity_type);
+        $subject = sanitize_text_field((string) $subject);
+        $notes = sanitize_textarea_field((string) $notes);
+        $default_subject = ucfirst($activity_type);
+        $body_parts = [];
+        if ($subject !== '' && !in_array($subject, [$default_subject, 'Lead note added', 'Lead call note', 'Lead email note'], true)) {
+            $body_parts[] = $subject;
+        }
+        if ($notes !== '') {
+            $body_parts[] = $notes;
+        } elseif ($subject !== '') {
+            $body_parts[] = $subject;
+        }
+        return sanitize_textarea_field(trim(implode("\n\n", $body_parts)));
+    }
+
+    private function append_school_note_row($school_post_id, $note_type, $note_body, $actor_user_id = 0, $author_name = '', $created_at = '') {
+        $school_post_id = (int) $school_post_id;
+        $actor_user_id = max(0, (int) $actor_user_id);
+        $note_type = $this->normalize_school_lead_note_type($note_type);
+        $note_body = sanitize_textarea_field((string) $note_body);
+        $author_name = sanitize_text_field((string) $author_name);
+        $created_at = sanitize_text_field((string) $created_at);
+        if ($school_post_id < 1 || $note_body === '') {
+            return false;
+        }
+        if ($author_name === '' && $actor_user_id > 0) {
+            $actor_user = get_user_by('id', $actor_user_id);
+            if ($actor_user instanceof WP_User) {
+                $author_name = sanitize_text_field((string) $actor_user->display_name);
+            }
+        }
+        if ($author_name === '') {
+            $author_name = 'System';
+        }
+        if ($created_at === '' || strtotime($created_at) === false) {
+            $created_at = current_time('mysql');
+        }
+        $existing_notes = $this->get_school_lead_notes($school_post_id, 250);
+        $fingerprint = implode('|', [$note_type, $note_body, $actor_user_id, $created_at]);
+        foreach ($existing_notes as $row) {
+            $existing_fingerprint = implode('|', [
+                $this->normalize_school_lead_note_type((string) ($row['type'] ?? 'general')),
+                sanitize_textarea_field((string) ($row['body'] ?? '')),
+                max(0, (int) ($row['author_user_id'] ?? 0)),
+                sanitize_text_field((string) ($row['created_at'] ?? '')),
+            ]);
+            if ($existing_fingerprint === $fingerprint) {
+                return true;
+            }
+        }
+        array_unshift($existing_notes, [
+            'id' => sanitize_key('leadnote_' . wp_generate_password(10, false, false)),
+            'type' => $note_type,
+            'body' => $note_body,
+            'author_user_id' => $actor_user_id,
+            'author_name' => $author_name,
+            'created_at' => $created_at,
+        ]);
+        return $this->save_school_lead_notes($school_post_id, $existing_notes);
+    }
+
+    private function sync_school_activity_notes_to_canonical($school_post_id, $school_domain, $limit = 50) {
+        $school_post_id = (int) $school_post_id;
+        $school_domain = strtolower(trim((string) $school_domain));
+        if ($school_post_id < 1 || $school_domain === '') {
+            return 0;
+        }
+        $rows = $this->get_school_activities($school_domain, max(1, min(100, (int) $limit)));
+        if (!$rows) {
+            return 0;
+        }
+        $inserted = 0;
+        foreach (array_reverse((array) $rows) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $activity_type = $this->normalize_activity_type((string) ($row['activity_type'] ?? 'note'));
+            if (!in_array($activity_type, ['note', 'call', 'email'], true)) {
+                continue;
+            }
+            $note_body = $this->get_school_note_body_from_activity_fields(
+                $activity_type,
+                (string) ($row['subject'] ?? ''),
+                (string) ($row['notes'] ?? '')
+            );
+            if ($note_body === '') {
+                continue;
+            }
+            if ($this->append_school_note_row(
+                $school_post_id,
+                $this->get_school_note_type_from_activity_type($activity_type),
+                $note_body,
+                (int) ($row['created_by'] ?? 0),
+                '',
+                sanitize_text_field((string) ($row['created_at'] ?? ''))
+            )) {
+                $inserted++;
+            }
+        }
+        return $inserted;
+    }
+
     private function save_school_lead_notes($school_post_id, array $notes) {
         $school_post_id = (int) $school_post_id;
         if ($school_post_id < 1) {
@@ -52111,6 +52226,7 @@ global $wpdb;
                 'contacts' => (int) count($contacts),
             ];
             $is_school_lead_record = $this->is_school_lead_record($school_id);
+            $synced_activity_notes = $this->sync_school_activity_notes_to_canonical($school_id, $school_domain, 50);
             $school_lead_notes = $this->get_school_lead_visible_notes($school_id, 250);
             $school_lead_notes_raw = $this->get_school_lead_notes($school_id, 250);
             $school_lead_notes_preview = array_slice($school_lead_notes, 0, 10);
@@ -52126,6 +52242,7 @@ global $wpdb;
                 'active_profile_tab' => $active_profile_tab,
                 'notes_count' => count($school_lead_notes),
                 'preview_count' => count($school_lead_notes_preview),
+                'synced_activity_notes_count' => (int) $synced_activity_notes,
                 'hidden_validation_notes_count' => max(0, count($school_lead_notes_raw) - count($school_lead_notes)),
                 'preview_body_debug' => array_map(function ($row) {
                     return $this->get_school_lead_note_debug_value((string) ($row['body'] ?? ''));
@@ -52504,7 +52621,6 @@ global $wpdb;
                 </div>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end address school_id=' . (int) $school_id); ?>
             </div>
-            <?php if ($is_school_lead_record) : ?>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview" id="cmn-school-lead-notes">
                 <h3>Notes</h3>
                 <ul class="cmn-activity-list cmn-school-lead-notes-list" data-school-lead-notes-list>
@@ -52566,7 +52682,6 @@ global $wpdb;
                     </ul>
                 <?php endif; ?>
             </div>
-            <?php endif; ?>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
                 <h3>Activity Quick Actions</h3>
                 <div class="cmn-school-profile-summary-strip">
@@ -52580,9 +52695,8 @@ global $wpdb;
                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_tab_url('overview')); ?>">Back to overview</a>
                 </div>
             </div>
-            <?php if ($is_school_lead_record) : ?>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
-                <h3>Lead Notes</h3>
+                <h3>Notes</h3>
                 <?php if ($school_lead_notes) : ?>
                     <ul class="cmn-activity-list">
                         <?php foreach ($school_lead_notes as $lead_note_row) : ?>
@@ -52611,7 +52725,6 @@ global $wpdb;
                     <p class="cmn-muted">No notes yet.</p>
                 <?php endif; ?>
             </div>
-            <?php endif; ?>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
                 <?php if ($watchdog('panel_open_tasks')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start open_tasks school_id=' . (int) $school_id); ?>
@@ -95408,6 +95521,10 @@ global $wpdb;
         if ($school_domain === '' && $school_id === 0 && $candidate_id) {
             $school_domain = '';
         }
+        $school_post_id = $school_id > 0 ? $school_id : 0;
+        if ($school_post_id < 1 && $school_domain !== '') {
+            $school_post_id = (int) $this->get_school_post_id_by_domain($school_domain);
+        }
 
         if ($school_domain) {
             if (!$this->user_can_access_school($school_domain)) {
@@ -95431,6 +95548,16 @@ global $wpdb;
                 'assigned_to_user_id' => get_current_user_id(),
                 'assigned_to_school_domain' => $school_domain,
             ]);
+            if ($school_post_id > 0 && get_post_type($school_post_id) === 'cmn_school') {
+                $this->append_school_note_row(
+                    $school_post_id,
+                    $this->get_school_note_type_from_activity_type($type),
+                    $this->get_school_note_body_from_activity_fields($type, $title ?: ucfirst($type), $content),
+                    (int) get_current_user_id(),
+                    '',
+                    current_time('mysql')
+                );
+            }
         } elseif ($candidate_id) {
             $this->insert_activity_row([
                 'entity_type' => 'contact',
