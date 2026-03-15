@@ -28280,7 +28280,25 @@ global $wpdb;
 
         $existing_notes = $this->get_school_lead_notes($school_post_id, 250);
         array_unshift($existing_notes, $note_row);
-        $this->save_school_lead_notes($school_post_id, $existing_notes);
+        $save_result = $this->save_school_lead_notes($school_post_id, $existing_notes);
+        $persisted_notes = $this->get_school_lead_notes($school_post_id, 250);
+        $persisted_note_row = null;
+        foreach ($persisted_notes as $persisted_row) {
+            if (sanitize_key((string) ($persisted_row['id'] ?? '')) === (string) $note_row['id']) {
+                $persisted_note_row = $persisted_row;
+                break;
+            }
+        }
+        if (!$persisted_note_row) {
+            $this->log_school_debug('school_lead_note_persist_failed', [
+                'school_post_id' => $school_post_id,
+                'note_id' => (string) $note_row['id'],
+                'save_result' => $save_result ? 1 : 0,
+                'existing_notes_count' => count($existing_notes),
+                'persisted_notes_count' => count($persisted_notes),
+            ]);
+            wp_send_json_error(['message' => 'School lead note could not be saved. Please try again.'], 500);
+        }
 
         $school_domain = sanitize_text_field((string) ($context['school_domain'] ?? ''));
         if ($school_domain !== '') {
@@ -28303,7 +28321,7 @@ global $wpdb;
             ]);
         }
 
-        $note_response = $this->build_school_lead_note_response_item($note_row);
+        $note_response = $this->build_school_lead_note_response_item($persisted_note_row);
         $note_excerpt = function_exists('mb_substr')
             ? mb_substr($note_body, 0, 120)
             : substr($note_body, 0, 120);
@@ -28318,7 +28336,7 @@ global $wpdb;
             'message' => 'School lead note added.',
             'school_id' => $school_post_id,
             'note' => $note_response,
-            'notes_count' => count($existing_notes),
+            'notes_count' => count($persisted_notes),
         ]);
     }
 
