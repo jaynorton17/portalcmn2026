@@ -6641,6 +6641,48 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   margin-top: 10px;
 }
 
+.cmn-school-record-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.cmn-school-record-editor {
+  width: 100%;
+}
+
+.cmn-school-record-editor summary {
+  cursor: pointer;
+  color: var(--cmn-text-secondary);
+  font-size: 12px;
+}
+
+.cmn-school-record-form {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.cmn-school-record-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.cmn-school-tab-panel--activity .cmn-task-item {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.cmn-school-tab-panel--activity .cmn-task-item > :first-child {
+  flex: 1 1 240px;
+}
+
+.cmn-school-tab-panel--activity .cmn-task-meta {
+  min-width: 120px;
+}
+
 .cmn-school-profile-grid .cmn-school-tab-panel--contacts select {
   color: #f8fafc !important;
   background: rgba(255, 255, 255, 0.06) !important;

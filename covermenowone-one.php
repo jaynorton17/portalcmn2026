@@ -850,6 +850,10 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_toggle_availability', [$this, 'handle_toggle_availability']);
         add_action('admin_post_cmn_save_calendar', [$this, 'handle_save_calendar']);
         add_action('admin_post_cmn_school_add_note', [$this, 'handle_school_add_note_post']);
+        add_action('admin_post_cmn_school_note_update', [$this, 'handle_school_note_update_post']);
+        add_action('admin_post_cmn_school_note_delete', [$this, 'handle_school_note_delete_post']);
+        add_action('admin_post_cmn_school_task_update', [$this, 'handle_school_task_update_post']);
+        add_action('admin_post_cmn_school_task_delete', [$this, 'handle_school_task_delete_post']);
         add_action('admin_post_cmn_save_candidate_bank_details', [$this, 'handle_save_candidate_bank_details']);
         add_action('admin_post_cmn_candidate_accept_compliance_ack', [$this, 'handle_candidate_accept_compliance_ack']);
         add_action('admin_post_cmn_candidate_generate_remittance_pdf', [$this, 'handle_candidate_generate_remittance_pdf']);
@@ -28202,6 +28206,146 @@ global $wpdb;
         return update_post_meta($school_post_id, 'cmn_school_lead_notes', $sanitized_notes);
     }
 
+    private function update_school_lead_note($school_post_id, $note_id, $note_type, $note_body) {
+        $school_post_id = (int) $school_post_id;
+        $note_id = sanitize_key((string) $note_id);
+        $note_type = $this->normalize_school_lead_note_type($note_type);
+        $note_body = sanitize_textarea_field((string) $note_body);
+        if ($school_post_id < 1 || $note_id === '' || $note_body === '') {
+            return false;
+        }
+        $notes = $this->get_school_lead_notes($school_post_id, 250);
+        $updated = false;
+        foreach ($notes as &$row) {
+            if (sanitize_key((string) ($row['id'] ?? '')) !== $note_id) {
+                continue;
+            }
+            $row['type'] = $note_type;
+            $row['body'] = $note_body;
+            $updated = true;
+            break;
+        }
+        unset($row);
+        if (!$updated) {
+            return false;
+        }
+        return $this->save_school_lead_notes($school_post_id, $notes);
+    }
+
+    private function delete_school_lead_note($school_post_id, $note_id) {
+        $school_post_id = (int) $school_post_id;
+        $note_id = sanitize_key((string) $note_id);
+        if ($school_post_id < 1 || $note_id === '') {
+            return false;
+        }
+        $notes = $this->get_school_lead_notes($school_post_id, 250);
+        $remaining = [];
+        $deleted_row = null;
+        foreach ($notes as $row) {
+            if (sanitize_key((string) ($row['id'] ?? '')) === $note_id) {
+                $deleted_row = $row;
+                continue;
+            }
+            $remaining[] = $row;
+        }
+        if (!$deleted_row) {
+            return false;
+        }
+        $saved = $this->save_school_lead_notes($school_post_id, $remaining);
+        return $saved ? $deleted_row : false;
+    }
+
+    private function get_school_activity_record($activity_id, $school_post_id = 0, $school_domain = '') {
+        global $wpdb;
+        $activity_id = (int) $activity_id;
+        $school_post_id = (int) $school_post_id;
+        $school_domain = strtolower(trim((string) $school_domain));
+        if ($activity_id < 1) {
+            return null;
+        }
+        $table = $this->get_activity_table();
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d LIMIT 1", $activity_id), ARRAY_A);
+        if ($row) {
+            $entity_type = sanitize_text_field((string) ($row['entity_type'] ?? ''));
+            $entity_ref = strtolower(trim((string) ($row['entity_ref'] ?? '')));
+            if ($entity_type === 'school' && ($school_domain === '' || $entity_ref === $school_domain)) {
+                return [
+                    'storage' => 'table',
+                    'id' => $activity_id,
+                    'row' => $row,
+                ];
+            }
+        }
+        $post = get_post($activity_id);
+        if ($post instanceof WP_Post && $post->post_type === 'cmn_activity') {
+            $related_type = sanitize_key((string) get_post_meta($activity_id, 'cmn_related_type', true));
+            $related_id = (int) get_post_meta($activity_id, 'cmn_related_id', true);
+            if ($related_type === 'school' && ($school_post_id < 1 || $related_id === $school_post_id)) {
+                return [
+                    'storage' => 'legacy_post',
+                    'id' => $activity_id,
+                    'post' => $post,
+                ];
+            }
+        }
+        return null;
+    }
+
+    private function update_school_task_record($activity_id, $school_post_id, $school_domain, array $updates) {
+        global $wpdb;
+        $record = $this->get_school_activity_record($activity_id, $school_post_id, $school_domain);
+        if (!$record) {
+            return false;
+        }
+        $subject = sanitize_text_field((string) ($updates['subject'] ?? ''));
+        $notes = sanitize_textarea_field((string) ($updates['notes'] ?? ''));
+        $due_date = sanitize_text_field((string) ($updates['due_date'] ?? ''));
+        $duration = isset($updates['duration_minutes']) ? max(0, (int) $updates['duration_minutes']) : 0;
+        if ($subject === '') {
+            return false;
+        }
+        if ($record['storage'] === 'table') {
+            $table = $this->get_activity_table();
+            return false !== $wpdb->update($table, [
+                'subject' => $subject,
+                'notes' => $notes,
+                'due_date' => $due_date !== '' ? $due_date : null,
+                'duration_minutes' => $duration > 0 ? $duration : null,
+                'updated_at' => current_time('mysql'),
+            ], [
+                'id' => (int) $record['id'],
+            ], ['%s', '%s', '%s', '%d', '%s'], ['%d']);
+        }
+        if ($record['storage'] === 'legacy_post') {
+            wp_update_post([
+                'ID' => (int) $record['id'],
+                'post_title' => $subject,
+            ]);
+            update_post_meta((int) $record['id'], 'cmn_activity_content', $notes);
+            update_post_meta((int) $record['id'], 'cmn_activity_date', $due_date);
+            update_post_meta((int) $record['id'], 'cmn_activity_duration', $duration > 0 ? $duration : '');
+            update_post_meta((int) $record['id'], 'cmn_activity_type', 'todo');
+            return true;
+        }
+        return false;
+    }
+
+    private function delete_school_task_record($activity_id, $school_post_id, $school_domain) {
+        global $wpdb;
+        $record = $this->get_school_activity_record($activity_id, $school_post_id, $school_domain);
+        if (!$record) {
+            return false;
+        }
+        if ($record['storage'] === 'table') {
+            $table = $this->get_activity_table();
+            return false !== $wpdb->delete($table, ['id' => (int) $record['id']], ['%d']);
+        }
+        if ($record['storage'] === 'legacy_post') {
+            return (bool) wp_trash_post((int) $record['id']);
+        }
+        return false;
+    }
+
     private function build_school_lead_note_response_item(array $note_row) {
         $created_at = sanitize_text_field((string) ($note_row['created_at'] ?? ''));
         $created_ts = strtotime($created_at);
@@ -28214,6 +28358,128 @@ global $wpdb;
             'created_at' => $created_at,
             'created_label' => $created_ts ? date_i18n('M j, Y g:ia', $created_ts) : $created_at,
         ];
+    }
+
+    private function render_school_profile_note_item(array $note_row, array $type_labels, $school_post_id, $school_code, $redirect_url) {
+        $note_id = sanitize_key((string) ($note_row['id'] ?? ''));
+        $note_type = $this->normalize_school_lead_note_type((string) ($note_row['type'] ?? 'general'));
+        $note_type_label = (string) ($type_labels[$note_type] ?? 'General');
+        $note_created_at = sanitize_text_field((string) ($note_row['created_at'] ?? ''));
+        $note_created_ts = strtotime($note_created_at);
+        $note_author = sanitize_text_field((string) ($note_row['author_name'] ?? 'System'));
+        $note_body = sanitize_textarea_field((string) ($note_row['body'] ?? ''));
+        ob_start();
+        ?>
+        <li data-school-lead-note-id="<?php echo esc_attr($note_id); ?>">
+            <div class="cmn-school-lead-note-head">
+                <strong><?php echo esc_html($note_type_label); ?></strong>
+                <span class="cmn-muted">
+                    <?php echo esc_html($note_author); ?>
+                    <?php if ($note_created_ts) : ?>
+                        · <?php echo esc_html(date_i18n('M j, Y g:ia', $note_created_ts)); ?>
+                    <?php endif; ?>
+                </span>
+            </div>
+            <div><?php echo esc_html($note_body); ?></div>
+            <div class="cmn-school-record-actions">
+                <details class="cmn-school-record-editor">
+                    <summary>Edit</summary>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form cmn-school-record-form">
+                        <?php wp_nonce_field('cmn_school_note_action_' . $note_id, 'cmn_school_note_action_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_school_note_update">
+                        <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_code); ?>">
+                        <input type="hidden" name="pid" value="<?php echo esc_attr((string) $school_post_id); ?>">
+                        <input type="hidden" name="note_id" value="<?php echo esc_attr($note_id); ?>">
+                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
+                        <label>Type
+                            <select name="note_type">
+                                <?php foreach ($type_labels as $type_key => $type_name) : ?>
+                                    <option value="<?php echo esc_attr((string) $type_key); ?>"<?php selected($note_type, (string) $type_key); ?>><?php echo esc_html((string) $type_name); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Note
+                            <textarea name="note_body" rows="4" required><?php echo esc_textarea($note_body); ?></textarea>
+                        </label>
+                        <button class="cmn-ghost cmn-btn-mini" type="submit">Save note</button>
+                    </form>
+                </details>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline" data-confirm="Delete this note?">
+                    <?php wp_nonce_field('cmn_school_note_action_' . $note_id, 'cmn_school_note_action_nonce'); ?>
+                    <input type="hidden" name="action" value="cmn_school_note_delete">
+                    <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_code); ?>">
+                    <input type="hidden" name="pid" value="<?php echo esc_attr((string) $school_post_id); ?>">
+                    <input type="hidden" name="note_id" value="<?php echo esc_attr($note_id); ?>">
+                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
+                    <button class="cmn-ghost cmn-btn-mini" type="submit">Delete</button>
+                </form>
+            </div>
+        </li>
+        <?php
+        return (string) ob_get_clean();
+    }
+
+    private function render_school_profile_task_item(array $task, $school_post_id, $school_code, $redirect_url) {
+        $task_id = (int) ($task['id'] ?? 0);
+        $task_subject = sanitize_text_field((string) ($task['subject'] ?? 'Task'));
+        $task_notes = sanitize_textarea_field((string) ($task['notes'] ?? ''));
+        $task_date = sanitize_text_field((string) ($task['due_date'] ?? ''));
+        $task_duration = max(0, (int) ($task['duration_minutes'] ?? 0));
+        $task_label = $task_date ? date_i18n('M j, Y', strtotime($task_date)) : 'No date';
+        $is_overdue = $task_date && strtotime($task_date) < strtotime(date('Y-m-d'));
+        ob_start();
+        ?>
+        <div class="cmn-task-item<?php echo $is_overdue ? ' is-overdue' : ''; ?>">
+            <div>
+                <strong><?php echo esc_html($task_subject); ?></strong>
+                <span><?php echo esc_html($task_notes ? wp_trim_words($task_notes, 8, '...') : 'Task'); ?></span>
+            </div>
+            <div class="cmn-task-meta"><?php echo esc_html($task_label); ?><?php echo $is_overdue ? ' - Overdue' : ''; ?></div>
+            <div class="cmn-school-record-actions">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                    <?php wp_nonce_field('cmn_complete_activity', 'cmn_complete_activity_nonce'); ?>
+                    <input type="hidden" name="action" value="cmn_complete_activity">
+                    <input type="hidden" name="cmn_activity_id" value="<?php echo esc_attr((string) $task_id); ?>">
+                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
+                    <button class="cmn-ghost cmn-btn-mini" type="submit">Mark Done</button>
+                </form>
+                <details class="cmn-school-record-editor">
+                    <summary>Edit</summary>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-form cmn-school-record-form">
+                        <?php wp_nonce_field('cmn_school_task_action_' . $task_id, 'cmn_school_task_action_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_school_task_update">
+                        <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_code); ?>">
+                        <input type="hidden" name="pid" value="<?php echo esc_attr((string) $school_post_id); ?>">
+                        <input type="hidden" name="activity_id" value="<?php echo esc_attr((string) $task_id); ?>">
+                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
+                        <label>Task title
+                            <input type="text" name="task_title" value="<?php echo esc_attr($task_subject); ?>" required>
+                        </label>
+                        <label>Details
+                            <textarea name="task_notes" rows="3"><?php echo esc_textarea($task_notes); ?></textarea>
+                        </label>
+                        <label>Due date
+                            <input type="date" name="task_due_date" value="<?php echo esc_attr($task_date); ?>">
+                        </label>
+                        <label>Duration (mins)
+                            <input type="number" name="task_duration" min="0" value="<?php echo esc_attr($task_duration > 0 ? (string) $task_duration : ''); ?>">
+                        </label>
+                        <button class="cmn-ghost cmn-btn-mini" type="submit">Save task</button>
+                    </form>
+                </details>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline" data-confirm="Delete this task?">
+                    <?php wp_nonce_field('cmn_school_task_action_' . $task_id, 'cmn_school_task_action_nonce'); ?>
+                    <input type="hidden" name="action" value="cmn_school_task_delete">
+                    <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_code); ?>">
+                    <input type="hidden" name="pid" value="<?php echo esc_attr((string) $school_post_id); ?>">
+                    <input type="hidden" name="activity_id" value="<?php echo esc_attr((string) $task_id); ?>">
+                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
+                    <button class="cmn-ghost cmn-btn-mini" type="submit">Delete</button>
+                </form>
+            </div>
+        </div>
+        <?php
+        return (string) ob_get_clean();
     }
 
     public function handle_school_update_details_ajax() {
@@ -28547,6 +28813,167 @@ global $wpdb;
         }
 
         wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode((string) ($result['message'] ?? 'School lead note added.'))], $redirect));
+        exit;
+    }
+
+    private function get_school_profile_action_redirect($fallback_school_id = 0) {
+        $fallback_school_id = (int) $fallback_school_id;
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        if ($redirect !== '') {
+            $redirect = wp_validate_redirect($redirect, $this->get_portal_base_url());
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            $redirect = wp_get_referer();
+        }
+        if (!is_string($redirect) || $redirect === '') {
+            if ($fallback_school_id > 0) {
+                $redirect = add_query_arg([
+                    'view' => 'schools',
+                    'pid' => $fallback_school_id,
+                ], $this->get_portal_base_url());
+            } else {
+                $redirect = add_query_arg(['view' => 'schools'], $this->get_portal_base_url());
+            }
+        }
+        return $redirect;
+    }
+
+    public function handle_school_note_update_post() {
+        $actor_user_id = (int) get_current_user_id();
+        if (!$this->is_staff_user($actor_user_id)) {
+            wp_die('Unauthorized');
+        }
+        $school_post_id = (int) $this->resolve_school_identifier(
+            sanitize_text_field((string) ($_POST['school_id'] ?? '')),
+            (int) ($_POST['pid'] ?? 0)
+        );
+        $redirect = $this->get_school_profile_action_redirect($school_post_id);
+        $note_id = sanitize_key((string) ($_POST['note_id'] ?? ''));
+        if (!isset($_POST['cmn_school_note_action_nonce']) || !wp_verify_nonce((string) $_POST['cmn_school_note_action_nonce'], 'cmn_school_note_action_' . $note_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('Invalid request.')], $redirect));
+            exit;
+        }
+        if ($school_post_id < 1 || !$this->user_can_access_school($school_post_id, $actor_user_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('Access denied.')], $redirect));
+            exit;
+        }
+        $note_type = (string) ($_POST['note_type'] ?? 'general');
+        $note_body = sanitize_textarea_field((string) wp_unslash((string) ($_POST['note_body'] ?? '')));
+        if ($note_body === '') {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('Please enter a note before saving.')], $redirect));
+            exit;
+        }
+        $updated = $this->update_school_lead_note($school_post_id, $note_id, $note_type, $note_body);
+        if (!$updated) {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('Note could not be updated.')], $redirect));
+            exit;
+        }
+        $this->add_audit_log('school_lead_note_updated', 'school', (string) $school_post_id, [
+            'note_id' => $note_id,
+            'note_type' => $this->normalize_school_lead_note_type($note_type),
+        ], $actor_user_id);
+        wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('School note updated.')], $redirect));
+        exit;
+    }
+
+    public function handle_school_note_delete_post() {
+        $actor_user_id = (int) get_current_user_id();
+        if (!$this->is_staff_user($actor_user_id)) {
+            wp_die('Unauthorized');
+        }
+        $school_post_id = (int) $this->resolve_school_identifier(
+            sanitize_text_field((string) ($_POST['school_id'] ?? '')),
+            (int) ($_POST['pid'] ?? 0)
+        );
+        $redirect = $this->get_school_profile_action_redirect($school_post_id);
+        $note_id = sanitize_key((string) ($_POST['note_id'] ?? ''));
+        if (!isset($_POST['cmn_school_note_action_nonce']) || !wp_verify_nonce((string) $_POST['cmn_school_note_action_nonce'], 'cmn_school_note_action_' . $note_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('Invalid request.')], $redirect));
+            exit;
+        }
+        if ($school_post_id < 1 || !$this->user_can_access_school($school_post_id, $actor_user_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('Access denied.')], $redirect));
+            exit;
+        }
+        $deleted_row = $this->delete_school_lead_note($school_post_id, $note_id);
+        if (!$deleted_row) {
+            wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('Note could not be deleted.')], $redirect));
+            exit;
+        }
+        $this->add_audit_log('school_lead_note_deleted', 'school', (string) $school_post_id, [
+            'note_id' => $note_id,
+            'note_type' => sanitize_key((string) ($deleted_row['type'] ?? 'general')),
+        ], $actor_user_id);
+        wp_safe_redirect(add_query_arg(['cmn_school_note_msg' => rawurlencode('School note deleted.')], $redirect));
+        exit;
+    }
+
+    public function handle_school_task_update_post() {
+        $actor_user_id = (int) get_current_user_id();
+        if (!$this->is_staff_user($actor_user_id)) {
+            wp_die('Unauthorized');
+        }
+        $school_post_id = (int) $this->resolve_school_identifier(
+            sanitize_text_field((string) ($_POST['school_id'] ?? '')),
+            (int) ($_POST['pid'] ?? 0)
+        );
+        $redirect = $this->get_school_profile_action_redirect($school_post_id);
+        $activity_id = (int) ($_POST['activity_id'] ?? 0);
+        if (!isset($_POST['cmn_school_task_action_nonce']) || !wp_verify_nonce((string) $_POST['cmn_school_task_action_nonce'], 'cmn_school_task_action_' . $activity_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_task_msg' => rawurlencode('Invalid request.')], $redirect));
+            exit;
+        }
+        if ($school_post_id < 1 || !$this->user_can_access_school($school_post_id, $actor_user_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_task_msg' => rawurlencode('Access denied.')], $redirect));
+            exit;
+        }
+        $school_domain = $this->get_school_lead_domain_for_post($school_post_id);
+        $updated = $this->update_school_task_record($activity_id, $school_post_id, $school_domain, [
+            'subject' => (string) ($_POST['task_title'] ?? ''),
+            'notes' => (string) ($_POST['task_notes'] ?? ''),
+            'due_date' => (string) ($_POST['task_due_date'] ?? ''),
+            'duration_minutes' => (string) ($_POST['task_duration'] ?? ''),
+        ]);
+        if (!$updated) {
+            wp_safe_redirect(add_query_arg(['cmn_school_task_msg' => rawurlencode('Task could not be updated.')], $redirect));
+            exit;
+        }
+        $this->add_audit_log('school_task_updated', 'school', (string) $school_post_id, [
+            'activity_id' => $activity_id,
+        ], $actor_user_id);
+        wp_safe_redirect(add_query_arg(['cmn_school_task_msg' => rawurlencode('Task updated.')], $redirect));
+        exit;
+    }
+
+    public function handle_school_task_delete_post() {
+        $actor_user_id = (int) get_current_user_id();
+        if (!$this->is_staff_user($actor_user_id)) {
+            wp_die('Unauthorized');
+        }
+        $school_post_id = (int) $this->resolve_school_identifier(
+            sanitize_text_field((string) ($_POST['school_id'] ?? '')),
+            (int) ($_POST['pid'] ?? 0)
+        );
+        $redirect = $this->get_school_profile_action_redirect($school_post_id);
+        $activity_id = (int) ($_POST['activity_id'] ?? 0);
+        if (!isset($_POST['cmn_school_task_action_nonce']) || !wp_verify_nonce((string) $_POST['cmn_school_task_action_nonce'], 'cmn_school_task_action_' . $activity_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_task_msg' => rawurlencode('Invalid request.')], $redirect));
+            exit;
+        }
+        if ($school_post_id < 1 || !$this->user_can_access_school($school_post_id, $actor_user_id)) {
+            wp_safe_redirect(add_query_arg(['cmn_school_task_msg' => rawurlencode('Access denied.')], $redirect));
+            exit;
+        }
+        $school_domain = $this->get_school_lead_domain_for_post($school_post_id);
+        $deleted = $this->delete_school_task_record($activity_id, $school_post_id, $school_domain);
+        if (!$deleted) {
+            wp_safe_redirect(add_query_arg(['cmn_school_task_msg' => rawurlencode('Task could not be deleted.')], $redirect));
+            exit;
+        }
+        $this->add_audit_log('school_task_deleted', 'school', (string) $school_post_id, [
+            'activity_id' => $activity_id,
+        ], $actor_user_id);
+        wp_safe_redirect(add_query_arg(['cmn_school_task_msg' => rawurlencode('Task deleted.')], $redirect));
         exit;
     }
 
@@ -52176,6 +52603,7 @@ global $wpdb;
             $convert_msg = isset($_GET['cmn_convert_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_convert_msg'])) : '';
             $request_msg = isset($_GET['cmn_school_request_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_request_msg'])) : '';
             $school_note_msg = isset($_GET['cmn_school_note_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_note_msg'])) : '';
+            $school_task_msg = isset($_GET['cmn_school_task_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_school_task_msg'])) : '';
             $allowed_profile_tabs = ['overview', 'contacts', 'activity', 'bookings', 'commercial', 'marketing', 'documents', 'settings'];
             $active_profile_tab = isset($_GET['cmn_school_tab']) ? sanitize_key((string) $_GET['cmn_school_tab']) : 'overview';
             if (!in_array($active_profile_tab, $allowed_profile_tabs, true)) {
@@ -52226,7 +52654,6 @@ global $wpdb;
                 'contacts' => (int) count($contacts),
             ];
             $is_school_lead_record = $this->is_school_lead_record($school_id);
-            $synced_activity_notes = $this->sync_school_activity_notes_to_canonical($school_id, $school_domain, 50);
             $school_lead_notes = $this->get_school_lead_visible_notes($school_id, 250);
             $school_lead_notes_raw = $this->get_school_lead_notes($school_id, 250);
             $school_lead_notes_preview = array_slice($school_lead_notes, 0, 10);
@@ -52242,7 +52669,6 @@ global $wpdb;
                 'active_profile_tab' => $active_profile_tab,
                 'notes_count' => count($school_lead_notes),
                 'preview_count' => count($school_lead_notes_preview),
-                'synced_activity_notes_count' => (int) $synced_activity_notes,
                 'hidden_validation_notes_count' => max(0, count($school_lead_notes_raw) - count($school_lead_notes)),
                 'preview_body_debug' => array_map(function ($row) {
                     return $this->get_school_lead_note_debug_value((string) ($row['body'] ?? ''));
@@ -52329,6 +52755,9 @@ global $wpdb;
         <?php endif; ?>
         <?php if ($school_note_msg) : ?>
             <div class="cmn-panel-card"><strong><?php echo esc_html($school_note_msg); ?></strong></div>
+        <?php endif; ?>
+        <?php if ($school_task_msg) : ?>
+            <div class="cmn-panel-card"><strong><?php echo esc_html($school_task_msg); ?></strong></div>
         <?php endif; ?>
         <?php if ($is_school_lead_record) : ?>
         <section class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-lead-quick-actions"
@@ -52626,25 +53055,7 @@ global $wpdb;
                 <ul class="cmn-activity-list cmn-school-lead-notes-list" data-school-lead-notes-list>
                     <?php if ($school_lead_notes_preview) : ?>
                         <?php foreach ($school_lead_notes_preview as $lead_note_row) : ?>
-                            <?php
-                            $lead_note_type = $this->normalize_school_lead_note_type((string) ($lead_note_row['type'] ?? 'general'));
-                            $lead_note_type_label = (string) ($school_lead_note_type_labels[$lead_note_type] ?? 'General');
-                            $lead_note_created_at = sanitize_text_field((string) ($lead_note_row['created_at'] ?? ''));
-                            $lead_note_created_ts = strtotime($lead_note_created_at);
-                            $lead_note_author = sanitize_text_field((string) ($lead_note_row['author_name'] ?? 'System'));
-                            ?>
-                            <li data-school-lead-note-id="<?php echo esc_attr(sanitize_key((string) ($lead_note_row['id'] ?? ''))); ?>">
-                                <div class="cmn-school-lead-note-head">
-                                    <strong><?php echo esc_html($lead_note_type_label); ?></strong>
-                                    <span class="cmn-muted">
-                                        <?php echo esc_html($lead_note_author); ?>
-                                        <?php if ($lead_note_created_ts) : ?>
-                                            · <?php echo esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)); ?>
-                                        <?php endif; ?>
-                                    </span>
-                                </div>
-                                <div><?php echo esc_html((string) ($lead_note_row['body'] ?? '')); ?></div>
-                            </li>
+                            <?php echo $this->render_school_profile_note_item($lead_note_row, $school_lead_note_type_labels, $school_id, $school_code, $build_tab_url('overview')); ?>
                         <?php endforeach; ?>
                     <?php else : ?>
                         <li class="cmn-muted" data-school-lead-notes-empty>No notes yet.</li>
@@ -52659,25 +53070,7 @@ global $wpdb;
                 <?php if (count($school_lead_notes) > count($school_lead_notes_preview)) : ?>
                     <ul class="cmn-activity-list cmn-school-lead-notes-list cmn-school-lead-notes-list--all" data-school-lead-notes-all hidden>
                         <?php foreach (array_slice($school_lead_notes, count($school_lead_notes_preview)) as $lead_note_row) : ?>
-                            <?php
-                            $lead_note_type = $this->normalize_school_lead_note_type((string) ($lead_note_row['type'] ?? 'general'));
-                            $lead_note_type_label = (string) ($school_lead_note_type_labels[$lead_note_type] ?? 'General');
-                            $lead_note_created_at = sanitize_text_field((string) ($lead_note_row['created_at'] ?? ''));
-                            $lead_note_created_ts = strtotime($lead_note_created_at);
-                            $lead_note_author = sanitize_text_field((string) ($lead_note_row['author_name'] ?? 'System'));
-                            ?>
-                            <li data-school-lead-note-id="<?php echo esc_attr(sanitize_key((string) ($lead_note_row['id'] ?? ''))); ?>">
-                                <div class="cmn-school-lead-note-head">
-                                    <strong><?php echo esc_html($lead_note_type_label); ?></strong>
-                                    <span class="cmn-muted">
-                                        <?php echo esc_html($lead_note_author); ?>
-                                        <?php if ($lead_note_created_ts) : ?>
-                                            · <?php echo esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)); ?>
-                                        <?php endif; ?>
-                                    </span>
-                                </div>
-                                <div><?php echo esc_html((string) ($lead_note_row['body'] ?? '')); ?></div>
-                            </li>
+                            <?php echo $this->render_school_profile_note_item($lead_note_row, $school_lead_note_type_labels, $school_id, $school_code, $build_tab_url('overview')); ?>
                         <?php endforeach; ?>
                     </ul>
                 <?php endif; ?>
@@ -52700,25 +53093,7 @@ global $wpdb;
                 <?php if ($school_lead_notes) : ?>
                     <ul class="cmn-activity-list">
                         <?php foreach ($school_lead_notes as $lead_note_row) : ?>
-                            <?php
-                            $lead_note_type = $this->normalize_school_lead_note_type((string) ($lead_note_row['type'] ?? 'general'));
-                            $lead_note_type_label = (string) ($school_lead_note_type_labels[$lead_note_type] ?? 'General');
-                            $lead_note_created_at = sanitize_text_field((string) ($lead_note_row['created_at'] ?? ''));
-                            $lead_note_created_ts = strtotime($lead_note_created_at);
-                            $lead_note_author = sanitize_text_field((string) ($lead_note_row['author_name'] ?? 'System'));
-                            ?>
-                            <li data-school-lead-note-id="<?php echo esc_attr(sanitize_key((string) ($lead_note_row['id'] ?? ''))); ?>">
-                                <div class="cmn-school-lead-note-head">
-                                    <strong><?php echo esc_html($lead_note_type_label); ?></strong>
-                                    <span class="cmn-muted">
-                                        <?php echo esc_html($lead_note_author); ?>
-                                        <?php if ($lead_note_created_ts) : ?>
-                                            · <?php echo esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)); ?>
-                                        <?php endif; ?>
-                                    </span>
-                                </div>
-                                <div><?php echo esc_html((string) ($lead_note_row['body'] ?? '')); ?></div>
-                            </li>
+                            <?php echo $this->render_school_profile_note_item($lead_note_row, $school_lead_note_type_labels, $school_id, $school_code, $build_tab_url('activity')); ?>
                         <?php endforeach; ?>
                     </ul>
                 <?php else : ?>
@@ -52734,25 +53109,7 @@ global $wpdb;
                 <?php elseif ($open_tasks) : ?>
                     <div class="cmn-task-list">
                         <?php foreach ($open_tasks as $task) : ?>
-                            <?php
-                            $task_date = $task['due_date'] ?? '';
-                            $task_label = $task_date ? date_i18n('M j, Y', strtotime($task_date)) : 'No date';
-                            $is_overdue = $task_date && strtotime($task_date) < strtotime(date('Y-m-d'));
-                            ?>
-                            <div class="cmn-task-item<?php echo $is_overdue ? ' is-overdue' : ''; ?>">
-                                <div>
-                                    <strong><?php echo esc_html($task['subject'] ?? 'Task'); ?></strong>
-                                    <span><?php echo esc_html($task['notes'] ? wp_trim_words($task['notes'], 8, '...') : 'Task'); ?></span>
-                                </div>
-                                <div class="cmn-task-meta"><?php echo esc_html($task_label); ?><?php echo $is_overdue ? ' - Overdue' : ''; ?></div>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
-                                    <?php wp_nonce_field('cmn_complete_activity', 'cmn_complete_activity_nonce'); ?>
-                                    <input type="hidden" name="action" value="cmn_complete_activity">
-                                    <input type="hidden" name="cmn_activity_id" value="<?php echo esc_attr($task['id'] ?? 0); ?>">
-                                    <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
-                                    <button class="cmn-ghost" type="submit">Mark Done</button>
-                                </form>
-                            </div>
+                            <?php echo $this->render_school_profile_task_item($task, $school_id, $school_code, $build_tab_url('activity')); ?>
                         <?php endforeach; ?>
                     </div>
                 <?php else : ?>
