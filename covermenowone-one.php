@@ -95887,12 +95887,6 @@ global $wpdb;
             if (!$this->user_can_access_school($school_domain)) {
                 wp_die('Unauthorized');
             }
-            $details_thread = $this->get_booking_thread_by_booking((int) $booking_id_for_rates, self::BOOKING_THREAD_TYPE_BOOKING_DETAILS);
-            if (!empty($details_thread['id'])) {
-                $this->set_booking_thread_status((int) $details_thread['id'], self::BOOKING_THREAD_STATUS_CLOSED);
-                $this->add_booking_thread_message((int) $details_thread['id'], get_current_user_id(), $this->is_admin_user() ? self::PARTICIPANT_ROLE_ADMIN : self::PARTICIPANT_ROLE_ACCOUNT_MANAGER, 'Booking details finalized. Thread closed by CoverMeNow. Post a message any time to reopen.');
-            }
-
             $this->insert_activity_row([
                 'entity_type' => 'school',
                 'entity_ref' => $school_domain,
