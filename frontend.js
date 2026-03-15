@@ -2998,6 +2998,10 @@ document.addEventListener('DOMContentLoaded', function () {
       if (noteForm) {
         noteForm.addEventListener('submit', function (event) {
           event.preventDefault();
+          if (noteForm.getAttribute('data-cmn-native-submit') === '1') {
+            noteForm.removeAttribute('data-cmn-native-submit');
+            return;
+          }
           setFeedback(noteFeedback, 'Saving...');
           var formData = new FormData(noteForm);
           var values = {};
@@ -3016,7 +3020,11 @@ document.addEventListener('DOMContentLoaded', function () {
               closeModal(noteModal);
             }, 300);
           }).catch(function (error) {
-            setFeedback(noteFeedback, error && error.message ? error.message : 'Unable to save school lead note.');
+            setFeedback(noteFeedback, 'Saving via fallback...');
+            noteForm.setAttribute('data-cmn-native-submit', '1');
+            window.setTimeout(function () {
+              HTMLFormElement.prototype.submit.call(noteForm);
+            }, 50);
           });
         });
       }
