@@ -28243,8 +28243,20 @@ global $wpdb;
             }
         }
 
+        $note_id = sanitize_key('leadnote_' . wp_generate_password(10, false, false));
+        $this->log_school_debug('school_lead_note_request', [
+            'school_identifier' => sanitize_text_field((string) ($_POST['school_id'] ?? $_POST['cmn_school_id'] ?? '')),
+            'requested_pid' => max(0, (int) ($_POST['pid'] ?? $_POST['school_pid'] ?? 0)),
+            'resolved_school_post_id' => $school_post_id,
+            'school_code' => sanitize_text_field((string) ($context['school_code'] ?? '')),
+            'school_domain' => sanitize_text_field((string) ($context['school_domain'] ?? '')),
+            'note_type' => $note_type,
+            'note_length' => function_exists('mb_strlen') ? (int) mb_strlen($note_body) : (int) strlen($note_body),
+            'actor_user_id' => $actor_user_id,
+        ]);
+
         $note_row = [
-            'id' => 'leadnote_' . wp_generate_password(10, false, false),
+            'id' => $note_id,
             'type' => $note_type,
             'body' => $note_body,
             'author_user_id' => $actor_user_id,
@@ -28256,9 +28268,16 @@ global $wpdb;
         array_unshift($existing_notes, $note_row);
         $save_result = $this->save_school_lead_notes($school_post_id, $existing_notes);
         $persisted_notes = $this->get_school_lead_notes($school_post_id, 250);
+        $this->log_school_debug('school_lead_note_save_attempt', [
+            'school_post_id' => $school_post_id,
+            'note_id' => $note_id,
+            'save_result' => $save_result ? 1 : 0,
+            'existing_notes_count' => count($existing_notes),
+            'persisted_notes_count' => count($persisted_notes),
+        ]);
         $persisted_note_row = null;
         foreach ($persisted_notes as $persisted_row) {
-            if (sanitize_key((string) ($persisted_row['id'] ?? '')) === (string) $note_row['id']) {
+            if (sanitize_key((string) ($persisted_row['id'] ?? '')) === $note_id) {
                 $persisted_note_row = $persisted_row;
                 break;
             }
@@ -28266,7 +28285,7 @@ global $wpdb;
         if (!$persisted_note_row) {
             $this->log_school_debug('school_lead_note_persist_failed', [
                 'school_post_id' => $school_post_id,
-                'note_id' => (string) $note_row['id'],
+                'note_id' => $note_id,
                 'save_result' => $save_result ? 1 : 0,
                 'existing_notes_count' => count($existing_notes),
                 'persisted_notes_count' => count($persisted_notes),
@@ -52096,6 +52115,13 @@ global $wpdb;
                 'email' => 'Email',
                 'meeting' => 'Meeting',
             ];
+            $this->log_school_debug('school_lead_notes_render_lookup', [
+                'school_post_id' => (int) $school_id,
+                'school_code' => sanitize_text_field((string) $school_code),
+                'active_profile_tab' => $active_profile_tab,
+                'notes_count' => count($school_lead_notes),
+                'preview_count' => count($school_lead_notes_preview),
+            ]);
             $school_lead_field_values = [
                 'school_name' => sanitize_text_field((string) $school->post_title),
                 'postcode' => sanitize_text_field((string) $meta('cmn_postcode')),
@@ -100968,7 +100994,8 @@ p{margin:0;line-height:1.5}
     private function log_school_debug($event, $context = []) {
         $event_key = sanitize_key((string) $event);
         $always_log = (strpos($event_key, 'staff_school_view_') === 0)
-            || in_array($event_key, ['school_profile_related_data_failed', 'school_profile_timeline_failed'], true);
+            || (strpos($event_key, 'school_lead_note_') === 0)
+            || in_array($event_key, ['school_profile_related_data_failed', 'school_profile_timeline_failed', 'school_lead_notes_render_lookup'], true);
         if (!$always_log && !$this->is_school_debug_enabled()) {
             return;
         }
