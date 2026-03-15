@@ -27973,6 +27973,20 @@ global $wpdb;
         ];
     }
 
+    private function is_school_lead_validation_note(array $note_row) {
+        $body = sanitize_textarea_field((string) ($note_row['body'] ?? ''));
+        if ($body === '') {
+            return false;
+        }
+        if (preg_match('/^CMN test note\s+\d{4}-\d{2}-\d{2}T/i', $body)) {
+            return true;
+        }
+        if (preg_match('/^TEST_[A-Z0-9_ -]+$/', $body)) {
+            return true;
+        }
+        return false;
+    }
+
     private function get_school_lead_notes($school_post_id, $limit = 10) {
         $school_post_id = (int) $school_post_id;
         $limit = max(1, min(200, (int) $limit));
@@ -28025,6 +28039,19 @@ global $wpdb;
             return ($a_time > $b_time) ? -1 : 1;
         });
         return array_slice($notes, 0, $limit);
+    }
+
+    private function get_school_lead_visible_notes($school_post_id, $limit = 10) {
+        $notes = $this->get_school_lead_notes($school_post_id, 250);
+        $visible_notes = [];
+        foreach ($notes as $row) {
+            if ($this->is_school_lead_validation_note($row)) {
+                continue;
+            }
+            $visible_notes[] = $row;
+        }
+        $limit = max(1, min(200, (int) $limit));
+        return array_slice($visible_notes, 0, $limit);
     }
 
     private function save_school_lead_notes($school_post_id, array $notes) {
@@ -52084,7 +52111,8 @@ global $wpdb;
                 'contacts' => (int) count($contacts),
             ];
             $is_school_lead_record = $this->is_school_lead_record($school_id);
-            $school_lead_notes = $this->get_school_lead_notes($school_id, 250);
+            $school_lead_notes = $this->get_school_lead_visible_notes($school_id, 250);
+            $school_lead_notes_raw = $this->get_school_lead_notes($school_id, 250);
             $school_lead_notes_preview = array_slice($school_lead_notes, 0, 10);
             $school_lead_note_type_labels = [
                 'general' => 'General',
@@ -52098,6 +52126,7 @@ global $wpdb;
                 'active_profile_tab' => $active_profile_tab,
                 'notes_count' => count($school_lead_notes),
                 'preview_count' => count($school_lead_notes_preview),
+                'hidden_validation_notes_count' => max(0, count($school_lead_notes_raw) - count($school_lead_notes)),
                 'preview_body_debug' => array_map(function ($row) {
                     return $this->get_school_lead_note_debug_value((string) ($row['body'] ?? ''));
                 }, array_slice($school_lead_notes_preview, 0, 5)),
