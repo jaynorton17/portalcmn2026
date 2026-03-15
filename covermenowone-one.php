@@ -51849,7 +51849,6 @@ global $wpdb;
                 // Avoid writes during render; fall back to post ID.
                 $school_code = (string) $school_id;
             }
-            $redirect_url = add_query_arg(['view' => 'schools', 'school_id' => $school_code], $portal_url);
             $school_email = (string) $meta('cmn_email');
             $school_domain = $this->get_email_domain($school_email);
             if ($school_domain === '') {
@@ -51953,11 +51952,15 @@ global $wpdb;
             if (!in_array($active_profile_tab, $allowed_profile_tabs, true)) {
                 $active_profile_tab = 'overview';
             }
+            $status_query_value = isset($_GET['cmn_status']) ? sanitize_key((string) $_GET['cmn_status']) : '';
+            if ($status_query_value === '' && $status_raw !== '') {
+                $status_query_value = sanitize_key($status_raw);
+            }
             $tab_base_query = array_filter([
                 'view' => 'schools',
                 'school_id' => $school_code ?: null,
                 'pid' => $school_id,
-                'cmn_status' => isset($_GET['cmn_status']) ? sanitize_key((string) $_GET['cmn_status']) : '',
+                'cmn_status' => $status_query_value,
                 'cmn_bucket' => isset($_GET['cmn_bucket']) ? sanitize_key((string) $_GET['cmn_bucket']) : '',
                 'cmn_stage' => isset($_GET['cmn_stage']) ? sanitize_key((string) $_GET['cmn_stage']) : '',
                 'cmn_manager' => isset($_GET['cmn_manager']) ? (int) $_GET['cmn_manager'] : 0,
@@ -51966,6 +51969,7 @@ global $wpdb;
                 'cmn_last_activity' => isset($_GET['cmn_last_activity']) ? sanitize_key((string) $_GET['cmn_last_activity']) : '',
                 'q' => isset($_GET['q']) ? sanitize_text_field((string) $_GET['q']) : '',
             ]);
+            $redirect_url = add_query_arg(array_merge($tab_base_query, ['cmn_school_tab' => $active_profile_tab]), $portal_url);
             $build_tab_url = function ($tab_key) use ($portal_url, $tab_base_query) {
                 return add_query_arg(array_merge($tab_base_query, ['cmn_school_tab' => $tab_key]), $portal_url);
             };
@@ -100645,40 +100649,37 @@ p{margin:0;line-height:1.5}
                 && $index_post->post_type === 'cmn_school'
                 && in_array((string) $index_post->post_status, $allowed_statuses, true)
             ) {
+                $indexed_school_id = $this->normalize_school_id((string) get_post_meta($index_match, 'cmn_school_id', true));
+                if ($indexed_school_id === $school_id) {
+                    return (int) $index_match;
+                }
                 $indexed_post_id = (int) $index_match;
             }
         }
 
-        $lookup_args = [
-            'post_type' => 'cmn_school',
-            'post_status' => $allowed_statuses,
-            'posts_per_page' => 1,
-            'orderby' => 'date',
-            'order' => 'DESC',
-            'fields' => 'ids',
-            'no_found_rows' => true,
-            'update_post_meta_cache' => false,
-            'update_post_term_cache' => false,
-            'cache_results' => false,
-            'suppress_filters' => true,
-            'meta_query' => [
-                [
-                    'key' => 'cmn_school_id',
-                    'value' => $school_id,
-                    'compare' => '=',
-                ],
-            ],
-        ];
-        $ids = array_values(array_filter(array_map('intval', (array) get_posts($lookup_args))));
+        $posts_table = $wpdb->posts;
+        $meta_table = $wpdb->postmeta;
+        $status_placeholders = implode(',', array_fill(0, count($allowed_statuses), '%s'));
+        $school_lookup_sql = $wpdb->prepare(
+            "SELECT DISTINCT p.ID
+             FROM {$posts_table} p
+             INNER JOIN {$meta_table} pm
+                     ON pm.post_id = p.ID
+                    AND pm.meta_key = %s
+                    AND pm.meta_value = %s
+             WHERE p.post_type = %s
+               AND p.post_status IN ({$status_placeholders})
+             ORDER BY p.post_date DESC, p.ID DESC
+             LIMIT 5",
+            array_merge(['cmn_school_id', $school_id, 'cmn_school'], array_values($allowed_statuses))
+        );
+        $ids = array_values(array_filter(array_map('intval', (array) $wpdb->get_col($school_lookup_sql))));
         if ($ids) {
             $post_id = (int) $ids[0];
-            $dupe_args = $lookup_args;
-            $dupe_args['posts_per_page'] = 5;
-            $dupes = array_values(array_unique(array_filter(array_map('intval', (array) get_posts($dupe_args)))));
-            if (count($dupes) > 1) {
+            if (count($ids) > 1) {
                 $this->log_school_id_resolution('duplicate_school_id', [
                     'school_id' => $school_id,
-                    'post_ids' => $dupes,
+                    'post_ids' => $ids,
                 ]);
             }
             if ($post_id > 0 && $post_id !== $indexed_post_id) {
