@@ -2996,36 +2996,8 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       if (noteForm) {
-        noteForm.addEventListener('submit', function (event) {
-          event.preventDefault();
-          if (noteForm.getAttribute('data-cmn-native-submit') === '1') {
-            noteForm.removeAttribute('data-cmn-native-submit');
-            return;
-          }
+        noteForm.addEventListener('submit', function () {
           setFeedback(noteFeedback, 'Saving...');
-          var formData = new FormData(noteForm);
-          var values = {};
-          formData.forEach(function (value, key) {
-            values[key] = value;
-          });
-          ajaxSubmit('cmn_school_add_note', values).then(function (data) {
-            if (data && data.note) {
-              prependNote(data.note);
-            }
-            if (noteForm) {
-              noteForm.reset();
-            }
-            setFeedback(noteFeedback, (data && data.message) ? data.message : 'School lead note added.');
-            window.setTimeout(function () {
-              closeModal(noteModal);
-            }, 300);
-          }).catch(function (error) {
-            setFeedback(noteFeedback, 'Saving via fallback...');
-            noteForm.setAttribute('data-cmn-native-submit', '1');
-            window.setTimeout(function () {
-              HTMLFormElement.prototype.submit.call(noteForm);
-            }, 50);
-          });
         });
       }
 

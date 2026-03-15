@@ -28296,6 +28296,12 @@ global $wpdb;
         }
 
         $note_response = $this->build_school_lead_note_response_item($persisted_note_row);
+        $this->log_school_debug('school_lead_note_saved', [
+            'school_post_id' => $school_post_id,
+            'note_id' => (string) ($note_response['id'] ?? ''),
+            'note_type' => $note_type,
+            'notes_count' => count($persisted_notes),
+        ]);
         $note_excerpt = function_exists('mb_substr')
             ? mb_substr($note_body, 0, 120)
             : substr($note_body, 0, 120);
@@ -52539,6 +52545,38 @@ global $wpdb;
                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($build_tab_url('overview')); ?>">Back to overview</a>
                 </div>
             </div>
+            <?php if ($is_school_lead_record) : ?>
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
+                <h3>Lead Notes</h3>
+                <?php if ($school_lead_notes) : ?>
+                    <ul class="cmn-activity-list">
+                        <?php foreach ($school_lead_notes as $lead_note_row) : ?>
+                            <?php
+                            $lead_note_type = $this->normalize_school_lead_note_type((string) ($lead_note_row['type'] ?? 'general'));
+                            $lead_note_type_label = (string) ($school_lead_note_type_labels[$lead_note_type] ?? 'General');
+                            $lead_note_created_at = sanitize_text_field((string) ($lead_note_row['created_at'] ?? ''));
+                            $lead_note_created_ts = strtotime($lead_note_created_at);
+                            $lead_note_author = sanitize_text_field((string) ($lead_note_row['author_name'] ?? 'System'));
+                            ?>
+                            <li data-school-lead-note-id="<?php echo esc_attr(sanitize_key((string) ($lead_note_row['id'] ?? ''))); ?>">
+                                <div class="cmn-school-lead-note-head">
+                                    <strong><?php echo esc_html($lead_note_type_label); ?></strong>
+                                    <span class="cmn-muted">
+                                        <?php echo esc_html($lead_note_author); ?>
+                                        <?php if ($lead_note_created_ts) : ?>
+                                            · <?php echo esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)); ?>
+                                        <?php endif; ?>
+                                    </span>
+                                </div>
+                                <div><?php echo esc_html((string) ($lead_note_row['body'] ?? '')); ?></div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php else : ?>
+                    <p class="cmn-muted">No notes yet.</p>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
             <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
                 <?php if ($watchdog('panel_open_tasks')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start open_tasks school_id=' . (int) $school_id); ?>
