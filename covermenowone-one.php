@@ -13194,7 +13194,7 @@ global $wpdb;
             }
             $portal_mode = !empty($payload['portal_mode']);
 
-            $pdf_binary = $this->generate_cv_converter_pdf_binary($base_name, $html_content);
+            $pdf_binary = $this->render_cv_converter_html_to_pdf_binary($base_name, $html_content);
             $pdf_filename = $base_name . '.pdf';
             $html_filename = $base_name . '.html';
             $pdf_base64 = base64_encode($pdf_binary);
@@ -13217,6 +13217,12 @@ global $wpdb;
                 'pdf_filename' => $pdf_filename,
                 'html_filename' => $html_filename,
             ], 200);
+        } catch (RuntimeException $e) {
+            error_log('[CMN_CV_CONVERTER_API] ' . $e->getMessage());
+            $this->send_cv_converter_api_json([
+                'ok' => false,
+                'error' => $e->getMessage(),
+            ], 503);
         } catch (Throwable $e) {
             error_log('[CMN_CV_CONVERTER_API] ' . $e->getMessage());
             $this->send_cv_converter_api_json([
@@ -14664,6 +14670,213 @@ global $wpdb;
     .footer-contact { margin: 0; font-size: 3mm; font-weight: 500; }
     @media print { .page { overflow: visible; } .footer-band { position: fixed; left: 0; right: 0; bottom: 0; } }
   </style></head><body><article class="page"><header class="header-band"><div class="header-inner"><h1 class="candidate-name" contenteditable="true">' . $candidate_name . '</h1><p class="candidate-title" contenteditable="true">' . $candidate_title . '</p><p class="header-location" contenteditable="true">' . $location . '</p></div></header><div class="logo-shell">' . $logo_html . '</div><main class="body-grid"><aside class="sidebar"><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">KEY INFO</span></h3><div class="divider"></div><ul class="clean-list">' . $key_info_items . '</ul></section><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">STRENGTHS</span></h3><div class="divider"></div><ul class="clean-list">' . $strength_items . '</ul></section><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">SKILLS</span></h3><div class="divider"></div><ul class="clean-list">' . $skills_items . '</ul></section><section class="section section-contact"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">CONTACT</span></h3><div class="divider"></div><ul class="clean-list">' . $contact_items . '</ul></section></aside><section class="main-column"><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">PROFILE</span></h3><div class="divider"></div><p class="paragraph" contenteditable="true">' . $profile_text . '</p></section><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">WORK EXPERIENCE</span></h3><div class="divider"></div>' . $experience_html . '</section><section class="section"><h3 class="section-title"><span class="section-icon"></span><span class="title-text" contenteditable="true">EDUCATION</span></h3><div class="divider"></div>' . $education_html . '</section></section></main><footer class="footer-band"><p class="footer-cta" contenteditable="true">' . $footer_cta_text . '</p><p class="footer-contact" contenteditable="true">' . $phone . ' | ' . $email . '</p></footer></article></body></html>';
+    }
+
+    private function get_cv_pdf_renderer_config_value($constant_name, $env_name, $default = '') {
+        if ($constant_name !== '' && defined($constant_name)) {
+            return constant($constant_name);
+        }
+        if ($env_name !== '') {
+            $env_value = getenv($env_name);
+            if ($env_value !== false && $env_value !== '') {
+                return $env_value;
+            }
+        }
+        return $default;
+    }
+
+    private function get_cv_pdf_renderer_config() {
+        $uploads = wp_upload_dir();
+        $uploads_base = isset($uploads['basedir']) ? (string) $uploads['basedir'] : '';
+        if ($uploads_base === '') {
+            $uploads_base = WP_CONTENT_DIR . '/uploads';
+        }
+        $default_runtime_dir = trailingslashit($uploads_base) . 'cmn-tools/cv-pdf-renderer-runtime';
+        $runtime_dir = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_RUNTIME_DIR', 'CMN_CV_PDF_RUNTIME_DIR', $default_runtime_dir));
+        if ($runtime_dir === '') {
+            $runtime_dir = $default_runtime_dir;
+        }
+
+        $default_node_modules_path = trailingslashit($runtime_dir) . 'node_modules';
+        $default_browsers_path = trailingslashit($runtime_dir) . 'playwright-browsers';
+        $default_mode = is_dir($default_node_modules_path) ? 'playwright' : '';
+
+        $mode = strtolower(trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_RENDERER', 'CMN_CV_PDF_RENDERER', $default_mode)));
+        $node_bin = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_NODE_BIN', 'CMN_CV_PDF_NODE_BIN', 'node'));
+        $chromium_path = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_CHROMIUM_PATH', 'CMN_CV_PDF_CHROMIUM_PATH', ''));
+        $node_modules_path = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_NODE_MODULES', 'CMN_CV_PDF_NODE_MODULES', $default_node_modules_path));
+        $browsers_path = trim((string) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_BROWSERS_PATH', 'CMN_CV_PDF_BROWSERS_PATH', $default_browsers_path));
+        $timeout_seconds = (int) $this->get_cv_pdf_renderer_config_value('CMN_CV_PDF_TIMEOUT', 'CMN_CV_PDF_TIMEOUT', 60);
+        if ($timeout_seconds < 10) {
+            $timeout_seconds = 10;
+        }
+
+        return [
+            'mode' => $mode,
+            'node_bin' => $node_bin,
+            'chromium_path' => $chromium_path,
+            'runtime_dir' => $runtime_dir,
+            'node_modules_path' => $node_modules_path,
+            'browsers_path' => $browsers_path,
+            'timeout_seconds' => $timeout_seconds,
+            'script_path' => plugin_dir_path(__FILE__) . 'tools/cv-pdf-renderer/render.js',
+        ];
+    }
+
+    private function run_cv_pdf_renderer_process($command, $cwd, array $env, $timeout_seconds) {
+        if (!function_exists('proc_open')) {
+            throw new RuntimeException('Formatted CV PDF renderer is unavailable on this host.');
+        }
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = @proc_open($command, $descriptors, $pipes, $cwd, $env);
+        if (!is_resource($process)) {
+            throw new RuntimeException('Formatted CV PDF renderer could not be started.');
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $stdout = '';
+        $stderr = '';
+        $started_at = microtime(true);
+
+        while (true) {
+            $stdout .= (string) stream_get_contents($pipes[1]);
+            $stderr .= (string) stream_get_contents($pipes[2]);
+            $status = proc_get_status($process);
+            if (!$status['running']) {
+                break;
+            }
+            if ((microtime(true) - $started_at) > $timeout_seconds) {
+                @proc_terminate($process, 9);
+                $stdout .= (string) stream_get_contents($pipes[1]);
+                $stderr .= (string) stream_get_contents($pipes[2]);
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+                @proc_close($process);
+                throw new RuntimeException('Formatted CV PDF renderer timed out.');
+            }
+            usleep(100000);
+        }
+
+        $stdout .= (string) stream_get_contents($pipes[1]);
+        $stderr .= (string) stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exit_code = proc_close($process);
+
+        return [
+            'stdout' => $stdout,
+            'stderr' => $stderr,
+            'exit_code' => (int) $exit_code,
+        ];
+    }
+
+    private function render_cv_converter_html_to_pdf_binary($base_name, $html_content) {
+        $config = $this->get_cv_pdf_renderer_config();
+        if (($config['mode'] ?? '') !== 'playwright') {
+            throw new RuntimeException('Formatted CV PDF renderer is not enabled.');
+        }
+
+        $script_path = (string) ($config['script_path'] ?? '');
+        if ($script_path === '' || !is_file($script_path)) {
+            throw new RuntimeException('Formatted CV PDF renderer script is missing.');
+        }
+
+        $node_bin = trim((string) ($config['node_bin'] ?? 'node'));
+        if ($node_bin === '') {
+            $node_bin = 'node';
+        }
+
+        $tmp_html_path = wp_tempnam('cmn_cv_renderer_' . sanitize_file_name((string) $base_name) . '.html');
+        $tmp_pdf_path = wp_tempnam('cmn_cv_renderer_' . sanitize_file_name((string) $base_name) . '.pdf');
+        if (!$tmp_html_path || !$tmp_pdf_path) {
+            if ($tmp_html_path) {
+                @unlink($tmp_html_path);
+            }
+            if ($tmp_pdf_path) {
+                @unlink($tmp_pdf_path);
+            }
+            throw new RuntimeException('Formatted CV PDF renderer could not prepare temporary files.');
+        }
+
+        $tmp_pdf_output_path = $tmp_pdf_path . '.pdf';
+        if (@file_put_contents($tmp_html_path, (string) $html_content) === false) {
+            @unlink($tmp_html_path);
+            @unlink($tmp_pdf_path);
+            throw new RuntimeException('Formatted CV PDF renderer could not stage HTML input.');
+        }
+        @unlink($tmp_pdf_path);
+
+        $env = $_ENV;
+        $node_modules_path = trim((string) ($config['node_modules_path'] ?? ''));
+        if ($node_modules_path !== '') {
+            $existing_node_path = getenv('NODE_PATH');
+            $env['NODE_PATH'] = $existing_node_path ? ($node_modules_path . PATH_SEPARATOR . $existing_node_path) : $node_modules_path;
+        }
+        $browsers_path = trim((string) ($config['browsers_path'] ?? ''));
+        if ($browsers_path !== '') {
+            $env['PLAYWRIGHT_BROWSERS_PATH'] = $browsers_path;
+        }
+        $chromium_path = trim((string) ($config['chromium_path'] ?? ''));
+        if ($chromium_path !== '') {
+            $env['CMN_CV_PDF_CHROMIUM_PATH'] = $chromium_path;
+        }
+
+        $command = escapeshellarg($node_bin)
+            . ' ' . escapeshellarg($script_path)
+            . ' --input ' . escapeshellarg($tmp_html_path)
+            . ' --output ' . escapeshellarg($tmp_pdf_output_path);
+        if ($chromium_path !== '') {
+            $command .= ' --chromium-path ' . escapeshellarg($chromium_path);
+        }
+
+        try {
+            $result = $this->run_cv_pdf_renderer_process(
+                $command,
+                plugin_dir_path(__FILE__),
+                $env,
+                (int) ($config['timeout_seconds'] ?? 60)
+            );
+        } catch (Throwable $e) {
+            @unlink($tmp_html_path);
+            @unlink($tmp_pdf_output_path);
+            throw $e instanceof RuntimeException ? $e : new RuntimeException('Formatted CV PDF renderer failed to execute.');
+        }
+
+        $stderr = trim((string) ($result['stderr'] ?? ''));
+        if ($stderr !== '') {
+            error_log('[CMN_CV_PDF_RENDERER] ' . $stderr);
+        }
+
+        if ((int) ($result['exit_code'] ?? 1) !== 0) {
+            @unlink($tmp_html_path);
+            @unlink($tmp_pdf_output_path);
+            throw new RuntimeException('Formatted CV PDF renderer failed.');
+        }
+
+        if (!is_file($tmp_pdf_output_path) || !is_readable($tmp_pdf_output_path)) {
+            @unlink($tmp_html_path);
+            @unlink($tmp_pdf_output_path);
+            throw new RuntimeException('Formatted CV PDF renderer did not produce a PDF.');
+        }
+
+        $pdf_binary = (string) @file_get_contents($tmp_pdf_output_path);
+        @unlink($tmp_html_path);
+        @unlink($tmp_pdf_output_path);
+
+        if ($pdf_binary === '' || strpos($pdf_binary, '%PDF-') !== 0) {
+            throw new RuntimeException('Formatted CV PDF renderer produced an invalid PDF.');
+        }
+
+        return $pdf_binary;
     }
 
     private function generate_cv_converter_pdf_escape_text($value) {

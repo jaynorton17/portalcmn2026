@@ -1,0 +1,10 @@
+{
+  "name": "cmn-cv-pdf-renderer-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Runtime dependencies for CoverMeNow ONE formatted CV PDF rendering",
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "playwright": "^1.52.0"
+  }
+}
