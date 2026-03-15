@@ -118301,6 +118301,8 @@ if (!function_exists('cmn_can')) {
                 return $user_id > 0;
             case 'portal.staff.view':
                 return $is_staff_or_admin;
+            case 'school.candidate.documents.download':
+                return $role === 'school' || $is_staff_or_admin;
             case 'system.after_booking_support.view':
                 return $is_staff_or_admin;
             case 'partner.admin.mutate':
