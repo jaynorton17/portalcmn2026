@@ -889,7 +889,6 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_notifications_mark_read', [$this, 'handle_notifications_mark_read']);
         add_action('wp_ajax_cmn_school_contact_search', [$this, 'handle_school_contact_search_ajax']);
         add_action('wp_ajax_cmn_school_update_details', [$this, 'handle_school_update_details_ajax']);
-        add_action('wp_ajax_cmn_school_add_note', [$this, 'handle_school_add_note_ajax']);
         add_action('wp_ajax_cmn_notifications_mark_selected_read', [$this, 'handle_notifications_mark_selected_read']);
         add_action('wp_ajax_cmn_notifications_delete_selected', [$this, 'handle_notifications_delete_selected']);
         add_action('wp_ajax_cmn_notifications_poll', [$this, 'handle_notifications_poll']);
@@ -27958,6 +27957,22 @@ global $wpdb;
         return 'general';
     }
 
+    private function get_school_lead_note_debug_value($note_body) {
+        $body = sanitize_textarea_field((string) $note_body);
+        if ($body === '') {
+            return '';
+        }
+        if (preg_match('/^TEST_[A-Z0-9_ -]+$/', $body)) {
+            return $body;
+        }
+        $excerpt = function_exists('mb_substr') ? mb_substr($body, 0, 40) : substr($body, 0, 40);
+        return [
+            'excerpt' => $excerpt,
+            'length' => function_exists('mb_strlen') ? (int) mb_strlen($body) : (int) strlen($body),
+            'sha1' => sha1($body),
+        ];
+    }
+
     private function get_school_lead_notes($school_post_id, $limit = 10) {
         $school_post_id = (int) $school_post_id;
         $limit = max(1, min(200, (int) $limit));
@@ -28252,6 +28267,7 @@ global $wpdb;
             'school_domain' => sanitize_text_field((string) ($context['school_domain'] ?? '')),
             'note_type' => $note_type,
             'note_length' => function_exists('mb_strlen') ? (int) mb_strlen($note_body) : (int) strlen($note_body),
+            'note_body_debug' => $this->get_school_lead_note_debug_value($note_body),
             'actor_user_id' => $actor_user_id,
         ]);
 
@@ -28274,6 +28290,7 @@ global $wpdb;
             'save_result' => $save_result ? 1 : 0,
             'existing_notes_count' => count($existing_notes),
             'persisted_notes_count' => count($persisted_notes),
+            'requested_note_body_debug' => $this->get_school_lead_note_debug_value($note_body),
         ]);
         $persisted_note_row = null;
         foreach ($persisted_notes as $persisted_row) {
@@ -28320,6 +28337,7 @@ global $wpdb;
             'note_id' => (string) ($note_response['id'] ?? ''),
             'note_type' => $note_type,
             'notes_count' => count($persisted_notes),
+            'saved_note_body_debug' => $this->get_school_lead_note_debug_value((string) ($persisted_note_row['body'] ?? '')),
         ]);
         $note_excerpt = function_exists('mb_substr')
             ? mb_substr($note_body, 0, 120)
@@ -28338,47 +28356,6 @@ global $wpdb;
             'notes_count' => count($persisted_notes),
             'context' => $context,
         ];
-    }
-
-    public function handle_school_add_note_ajax() {
-        $actor_user_id = (int) get_current_user_id();
-        $guard = $this->cmn_endpoint_guard([
-            'ability_required' => 'partner.admin.mutate',
-            'nonce_mode' => 'required',
-            'nonce_action' => 'cmn_school_lead_actions',
-            'nonce_field' => 'nonce',
-            'writes_state' => true,
-            'transport' => 'ajax',
-            'context' => [
-                'actor_user_id' => $actor_user_id,
-            ],
-        ], function () {
-            return true;
-        });
-        if ($guard !== true) {
-            return;
-        }
-
-        $staff_guard = $this->cmn_policy_require_ability('portal.staff.view', [
-            'actor_user_id' => $actor_user_id,
-            'transport' => 'ajax',
-            'endpoint' => 'cmn_school_add_note',
-        ]);
-        if (is_wp_error($staff_guard)) {
-            wp_send_json_error(['message' => $staff_guard->get_error_message()], (int) ($staff_guard->get_error_data()['status'] ?? 403));
-        }
-
-        $result = $this->persist_school_lead_note_from_request($actor_user_id);
-        if (is_wp_error($result)) {
-            wp_send_json_error(['message' => $result->get_error_message()], (int) ($result->get_error_data()['status'] ?? 400));
-        }
-
-        wp_send_json_success([
-            'message' => (string) ($result['message'] ?? 'School lead note added.'),
-            'school_id' => (int) ($result['school_id'] ?? 0),
-            'note' => $result['note'] ?? null,
-            'notes_count' => (int) ($result['notes_count'] ?? 0),
-        ]);
     }
 
     public function handle_school_add_note_post() {
@@ -52121,6 +52098,9 @@ global $wpdb;
                 'active_profile_tab' => $active_profile_tab,
                 'notes_count' => count($school_lead_notes),
                 'preview_count' => count($school_lead_notes_preview),
+                'preview_body_debug' => array_map(function ($row) {
+                    return $this->get_school_lead_note_debug_value((string) ($row['body'] ?? ''));
+                }, array_slice($school_lead_notes_preview, 0, 5)),
             ]);
             $school_lead_field_values = [
                 'school_name' => sanitize_text_field((string) $school->post_title),
@@ -52265,7 +52245,7 @@ global $wpdb;
                         <h3>Add note</h3>
                         <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-close-note>Close</button>
                     </div>
-                    <form class="cmn-form cmn-school-lead-form" data-school-lead-note-form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <form class="cmn-form cmn-school-lead-form" data-school-lead-note-form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" autocomplete="off">
                         <input type="hidden" name="action" value="cmn_school_add_note">
                         <input type="hidden" name="school_id" value="<?php echo esc_attr((string) $school_code); ?>">
                         <input type="hidden" name="pid" value="<?php echo esc_attr((string) $school_id); ?>">
@@ -52280,7 +52260,7 @@ global $wpdb;
                             </select>
                         </label>
                         <label>Note
-                            <textarea name="note_body" rows="4" required placeholder="Add your note"></textarea>
+                            <textarea name="note_body" rows="4" required placeholder="Add your note" autocomplete="off"></textarea>
                         </label>
                         <div class="cmn-school-lead-modal-actions">
                             <button class="cmn-ghost" type="button" data-school-lead-close-note>Cancel</button>

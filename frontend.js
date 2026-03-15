@@ -2852,6 +2852,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       if (noteOpenBtn && noteModal) {
         noteOpenBtn.addEventListener('click', function () {
+          if (noteForm) {
+            noteForm.reset();
+          }
           setFeedback(noteFeedback, '');
           openModal(noteModal);
         });
@@ -2864,6 +2867,10 @@ document.addEventListener('DOMContentLoaded', function () {
       });
       noteCloseBtns.forEach(function (btn) {
         btn.addEventListener('click', function () {
+          if (noteForm) {
+            noteForm.reset();
+          }
+          setFeedback(noteFeedback, '');
           closeModal(noteModal);
         });
       });
