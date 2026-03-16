@@ -1515,10 +1515,12 @@ document.addEventListener('DOMContentLoaded', function () {
   var staffNav = document.querySelector('[data-staff-nav]');
   if (staffNav) {
     var staffNavUserId = staffNav.getAttribute('data-user-id') || '0';
+    var staffNavEditable = staffNav.getAttribute('data-nav-editable') !== '0';
     var staffNavStorageKey = 'cmn_staff_nav_state_v2_' + staffNavUserId;
     var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
     var staffNavEditModeKey = 'cmn_sidebar_edit_mode';
     var staffShell = staffNav.closest('.cmn-staff-shell');
+    var amNavContext = staffNav.querySelector('[data-am-nav-context]');
     var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
     var staffNavEditToggleBtn = staffNav.querySelector('[data-staff-nav-edit-toggle]');
     var staffNavEditPanel = staffNav.querySelector('[data-staff-nav-edit-panel]');
@@ -1725,6 +1727,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     };
     var readStaffNavEditModeState = function () {
+      if (!staffNavEditable) {
+        return false;
+      }
       try {
         return window.localStorage.getItem(staffNavEditModeKey) === '1';
       } catch (e) {
@@ -1732,6 +1737,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     };
     var writeStaffNavEditModeState = function (isEditing) {
+      if (!staffNavEditable) {
+        return;
+      }
       try {
         window.localStorage.setItem(staffNavEditModeKey, isEditing ? '1' : '0');
       } catch (e) {
@@ -1861,6 +1869,60 @@ document.addEventListener('DOMContentLoaded', function () {
         staffNavEditSaveBtn.disabled = navOrderSaveInFlight || !navOrderDirty;
       }
     };
+    var loadAccountManagerNavContext = function () {
+      if (!amNavContext || !(window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.accountManagerNavNonce)) {
+        return;
+      }
+      var statusEl = amNavContext.querySelector('[data-am-nav-context-status]');
+      var setMetricValue = function (key, value) {
+        var metricEl = amNavContext.querySelector('[data-am-nav-metric-value="' + key + '"]');
+        if (metricEl) {
+          metricEl.textContent = String(value);
+        }
+      };
+      amNavContext.classList.add('is-loading');
+      amNavContext.classList.remove('has-error');
+      amNavContext.setAttribute('aria-busy', 'true');
+      if (statusEl) {
+        statusEl.textContent = 'Loading live counts...';
+      }
+      var fd = new FormData();
+      fd.append('action', 'cmn_get_account_manager_nav_context');
+      fd.append('nonce', window.cmnPortal.accountManagerNavNonce);
+      fetch(window.cmnPortal.ajaxUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd
+      }).then(function (response) {
+        if (!response || !response.ok) {
+          throw new Error('Unable to load.');
+        }
+        return response.json();
+      }).then(function (json) {
+        var context = json && json.success && json.data ? json.data.context : null;
+        if (!context || typeof context !== 'object') {
+          throw new Error('Invalid response.');
+        }
+        setMetricValue('portfolio', parseInt(context.portfolio || 0, 10) || 0);
+        setMetricValue('follow_up', parseInt(context.follow_up || 0, 10) || 0);
+        setMetricValue('active_clients', parseInt(context.active_clients || 0, 10) || 0);
+        setMetricValue('open_requests', parseInt(context.open_requests || 0, 10) || 0);
+        amNavContext.classList.remove('is-loading');
+        amNavContext.setAttribute('aria-busy', 'false');
+        if (statusEl) {
+          statusEl.textContent = context.updated_label
+            ? ('Updated ' + String(context.updated_label))
+            : 'Live counts ready.';
+        }
+      }).catch(function () {
+        amNavContext.classList.remove('is-loading');
+        amNavContext.classList.add('has-error');
+        amNavContext.setAttribute('aria-busy', 'false');
+        if (statusEl) {
+          statusEl.textContent = 'Live counts unavailable right now.';
+        }
+      });
+    };
     var syncNavDirtyState = function () {
       var currentOrder = normalizeNavOrder(collectNavOrderFromDom(), navOrderDefault);
       navOrderDirty = orderFingerprint(currentOrder) !== orderFingerprint(navOrderBaseline);
@@ -1882,6 +1944,9 @@ document.addEventListener('DOMContentLoaded', function () {
       writeStaffNavEditModeState(false);
     };
     var enterNavEditMode = function () {
+      if (!staffNavEditable) {
+        return;
+      }
       isNavEditing = true;
       navOrderSaveInFlight = false;
       navOrderBaseline = normalizeNavOrder(collectNavOrderFromDom(), navOrderDefault);
@@ -2121,8 +2186,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
     setNavDragEnabled(false);
     refreshNavEditControls();
+    if (!staffNavEditable) {
+      try {
+        window.localStorage.removeItem(staffNavEditModeKey);
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    }
     if (readStaffNavEditModeState()) {
       enterNavEditMode();
+    }
+    if (amNavContext) {
+      (window.requestAnimationFrame || function (cb) {
+        return window.setTimeout(cb, 0);
+      })(loadAccountManagerNavContext);
     }
     document.addEventListener('click', function (event) {
       if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
@@ -2234,12 +2311,50 @@ document.addEventListener('DOMContentLoaded', function () {
     // Panels stay hidden until a menu option is selected (unless server marked one active).
   }
 
-  var filterToggle = document.querySelector('[data-filter-toggle]');
-  var filterPanel = document.querySelector('[data-filter-panel]');
-  if (filterToggle && filterPanel) {
-    filterToggle.addEventListener('click', function (event) {
-      event.preventDefault();
-      filterPanel.classList.toggle('is-open');
+  var schoolToolbars = document.querySelectorAll('[data-school-toolbar]');
+  if (schoolToolbars.length) {
+    schoolToolbars.forEach(function (toolbar, toolbarIndex) {
+      var filterToggle = toolbar.querySelector('[data-filter-toggle]');
+      var filterPanel = toolbar.querySelector('[data-filter-panel]');
+      if (!filterToggle || !filterPanel) {
+        return;
+      }
+      var storageKey = String(toolbar.getAttribute('data-toolbar-storage') || ('cmnSchoolToolbar:' + toolbarIndex)).trim();
+      var defaultOpen = String(toolbar.getAttribute('data-filter-default-open') || '').trim() === '1';
+
+      var setFilterPanelOpen = function (isOpen) {
+        filterPanel.classList.toggle('is-open', !!isOpen);
+        filterToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        toolbar.setAttribute('data-filter-open', isOpen ? '1' : '0');
+      };
+
+      var initialOpen = defaultOpen || filterPanel.classList.contains('is-open');
+      try {
+        if (window.localStorage) {
+          var storedState = String(window.localStorage.getItem(storageKey) || '').trim();
+          if (storedState === '1') {
+            initialOpen = true;
+          } else if (storedState === '0') {
+            initialOpen = false;
+          }
+        }
+      } catch (e) {
+        // Ignore storage failures.
+      }
+      setFilterPanelOpen(initialOpen);
+
+      filterToggle.addEventListener('click', function (event) {
+        event.preventDefault();
+        var nextOpen = !filterPanel.classList.contains('is-open');
+        setFilterPanelOpen(nextOpen);
+        try {
+          if (window.localStorage) {
+            window.localStorage.setItem(storageKey, nextOpen ? '1' : '0');
+          }
+        } catch (e) {
+          // Ignore storage failures.
+        }
+      });
     });
   }
 
@@ -2779,6 +2894,2267 @@ document.addEventListener('DOMContentLoaded', function () {
       mainContactRoleInput.addEventListener('input', syncCoverManagerFields);
       mainContactRoleInput.addEventListener('change', syncCoverManagerFields);
       syncCoverManagerFields();
+    });
+  }
+
+  var schoolLeadOverviewRoots = document.querySelectorAll('[data-school-lead-overview]');
+  if (schoolLeadOverviewRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl) {
+    schoolLeadOverviewRoots.forEach(function (root) {
+      var ajaxUrl = String(window.cmnPortal.ajaxUrl || '').trim();
+      if (!ajaxUrl) {
+        return;
+      }
+      var schoolId = String(root.getAttribute('data-school-id') || '').trim();
+      var schoolPid = String(root.getAttribute('data-school-pid') || '').trim();
+      var nonce = String(root.getAttribute('data-school-lead-nonce') || window.cmnPortal.schoolLeadNonce || '').trim();
+      if (!schoolId || !schoolPid || !nonce) {
+        return;
+      }
+
+      var editModal = root.querySelector('[data-school-lead-edit-modal]');
+      var stageModal = root.querySelector('[data-school-lead-stage-modal]');
+      var noteModal = root.querySelector('[data-school-lead-note-modal]');
+      var editOpenBtns = Array.prototype.slice.call(root.querySelectorAll('[data-school-lead-open-edit]'));
+      var stageOpenBtns = Array.prototype.slice.call(root.querySelectorAll('[data-school-lead-open-stage]'));
+      var noteOpenBtns = Array.prototype.slice.call(root.querySelectorAll('[data-school-lead-open-note]'));
+      var editCloseBtns = Array.prototype.slice.call(root.querySelectorAll('[data-school-lead-close-edit]'));
+      var stageCloseBtns = Array.prototype.slice.call(root.querySelectorAll('[data-school-lead-close-stage]'));
+      var noteCloseBtns = Array.prototype.slice.call(root.querySelectorAll('[data-school-lead-close-note]'));
+      var editForm = root.querySelector('[data-school-lead-edit-form]');
+      var stageForm = root.querySelector('[data-school-lead-stage-form]');
+      var noteForm = root.querySelector('[data-school-lead-note-form]');
+      var quickNoteForm = root.querySelector('[data-school-lead-quick-note-form]');
+      var editFeedback = root.querySelector('[data-school-lead-edit-feedback]');
+      var stageFeedback = root.querySelector('[data-school-lead-stage-feedback]');
+      var noteFeedback = root.querySelector('[data-school-lead-note-feedback]');
+      var quickNoteFeedback = root.querySelector('[data-school-lead-quick-note-feedback]');
+      var noteModalTitle = root.querySelector('[data-school-lead-note-modal-title]');
+      var noteModalSubmit = root.querySelector('[data-school-lead-note-submit]');
+      var quickNoteSubmit = root.querySelector('[data-school-lead-quick-note-submit]');
+      var quickNoteField = quickNoteForm ? quickNoteForm.querySelector('[name="note_body"]') : null;
+      var notesPanel = document.querySelector('[data-school-lead-notes-panel][data-school-pid="' + schoolPid + '"]');
+      var notesList = notesPanel ? notesPanel.querySelector('[data-school-lead-notes-list]') : null;
+      var notesAllList = notesPanel ? notesPanel.querySelector('[data-school-lead-notes-all]') : null;
+      var notesExpandBtn = notesPanel ? notesPanel.querySelector('[data-school-lead-notes-expand]') : null;
+      var fieldTargets = document.querySelectorAll('[data-school-overview-field]');
+
+      var typeLabels = {
+        general: 'Note',
+        task: 'Task',
+        call: 'Call',
+        email: 'Email',
+        meeting: 'Meeting'
+      };
+
+      var setFeedback = function (target, message) {
+        if (target) {
+          target.textContent = message || '';
+        }
+      };
+
+      var runWithBusyButton = function (button, busyLabel, runner) {
+        var originalLabel = '';
+        if (button) {
+          originalLabel = String(button.textContent || '').trim();
+          button.setAttribute('data-school-lead-original-label', originalLabel);
+          button.disabled = true;
+          button.classList.add('is-loading');
+          if (busyLabel) {
+            button.textContent = String(busyLabel);
+          }
+        }
+        return Promise.resolve().then(runner).finally(function () {
+          if (button) {
+            button.disabled = false;
+            button.classList.remove('is-loading');
+            button.textContent = originalLabel || button.textContent;
+          }
+        });
+      };
+
+      var openModal = function (modalEl) {
+        if (!modalEl) {
+          return;
+        }
+        modalEl.hidden = false;
+        modalEl.classList.add('is-open');
+        document.body.classList.add('cmn-support-modal-lock');
+        var focusTarget = modalEl.querySelector('input:not([type="hidden"]), select, textarea, button');
+        if (focusTarget && typeof focusTarget.focus === 'function') {
+          window.setTimeout(function () {
+            focusTarget.focus();
+          }, 0);
+        }
+      };
+
+      var closeModal = function (modalEl) {
+        if (!modalEl) {
+          return;
+        }
+        modalEl.hidden = true;
+        modalEl.classList.remove('is-open');
+        if (!root.querySelector('.cmn-modal.is-open')) {
+          document.body.classList.remove('cmn-support-modal-lock');
+        }
+      };
+
+      var normalizeFieldDisplay = function (value) {
+        var normalized = String(value || '').trim();
+        return normalized ? normalized : '—';
+      };
+
+      var updateOverviewFields = function (values) {
+        if (!values || typeof values !== 'object') {
+          return;
+        }
+        fieldTargets.forEach(function (node) {
+          var key = String(node.getAttribute('data-school-overview-field') || '').trim();
+          if (!key || !Object.prototype.hasOwnProperty.call(values, key)) {
+            return;
+          }
+          node.textContent = normalizeFieldDisplay(values[key]);
+        });
+        if (editForm) {
+          Object.keys(values).forEach(function (key) {
+            var input = editForm.querySelector('[name="' + key + '"]');
+            if (!input) {
+              return;
+            }
+            input.value = String(values[key] || '');
+          });
+        }
+      };
+
+      var prepareNoteFormForAdd = function () {
+        if (!noteForm) {
+          return;
+        }
+        noteForm.reset();
+        var noteIdInput = noteForm.querySelector('[name="note_id"]');
+        if (noteIdInput) {
+          noteIdInput.value = '';
+        }
+        if (noteModalTitle) {
+          noteModalTitle.textContent = 'Add note';
+        }
+        if (noteModalSubmit) {
+          noteModalSubmit.textContent = 'Save note';
+        }
+      };
+
+      var prepareNoteFormForEdit = function (noteItem) {
+        if (!noteForm || !noteItem) {
+          return;
+        }
+        var noteIdInput = noteForm.querySelector('[name="note_id"]');
+        var noteTypeInput = noteForm.querySelector('[name="note_type"]');
+        var noteBodyInput = noteForm.querySelector('[name="note_body"]');
+        if (noteIdInput) {
+          noteIdInput.value = String(noteItem.getAttribute('data-school-lead-note-id') || '').trim();
+        }
+        if (noteTypeInput) {
+          noteTypeInput.value = String(noteItem.getAttribute('data-school-lead-note-type') || 'general').trim().toLowerCase();
+        }
+        if (noteBodyInput) {
+          noteBodyInput.value = String(noteItem.getAttribute('data-school-lead-note-body') || '');
+        }
+        if (noteModalTitle) {
+          noteModalTitle.textContent = 'Edit note';
+        }
+        if (noteModalSubmit) {
+          noteModalSubmit.textContent = 'Save changes';
+        }
+      };
+
+      var getNoteDisplayParts = function (note) {
+        var typeKey = String(note && note.type ? note.type : 'general').toLowerCase();
+        var typeLabel = String(note && note.type_label ? note.type_label : (typeLabels[typeKey] || 'Note'));
+        var explicitTitle = String(note && note.display_title ? note.display_title : '').trim();
+        var explicitContext = String(note && note.display_context ? note.display_context : '').trim();
+        if (explicitTitle) {
+          return {
+            title: explicitTitle,
+            context: explicitContext
+          };
+        }
+        var noteBody = String(note && note.body ? note.body : '');
+        var bodyLines = noteBody.split(/\r\n|\r|\n/);
+        var titleLine = '';
+        var contextLines = [];
+        bodyLines.forEach(function (line) {
+          var trimmed = String(line || '').trim();
+          if (!trimmed) {
+            if (titleLine && contextLines.length) {
+              contextLines.push('');
+            }
+            return;
+          }
+          if (!titleLine) {
+            titleLine = trimmed;
+            return;
+          }
+          contextLines.push(trimmed);
+        });
+        if (!titleLine) {
+          titleLine = noteBody.trim() || typeLabel;
+        }
+        return {
+          title: typeLabel + (titleLine ? ' - ' + titleLine : ''),
+          context: contextLines.join('\n').trim()
+        };
+      };
+
+      var buildNoteListItem = function (note) {
+        var li = document.createElement('li');
+        li.setAttribute('data-school-lead-note-id', String(note && note.id ? note.id : ''));
+        li.setAttribute('data-school-lead-note-type', String(note && note.type ? note.type : 'general'));
+        li.setAttribute('data-school-lead-note-body', String(note && note.body ? note.body : ''));
+        var head = document.createElement('div');
+        head.className = 'cmn-school-lead-note-head';
+        var headMain = document.createElement('div');
+        headMain.className = 'cmn-school-lead-note-head-main';
+        var typeStrong = document.createElement('strong');
+        typeStrong.className = 'cmn-school-lead-note-title';
+        var display = getNoteDisplayParts(note);
+        typeStrong.textContent = display.title || 'Note';
+        var meta = document.createElement('span');
+        meta.className = 'cmn-muted';
+        var author = String(note && note.author_name ? note.author_name : 'System');
+        var created = String(note && note.created_label ? note.created_label : (note && note.created_at ? note.created_at : ''));
+        meta.textContent = created ? (author + ' · ' + created) : author;
+        headMain.appendChild(typeStrong);
+        headMain.appendChild(meta);
+        head.appendChild(headMain);
+        var editButton = document.createElement('button');
+        editButton.type = 'button';
+        editButton.className = 'cmn-ghost cmn-btn-mini';
+        editButton.setAttribute('data-school-lead-edit-note', '1');
+        editButton.textContent = 'Edit';
+        head.appendChild(editButton);
+        li.appendChild(head);
+        if (display.context) {
+          var body = document.createElement('div');
+          body.className = 'cmn-school-lead-note-context';
+          body.textContent = display.context;
+          li.appendChild(body);
+        }
+        return li;
+      };
+
+      var upsertNote = function (note) {
+        if (!notesPanel || !note) {
+          return;
+        }
+        var noteId = String(note && note.id ? note.id : '').trim();
+        var existingNodes = noteId ? notesPanel.querySelectorAll('[data-school-lead-note-id="' + noteId + '"]') : [];
+        if (existingNodes.length) {
+          existingNodes.forEach(function (node) {
+            var replacement = buildNoteListItem(note);
+            if (node.parentNode) {
+              node.parentNode.replaceChild(replacement, node);
+            }
+          });
+          return;
+        }
+        if (!notesList) {
+          return;
+        }
+        var emptyEl = notesList.querySelector('[data-school-lead-notes-empty]');
+        if (emptyEl) {
+          emptyEl.remove();
+        }
+        var item = buildNoteListItem(note);
+        if (notesList.firstChild) {
+          notesList.insertBefore(item, notesList.firstChild);
+        } else {
+          notesList.appendChild(item);
+        }
+      };
+
+      var requestJson = function (formData) {
+        return fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: formData
+        }).then(function (response) {
+          return response.text().then(function (text) {
+            var data;
+            try {
+              data = JSON.parse(text);
+            } catch (e) {
+              data = null;
+            }
+            if (!response.ok || !data) {
+              var fallback = 'Request failed.';
+              if (data && data.data && data.data.message) {
+                fallback = data.data.message;
+              } else if (text) {
+                fallback = text.slice(0, 180);
+              }
+              throw new Error(fallback);
+            }
+            if (!data.success) {
+              throw new Error((data.data && data.data.message) ? data.data.message : 'Request failed.');
+            }
+            return data.data || {};
+          });
+        });
+      };
+
+      var submitLeadNoteForm = function (formEl, feedbackTarget, submitBtn, options) {
+        if (!formEl) {
+          return Promise.resolve();
+        }
+        var noteIdInput = formEl.querySelector('[name="note_id"]');
+        var isEditingNote = !!(noteIdInput && String(noteIdInput.value || '').trim());
+        var savingLabel = options && options.savingLabel
+          ? String(options.savingLabel)
+          : (isEditingNote ? 'Saving changes...' : 'Saving note...');
+        var errorLabel = options && options.errorLabel
+          ? String(options.errorLabel)
+          : 'Unable to save note.';
+        var successLabel = options && options.successLabel
+          ? String(options.successLabel)
+          : (isEditingNote ? 'Note updated.' : 'Note saved.');
+        setFeedback(feedbackTarget, savingLabel);
+        return runWithBusyButton(submitBtn, 'Saving...', function () {
+          var formData = new FormData(formEl);
+          formData.append('action', 'cmn_school_add_note');
+          formData.append('school_id', schoolId);
+          formData.append('pid', schoolPid);
+          formData.append('nonce', nonce);
+          return requestJson(formData).then(function (payload) {
+            if (payload.note) {
+              upsertNote(payload.note);
+            }
+            setFeedback(feedbackTarget, payload.message || successLabel);
+            if (options && typeof options.onSuccess === 'function') {
+              options.onSuccess(payload, isEditingNote);
+            }
+          }).catch(function (err) {
+            setFeedback(feedbackTarget, err && err.message ? err.message : errorLabel);
+          });
+        });
+      };
+
+      editOpenBtns.forEach(function (button) {
+        if (!editModal) {
+          return;
+        }
+        button.addEventListener('click', function () {
+          setFeedback(editFeedback, '');
+          openModal(editModal);
+        });
+      });
+      stageOpenBtns.forEach(function (button) {
+        if (!stageModal) {
+          return;
+        }
+        button.addEventListener('click', function () {
+          setFeedback(stageFeedback, '');
+          openModal(stageModal);
+        });
+      });
+      noteOpenBtns.forEach(function (button) {
+        if (!noteModal) {
+          return;
+        }
+        button.addEventListener('click', function () {
+          prepareNoteFormForAdd();
+          setFeedback(noteFeedback, '');
+          openModal(noteModal);
+        });
+      });
+
+      editCloseBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          closeModal(editModal);
+        });
+      });
+      stageCloseBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          closeModal(stageModal);
+          setFeedback(stageFeedback, '');
+        });
+      });
+      noteCloseBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          prepareNoteFormForAdd();
+          setFeedback(noteFeedback, '');
+          closeModal(noteModal);
+        });
+      });
+
+      [editModal, stageModal, noteModal].forEach(function (modalEl) {
+        if (!modalEl) {
+          return;
+        }
+        modalEl.addEventListener('click', function (event) {
+          if (event.target === modalEl) {
+            closeModal(modalEl);
+          }
+        });
+      });
+
+      if (editForm) {
+        editForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var submitBtn = editForm.querySelector('button[type="submit"]');
+          setFeedback(editFeedback, 'Saving details...');
+          runWithBusyButton(submitBtn, 'Saving...', function () {
+            var formData = new FormData(editForm);
+            formData.append('action', 'cmn_school_update_details');
+            formData.append('school_id', schoolId);
+            formData.append('pid', schoolPid);
+            formData.append('nonce', nonce);
+            return requestJson(formData).then(function (payload) {
+              updateOverviewFields(payload.values || {});
+              if (stageForm && payload.stage_value) {
+                var stageInput = stageForm.querySelector('[name="pipeline_stage"]');
+                if (stageInput) {
+                  stageInput.value = String(payload.stage_value || '');
+                }
+              }
+              setFeedback(editFeedback, payload.message || 'Details saved.');
+              window.setTimeout(function () {
+                closeModal(editModal);
+                setFeedback(editFeedback, '');
+              }, 250);
+            }).catch(function (err) {
+              setFeedback(editFeedback, err && err.message ? err.message : 'Unable to save details.');
+            });
+          });
+        });
+      }
+
+      if (stageForm) {
+        stageForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var submitBtn = stageForm.querySelector('button[type="submit"]');
+          setFeedback(stageFeedback, 'Saving stage...');
+          runWithBusyButton(submitBtn, 'Saving...', function () {
+            var formData = new FormData(stageForm);
+            formData.append('action', 'cmn_school_update_details');
+            formData.append('school_id', schoolId);
+            formData.append('pid', schoolPid);
+            formData.append('nonce', nonce);
+            return requestJson(formData).then(function (payload) {
+              updateOverviewFields(payload.values || {});
+              if (payload.stage_value) {
+                var stageInput = stageForm.querySelector('[name="pipeline_stage"]');
+                if (stageInput) {
+                  stageInput.value = String(payload.stage_value || '');
+                }
+              }
+              setFeedback(stageFeedback, payload.message || 'Stage saved.');
+              window.setTimeout(function () {
+                closeModal(stageModal);
+                setFeedback(stageFeedback, '');
+              }, 250);
+            }).catch(function (err) {
+              setFeedback(stageFeedback, err && err.message ? err.message : 'Unable to save stage.');
+            });
+          });
+        });
+      }
+
+      if (noteForm) {
+        noteForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var submitBtn = noteForm.querySelector('button[type="submit"]');
+          submitLeadNoteForm(noteForm, noteFeedback, submitBtn, {
+            onSuccess: function () {
+              prepareNoteFormForAdd();
+              window.setTimeout(function () {
+                closeModal(noteModal);
+                setFeedback(noteFeedback, '');
+              }, 250);
+            }
+          });
+        });
+      }
+
+      if (quickNoteForm) {
+        quickNoteForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          submitLeadNoteForm(quickNoteForm, quickNoteFeedback, quickNoteSubmit, {
+            savingLabel: 'Saving quick note...',
+            successLabel: 'Quick note saved.',
+            errorLabel: 'Unable to save quick note.',
+            onSuccess: function () {
+              quickNoteForm.reset();
+              if (quickNoteField && typeof quickNoteField.focus === 'function') {
+                quickNoteField.focus();
+              }
+              window.setTimeout(function () {
+                setFeedback(quickNoteFeedback, '');
+              }, 1200);
+            }
+          });
+        });
+      }
+
+      if (notesPanel) {
+        notesPanel.addEventListener('click', function (event) {
+          var editNoteBtn = event.target && event.target.closest ? event.target.closest('[data-school-lead-edit-note]') : null;
+          if (!editNoteBtn) {
+            return;
+          }
+          event.preventDefault();
+          var noteItem = editNoteBtn.closest('[data-school-lead-note-id]');
+          if (!noteItem) {
+            return;
+          }
+          prepareNoteFormForEdit(noteItem);
+          setFeedback(noteFeedback, '');
+          openModal(noteModal);
+        });
+      }
+
+      if (notesExpandBtn && notesAllList) {
+        notesExpandBtn.addEventListener('click', function () {
+          notesAllList.hidden = false;
+          notesExpandBtn.hidden = true;
+        });
+      }
+
+      if (quickNoteField) {
+        quickNoteField.addEventListener('keydown', function (event) {
+          if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && quickNoteForm) {
+            event.preventDefault();
+            if (typeof quickNoteForm.requestSubmit === 'function') {
+              quickNoteForm.requestSubmit();
+            } else {
+              quickNoteForm.dispatchEvent(new Event('submit', {cancelable: true}));
+            }
+          }
+        });
+      }
+
+      try {
+        var searchParams = new URLSearchParams(window.location.search || '');
+        var focusAction = String(searchParams.get('cmn_school_focus_action') || '').trim().toLowerCase();
+        var modalToOpen = null;
+        if (focusAction === 'edit') {
+          modalToOpen = editModal;
+          setFeedback(editFeedback, '');
+        } else if (focusAction === 'stage') {
+          modalToOpen = stageModal;
+          setFeedback(stageFeedback, '');
+        } else if (focusAction === 'note') {
+          modalToOpen = noteModal;
+          prepareNoteFormForAdd();
+          setFeedback(noteFeedback, '');
+        }
+        if (modalToOpen) {
+          openModal(modalToOpen);
+          searchParams.delete('cmn_school_focus_action');
+          if (window.history && typeof window.history.replaceState === 'function') {
+            var nextSearch = searchParams.toString();
+            var nextUrl = window.location.pathname + (nextSearch ? ('?' + nextSearch) : '') + window.location.hash;
+            window.history.replaceState({}, '', nextUrl);
+          }
+        }
+      } catch (e) {
+        // Ignore invalid URLSearchParams support or history errors.
+      }
+
+      prepareNoteFormForAdd();
+    });
+  }
+
+  var schoolEmailComposerRoots = document.querySelectorAll('[data-school-email-composer-root]');
+  if (schoolEmailComposerRoots.length) {
+    var emailComposerAutoOpened = false;
+
+    schoolEmailComposerRoots.forEach(function (root) {
+      var schoolId = String(root.getAttribute('data-school-email-school-id') || '').trim();
+      var modal = root.querySelector('[data-school-email-composer-modal]');
+      var form = modal ? modal.querySelector('[data-school-email-composer-form]') : null;
+      var recipientSelect = form ? form.querySelector('[data-school-email-recipient-select]') : null;
+      var subjectInput = form ? form.querySelector('[data-school-email-subject]') : null;
+      var bodyInput = form ? form.querySelector('[data-school-email-body]') : null;
+      var templatePicker = form ? form.querySelector('[data-school-email-template-picker]') : null;
+      var templateStatus = templatePicker ? templatePicker.querySelector('[data-school-email-template-status]') : null;
+      var templateSearchWrap = templatePicker ? templatePicker.querySelector('[data-school-email-template-search-wrap]') : null;
+      var templateSearchInput = templatePicker ? templatePicker.querySelector('[data-school-email-template-search-input]') : null;
+      var templateSelectWrap = templatePicker ? templatePicker.querySelector('[data-school-email-template-select-wrap]') : null;
+      var templateSelect = templatePicker ? templatePicker.querySelector('[data-school-email-template-select]') : null;
+      var templateSummary = templatePicker ? templatePicker.querySelector('[data-school-email-template-summary]') : null;
+      var templateName = templatePicker ? templatePicker.querySelector('[data-school-email-template-name]') : null;
+      var templateModule = templatePicker ? templatePicker.querySelector('[data-school-email-template-module]') : null;
+      var templateStatusChip = templatePicker ? templatePicker.querySelector('[data-school-email-template-status-chip]') : null;
+      var templateCoverageChip = templatePicker ? templatePicker.querySelector('[data-school-email-template-coverage-chip]') : null;
+      var templatePreview = templatePicker ? templatePicker.querySelector('[data-school-email-template-preview]') : null;
+      var templateCoverage = templatePicker ? templatePicker.querySelector('[data-school-email-template-coverage]') : null;
+      var templateApplyBtn = templatePicker ? templatePicker.querySelector('[data-school-email-template-apply]') : null;
+      var templateReloadBtn = templatePicker ? templatePicker.querySelector('[data-school-email-template-reload]') : null;
+      var feedback = form ? form.querySelector('[data-school-email-feedback]') : null;
+      var clearBtn = form ? form.querySelector('[data-school-email-clear]') : null;
+      var copyBtn = form ? form.querySelector('[data-school-email-copy]') : null;
+      var mailAppLink = form ? form.querySelector('[data-school-email-open-mail-app]') : null;
+      var closeBtns = modal ? Array.prototype.slice.call(modal.querySelectorAll('[data-school-email-close]')) : [];
+      var recipientPickers = modal ? Array.prototype.slice.call(modal.querySelectorAll('[data-school-email-recipient-pick]')) : [];
+      var defaultRecipientKey = form ? String(form.getAttribute('data-school-email-default-recipient') || '').trim() : '';
+      var openTriggers = schoolId
+        ? Array.prototype.slice.call(document.querySelectorAll('[data-school-email-open][data-school-email-school-id="' + schoolId + '"]'))
+        : [];
+      var saveTimer = 0;
+      var feedbackTimer = 0;
+      var storageKey = schoolId ? ('cmnSchoolEmailDraft:' + schoolId) : '';
+      var templateNonce = templatePicker ? String(templatePicker.getAttribute('data-school-email-template-nonce') || '').trim() : '';
+      var ajaxUrl = window.cmnPortal && window.cmnPortal.ajaxUrl ? String(window.cmnPortal.ajaxUrl || '').trim() : '';
+      var templateRows = [];
+      var filteredTemplateRows = [];
+      var templatesLoaded = false;
+      var templatesLoading = false;
+      var restoredTemplateKey = '';
+
+      if (!schoolId || !modal || !form || !recipientSelect || !subjectInput || !bodyInput) {
+        return;
+      }
+
+      var setFeedback = function (message) {
+        if (!feedback) {
+          return;
+        }
+        feedback.textContent = String(message || '').trim();
+      };
+
+      var queueFeedbackClear = function (delay) {
+        if (!feedback) {
+          return;
+        }
+        window.clearTimeout(feedbackTimer);
+        feedbackTimer = window.setTimeout(function () {
+          setFeedback('');
+        }, delay || 1400);
+      };
+
+      var getSelectedRecipientOption = function () {
+        if (!recipientSelect) {
+          return null;
+        }
+        var selectedIndex = recipientSelect.selectedIndex;
+        if (selectedIndex < 0 || !recipientSelect.options[selectedIndex]) {
+          return null;
+        }
+        return recipientSelect.options[selectedIndex];
+      };
+
+      var syncRecipientCards = function () {
+        var activeKey = String(recipientSelect.value || '').trim();
+        recipientPickers.forEach(function (picker) {
+          var pickerKey = String(picker.getAttribute('data-school-email-recipient-pick') || '').trim();
+          var isActive = !!activeKey && pickerKey === activeKey;
+          picker.classList.toggle('is-active', isActive);
+          picker.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+      };
+
+      var updateMailAppLink = function () {
+        if (!mailAppLink) {
+          return;
+        }
+        var selectedOption = getSelectedRecipientOption();
+        var recipientEmail = selectedOption ? String(selectedOption.getAttribute('data-school-email-option-email') || '').trim() : '';
+        if (!recipientEmail) {
+          mailAppLink.setAttribute('href', '#');
+          mailAppLink.setAttribute('aria-disabled', 'true');
+          mailAppLink.classList.add('is-disabled');
+          return;
+        }
+        var subject = String(subjectInput.value || '').trim();
+        var body = String(bodyInput.value || '');
+        var href = 'mailto:' + encodeURIComponent(recipientEmail);
+        var params = [];
+        if (subject) {
+          params.push('subject=' + encodeURIComponent(subject));
+        }
+        if (body) {
+          params.push('body=' + encodeURIComponent(body));
+        }
+        if (params.length) {
+          href += '?' + params.join('&');
+        }
+        mailAppLink.setAttribute('href', href);
+        mailAppLink.setAttribute('aria-disabled', 'false');
+        mailAppLink.classList.remove('is-disabled');
+      };
+
+      var getDraftState = function () {
+        return {
+          recipientKey: String(recipientSelect.value || '').trim(),
+          templateKey: templateSelect ? String(templateSelect.value || '').trim() : '',
+          subject: String(subjectInput.value || ''),
+          body: String(bodyInput.value || '')
+        };
+      };
+
+      var saveDraftState = function (message) {
+        if (!storageKey) {
+          return;
+        }
+        var draftState = getDraftState();
+        var hasDraft = !!(
+          draftState.subject.trim()
+          || draftState.body.trim()
+          || (draftState.recipientKey && draftState.recipientKey !== defaultRecipientKey)
+          || draftState.templateKey
+        );
+        try {
+          if (hasDraft) {
+            window.localStorage.setItem(storageKey, JSON.stringify(draftState));
+          } else {
+            window.localStorage.removeItem(storageKey);
+          }
+        } catch (e) {
+          return;
+        }
+        if (message) {
+          setFeedback(message);
+          queueFeedbackClear();
+        }
+      };
+
+      var scheduleDraftSave = function () {
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(function () {
+          saveDraftState('Draft saved in this browser.');
+        }, 160);
+      };
+
+      var loadDraftState = function () {
+        if (!storageKey) {
+          syncRecipientCards();
+          updateMailAppLink();
+          return;
+        }
+        try {
+          var rawDraft = window.localStorage.getItem(storageKey);
+          if (!rawDraft) {
+            restoredTemplateKey = '';
+            syncRecipientCards();
+            updateMailAppLink();
+            return;
+          }
+          var parsedDraft = JSON.parse(rawDraft);
+          if (parsedDraft && typeof parsedDraft === 'object') {
+            var draftRecipientKey = String(parsedDraft.recipientKey || '').trim();
+            if (draftRecipientKey && recipientSelect.querySelector('option[value="' + draftRecipientKey.replace(/"/g, '\\"') + '"]')) {
+              recipientSelect.value = draftRecipientKey;
+            }
+            restoredTemplateKey = String(parsedDraft.templateKey || '').trim();
+            if (Object.prototype.hasOwnProperty.call(parsedDraft, 'subject')) {
+              subjectInput.value = String(parsedDraft.subject || '');
+            }
+            if (Object.prototype.hasOwnProperty.call(parsedDraft, 'body')) {
+              bodyInput.value = String(parsedDraft.body || '');
+            }
+          }
+        } catch (e) {
+          // Ignore malformed local draft state.
+          restoredTemplateKey = '';
+        }
+        syncRecipientCards();
+        updateMailAppLink();
+      };
+
+      var resetDraftState = function () {
+        subjectInput.value = '';
+        bodyInput.value = '';
+        restoredTemplateKey = '';
+        if (defaultRecipientKey && recipientSelect.querySelector('option[value="' + defaultRecipientKey.replace(/"/g, '\\"') + '"]')) {
+          recipientSelect.value = defaultRecipientKey;
+        } else if (recipientSelect.options.length) {
+          recipientSelect.selectedIndex = 0;
+        }
+        if (templateSearchInput) {
+          templateSearchInput.value = '';
+        }
+        if (templateSelect) {
+          templateSelect.value = '';
+        }
+        if (storageKey) {
+          try {
+            window.localStorage.removeItem(storageKey);
+          } catch (e) {
+            // Ignore storage failures.
+          }
+        }
+        if (templatesLoaded && templatePicker) {
+          filteredTemplateRows = templateRows.slice();
+          populateTemplateSelect('');
+        } else if (templatePicker) {
+          renderTemplateSummary(null);
+        }
+        syncRecipientCards();
+        updateMailAppLink();
+        setFeedback('Draft cleared from this browser.');
+        queueFeedbackClear();
+      };
+
+      var setTemplateStatus = function (message, state) {
+        if (!templateStatus) {
+          return;
+        }
+        templateStatus.textContent = String(message || '').trim();
+        templateStatus.classList.toggle('is-error', state === 'error');
+        templateStatus.classList.toggle('is-loading', state === 'loading');
+      };
+
+      var setTemplateChipClass = function (element, className) {
+        if (!element) {
+          return;
+        }
+        element.className = 'cmn-status-chip';
+        if (className) {
+          element.classList.add(String(className));
+        }
+      };
+
+      var getTemplateByKey = function (templateKey, list) {
+        var matchKey = String(templateKey || '').trim();
+        var sourceList = Array.isArray(list) ? list : templateRows;
+        if (!matchKey || !sourceList.length) {
+          return null;
+        }
+        for (var templateIndex = 0; templateIndex < sourceList.length; templateIndex += 1) {
+          if (String(sourceList[templateIndex].key || '').trim() === matchKey) {
+            return sourceList[templateIndex];
+          }
+        }
+        return null;
+      };
+
+      var renderTemplateSummary = function (template) {
+        if (!templateSummary) {
+          return;
+        }
+        if (!template) {
+          templateSummary.hidden = true;
+          if (templateApplyBtn) {
+            templateApplyBtn.disabled = true;
+          }
+          return;
+        }
+        templateSummary.hidden = false;
+        if (templateName) {
+          templateName.textContent = String(template.name || 'Template');
+        }
+        if (templateModule) {
+          templateModule.textContent = String(template.module_label || 'Module');
+        }
+        if (templateStatusChip) {
+          templateStatusChip.textContent = String(template.status_label || 'Published');
+          setTemplateChipClass(templateStatusChip, String(template.status_chip_class || 'is-verified'));
+        }
+        if (templateCoverageChip) {
+          templateCoverageChip.textContent = String(template.coverage_label || 'Ready to use');
+          setTemplateChipClass(templateCoverageChip, String(template.coverage_chip_class || 'is-verified'));
+        }
+        if (templatePreview) {
+          templatePreview.textContent = String(template.preview || 'No message preview available.');
+        }
+        if (templateCoverage) {
+          templateCoverage.textContent = String(template.coverage_detail || '');
+        }
+        if (templateApplyBtn) {
+          templateApplyBtn.disabled = false;
+        }
+      };
+
+      var populateTemplateSelect = function (preferredTemplateKey) {
+        if (!templatePicker || !templateSelect) {
+          return;
+        }
+        var searchValue = templateSearchInput ? String(templateSearchInput.value || '').trim().toLowerCase() : '';
+        filteredTemplateRows = templateRows.filter(function (templateRow) {
+          if (!searchValue) {
+            return true;
+          }
+          return String(templateRow.search_text || '').indexOf(searchValue) !== -1;
+        });
+
+        templateSelect.innerHTML = '';
+        var placeholderOption = document.createElement('option');
+        placeholderOption.value = '';
+        placeholderOption.textContent = filteredTemplateRows.length ? 'Choose a template' : 'No matching templates';
+        templateSelect.appendChild(placeholderOption);
+
+        filteredTemplateRows.forEach(function (templateRow) {
+          var option = document.createElement('option');
+          option.value = String(templateRow.key || '');
+          option.textContent = String(templateRow.name || 'Template') + ' - ' + String(templateRow.module_label || 'System');
+          templateSelect.appendChild(option);
+        });
+
+        templateSelect.disabled = !filteredTemplateRows.length;
+        if (templateSearchWrap) {
+          templateSearchWrap.hidden = !templateRows.length;
+        }
+        if (templateSelectWrap) {
+          templateSelectWrap.hidden = !templateRows.length;
+        }
+
+        var selectedTemplateKey = String(preferredTemplateKey || '').trim();
+        if (selectedTemplateKey && !getTemplateByKey(selectedTemplateKey, filteredTemplateRows)) {
+          selectedTemplateKey = '';
+        }
+        if (!selectedTemplateKey) {
+          selectedTemplateKey = String(templateSelect.value || '').trim();
+          if (selectedTemplateKey && !getTemplateByKey(selectedTemplateKey, filteredTemplateRows)) {
+            selectedTemplateKey = '';
+          }
+        }
+        templateSelect.value = selectedTemplateKey;
+        renderTemplateSummary(getTemplateByKey(selectedTemplateKey, filteredTemplateRows));
+
+        if (!filteredTemplateRows.length) {
+          setTemplateStatus(searchValue ? 'No templates match this search.' : 'No school email templates are ready yet.');
+          return;
+        }
+        setTemplateStatus(
+          String(filteredTemplateRows.length) + ' template' + (filteredTemplateRows.length === 1 ? '' : 's')
+            + (searchValue ? ' match this search.' : ' ready to use.')
+        );
+      };
+
+      var loadTemplates = function (forceReload) {
+        if (!templatePicker || !templateSelect || !ajaxUrl || !templateNonce) {
+          if (templatePicker) {
+            setTemplateStatus('Templates are unavailable right now.', 'error');
+          }
+          return Promise.resolve([]);
+        }
+        if (templatesLoading) {
+          return Promise.resolve([]);
+        }
+        if (templatesLoaded && !forceReload) {
+          populateTemplateSelect(restoredTemplateKey);
+          return Promise.resolve(templateRows);
+        }
+
+        templatesLoading = true;
+        templateRows = forceReload ? [] : templateRows;
+        filteredTemplateRows = [];
+        templateSelect.disabled = true;
+        if (templateApplyBtn) {
+          templateApplyBtn.disabled = true;
+        }
+        if (templateSummary) {
+          templateSummary.hidden = true;
+        }
+        if (templateReloadBtn) {
+          templateReloadBtn.disabled = true;
+        }
+        setTemplateStatus('Loading school email templates...', 'loading');
+
+        var params = new URLSearchParams();
+        params.append('action', 'cmn_get_school_email_template_selector');
+        params.append('nonce', templateNonce);
+        params.append('school_id', schoolId);
+        params.append('school_pid', schoolId);
+
+        return fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+          },
+          body: params.toString()
+        }).then(function (response) {
+          return response.json().then(function (payload) {
+            return {
+              ok: response.ok,
+              payload: payload
+            };
+          });
+        }).then(function (result) {
+          if (!result.ok || !result.payload || !result.payload.success) {
+            var failureMessage = result.payload && result.payload.data && result.payload.data.message
+              ? result.payload.data.message
+              : 'Unable to load templates right now.';
+            throw new Error(failureMessage);
+          }
+          var responseData = result.payload.data || {};
+          templateRows = Array.isArray(responseData.templates) ? responseData.templates : [];
+          templatesLoaded = true;
+          if (templateReloadBtn) {
+            templateReloadBtn.textContent = 'Reload templates';
+          }
+          populateTemplateSelect(restoredTemplateKey);
+          if (!templateRows.length) {
+            setTemplateStatus('No school email templates are ready yet.');
+          } else {
+            var loadedLabel = String(responseData.loaded_at_label || '').trim();
+            setTemplateStatus(
+              String(templateRows.length) + ' template' + (templateRows.length === 1 ? '' : 's') + ' loaded'
+                + (loadedLabel ? (' · ' + loadedLabel) : '')
+            );
+          }
+          return templateRows;
+        }).catch(function (error) {
+          templatesLoaded = false;
+          templateRows = [];
+          filteredTemplateRows = [];
+          if (templateSearchWrap) {
+            templateSearchWrap.hidden = true;
+          }
+          if (templateSelectWrap) {
+            templateSelectWrap.hidden = true;
+          }
+          if (templateSummary) {
+            templateSummary.hidden = true;
+          }
+          if (templateApplyBtn) {
+            templateApplyBtn.disabled = true;
+          }
+          if (templateSelect) {
+            templateSelect.innerHTML = '<option value=\"\">No templates loaded</option>';
+            templateSelect.disabled = true;
+          }
+          setTemplateStatus(error && error.message ? error.message : 'Unable to load templates right now.', 'error');
+          return [];
+        }).finally(function () {
+          templatesLoading = false;
+          if (templateReloadBtn) {
+            templateReloadBtn.disabled = false;
+          }
+        });
+      };
+
+      var applySelectedTemplate = function () {
+        if (!templateSelect) {
+          return;
+        }
+        var selectedTemplate = getTemplateByKey(String(templateSelect.value || '').trim());
+        if (!selectedTemplate) {
+          setFeedback('Choose a template first.');
+          queueFeedbackClear();
+          return;
+        }
+        subjectInput.value = String(selectedTemplate.subject || '');
+        bodyInput.value = String(selectedTemplate.body || '');
+        restoredTemplateKey = String(selectedTemplate.key || '').trim();
+        updateMailAppLink();
+        saveDraftState('Template applied to this draft.');
+        if (bodyInput && typeof bodyInput.focus === 'function') {
+          bodyInput.focus();
+        }
+      };
+
+      var openModal = function (preferredRecipientKey) {
+        loadDraftState();
+        if (preferredRecipientKey && recipientSelect.querySelector('option[value="' + preferredRecipientKey.replace(/"/g, '\\"') + '"]')) {
+          recipientSelect.value = preferredRecipientKey;
+          syncRecipientCards();
+          updateMailAppLink();
+        }
+        if (templatePicker) {
+          loadTemplates(false);
+        }
+        modal.hidden = false;
+        modal.classList.add('is-open');
+        document.body.classList.add('cmn-support-modal-lock');
+        var focusTarget = subjectInput;
+        if (recipientSelect && !String(recipientSelect.value || '').trim()) {
+          focusTarget = recipientSelect;
+        } else if (subjectInput && String(subjectInput.value || '').trim() !== '' && bodyInput) {
+          focusTarget = bodyInput;
+        }
+        if (focusTarget && typeof focusTarget.focus === 'function') {
+          window.setTimeout(function () {
+            focusTarget.focus();
+          }, 0);
+        }
+      };
+
+      var closeModal = function () {
+        modal.hidden = true;
+        modal.classList.remove('is-open');
+        if (!document.querySelector('.cmn-modal.is-open')) {
+          document.body.classList.remove('cmn-support-modal-lock');
+        }
+      };
+
+      openTriggers.forEach(function (trigger) {
+        trigger.addEventListener('click', function (event) {
+          event.preventDefault();
+          var preferredRecipientKey = String(trigger.getAttribute('data-school-email-recipient-key') || '').trim();
+          openModal(preferredRecipientKey);
+        });
+      });
+
+      closeBtns.forEach(function (button) {
+        button.addEventListener('click', function () {
+          closeModal();
+        });
+      });
+
+      modal.addEventListener('click', function (event) {
+        if (event.target === modal) {
+          closeModal();
+        }
+      });
+
+      recipientPickers.forEach(function (picker) {
+        picker.addEventListener('click', function () {
+          var recipientKey = String(picker.getAttribute('data-school-email-recipient-pick') || '').trim();
+          if (!recipientKey || !recipientSelect.querySelector('option[value="' + recipientKey.replace(/"/g, '\\"') + '"]')) {
+            return;
+          }
+          recipientSelect.value = recipientKey;
+          syncRecipientCards();
+          updateMailAppLink();
+          scheduleDraftSave();
+          if (subjectInput && typeof subjectInput.focus === 'function') {
+            subjectInput.focus();
+          }
+        });
+      });
+
+      recipientSelect.addEventListener('change', function () {
+        syncRecipientCards();
+        updateMailAppLink();
+        scheduleDraftSave();
+      });
+      if (templateSearchInput) {
+        templateSearchInput.addEventListener('input', function () {
+          populateTemplateSelect(String(templateSelect ? templateSelect.value || '' : '').trim());
+        });
+      }
+      if (templateSelect) {
+        templateSelect.addEventListener('change', function () {
+          restoredTemplateKey = String(templateSelect.value || '').trim();
+          renderTemplateSummary(getTemplateByKey(restoredTemplateKey, filteredTemplateRows));
+          scheduleDraftSave();
+        });
+      }
+      if (templateApplyBtn) {
+        templateApplyBtn.addEventListener('click', function () {
+          applySelectedTemplate();
+        });
+      }
+      if (templateReloadBtn) {
+        templateReloadBtn.addEventListener('click', function () {
+          loadTemplates(true);
+        });
+      }
+      subjectInput.addEventListener('input', function () {
+        updateMailAppLink();
+        scheduleDraftSave();
+      });
+      bodyInput.addEventListener('input', function () {
+        updateMailAppLink();
+        scheduleDraftSave();
+      });
+
+      if (copyBtn) {
+        copyBtn.addEventListener('click', function () {
+          var selectedOption = getSelectedRecipientOption();
+          var recipientEmail = selectedOption ? String(selectedOption.getAttribute('data-school-email-option-email') || '').trim() : '';
+          var lines = [];
+          if (recipientEmail) {
+            lines.push('To: ' + recipientEmail);
+          }
+          if (String(subjectInput.value || '').trim()) {
+            lines.push('Subject: ' + String(subjectInput.value || '').trim());
+          }
+          if (lines.length) {
+            lines.push('');
+          }
+          lines.push(String(bodyInput.value || ''));
+          var draftText = lines.join('\n').trim();
+          if (!draftText) {
+            setFeedback('Add a subject or message before copying the draft.');
+            queueFeedbackClear();
+            return;
+          }
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            navigator.clipboard.writeText(draftText).then(function () {
+              saveDraftState();
+              setFeedback('Draft copied.');
+              queueFeedbackClear();
+            }).catch(function () {
+              setFeedback('Unable to copy the draft.');
+              queueFeedbackClear();
+            });
+            return;
+          }
+          setFeedback('Clipboard copy is not available in this browser.');
+          queueFeedbackClear();
+        });
+      }
+
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+          resetDraftState();
+        });
+      }
+
+      if (mailAppLink) {
+        mailAppLink.addEventListener('click', function (event) {
+          if (String(mailAppLink.getAttribute('aria-disabled') || 'false') === 'true') {
+            event.preventDefault();
+            setFeedback('Choose a saved email recipient first.');
+            queueFeedbackClear();
+            return;
+          }
+          saveDraftState();
+        });
+      }
+
+      loadDraftState();
+
+      try {
+        var emailSearchParams = new URLSearchParams(window.location.search || '');
+        var emailFocusAction = String(emailSearchParams.get('cmn_school_focus_action') || '').trim().toLowerCase();
+        if (!emailComposerAutoOpened && emailFocusAction === 'email') {
+          emailComposerAutoOpened = true;
+          openModal();
+          emailSearchParams.delete('cmn_school_focus_action');
+          if (window.history && typeof window.history.replaceState === 'function') {
+            var nextSearch = emailSearchParams.toString();
+            var nextUrl = window.location.pathname + (nextSearch ? ('?' + nextSearch) : '') + window.location.hash;
+            window.history.replaceState({}, '', nextUrl);
+          }
+        }
+      } catch (e) {
+        // Ignore invalid URLSearchParams support or history errors.
+      }
+    });
+  }
+
+  var schoolOwnerControls = document.querySelectorAll('[data-school-owner-control]');
+  if (schoolOwnerControls.length) {
+    try {
+      var ownerSearchParams = new URLSearchParams(window.location.search || '');
+      var ownerFocusAction = String(ownerSearchParams.get('cmn_school_focus_action') || '').trim().toLowerCase();
+      if (ownerFocusAction === 'owner') {
+        Array.prototype.forEach.call(schoolOwnerControls, function (control) {
+          var focusTarget = control.querySelector('[data-school-owner-control-select]') || control;
+          control.classList.add('is-focused');
+          if (typeof control.scrollIntoView === 'function') {
+            control.scrollIntoView({behavior: 'smooth', block: 'center'});
+          }
+          window.setTimeout(function () {
+            if (focusTarget && typeof focusTarget.focus === 'function') {
+              focusTarget.focus();
+            }
+          }, 120);
+        });
+        ownerSearchParams.delete('cmn_school_focus_action');
+        if (window.history && typeof window.history.replaceState === 'function') {
+          var ownerNextSearch = ownerSearchParams.toString();
+          var ownerNextUrl = window.location.pathname + (ownerNextSearch ? ('?' + ownerNextSearch) : '') + window.location.hash;
+          window.history.replaceState({}, '', ownerNextUrl);
+        }
+        window.setTimeout(function () {
+          Array.prototype.forEach.call(schoolOwnerControls, function (control) {
+            control.classList.remove('is-focused');
+          });
+        }, 2200);
+      }
+    } catch (e) {
+      // Ignore invalid URLSearchParams support or history errors.
+    }
+  }
+
+  var schoolTaskReminderRoots = document.querySelectorAll('[data-school-task-reminder-root]');
+  if (schoolTaskReminderRoots.length) {
+    var taskReminderClassList = ['is-warning', 'is-info', 'is-muted', 'is-pending'];
+    var taskReminderDateFormatter = null;
+    if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+      taskReminderDateFormatter = new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+    }
+
+    var getTaskReminderStorageKey = function (schoolId) {
+      return 'cmnSchoolTaskReminderPlan:' + String(schoolId || '');
+    };
+
+    var parseTaskReminderDate = function (value) {
+      var normalized = String(value || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        return null;
+      }
+      var parts = normalized.split('-');
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    };
+
+    var getTaskReminderToday = function () {
+      var now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    };
+
+    var formatTaskReminderDate = function (dateObj, fallback) {
+      if (!dateObj || Object.prototype.toString.call(dateObj) !== '[object Date]' || isNaN(dateObj.getTime())) {
+        return String(fallback || '');
+      }
+      if (taskReminderDateFormatter) {
+        return taskReminderDateFormatter.format(dateObj);
+      }
+      return String(fallback || '');
+    };
+
+    var getTaskReminderState = function (dueDateValue, daysBefore) {
+      var dueDate = parseTaskReminderDate(dueDateValue);
+      if (!dueDate) {
+        return {
+          label: 'Reminder date needed',
+          detail: 'Add a due date to place this task in the reminder queue.',
+          tone: 'is-muted',
+          status: 'missing',
+          reminderDate: null
+        };
+      }
+      var reminderDate = new Date(dueDate.getTime());
+      reminderDate.setDate(reminderDate.getDate() - Math.max(0, parseInt(daysBefore, 10) || 0));
+      var today = getTaskReminderToday();
+      var diffDays = Math.round((reminderDate.getTime() - today.getTime()) / 86400000);
+      var reminderLabel = formatTaskReminderDate(reminderDate, dueDateValue);
+      if (diffDays < 0) {
+        return {
+          label: 'Reminder overdue',
+          detail: 'Reminder window opened ' + reminderLabel + '.',
+          tone: 'is-warning',
+          status: 'due_now',
+          reminderDate: reminderDate
+        };
+      }
+      if (diffDays === 0) {
+        return {
+          label: 'Remind today',
+          detail: 'Reminder window opens today.',
+          tone: 'is-warning',
+          status: 'due_now',
+          reminderDate: reminderDate
+        };
+      }
+      if (diffDays === 1) {
+        return {
+          label: 'Reminder tomorrow',
+          detail: 'Reminder window opens tomorrow.',
+          tone: 'is-info',
+          status: 'tomorrow',
+          reminderDate: reminderDate
+        };
+      }
+      return {
+        label: 'Reminder ' + reminderLabel,
+        detail: 'Reminder window opens ' + reminderLabel + '.',
+        tone: 'is-muted',
+        status: 'later',
+        reminderDate: reminderDate
+      };
+    };
+
+    var syncSchoolTaskReminderRoots = function (schoolId, selectedKey) {
+      Array.prototype.forEach.call(schoolTaskReminderRoots, function (root) {
+        if (String(root.getAttribute('data-school-task-reminder-school-id') || '').trim() !== String(schoolId || '').trim()) {
+          return;
+        }
+
+        var optionButtons = Array.prototype.slice.call(root.querySelectorAll('[data-school-task-reminder-option]'));
+        if (!optionButtons.length) {
+          return;
+        }
+
+        var activeButton = null;
+        optionButtons.forEach(function (button) {
+          var isActive = String(button.getAttribute('data-school-task-reminder-option') || '') === selectedKey;
+          button.classList.toggle('is-active', isActive);
+          button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          if (isActive) {
+            activeButton = button;
+          }
+        });
+        if (!activeButton) {
+          activeButton = optionButtons[0];
+        }
+
+        var activeLabel = String(activeButton.getAttribute('data-school-task-reminder-label') || activeButton.textContent || '').trim();
+        var planLabelNode = root.querySelector('[data-school-task-reminder-plan-label]');
+        var planDetailNode = root.querySelector('[data-school-task-reminder-plan-detail]');
+        var daysBefore = parseInt(String(activeButton.getAttribute('data-school-task-reminder-days-before') || '0'), 10) || 0;
+        var summaryDueDates = [];
+        try {
+          summaryDueDates = JSON.parse(String(root.getAttribute('data-school-task-reminder-due-dates') || '[]'));
+          if (!Array.isArray(summaryDueDates)) {
+            summaryDueDates = [];
+          }
+        } catch (e) {
+          summaryDueDates = [];
+        }
+
+        var dueNowCount = 0;
+        var tomorrowCount = 0;
+        var nextReminderDate = null;
+        var scheduledCount = 0;
+        var taskRows = Array.prototype.slice.call(root.querySelectorAll('[data-school-task-row]'));
+        taskRows.forEach(function (row) {
+          var dueDateValue = String(row.getAttribute('data-school-task-due-date') || '').trim();
+          var chip = row.querySelector('[data-school-task-reminder-chip]');
+          var reminderState = getTaskReminderState(dueDateValue, daysBefore);
+          if (chip) {
+            chip.textContent = reminderState.label;
+            chip.setAttribute('title', reminderState.detail || '');
+            taskReminderClassList.forEach(function (className) {
+              chip.classList.remove(className);
+            });
+            chip.classList.add(reminderState.tone || 'is-muted');
+          }
+          if (reminderState.status === 'due_now') {
+            dueNowCount++;
+          } else if (reminderState.status === 'tomorrow') {
+            tomorrowCount++;
+          }
+          if (reminderState.reminderDate) {
+            scheduledCount++;
+            if (!nextReminderDate || reminderState.reminderDate.getTime() < nextReminderDate.getTime()) {
+              nextReminderDate = reminderState.reminderDate;
+            }
+          }
+        });
+        if (summaryDueDates.length) {
+          dueNowCount = 0;
+          tomorrowCount = 0;
+          nextReminderDate = null;
+          scheduledCount = 0;
+          summaryDueDates.forEach(function (dueDateValue) {
+            var summaryState = getTaskReminderState(dueDateValue, daysBefore);
+            if (summaryState.status === 'due_now') {
+              dueNowCount++;
+            } else if (summaryState.status === 'tomorrow') {
+              tomorrowCount++;
+            }
+            if (summaryState.reminderDate) {
+              scheduledCount++;
+              if (!nextReminderDate || summaryState.reminderDate.getTime() < nextReminderDate.getTime()) {
+                nextReminderDate = summaryState.reminderDate;
+              }
+            }
+          });
+        }
+
+        if (planLabelNode) {
+          planLabelNode.textContent = activeLabel || 'Reminder plan';
+        }
+        if (planDetailNode) {
+          var planDetail = 'Planning only. No automatic reminder is sent. ';
+          if (!scheduledCount) {
+            planDetail += 'Add a due date to place tasks in the reminder queue.';
+          } else if (dueNowCount > 0) {
+            planDetail += dueNowCount + ' task reminder' + (dueNowCount === 1 ? ' is' : 's are') + ' due now using this lead time.';
+          } else if (tomorrowCount > 0) {
+            planDetail += 'The next reminder window opens tomorrow for ' + tomorrowCount + ' task' + (tomorrowCount === 1 ? '' : 's') + '.';
+          } else if (nextReminderDate) {
+            planDetail += 'The next reminder window opens ' + formatTaskReminderDate(nextReminderDate, '') + '.';
+          } else {
+            planDetail += 'Open tasks without due dates will stay out of the reminder queue.';
+          }
+          planDetailNode.textContent = planDetail;
+        }
+      });
+    };
+
+    Array.prototype.forEach.call(schoolTaskReminderRoots, function (root) {
+      var schoolId = String(root.getAttribute('data-school-task-reminder-school-id') || '').trim();
+      var defaultKey = String(root.getAttribute('data-school-task-reminder-default') || 'day_before').trim() || 'day_before';
+      var selectedKey = defaultKey;
+
+      try {
+        var storedKey = window.localStorage ? window.localStorage.getItem(getTaskReminderStorageKey(schoolId)) : '';
+        if (storedKey) {
+          selectedKey = String(storedKey).trim();
+        }
+      } catch (e) {
+        // Ignore localStorage access issues.
+      }
+
+      syncSchoolTaskReminderRoots(schoolId, selectedKey);
+
+      Array.prototype.forEach.call(root.querySelectorAll('[data-school-task-reminder-option]'), function (button) {
+        button.addEventListener('click', function () {
+          var nextKey = String(button.getAttribute('data-school-task-reminder-option') || '').trim();
+          if (!nextKey) {
+            return;
+          }
+          try {
+            if (window.localStorage) {
+              window.localStorage.setItem(getTaskReminderStorageKey(schoolId), nextKey);
+            }
+          } catch (e) {
+            // Ignore localStorage access issues.
+          }
+          syncSchoolTaskReminderRoots(schoolId, nextKey);
+        });
+      });
+    });
+  }
+
+  var schoolProfileTimelineRoots = document.querySelectorAll('[data-school-profile-timeline-root]');
+  if (schoolProfileTimelineRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl) {
+    schoolProfileTimelineRoots.forEach(function (root) {
+      var ajaxUrl = String(window.cmnPortal.ajaxUrl || '').trim();
+      var schoolId = String(root.getAttribute('data-school-id') || '').trim();
+      var schoolPid = String(root.getAttribute('data-school-pid') || '').trim();
+      var nonce = String(root.getAttribute('data-school-profile-timeline-nonce') || '').trim();
+      var visibleLimit = parseInt(String(root.getAttribute('data-school-profile-timeline-visible-limit') || '24'), 10);
+      var isActiveTab = String(root.getAttribute('data-school-profile-timeline-active') || '0') === '1';
+      var body = root.querySelector('[data-school-profile-timeline-body]');
+      var statusNode = root.querySelector('[data-school-profile-timeline-status]');
+      var loadObserver = null;
+      var isLoaded = false;
+      var isLoading = false;
+
+      if (!ajaxUrl || !schoolId || !schoolPid || !nonce || !body || !isActiveTab) {
+        return;
+      }
+
+      if (!visibleLimit || visibleLimit < 1) {
+        visibleLimit = 24;
+      }
+
+      var setStatus = function (message) {
+        if (statusNode) {
+          statusNode.textContent = message || '';
+        }
+      };
+
+      var timelineFilterStorageKey = 'cmnSchoolProfileTimelineFilters:' + schoolId;
+
+      var initializeTimelineFilters = function () {
+        var filterRoot = body.querySelector('[data-school-profile-timeline-filter-root]');
+        var list = body.querySelector('[data-timeline-filter-list]');
+        if (!filterRoot || !list) {
+          return;
+        }
+
+        var searchInput = filterRoot.querySelector('[data-timeline-filter-search]');
+        var typeSelect = filterRoot.querySelector('[data-timeline-filter-type]');
+        var clearButton = filterRoot.querySelector('[data-timeline-filter-clear]');
+        var resultNode = filterRoot.querySelector('[data-timeline-filter-results]');
+        var emptyNode = body.querySelector('[data-timeline-filter-empty]');
+        var sourceButtons = Array.prototype.slice.call(filterRoot.querySelectorAll('[data-timeline-filter-source]'));
+        var events = Array.prototype.slice.call(list.querySelectorAll('[data-timeline-event-source]'));
+        var state = {
+          search: '',
+          source: '',
+          type: ''
+        };
+
+        try {
+          var storedState = window.localStorage ? window.localStorage.getItem(timelineFilterStorageKey) : '';
+          if (storedState) {
+            var parsedState = JSON.parse(storedState);
+            if (parsedState && typeof parsedState === 'object') {
+              state.search = String(parsedState.search || '').trim();
+              state.source = String(parsedState.source || '').trim();
+              state.type = String(parsedState.type || '').trim();
+            }
+          }
+        } catch (error) {}
+
+        var persistState = function () {
+          try {
+            if (window.localStorage) {
+              window.localStorage.setItem(timelineFilterStorageKey, JSON.stringify(state));
+            }
+          } catch (error) {}
+        };
+
+        var syncControls = function () {
+          if (state.source && !sourceButtons.some(function (button) {
+            return String(button.getAttribute('data-timeline-filter-source') || '').trim() === state.source;
+          })) {
+            state.source = '';
+          }
+          if (typeSelect && state.type) {
+            var typeOptionExists = Array.prototype.some.call(typeSelect.options || [], function (option) {
+              return String(option.value || '').trim() === state.type;
+            });
+            if (!typeOptionExists) {
+              state.type = '';
+            }
+          }
+          if (searchInput) {
+            searchInput.value = state.search;
+          }
+          if (typeSelect) {
+            typeSelect.value = state.type;
+          }
+          sourceButtons.forEach(function (button) {
+            var buttonValue = String(button.getAttribute('data-timeline-filter-source') || '').trim();
+            var isActive = buttonValue === state.source;
+            button.setAttribute('data-active', isActive ? '1' : '0');
+            button.classList.toggle('is-info', isActive);
+            button.classList.toggle('is-muted', !isActive);
+          });
+        };
+
+        var applyFilters = function () {
+          var visibleCount = 0;
+          var totalCount = events.length;
+          var searchTerm = state.search.toLowerCase();
+
+          events.forEach(function (eventNode) {
+            var eventSource = String(eventNode.getAttribute('data-timeline-event-source') || '').trim();
+            var eventType = String(eventNode.getAttribute('data-timeline-event-type') || '').trim();
+            var searchText = String(eventNode.getAttribute('data-timeline-event-search') || '').toLowerCase();
+            var matchesSearch = !searchTerm || searchText.indexOf(searchTerm) !== -1;
+            var matchesSource = !state.source || eventSource === state.source;
+            var matchesType = !state.type || eventType === state.type;
+            var isVisible = matchesSearch && matchesSource && matchesType;
+            eventNode.hidden = !isVisible;
+            if (isVisible) {
+              visibleCount++;
+            }
+          });
+
+          if (resultNode) {
+            resultNode.textContent = visibleCount + ' of ' + totalCount + ' events shown';
+          }
+          if (emptyNode) {
+            emptyNode.hidden = visibleCount > 0;
+          }
+          persistState();
+        };
+
+        syncControls();
+        applyFilters();
+
+        if (searchInput) {
+          searchInput.addEventListener('input', function () {
+            state.search = String(searchInput.value || '').trim();
+            applyFilters();
+          });
+        }
+
+        if (typeSelect) {
+          typeSelect.addEventListener('change', function () {
+            state.type = String(typeSelect.value || '').trim();
+            applyFilters();
+          });
+        }
+
+        sourceButtons.forEach(function (button) {
+          button.addEventListener('click', function () {
+            state.source = String(button.getAttribute('data-timeline-filter-source') || '').trim();
+            syncControls();
+            applyFilters();
+          });
+        });
+
+        if (clearButton) {
+          clearButton.addEventListener('click', function () {
+            state.search = '';
+            state.source = '';
+            state.type = '';
+            syncControls();
+            applyFilters();
+          });
+        }
+      };
+
+      var renderErrorState = function (message) {
+        body.setAttribute('data-school-profile-timeline-state', 'error');
+        body.innerHTML = '';
+        var errorWrap = document.createElement('div');
+        errorWrap.className = 'cmn-school-profile-timeline-error';
+        var errorTitle = document.createElement('strong');
+        errorTitle.textContent = 'Timeline unavailable';
+        var errorMessage = document.createElement('p');
+        errorMessage.className = 'cmn-muted';
+        errorMessage.textContent = String(message || 'Unable to load the relationship timeline right now.');
+        var retryButton = document.createElement('button');
+        retryButton.className = 'cmn-ghost cmn-btn-mini';
+        retryButton.type = 'button';
+        retryButton.setAttribute('data-school-profile-timeline-retry', '1');
+        retryButton.textContent = 'Retry timeline';
+        errorWrap.appendChild(errorTitle);
+        errorWrap.appendChild(errorMessage);
+        errorWrap.appendChild(retryButton);
+        body.appendChild(errorWrap);
+      };
+
+      var requestTimeline = function () {
+        if (isLoaded || isLoading) {
+          return;
+        }
+        isLoading = true;
+        body.setAttribute('data-school-profile-timeline-state', 'loading');
+        setStatus('Loading the latest notes, activity, and application history...');
+
+        var formData = new FormData();
+        formData.append('action', 'cmn_get_school_profile_timeline');
+        formData.append('school_id', schoolId);
+        formData.append('pid', schoolPid);
+        formData.append('nonce', nonce);
+        formData.append('visible_limit', String(visibleLimit));
+
+        fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: formData
+        }).then(function (response) {
+          return response.text().then(function (text) {
+            var data;
+            try {
+              data = JSON.parse(text);
+            } catch (e) {
+              data = null;
+            }
+            if (!response.ok || !data || !data.success) {
+              var message = 'Unable to load the relationship timeline right now.';
+              if (data && data.data && data.data.message) {
+                message = data.data.message;
+              } else if (text) {
+                message = text.slice(0, 180);
+              }
+              throw new Error(message);
+            }
+            return data.data || {};
+          });
+        }).then(function (payload) {
+          body.innerHTML = String(payload && payload.html ? payload.html : '');
+          body.setAttribute('data-school-profile-timeline-state', 'loaded');
+          initializeTimelineFilters();
+          setStatus('');
+          isLoaded = true;
+          if (loadObserver) {
+            loadObserver.disconnect();
+            loadObserver = null;
+          }
+        }).catch(function (error) {
+          renderErrorState(error && error.message ? error.message : 'Unable to load the relationship timeline right now.');
+        }).finally(function () {
+          isLoading = false;
+        });
+      };
+
+      body.addEventListener('click', function (event) {
+        var retryButton = event.target && event.target.closest ? event.target.closest('[data-school-profile-timeline-retry]') : null;
+        if (!retryButton) {
+          return;
+        }
+        event.preventDefault();
+        requestTimeline();
+      });
+
+      var rootRect = typeof root.getBoundingClientRect === 'function' ? root.getBoundingClientRect() : null;
+      var initialViewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      var isNearViewport = !!(rootRect && initialViewportHeight && rootRect.top < (initialViewportHeight + 240));
+
+      if (isNearViewport) {
+        requestTimeline();
+      } else if ('IntersectionObserver' in window) {
+        loadObserver = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) {
+              return;
+            }
+            requestTimeline();
+          });
+        }, {
+          rootMargin: '240px 0px'
+        });
+        loadObserver.observe(root);
+      } else {
+        requestTimeline();
+      }
+    });
+  }
+
+  var schoolLeadsWorkspaces = document.querySelectorAll('[data-school-leads-workspace]');
+  if (schoolLeadsWorkspaces.length) {
+    schoolLeadsWorkspaces.forEach(function (workspace, workspaceIndex) {
+      var board = workspace.querySelector('[data-school-leads-board]');
+      if (!board) {
+        return;
+      }
+
+      var ajaxUrl = String(board.getAttribute('data-ajax-url') || ((window.cmnPortal && window.cmnPortal.ajaxUrl) || '')).trim();
+      var nonce = String(board.getAttribute('data-school-lead-nonce') || ((window.cmnPortal && window.cmnPortal.schoolLeadNonce) || '')).trim();
+      if (!ajaxUrl || !nonce) {
+        return;
+      }
+
+      var statusEl = workspace.querySelector('[data-school-leads-board-status]');
+      var panels = Array.prototype.slice.call(workspace.querySelectorAll('[data-school-leads-view-panel]'));
+      var toggleButtons = Array.prototype.slice.call(workspace.querySelectorAll('[data-school-leads-view-toggle]'));
+      var previewPanel = workspace.querySelector('[data-school-lead-preview-panel]');
+      var previewBackdrop = workspace.querySelector('[data-school-lead-preview-backdrop]');
+      var previewTitle = workspace.querySelector('[data-school-lead-preview-title]');
+      var previewStatus = workspace.querySelector('[data-school-lead-preview-status]');
+      var previewBody = workspace.querySelector('[data-school-lead-preview-body]');
+      var previewCloseButtons = Array.prototype.slice.call(workspace.querySelectorAll('[data-school-lead-preview-close]'));
+      var storageKey = 'cmnSchoolLeadsViewMode:' + String(workspaceIndex);
+      var dragState = null;
+      var previewCache = {};
+
+      var setBoardStatus = function (message, isError) {
+        if (!statusEl) {
+          return;
+        }
+        statusEl.textContent = String(message || '');
+        statusEl.classList.toggle('is-error', !!isError);
+      };
+
+      var readViewMode = function () {
+        var defaultMode = String(workspace.getAttribute('data-default-view') || 'board').trim().toLowerCase();
+        try {
+          var storedMode = window.localStorage ? String(window.localStorage.getItem(storageKey) || '') : '';
+          if (storedMode === 'board' || storedMode === 'list') {
+            return storedMode;
+          }
+        } catch (e) {
+          // Ignore storage failures.
+        }
+        return (defaultMode === 'list') ? 'list' : 'board';
+      };
+
+      var writeViewMode = function (mode) {
+        try {
+          if (window.localStorage) {
+            window.localStorage.setItem(storageKey, mode);
+          }
+        } catch (e) {
+          // Ignore storage failures.
+        }
+      };
+
+      var applyViewMode = function (mode) {
+        var nextMode = (mode === 'list') ? 'list' : 'board';
+        workspace.setAttribute('data-view-mode', nextMode);
+        panels.forEach(function (panel) {
+          var panelMode = String(panel.getAttribute('data-school-leads-view-panel') || '').trim();
+          panel.hidden = panelMode !== nextMode;
+        });
+        toggleButtons.forEach(function (button) {
+          var buttonMode = String(button.getAttribute('data-school-leads-view-toggle') || '').trim();
+          var isActive = buttonMode === nextMode;
+          button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          button.classList.toggle('is-active', isActive);
+        });
+      };
+
+      toggleButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          var mode = String(button.getAttribute('data-school-leads-view-toggle') || '').trim();
+          if (mode !== 'board' && mode !== 'list') {
+            return;
+          }
+          applyViewMode(mode);
+          writeViewMode(mode);
+        });
+      });
+      applyViewMode(readViewMode());
+
+      var closePreviewPanel = function () {
+        if (previewPanel) {
+          previewPanel.hidden = true;
+          previewPanel.removeAttribute('data-school-pid');
+        }
+        if (previewBackdrop) {
+          previewBackdrop.hidden = true;
+        }
+        document.body.classList.remove('cmn-school-lead-preview-open');
+      };
+
+      var openPreviewPanel = function () {
+        if (previewPanel) {
+          previewPanel.hidden = false;
+        }
+        if (previewBackdrop) {
+          previewBackdrop.hidden = false;
+        }
+        document.body.classList.add('cmn-school-lead-preview-open');
+      };
+
+      var setPreviewLoadingState = function (title, message) {
+        openPreviewPanel();
+        if (previewTitle) {
+          previewTitle.textContent = title || 'Relationship context';
+        }
+        if (previewStatus) {
+          previewStatus.textContent = message || 'Loading lead history...';
+          previewStatus.classList.remove('is-error');
+        }
+        if (previewBody) {
+          previewBody.innerHTML = '<div class="cmn-empty">Loading lead history...</div>';
+        }
+      };
+
+      var setPreviewErrorState = function (title, message) {
+        openPreviewPanel();
+        if (previewTitle) {
+          previewTitle.textContent = title || 'Relationship context';
+        }
+        if (previewStatus) {
+          previewStatus.textContent = message || 'Unable to load lead activity.';
+          previewStatus.classList.add('is-error');
+        }
+        if (previewBody) {
+          previewBody.innerHTML = '<div class="cmn-empty">Lead activity is unavailable right now.</div>';
+        }
+      };
+
+      var renderPreviewPayload = function (payload) {
+        if (!payload || typeof payload !== 'object') {
+          return;
+        }
+        openPreviewPanel();
+        if (previewTitle) {
+          previewTitle.textContent = String(payload.title || 'Relationship context');
+        }
+        if (previewStatus) {
+          previewStatus.textContent = 'Live history and activity ready.';
+          previewStatus.classList.remove('is-error');
+        }
+        if (previewBody) {
+          previewBody.innerHTML = String(payload.html || '<div class="cmn-empty">No preview available.</div>');
+        }
+        if (previewPanel) {
+          previewPanel.setAttribute('data-school-pid', String(payload.school_post_id || ''));
+        }
+      };
+
+      var loadLeadPreview = function (button) {
+        if (!button) {
+          return;
+        }
+        var schoolId = String(button.getAttribute('data-school-id') || '').trim();
+        var schoolPid = String(button.getAttribute('data-school-pid') || '').trim();
+        var schoolTitle = String(button.getAttribute('data-school-title') || 'Relationship context').trim();
+        if (!schoolId || !schoolPid) {
+          setPreviewErrorState(schoolTitle, 'Lead details are missing.');
+          return;
+        }
+        if (Object.prototype.hasOwnProperty.call(previewCache, schoolPid)) {
+          renderPreviewPayload(previewCache[schoolPid]);
+          return;
+        }
+        setPreviewLoadingState(schoolTitle, 'Loading stage history, notes, tasks, and activity...');
+        var fd = new FormData();
+        fd.append('action', 'cmn_get_school_lead_activity_preview');
+        fd.append('nonce', nonce);
+        fd.append('school_id', schoolId);
+        fd.append('pid', schoolPid);
+        fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (response) {
+          return response.text().then(function (text) {
+            var data;
+            try {
+              data = JSON.parse(text);
+            } catch (e) {
+              data = null;
+            }
+            if (!response.ok || !data) {
+              var fallback = 'Unable to load lead activity.';
+              if (data && data.data && data.data.message) {
+                fallback = data.data.message;
+              } else if (text) {
+                fallback = text.slice(0, 180);
+              }
+              throw new Error(fallback);
+            }
+            if (!data.success) {
+              throw new Error((data.data && data.data.message) ? data.data.message : 'Unable to load lead activity.');
+            }
+            return data.data || {};
+          });
+        }).then(function (payload) {
+          previewCache[schoolPid] = payload;
+          renderPreviewPayload(payload);
+        }).catch(function (err) {
+          setPreviewErrorState(schoolTitle, (err && err.message) ? err.message : 'Unable to load lead activity.');
+        });
+      };
+
+      previewCloseButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          closePreviewPanel();
+        });
+      });
+      if (previewBackdrop) {
+        previewBackdrop.addEventListener('click', function () {
+          closePreviewPanel();
+        });
+      }
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && previewPanel && !previewPanel.hidden) {
+          closePreviewPanel();
+        }
+      });
+
+      workspace.addEventListener('click', function (event) {
+        var previewButton = event.target && event.target.closest ? event.target.closest('[data-school-lead-open-preview]') : null;
+        if (!previewButton || !workspace.contains(previewButton)) {
+          return;
+        }
+        event.preventDefault();
+        loadLeadPreview(previewButton);
+      });
+
+      var clearDropTargets = function () {
+        board.querySelectorAll('[data-school-lead-stage-column]').forEach(function (lane) {
+          lane.classList.remove('is-drop-target');
+        });
+      };
+
+      var refreshLaneCounts = function () {
+        board.querySelectorAll('[data-school-lead-stage-column]').forEach(function (lane) {
+          var cards = lane.querySelectorAll('[data-school-lead-card]');
+          var countEl = lane.querySelector('[data-school-lead-stage-count]');
+          var emptyEl = lane.querySelector('[data-school-leads-empty-state]');
+          if (countEl) {
+            countEl.textContent = String(cards.length);
+          }
+          if (emptyEl) {
+            emptyEl.hidden = cards.length > 0;
+          }
+        });
+      };
+
+      var getCardTitle = function (card) {
+        if (!card) {
+          return 'lead';
+        }
+        var titleLink = card.querySelector('h4 a');
+        if (titleLink) {
+          return String(titleLink.textContent || '').trim() || 'lead';
+        }
+        return 'lead';
+      };
+
+      var restoreCardPosition = function (state) {
+        if (!state || !state.card || !state.sourceDropzone) {
+          return;
+        }
+        if (state.sourceNextSibling && state.sourceNextSibling.parentNode === state.sourceDropzone) {
+          state.sourceDropzone.insertBefore(state.card, state.sourceNextSibling);
+          return;
+        }
+        state.sourceDropzone.appendChild(state.card);
+      };
+
+      var getInsertionTarget = function (dropzone, clientY, draggingCard) {
+        var cards = Array.prototype.slice.call(dropzone.querySelectorAll('[data-school-lead-card]')).filter(function (card) {
+          return card !== draggingCard;
+        });
+        var closest = {
+          offset: Number.NEGATIVE_INFINITY,
+          element: null
+        };
+        cards.forEach(function (card) {
+          var rect = card.getBoundingClientRect();
+          var offset = clientY - rect.top - (rect.height / 2);
+          if (offset < 0 && offset > closest.offset) {
+            closest = {
+              offset: offset,
+              element: card
+            };
+          }
+        });
+        return closest.element;
+      };
+
+      var updateCardStageUi = function (card, nextStage) {
+        if (!card) {
+          return;
+        }
+        var lane = board.querySelector('[data-school-lead-stage-column="' + nextStage + '"]');
+        if (!lane) {
+          return;
+        }
+        var stageLabel = String(lane.getAttribute('data-stage-label') || '').trim() || nextStage;
+        var nextAction = String(lane.getAttribute('data-stage-next') || '').trim();
+        card.setAttribute('data-stage', nextStage);
+        var stageChip = card.querySelector('[data-school-lead-stage-chip]');
+        if (stageChip) {
+          stageChip.textContent = stageLabel;
+        }
+        var nextActionEl = card.querySelector('[data-school-lead-card-next]');
+        if (nextActionEl && nextAction) {
+          nextActionEl.textContent = nextAction;
+        }
+        var schoolPid = String(card.getAttribute('data-school-pid') || '').trim();
+        if (!schoolPid) {
+          return;
+        }
+        delete previewCache[schoolPid];
+        var tableRow = document.querySelector('[data-school-lead-table-row][data-school-pid="' + schoolPid + '"]');
+        if (!tableRow) {
+          tableRow = null;
+        }
+        if (tableRow) {
+          tableRow.setAttribute('data-stage', nextStage);
+          var rowStageLabel = tableRow.querySelector('[data-school-lead-stage-label]');
+          if (rowStageLabel) {
+            rowStageLabel.textContent = stageLabel;
+          }
+        }
+        if (previewPanel && String(previewPanel.getAttribute('data-school-pid') || '').trim() === schoolPid) {
+          var previewStageChip = previewPanel.querySelector('[data-school-lead-preview-stage]');
+          if (previewStageChip) {
+            previewStageChip.textContent = stageLabel;
+          }
+          var activePreviewTrigger = card.querySelector('[data-school-lead-open-preview]');
+          if (!activePreviewTrigger) {
+            activePreviewTrigger = workspace.querySelector('[data-school-lead-open-preview][data-school-pid="' + schoolPid + '"]');
+          }
+          if (activePreviewTrigger) {
+            loadLeadPreview(activePreviewTrigger);
+          }
+        }
+      };
+
+      var postStageChange = function (card, nextStage) {
+        var schoolId = String(card.getAttribute('data-school-id') || '').trim();
+        var schoolPid = String(card.getAttribute('data-school-pid') || '').trim();
+        if (!schoolId || !schoolPid || !nextStage) {
+          return Promise.reject(new Error('Lead details are missing.'));
+        }
+        var fd = new FormData();
+        fd.append('action', 'cmn_school_update_details');
+        fd.append('nonce', nonce);
+        fd.append('school_id', schoolId);
+        fd.append('pid', schoolPid);
+        fd.append('pipeline_stage', nextStage);
+        return fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (response) {
+          return response.text().then(function (text) {
+            var data;
+            try {
+              data = JSON.parse(text);
+            } catch (e) {
+              data = null;
+            }
+            if (!response.ok || !data) {
+              var fallback = 'Unable to move this lead right now.';
+              if (data && data.data && data.data.message) {
+                fallback = data.data.message;
+              } else if (text) {
+                fallback = text.slice(0, 180);
+              }
+              throw new Error(fallback);
+            }
+            if (!data.success) {
+              throw new Error((data.data && data.data.message) ? data.data.message : 'Unable to move this lead right now.');
+            }
+            return data.data || {};
+          });
+        });
+      };
+
+      board.addEventListener('dragstart', function (event) {
+        var card = event.target && event.target.closest ? event.target.closest('[data-school-lead-card]') : null;
+        if (!card || card.classList.contains('is-saving')) {
+          return;
+        }
+        dragState = {
+          card: card,
+          sourceDropzone: card.parentNode,
+          sourceNextSibling: card.nextSibling,
+          sourceStage: String(card.getAttribute('data-stage') || '').trim()
+        };
+        card.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', 'cmn-school-lead-stage');
+        }
+      });
+
+      board.addEventListener('dragover', function (event) {
+        if (!dragState || !dragState.card) {
+          return;
+        }
+        var dropzone = event.target && event.target.closest ? event.target.closest('[data-school-lead-stage-dropzone]') : null;
+        if (!dropzone) {
+          return;
+        }
+        event.preventDefault();
+        clearDropTargets();
+        var lane = dropzone.closest('[data-school-lead-stage-column]');
+        if (lane) {
+          lane.classList.add('is-drop-target');
+        }
+        var before = getInsertionTarget(dropzone, event.clientY, dragState.card);
+        if (before) {
+          dropzone.insertBefore(dragState.card, before);
+        } else {
+          dropzone.appendChild(dragState.card);
+        }
+        refreshLaneCounts();
+      });
+
+      board.addEventListener('drop', function (event) {
+        if (!dragState || !dragState.card) {
+          return;
+        }
+        var dropzone = event.target && event.target.closest ? event.target.closest('[data-school-lead-stage-dropzone]') : null;
+        if (!dropzone) {
+          return;
+        }
+        event.preventDefault();
+        clearDropTargets();
+        var currentDrag = dragState;
+        dragState = null;
+        var card = currentDrag.card;
+        var lane = dropzone.closest('[data-school-lead-stage-column]');
+        var nextStage = lane ? String(lane.getAttribute('data-school-lead-stage-column') || '').trim() : '';
+        card.classList.remove('is-dragging');
+        if (!nextStage || nextStage === currentDrag.sourceStage) {
+          restoreCardPosition(currentDrag);
+          refreshLaneCounts();
+          setBoardStatus('Stage unchanged.', false);
+          return;
+        }
+        card.classList.add('is-saving');
+        setBoardStatus('Updating ' + getCardTitle(card) + '...', false);
+        postStageChange(card, nextStage).then(function (payload) {
+          updateCardStageUi(card, String(payload.stage_value || nextStage));
+          var feedbackEl = card.querySelector('[data-school-lead-card-feedback]');
+          if (feedbackEl) {
+            feedbackEl.textContent = String(payload.message || 'Stage updated.');
+          }
+          setBoardStatus(getCardTitle(card) + ' moved to ' + String(lane.getAttribute('data-stage-label') || nextStage) + '.', false);
+        }).catch(function (err) {
+          restoreCardPosition(currentDrag);
+          var feedbackEl = card.querySelector('[data-school-lead-card-feedback]');
+          if (feedbackEl) {
+            feedbackEl.textContent = (err && err.message) ? err.message : 'Unable to move stage.';
+          }
+          setBoardStatus((err && err.message) ? err.message : 'Unable to move stage.', true);
+        }).finally(function () {
+          card.classList.remove('is-saving');
+          refreshLaneCounts();
+        });
+      });
+
+      board.addEventListener('dragend', function () {
+        clearDropTargets();
+        if (!dragState || !dragState.card) {
+          return;
+        }
+        dragState.card.classList.remove('is-dragging');
+        restoreCardPosition(dragState);
+        dragState = null;
+        refreshLaneCounts();
+      });
+
+      refreshLaneCounts();
     });
   }
 
@@ -4271,15 +6647,19 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       var estimatedAveragePay = parseFloat(bonus.estimated_average_day_pay || '0');
-      if (!isFinite(estimatedAveragePay) || estimatedAveragePay <= 0) {
-        estimatedAveragePay = 160;
+      if (!isFinite(estimatedAveragePay) || estimatedAveragePay < 0) {
+        estimatedAveragePay = 0;
       }
+      var payRateMissing = !!bonus.pay_rate_missing || estimatedAveragePay <= 0;
       var nextMultiplier = parseFloat(bonus.next_multiplier || multipliers[tier] || '1');
       if (!isFinite(nextMultiplier) || nextMultiplier <= 0) {
         nextMultiplier = 1;
       }
       var estimatedNextBonus = parseFloat(bonus.estimated_next_bonus || (estimatedAveragePay * nextMultiplier));
       if (!isFinite(estimatedNextBonus) || estimatedNextBonus < 0) {
+        estimatedNextBonus = 0;
+      }
+      if (payRateMissing) {
         estimatedNextBonus = 0;
       }
 
@@ -4302,11 +6682,15 @@ document.addEventListener('DOMContentLoaded', function () {
       rewardsSetText('[data-cmn-rewards-next-bonus]', 'Next bonus at ' + String(nextBonusAt) + ' shifts (' + String(shiftsToNextBonus) + ' to go)');
       rewardsSetText('[data-cmn-rewards-progress-value]', rewardsWhole(progressValue) + ' / ' + rewardsWhole(progressTarget) + ' shifts');
       rewardsSetText('[data-cmn-rewards-next-unlock]', nextTierThreshold > 0 ? (String(state.next_tier || 'Next Tier') + ' unlocked at ' + String(nextTierThreshold)) : 'Top tier achieved');
-      rewardsSetText('[data-cmn-rewards-estimated-average-pay]', rewardsMoney(estimatedAveragePay));
+      rewardsSetText('[data-cmn-rewards-estimated-average-pay]', payRateMissing ? 'Pay rate not set yet' : rewardsMoney(estimatedAveragePay));
       rewardsSetText('[data-cmn-rewards-estimated-next-bonus]', rewardsMoney(estimatedNextBonus));
       rewardsSetText('[data-cmn-rewards-confirmation-compliance]', confirmationCompliance === null ? '80%+ required' : (String(confirmationCompliance) + '%'));
       rewardsSetText('[data-cmn-rewards-rating-value]', ratingCount > 0 ? (ratingRaw.toFixed(2) + ' / 5') : 'N/A');
       rewardsSetText('[data-cmn-rewards-rating-count]', ratingCount > 0 ? (String(ratingCount) + (ratingCount === 1 ? ' review' : ' reviews')) : 'No reviews yet');
+      var payRateNote = candidateRewardsRoot.querySelector('[data-cmn-rewards-pay-rate-note]');
+      if (payRateNote) {
+        payRateNote.hidden = !payRateMissing;
+      }
 
       var eliteNote = candidateRewardsRoot.querySelector('[data-cmn-rewards-elite-note]');
       if (eliteNote) {
@@ -11286,11 +13670,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
 
-      var roleInputs = document.querySelectorAll('[data-profile-form] input[name="roles[]"]:checked');
-      roleInputs.forEach(function (input) {
-        fd.append('roles[]', input.value);
-      });
-
       var dayInputs = document.querySelectorAll('[data-profile-form] input[name="availability_days[]"]:checked');
       dayInputs.forEach(function (input) {
         fd.append('availability_days[]', input.value);
@@ -14568,7 +16947,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var appliedHint = isApplied ? ' title="Already applied"' : '';
         return ''
           + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="approved" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '"' + (approveDisabled ? ' disabled' : '') + appliedHint + '>Approve</button>'
-          + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="rejected" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '"' + (denyDisabled ? ' disabled' : '') + appliedHint + '>Deny</button>';
+          + '<button type="button" class="cmn-ghost cmn-btn-mini" data-seo-decision="rejected" data-seo-recommendation-id="' + seoEscapeHtml(recommendationId) + '"' + (denyDisabled ? ' disabled' : '') + appliedHint + '>Reject</button>';
       };
 
       var renderRecommendations = function () {
@@ -14832,83 +17211,78 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       };
 
-      if (saveAllowlistButton && allowlistInput) {
-        saveAllowlistButton.addEventListener('click', function () {
-          seoDebugLog('click', { action: 'save_allowlist' });
-          setStatus('Saving allowlist...', false);
-          runWithBusyButton(saveAllowlistButton, 'Saving...', function () {
-            return seoApiCall('cmn_seo_assistant_save_allowlist', {
-              allowlist: allowlistInput.value || ''
-            }).then(function (data) {
-              state = seoNormalizeState((data && data.state) ? data.state : {});
-              renderAll();
-              setStatus((data && data.message) ? data.message : 'Allowlist saved.', false);
-            }).catch(function (error) {
-              setStatus(error && error.message ? error.message : 'Unable to save allowlist.', true);
-            });
-          });
-        });
-      }
-
-      if (discoverButton) {
-        discoverButton.addEventListener('click', function () {
-          seoDebugLog('click', { action: 'discover_pages' });
-          setStatus('Discovering pages...', false);
-          runWithBusyButton(discoverButton, 'Discovering...', function () {
-            return seoApiCall('cmn_seo_discover_pages', {}).then(function (data) {
-              state = seoNormalizeState((data && data.state) ? data.state : {});
-              renderAll();
-              setStatus((data && data.message) ? data.message : 'Page discovery complete.', false);
-            }).catch(function (error) {
-              setStatus(error && error.message ? error.message : 'Unable to discover pages.', true);
-            });
-          });
-        });
-      }
-
-      if (scanButton) {
-        scanButton.addEventListener('click', function () {
-          var selectedUrls = getSelectedUrls();
-          seoDebugLog('click', { action: 'scan_selected', selectedCount: selectedUrls.length });
-          setStatus('Scanning selected pages...', false);
-          runWithBusyButton(scanButton, 'Scanning...', function () {
-            return seoApiCall('cmn_seo_scan_pages', {
-              urls: selectedUrls
-            }).then(function (data) {
-              state = seoNormalizeState((data && data.state) ? data.state : {});
-              renderAll();
-              setStatus((data && data.message) ? data.message : 'Scan complete.', false);
-            }).catch(function (error) {
-              setStatus(error && error.message ? error.message : 'Unable to run SEO scan.', true);
-            });
-          });
-        });
-      }
-
-      if (applyButton) {
-        applyButton.addEventListener('click', function () {
-          runApplyApprovedWithProgress();
-        });
-      }
-
-      if (rollbackButton) {
-        rollbackButton.addEventListener('click', function () {
-          if (applyInProgress) {
-            return;
-          }
-          setBusy(true);
-          seoApiCall('cmn_seo_assistant_rollback_last_batch', {}).then(function (data) {
+      var handleSaveAllowlist = function () {
+        if (!saveAllowlistButton || !allowlistInput) {
+          return;
+        }
+        seoDebugLog('click', { action: 'save_allowlist' });
+        setStatus('Saving allowlist...', false);
+        runWithBusyButton(saveAllowlistButton, 'Saving...', function () {
+          return seoApiCall('cmn_seo_assistant_save_allowlist', {
+            allowlist: allowlistInput.value || ''
+          }).then(function (data) {
             state = seoNormalizeState((data && data.state) ? data.state : {});
             renderAll();
-            setStatus((data && data.message) ? data.message : 'Rollback complete.', false);
-            appendApplyLog('ROLLBACK: Applied=' + String((data && data.rolled_back_count) || 0) + ' Failed=' + String((data && data.failed_count) || 0), 'skip');
+            setStatus((data && data.message) ? data.message : 'Allowlist saved.', false);
           }).catch(function (error) {
-            setStatus(error && error.message ? error.message : 'Unable to roll back last batch.', true);
-          }).finally(function () {
-            setBusy(false);
+            setStatus(error && error.message ? error.message : 'Unable to save allowlist.', true);
           });
         });
-      }
+      };
+
+      var handleDiscoverPages = function () {
+        if (!discoverButton) {
+          return;
+        }
+        seoDebugLog('click', { action: 'discover_pages' });
+        setStatus('Discovering pages...', false);
+        runWithBusyButton(discoverButton, 'Discovering...', function () {
+          return seoApiCall('cmn_seo_discover_pages', {}).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            setStatus((data && data.message) ? data.message : 'Page discovery complete.', false);
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to discover pages.', true);
+          });
+        });
+      };
+
+      var handleScanSelectedPages = function () {
+        if (!scanButton) {
+          return;
+        }
+        var selectedUrls = getSelectedUrls();
+        seoDebugLog('click', { action: 'scan_selected', selectedCount: selectedUrls.length });
+        setStatus('Scanning selected pages...', false);
+        runWithBusyButton(scanButton, 'Scanning...', function () {
+          return seoApiCall('cmn_seo_scan_pages', {
+            urls: selectedUrls
+          }).then(function (data) {
+            state = seoNormalizeState((data && data.state) ? data.state : {});
+            renderAll();
+            setStatus((data && data.message) ? data.message : 'Scan complete.', false);
+          }).catch(function (error) {
+            setStatus(error && error.message ? error.message : 'Unable to run SEO scan.', true);
+          });
+        });
+      };
+
+      var handleRollbackBatch = function () {
+        if (!rollbackButton || applyInProgress) {
+          return;
+        }
+        setBusy(true);
+        seoApiCall('cmn_seo_assistant_rollback_last_batch', {}).then(function (data) {
+          state = seoNormalizeState((data && data.state) ? data.state : {});
+          renderAll();
+          setStatus((data && data.message) ? data.message : 'Rollback complete.', false);
+          appendApplyLog('ROLLBACK: Applied=' + String((data && data.rolled_back_count) || 0) + ' Failed=' + String((data && data.failed_count) || 0), 'skip');
+        }).catch(function (error) {
+          setStatus(error && error.message ? error.message : 'Unable to roll back last batch.', true);
+        }).finally(function () {
+          setBusy(false);
+        });
+      };
 
       if (pageSearchInput) {
         pageSearchInput.addEventListener('input', function () {
@@ -14936,6 +17310,22 @@ document.addEventListener('DOMContentLoaded', function () {
       });
 
       root.addEventListener('click', function (event) {
+        var topActionButton = event.target && event.target.closest ? event.target.closest('[data-seo-save-allowlist], [data-seo-discover-pages], [data-seo-scan-selected], [data-seo-apply-approved], [data-seo-rollback-last-batch]') : null;
+        if (topActionButton) {
+          event.preventDefault();
+          if (topActionButton.matches('[data-seo-save-allowlist]')) {
+            handleSaveAllowlist();
+          } else if (topActionButton.matches('[data-seo-discover-pages]')) {
+            handleDiscoverPages();
+          } else if (topActionButton.matches('[data-seo-scan-selected]')) {
+            handleScanSelectedPages();
+          } else if (topActionButton.matches('[data-seo-apply-approved]')) {
+            runApplyApprovedWithProgress();
+          } else if (topActionButton.matches('[data-seo-rollback-last-batch]')) {
+            handleRollbackBatch();
+          }
+          return;
+        }
         var pageNavButton = event.target && event.target.closest ? event.target.closest('[data-seo-page-nav]') : null;
         if (pageNavButton) {
           event.preventDefault();
@@ -15244,6 +17634,26 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!root) {
       return;
     }
+    var debugParams = null;
+    try {
+      debugParams = new URLSearchParams((window && window.location && window.location.search) ? window.location.search : '');
+    } catch (ignoreErr) {
+      debugParams = null;
+    }
+    var liveDebug = !!(debugParams && debugParams.get('cmn_debug') === '1');
+    var liveDebugLog = function () {
+      if (!liveDebug || !window || !window.console || typeof window.console.log !== 'function') {
+        return;
+      }
+      var args = Array.prototype.slice.call(arguments);
+      args.unshift('[CMN Live Carousel]');
+      window.console.log.apply(window.console, args);
+    };
+    if (!root.hasAttribute('tabindex')) {
+      root.setAttribute('tabindex', '0');
+    }
+    root.setAttribute('role', 'region');
+    root.setAttribute('aria-label', 'Available candidates carousel');
     var payloadRaw = root.getAttribute('data-live-matches') || '{}';
     var payload = {};
     try { payload = JSON.parse(payloadRaw); } catch (e) { payload = {}; }
@@ -15255,6 +17665,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!carousel) {
       return;
     }
+    carousel.setAttribute('role', 'listbox');
+    carousel.setAttribute('aria-label', 'Candidate cards');
     var prevArrow = root.querySelector('[data-live-prev]');
     var nextArrow = root.querySelector('[data-live-next]');
     var dots = root.querySelector('[data-live-dots]');
@@ -15393,6 +17805,14 @@ document.addEventListener('DOMContentLoaded', function () {
       return out;
     };
 
+    var getCenterSlotIndex = function(visibleCount){
+      var count = Math.max(0, parseInt(String(visibleCount || '0'), 10) || 0);
+      if (count <= 1) {
+        return 0;
+      }
+      return 1;
+    };
+
     var postAction = function(action, candidateId, extra){
       var form = new FormData();
       form.append('action', 'cmn_school_live_match_action');
@@ -15403,13 +17823,21 @@ document.addEventListener('DOMContentLoaded', function () {
       return fetch((window.cmnPortal && window.cmnPortal.ajaxUrl) || '', {method:'POST', credentials:'same-origin', body:form}).then(function(r){ return r.json(); });
     };
 
+    var isDistanceStatusText = function(rawValue){
+      var raw = String(rawValue || '').trim();
+      if (!raw) {
+        return false;
+      }
+      return /\b(unavailable|unknown|n\/a|pending|missing|geocod|failed)\b/i.test(raw);
+    };
+
     var resolveDistanceText = function(rawValue){
       var raw = String(rawValue || '').trim();
       if (!raw) {
         return '';
       }
-      if (/\b(unavailable|unknown|n\/a|pending)\b/i.test(raw)) {
-        return 'Distance unavailable';
+      if (isDistanceStatusText(raw)) {
+        return raw;
       }
       if (/^\d+(\.\d+)?$/.test(raw)) {
         return raw + ' miles';
@@ -15429,7 +17857,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var distanceWithAway = distanceText;
       if (
         distanceWithAway
-        && !/\b(unavailable|unknown|n\/a|pending)\b/i.test(distanceWithAway)
+        && !isDistanceStatusText(distanceWithAway)
         && /\b(mile|miles|mi|km|kilometre|kilometer|kilometres|kilometers)\b/i.test(distanceWithAway)
         && !/\baway\b/i.test(distanceWithAway)
       ) {
@@ -15760,13 +18188,18 @@ document.addEventListener('DOMContentLoaded', function () {
         + '</div>';
     };
 
-    var cardHtml = function(item){
+    var cardHtml = function(item, options){
+      options = options && typeof options === 'object' ? options : {};
       if (!item) return '<div></div>';
       var isOnlineNow = String(item.is_physically_online || '0') === '1' || item.is_physically_online === 1 || item.is_physically_online === true;
       var presenceLabel = isOnlineNow ? 'ONLINE NOW' : String(item.presence_label || 'Last seen at --:--');
       var ratingMarkup = resolveRatingMarkup(item);
       var isBookable = item.status === 'available';
       var cardStateClass = isBookable ? ' is-bookable' : ' is-pending-confirmation';
+      var isCenter = !!options.isCenter;
+      var cardClassName = 'cmn-live-card' + cardStateClass + (isCenter ? ' is-center' : ' is-side');
+      var slotIndex = Math.max(0, parseInt(String(options.slotIndex || '0'), 10) || 0);
+      var ariaSelected = isCenter ? 'true' : 'false';
       var banner = item.status === 'available'
         ? '<div class="cmn-live-banner">Bookable<br><small>Confirmed at ' + (item.confirmed_at || '--:--') + '</small></div>'
         : '<div class="cmn-live-banner is-pending">Not yet confirmed</div>';
@@ -15818,10 +18251,46 @@ document.addEventListener('DOMContentLoaded', function () {
     var render = function(){
       var list = getFiltered();
       if (!list.length) { carousel.innerHTML = '<div class="cmn-muted">No candidates in this tab.</div>'; dots.innerHTML=''; renderTabs(); return; }
-      if (startIndex >= list.length) startIndex = 0;
+      if (startIndex >= list.length || startIndex < 0 || !isFinite(startIndex)) startIndex = 0;
       var visible = getVisibleWindow(list, startIndex, 3);
-      carousel.innerHTML = visible.map(function(item){ return cardHtml(item); }).join('');
-      dots.innerHTML = list.map(function(_,idx){ return '<button type="button" class="cmn-live-dot'+(idx===startIndex?' is-active':'')+'" data-live-dot="'+idx+'" aria-label="Show candidate '+(idx+1)+'"></button>'; }).join('');
+      var centerSlotIndex = getCenterSlotIndex(visible.length);
+      var activeItem = list[startIndex] || null;
+      var activeCandidateId = parseInt(String((activeItem && activeItem.candidate_id) || '0'), 10) || 0;
+      carousel.innerHTML = visible.map(function(item, slotIndex){
+        var itemId = parseInt(String((item && item.candidate_id) || '0'), 10) || 0;
+        var isCenter = activeCandidateId > 0 ? itemId === activeCandidateId : slotIndex === centerSlotIndex;
+        return cardHtml(item, {
+          slotIndex: slotIndex,
+          isCenter: isCenter
+        });
+      }).join('');
+      dots.innerHTML = list.map(function(_,idx){
+        var isActiveDot = idx === startIndex;
+        return '<button type="button" class="cmn-live-dot' + (isActiveDot ? ' is-active' : '') + '" data-live-dot="' + idx + '" aria-label="Show candidate ' + (idx + 1) + '" aria-selected="' + (isActiveDot ? 'true' : 'false') + '"></button>';
+      }).join('');
+      root.setAttribute('data-live-current-index', String(startIndex));
+      var centeredCard = carousel.querySelector('.cmn-live-card.is-center');
+      if (!centeredCard) {
+        var fallbackCard = carousel.querySelector('.cmn-live-card[data-live-slot-index="' + String(centerSlotIndex) + '"]');
+        if (fallbackCard) {
+          fallbackCard.classList.add('is-center');
+          fallbackCard.classList.remove('is-side');
+          fallbackCard.setAttribute('aria-selected', 'true');
+          centeredCard = fallbackCard;
+        }
+      }
+      if (liveDebug) {
+        var centeredName = centeredCard ? centeredCard.getAttribute('data-candidate-name') : '';
+        var centeredId = centeredCard ? parseInt(String(centeredCard.getAttribute('data-candidate-id') || '0'), 10) || 0 : 0;
+        liveDebugLog('render', {
+          currentIndex: startIndex,
+          targetIndex: startIndex,
+          totalCandidates: list.length,
+          centerCandidateId: centeredId,
+          centerCandidateName: centeredName,
+          activeDotIndex: startIndex
+        });
+      }
       renderTabs();
       syncOfferTicker();
     };
@@ -15839,6 +18308,12 @@ document.addEventListener('DOMContentLoaded', function () {
       if (startIndex < 0) {
         startIndex += listLen;
       }
+      liveDebugLog('advance', {
+        step: safeStep,
+        currentIndex: startIndex,
+        targetIndex: startIndex,
+        totalCandidates: listLen
+      });
       render();
     };
     root.__cmnAdvanceLive = function(step){
@@ -15967,12 +18442,18 @@ document.addEventListener('DOMContentLoaded', function () {
         closeOfferModal();
         return;
       }
+      var targetTag = String((e && e.target && e.target.tagName) || '').toLowerCase();
+      if (targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select' || (e && e.target && e.target.isContentEditable)) {
+        return;
+      }
       if (e.key==='ArrowLeft'){
+        e.preventDefault();
         var leftLen = Math.max(1, getFiltered().length);
         startIndex = (startIndex - 1 + leftLen) % leftLen;
         render();
       }
       if (e.key==='ArrowRight'){
+        e.preventDefault();
         startIndex = (startIndex + 1) % Math.max(1,getFiltered().length);
         render();
       }
@@ -16153,6 +18634,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     var root = btn.closest ? btn.closest('[data-live-matches-root]') : null;
     if (!root) {
+      return;
+    }
+    if (root.getAttribute('data-live-nav-bound') === '1') {
       return;
     }
     var direction = btn.matches('[data-live-next]') ? 1 : -1;
@@ -16471,4 +18955,263 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     showPanel(panelEmpty);
   }, 140);
+
+  var staffDashboardRoots = document.querySelectorAll('[data-staff-dashboard]');
+  if (staffDashboardRoots.length && window.cmnPortal && window.cmnPortal.ajaxUrl && window.cmnPortal.staffDashboardNonce) {
+    staffDashboardRoots.forEach(function (root) {
+      var sections = Array.prototype.slice.call(root.querySelectorAll('[data-dashboard-section]')).sort(function (a, b) {
+        var aPriority = parseInt(a.getAttribute('data-dashboard-priority') || '99', 10);
+        var bPriority = parseInt(b.getAttribute('data-dashboard-priority') || '99', 10);
+        if (!isFinite(aPriority)) {
+          aPriority = 99;
+        }
+        if (!isFinite(bPriority)) {
+          bPriority = 99;
+        }
+        return aPriority - bPriority;
+      });
+      var ajaxUrl = String(window.cmnPortal.ajaxUrl || '').trim();
+      var nonce = String(window.cmnPortal.staffDashboardNonce || '').trim();
+      var perfEnabled = typeof window !== 'undefined'
+        && window.location
+        && /(?:\?|&)cmn_perf=1(?:&|$)/.test(String(window.location.search || ''));
+      if (!sections.length || !ajaxUrl || !nonce) {
+        return;
+      }
+      var loaderStrip = root.previousElementSibling && root.previousElementSibling.matches('[data-dashboard-loader-strip]')
+        ? root.previousElementSibling
+        : null;
+      var loaderCount = loaderStrip ? loaderStrip.querySelector('[data-dashboard-loader-count]') : null;
+      var loaderLabel = loaderStrip ? loaderStrip.querySelector('[data-dashboard-loader-label]') : null;
+      var loaderBar = loaderStrip ? loaderStrip.querySelector('[data-dashboard-loader-bar]') : null;
+      var maxConcurrentLoads = 2;
+      var activeLoads = 0;
+      var nextImmediateIndex = 0;
+      var idleQueue = [];
+      var idleQueueStarted = false;
+      var sectionStates = {};
+      var viewportObserver = null;
+
+      var setSectionStatus = function (section, message) {
+        var status = section.querySelector('[data-dashboard-section-status]');
+        if (status) {
+          status.textContent = String(message || '');
+        }
+      };
+      var setSectionState = function (section, state) {
+        var group = String(section.getAttribute('data-dashboard-section') || '').trim();
+        if (!group) {
+          return;
+        }
+        sectionStates[group] = String(state || 'pending');
+      };
+      var updateLoaderSummary = function () {
+        var total = sections.length;
+        var readyCount = 0;
+        var errorCount = 0;
+        var processedCount = 0;
+        var deferredCount = 0;
+        var loadingCount = 0;
+        sections.forEach(function (section) {
+          var group = String(section.getAttribute('data-dashboard-section') || '').trim();
+          var state = sectionStates[group] || 'pending';
+          if (state === 'loaded') {
+            readyCount += 1;
+            processedCount += 1;
+          } else if (state === 'error') {
+            errorCount += 1;
+            processedCount += 1;
+          } else if (state === 'deferred') {
+            deferredCount += 1;
+          } else if (state === 'loading') {
+            loadingCount += 1;
+          }
+        });
+        if (loaderCount) {
+          loaderCount.textContent = String(readyCount) + ' / ' + String(total);
+        }
+        if (loaderLabel) {
+          if (loadingCount > 0) {
+            loaderLabel.textContent = loadingCount === 1 ? 'section loading now' : (String(loadingCount) + ' sections loading now');
+          } else if (deferredCount > 0) {
+            loaderLabel.textContent = deferredCount === 1 ? '1 section queued for later load' : (String(deferredCount) + ' sections queued for later load');
+          } else if (errorCount > 0) {
+            loaderLabel.textContent = errorCount === 1 ? '1 section needs retry' : (String(errorCount) + ' sections need retry');
+          } else {
+            loaderLabel.textContent = total === 1 ? 'section ready' : 'sections ready';
+          }
+        }
+        if (loaderBar) {
+          var progress = total > 0 ? Math.round((processedCount / total) * 100) : 100;
+          loaderBar.style.width = String(progress) + '%';
+        }
+      };
+      var createRetryMarkup = function () {
+        return ''
+          + '<div class="cmn-dashboard-empty-card cmn-dashboard-empty-card--error">'
+          + '<p>This dashboard section could not be loaded right now.</p>'
+          + '<button type="button" class="cmn-dashboard-retry" data-dashboard-retry>Retry section</button>'
+          + '</div>';
+      };
+
+      var loadSection = function (section) {
+        var group = String(section.getAttribute('data-dashboard-section') || '').trim();
+        var body = section.querySelector('[data-dashboard-section-body]');
+        if (!group || !body) {
+          return Promise.resolve(false);
+        }
+        if (section.__cmnDashboardLoadPromise) {
+          return section.__cmnDashboardLoadPromise;
+        }
+        section.classList.add('is-loading');
+        section.classList.remove('is-loaded');
+        section.classList.remove('is-deferred');
+        section.classList.remove('has-error');
+        section.setAttribute('aria-busy', 'true');
+        setSectionState(section, 'loading');
+        setSectionStatus(section, 'Loading live data...');
+        updateLoaderSummary();
+
+        var fd = new FormData();
+        fd.append('action', 'cmn_staff_dashboard_overview');
+        fd.append('nonce', nonce);
+        fd.append('group', group);
+        if (perfEnabled) {
+          fd.append('cmn_perf', '1');
+        }
+
+        section.__cmnDashboardLoadPromise = fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (response) {
+          return response.json();
+        }).then(function (json) {
+          if (!(json && json.success && json.data && typeof json.data.html === 'string')) {
+            throw new Error('invalid_dashboard_payload');
+          }
+          body.innerHTML = json.data.html;
+          section.classList.remove('is-loading');
+          section.classList.add('is-loaded');
+          section.setAttribute('aria-busy', 'false');
+          setSectionState(section, 'loaded');
+          if (json.data.section_timing_ms !== undefined && json.data.section_timing_ms !== null) {
+            section.setAttribute('data-dashboard-section-ms', String(json.data.section_timing_ms));
+          }
+          setSectionStatus(
+            section,
+            (json.data && json.data.state_label)
+              ? String(json.data.state_label)
+              : ('Loaded in ' + String(json.data && json.data.section_timing_ms !== undefined ? json.data.section_timing_ms : '0') + ' ms')
+          );
+          updateLoaderSummary();
+          return true;
+        }).catch(function () {
+          body.innerHTML = createRetryMarkup();
+          section.classList.remove('is-loading');
+          section.classList.add('has-error');
+          section.setAttribute('aria-busy', 'false');
+          setSectionState(section, 'error');
+          setSectionStatus(section, 'Could not load. Retry available.');
+          updateLoaderSummary();
+          return false;
+        }).finally(function () {
+          section.__cmnDashboardLoadPromise = null;
+        });
+        return section.__cmnDashboardLoadPromise;
+      };
+
+      var immediateSections = sections.filter(function (section) {
+        var mode = String(section.getAttribute('data-dashboard-load-mode') || 'eager').trim();
+        return mode === 'critical' || mode === 'eager';
+      });
+      var startIdleQueue = function () {
+        if (idleQueueStarted || !idleQueue.length) {
+          return;
+        }
+        idleQueueStarted = true;
+        var kickoff = function () {
+          while (idleQueue.length) {
+            immediateSections.push(idleQueue.shift());
+          }
+          pumpQueue();
+        };
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(kickoff, { timeout: 1200 });
+          return;
+        }
+        window.setTimeout(kickoff, 450);
+      };
+      var pumpQueue = function () {
+        while (activeLoads < maxConcurrentLoads && nextImmediateIndex < immediateSections.length) {
+          var section = immediateSections[nextImmediateIndex];
+          nextImmediateIndex += 1;
+          activeLoads += 1;
+          loadSection(section).then(function () {
+            activeLoads -= 1;
+            if (nextImmediateIndex >= immediateSections.length && activeLoads === 0) {
+              startIdleQueue();
+            }
+            pumpQueue();
+          });
+        }
+      };
+
+      if ('IntersectionObserver' in window) {
+        viewportObserver = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) {
+              return;
+            }
+            var section = entry.target;
+            viewportObserver.unobserve(section);
+            immediateSections.push(section);
+            setSectionStatus(section, 'Loading as you reach this section...');
+            pumpQueue();
+          });
+        }, {
+          rootMargin: '220px 0px'
+        });
+      }
+
+      sections.forEach(function (section) {
+        var mode = String(section.getAttribute('data-dashboard-load-mode') || 'eager').trim();
+        setSectionState(section, 'pending');
+        if (mode === 'viewport') {
+          section.classList.add('is-deferred');
+          setSectionState(section, 'deferred');
+          setSectionStatus(section, 'Loads when this section is in view.');
+          if (viewportObserver) {
+            viewportObserver.observe(section);
+          } else {
+            idleQueue.push(section);
+          }
+          return;
+        }
+        if (mode === 'idle') {
+          section.classList.add('is-deferred');
+          setSectionState(section, 'deferred');
+          setSectionStatus(section, 'Queued after priority sections.');
+          idleQueue.push(section);
+        }
+      });
+
+      updateLoaderSummary();
+      root.addEventListener('click', function (event) {
+        var retryBtn = event.target.closest('[data-dashboard-retry]');
+        if (!retryBtn) {
+          return;
+        }
+        var section = retryBtn.closest('[data-dashboard-section]');
+        if (!section) {
+          return;
+        }
+        event.preventDefault();
+        loadSection(section);
+      });
+      (window.requestAnimationFrame || function (cb) {
+        return window.setTimeout(cb, 0);
+      })(pumpQueue);
+    });
+  }
 });
