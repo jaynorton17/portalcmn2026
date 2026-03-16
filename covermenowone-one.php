@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.29
+ * Version: 0.1.30
  * Author: CoverMeNow
  */
 
@@ -603,7 +603,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.29';
+    const VERSION = '0.1.30';
     const SCHEMA_BASE_VERSION = 38;
     const SCHEMA_VERSION = 79;
     const OFFER_EXPIRY_SECONDS = 900;
@@ -16922,6 +16922,64 @@ global $wpdb;
         ];
     }
 
+    private function get_school_work_queue_options() {
+        return [
+            'needs_contact' => [
+                'label' => 'Needs Contact',
+                'detail' => 'Missing direct contact details',
+            ],
+            'quiet_30' => [
+                'label' => 'Quiet 30+ Days',
+                'detail' => 'No recorded touch in the last 30 days',
+            ],
+            'follow_up' => [
+                'label' => 'Follow Ups',
+                'detail' => 'Relationships with explicit follow-up risk',
+            ],
+            'new_leads' => [
+                'label' => 'New Leads',
+                'detail' => 'Schools still at the first lead stage',
+            ],
+        ];
+    }
+
+    private function school_row_matches_work_queue(array $row_card, $work_queue_key) {
+        $work_queue_key = sanitize_key((string) $work_queue_key);
+        if ($work_queue_key === '') {
+            return true;
+        }
+
+        $contact_name = sanitize_text_field((string) ($row_card['contact_name'] ?? ''));
+        $contact_phone = sanitize_text_field((string) ($row_card['contact_phone'] ?? ''));
+        $contact_email = sanitize_email((string) ($row_card['contact_email'] ?? ''));
+        $stage_value = $this->normalize_school_lead_stage((string) ($row_card['stage_value'] ?? $row_card['pipeline_value'] ?? 'new_lead'));
+        $last_activity_ts = max(0, (int) ($row_card['last_activity_ts'] ?? 0));
+        $quiet_days = $last_activity_ts > 0 ? floor((current_time('timestamp') - $last_activity_ts) / DAY_IN_SECONDS) : PHP_INT_MAX;
+        $risk_labels = array_values(array_filter(array_map(static function ($flag) {
+            return strtolower(sanitize_text_field((string) ($flag['label'] ?? '')));
+        }, (array) ($row_card['risk_flags'] ?? []))));
+
+        if ($work_queue_key === 'needs_contact') {
+            return $contact_name === '' && $contact_phone === '' && $contact_email === '';
+        }
+        if ($work_queue_key === 'quiet_30') {
+            return $quiet_days >= 30;
+        }
+        if ($work_queue_key === 'follow_up') {
+            foreach ($risk_labels as $risk_label) {
+                if (strpos($risk_label, 'follow up') !== false || strpos($risk_label, 'meeting overdue') !== false || strpos($risk_label, 'quiet') !== false || strpos($risk_label, 'stale') !== false) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ($work_queue_key === 'new_leads') {
+            return $stage_value === 'new_lead';
+        }
+
+        return true;
+    }
+
     private function build_school_crm_active_filter_chips($portal_url, array $filters, array $manager_users = [], array $visible_lead_groups = []) {
         $portal_url = esc_url_raw((string) $portal_url);
         if ($portal_url === '') {
@@ -16939,6 +16997,7 @@ global $wpdb;
         $location = sanitize_text_field((string) ($filters['location'] ?? ''));
         $lead_group = sanitize_key((string) ($filters['lead_group'] ?? ''));
         $last_activity = sanitize_key((string) ($filters['last_activity'] ?? ''));
+        $work_queue = sanitize_key((string) ($filters['work_queue'] ?? ''));
         $search = sanitize_text_field((string) ($filters['search'] ?? ''));
 
         $query = array_filter([
@@ -16950,6 +17009,7 @@ global $wpdb;
             'cmn_location' => $location !== '' ? $location : null,
             'cmn_lead_group' => $lead_group !== '' ? $lead_group : null,
             'cmn_last_activity' => $last_activity !== '' ? $last_activity : null,
+            'cmn_work_queue' => $work_queue !== '' ? $work_queue : null,
             'q' => $search !== '' ? $search : null,
         ]);
         $remove_chip_url = function ($key) use ($query, $portal_url) {
@@ -17005,6 +17065,13 @@ global $wpdb;
             $chips[] = [
                 'label' => 'Last touch: ' . sanitize_text_field((string) $last_activity_options[$last_activity]['label']),
                 'remove_url' => $remove_chip_url('cmn_last_activity'),
+            ];
+        }
+        $work_queue_options = $this->get_school_work_queue_options();
+        if ($work_queue !== '' && !empty($work_queue_options[$work_queue]['label'])) {
+            $chips[] = [
+                'label' => 'Work queue: ' . sanitize_text_field((string) $work_queue_options[$work_queue]['label']),
+                'remove_url' => $remove_chip_url('cmn_work_queue'),
             ];
         }
 
@@ -17544,18 +17611,24 @@ global $wpdb;
         $created_at = trim((string) get_post_field('post_date', $school_post_id));
         $created_ts = $created_at !== '' ? strtotime($created_at) : 0;
         $last_activity_ts = max(0, (int) ($interaction_summaries[$school_post_id]['timestamp'] ?? 0));
+        $stage_display_value = $this->normalize_school_lead_stage((string) ($card['stage_value'] ?? $pipeline_value));
+        $email_url = add_query_arg(['cmn_school_focus_action' => 'email'], (string) ($card['overview_url'] ?? $card['view_url'] ?? $portal_url));
+        $log_call_url = (string) ($card['activity_url'] ?? $portal_url) . '#cmn-school-activity-form';
 
         return array_merge($card, [
             'status_value' => $status_value !== '' ? $status_value : 'lead',
             'status_label' => $status_value !== '' ? ucwords(str_replace('_', ' ', $status_value)) : 'Lead',
             'pipeline_value' => $pipeline_value,
             'pipeline_label' => $pipeline_value !== '' ? $this->get_school_lead_stage_label($pipeline_value) : '',
+            'stage_display_label' => $this->get_school_lead_stage_label($stage_display_value),
             'location' => $location,
             'import_issue_preview' => $import_issue_preview,
             'show_next_action' => $pipeline_value !== '',
             'created_ts' => $created_ts,
             'last_activity_ts' => $last_activity_ts,
             'sort_title' => sanitize_text_field((string) ($card['title'] ?? get_the_title($school_post_id))),
+            'email_url' => esc_url_raw((string) $email_url),
+            'log_call_url' => esc_url_raw((string) $log_call_url),
         ]);
     }
 
@@ -39845,6 +39918,11 @@ global $wpdb;
         if (!in_array($last_activity_filter, array_merge([''], array_keys($last_activity_options)), true)) {
             $last_activity_filter = '';
         }
+        $work_queue = isset($_GET['cmn_work_queue']) ? sanitize_key((string) $_GET['cmn_work_queue']) : '';
+        $work_queue_options = $this->get_school_work_queue_options();
+        if (!in_array($work_queue, array_merge([''], array_keys($work_queue_options)), true)) {
+            $work_queue = '';
+        }
         $view_style = isset($_GET['view_style']) ? sanitize_key((string) $_GET['view_style']) : '';
         if (!in_array($view_style, ['board', 'list'], true)) {
             $view_style = '';
@@ -40071,6 +40149,7 @@ global $wpdb;
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
             'cmn_last_activity' => $last_activity_filter ?: null,
+            'cmn_work_queue' => $work_queue ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
             'view_style' => $view_style ?: null,
@@ -40105,6 +40184,9 @@ global $wpdb;
         if ($last_activity_filter !== '') {
             $filter_count++;
         }
+        if ($work_queue !== '') {
+            $filter_count++;
+        }
         $filter_label = $filter_count ? 'Filters (' . $filter_count . ')' : 'Filters';
         $clear_filters_url = add_query_arg(array_filter([
             'view' => $view_param,
@@ -40122,6 +40204,7 @@ global $wpdb;
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
             'cmn_last_activity' => $last_activity_filter ?: null,
+            'cmn_work_queue' => $work_queue ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
             'view_style' => $view_style ?: null,
@@ -40137,6 +40220,7 @@ global $wpdb;
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
             'cmn_last_activity' => $last_activity_filter ?: null,
+            'cmn_work_queue' => $work_queue ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
             'view_style' => $view_style ?: null,
@@ -40155,7 +40239,8 @@ global $wpdb;
             'Needs Attention (%s)',
             number_format_i18n(max(0, (int) $this->count_school_status_for_navigation('needs_attention')))
         );
-        $show_leads_board = ($status === 'lead' || $bucket === 'sales' || $view === 'leads');
+        $portfolio_queue_mode = $this->is_restricted_account_manager($current_user_id);
+        $show_leads_board = !$portfolio_queue_mode && ($status === 'lead' || $bucket === 'sales' || $view === 'leads');
         $school_posts = isset($query->posts) && is_array($query->posts) ? $query->posts : [];
         $school_post_ids = array_values(array_filter(array_map(static function ($post) {
             return (int) ($post->ID ?? 0);
@@ -40185,6 +40270,7 @@ global $wpdb;
             'location' => $location_filter,
             'lead_group' => $lead_group_filter,
             'last_activity' => $last_activity_filter,
+            'work_queue' => $work_queue,
             'search' => $search,
         ], $manager_users, $visible_lead_groups);
         $active_filter_chip_count = count($active_filter_chips);
@@ -40194,6 +40280,7 @@ global $wpdb;
             'cmn_manager' => $manager_id ?: null,
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
+            'cmn_work_queue' => $work_queue ?: null,
             'q' => $search ?: null,
             'view_style' => $view_style ?: null,
             'sort' => $sort ?: null,
@@ -40235,6 +40322,7 @@ global $wpdb;
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
             'cmn_last_activity' => $last_activity_filter ?: null,
+            'cmn_work_queue' => $work_queue ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
             'view_style' => $view_style ?: null,
@@ -40250,6 +40338,37 @@ global $wpdb;
             $row_card = $this->build_school_crm_list_row_data($school_post_id, $visible_lead_groups, $portal_url, $view_context_query, $school_interaction_summaries);
             if ($row_card) {
                 $school_crm_rows[$school_post_id] = $row_card;
+            }
+        }
+        $work_queue_counts = array_fill_keys(array_keys($work_queue_options), 0);
+        foreach ($school_posts as $school_post) {
+            $school_post_id = (int) ($school_post->ID ?? 0);
+            $row_card = (array) ($school_crm_rows[$school_post_id] ?? []);
+            if (!$row_card) {
+                continue;
+            }
+            foreach ($work_queue_options as $queue_key => $_queue_meta) {
+                if ($this->school_row_matches_work_queue($row_card, $queue_key)) {
+                    $work_queue_counts[$queue_key]++;
+                }
+            }
+        }
+        if ($work_queue !== '') {
+            $filtered_school_posts = [];
+            foreach ($school_posts as $school_post) {
+                $school_post_id = (int) ($school_post->ID ?? 0);
+                $row_card = (array) ($school_crm_rows[$school_post_id] ?? []);
+                if ($row_card && $this->school_row_matches_work_queue($row_card, $work_queue)) {
+                    $filtered_school_posts[] = $school_post;
+                }
+            }
+            $school_posts = $filtered_school_posts;
+        }
+        $visible_school_crm_rows = [];
+        foreach ($school_posts as $school_post) {
+            $school_post_id = (int) ($school_post->ID ?? 0);
+            if ($school_post_id > 0 && !empty($school_crm_rows[$school_post_id])) {
+                $visible_school_crm_rows[] = (array) $school_crm_rows[$school_post_id];
             }
         }
         if ($sort !== '' && $school_posts) {
@@ -40273,6 +40392,18 @@ global $wpdb;
                 return $order === 'desc' ? ($comparison * -1) : $comparison;
             });
         }
+        $shown_results_count = count($school_posts);
+        $total_results_count = $shown_results_count;
+        if ($status === 'client') {
+            $result_subject = $total_results_count === 1 ? 'client' : 'clients';
+        } elseif ($status === 'needs_attention') {
+            $result_subject = $total_results_count === 1 ? 'school needing attention' : 'schools needing attention';
+        } elseif ($status === 'all') {
+            $result_subject = $total_results_count === 1 ? 'school' : 'schools';
+        } else {
+            $result_subject = $total_results_count === 1 ? 'lead' : 'leads';
+        }
+        $result_summary_label = 'Showing ' . number_format_i18n($shown_results_count) . ' ' . $result_subject;
         $lead_board_stage_config = $show_leads_board ? $this->get_school_lead_kanban_stage_config() : [];
         $lead_board_cards_by_stage = [];
         $lead_board_summary = [
@@ -40324,6 +40455,7 @@ global $wpdb;
             'cmn_location' => $location_filter ?: null,
             'cmn_lead_group' => $lead_group_filter ?: null,
             'cmn_last_activity' => $last_activity_filter ?: null,
+            'cmn_work_queue' => $work_queue ?: null,
             'q' => $search ?: null,
             'cmn_bucket' => $bucket ?: null,
             'view_style' => $view_style ?: null,
@@ -40343,7 +40475,38 @@ global $wpdb;
         $last_interaction_sort_url = $build_sort_url('last_interaction');
         $name_sort_indicator = $sort === 'name' ? ($order === 'desc' ? ' ↓' : ' ↑') : '';
         $last_interaction_sort_indicator = $sort === 'last_interaction' ? ($order === 'desc' ? ' ↓' : ' ↑') : '';
-        $school_workspace_context = $this->build_school_workspace_hero_context($status, array_values($school_crm_rows), $lead_board_summary, $total_results_count, $active_filter_chip_count, $search, [
+        $portfolio_toggle_base = array_filter([
+            'view' => 'schools',
+            'cmn_stage' => $stage ?: null,
+            'cmn_manager' => $manager_id ?: null,
+            'cmn_location' => $location_filter ?: null,
+            'cmn_lead_group' => $lead_group_filter ?: null,
+            'cmn_last_activity' => $last_activity_filter ?: null,
+            'cmn_work_queue' => $work_queue ?: null,
+            'q' => $search ?: null,
+            'view_style' => $view_style ?: null,
+            'sort' => $sort ?: null,
+            'order' => $sort !== '' ? $order : null,
+        ]);
+        $pipeline_toggle_url = add_query_arg(array_merge($portfolio_toggle_base, ['cmn_status' => 'lead']), $portal_url);
+        $portfolio_toggle_url = add_query_arg(array_merge($portfolio_toggle_base, ['cmn_status' => 'all']), $portal_url);
+        $clients_toggle_url = add_query_arg(array_merge($portfolio_toggle_base, ['cmn_status' => 'client']), $portal_url);
+        $needs_attention_quick_url = add_query_arg(array_merge($portfolio_toggle_base, ['cmn_status' => 'needs_attention']), $portal_url);
+        $work_queue_base = array_filter([
+            'view' => 'schools',
+            'cmn_status' => $status ?: null,
+            'cmn_stage' => $stage ?: null,
+            'cmn_manager' => $manager_id ?: null,
+            'cmn_location' => $location_filter ?: null,
+            'cmn_lead_group' => $lead_group_filter ?: null,
+            'cmn_last_activity' => $last_activity_filter ?: null,
+            'q' => $search ?: null,
+            'cmn_bucket' => $bucket ?: null,
+            'view_style' => $view_style ?: null,
+            'sort' => $sort ?: null,
+            'order' => $sort !== '' ? $order : null,
+        ]);
+        $school_workspace_context = $this->build_school_workspace_hero_context($status, $visible_school_crm_rows, $lead_board_summary, $total_results_count, $active_filter_chip_count, $search, [
             'portfolio' => $segment_all_url,
             'leads' => $segment_leads_url,
             'needs_attention' => $segment_needs_attention_url,
@@ -40353,13 +40516,32 @@ global $wpdb;
         ob_start();
         ?>
         <?php echo $this->render_crm_workspace_hero_html($school_workspace_context); ?>
-        <section class="cmn-panel-card cmn-crm-segment-bar">
-            <div class="cmn-segmented" role="tablist" aria-label="Schools view">
-                <a class="cmn-segment<?php echo $status === 'lead' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_leads_url); ?>"><?php echo esc_html($segment_leads_label); ?></a>
-                <a class="cmn-segment<?php echo $status === 'needs_attention' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_needs_attention_url); ?>"><?php echo esc_html($segment_needs_attention_label); ?></a>
-                <a class="cmn-segment<?php echo $status === 'client' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_clients_url); ?>">Clients</a>
-                <a class="cmn-segment<?php echo ($status !== 'lead' && $status !== 'needs_attention' && $status !== 'client') ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_all_url); ?>">All</a>
+        <section class="cmn-panel-card cmn-crm-segment-bar cmn-school-portfolio-toggle-bar">
+            <div class="cmn-segmented" role="tablist" aria-label="Portfolio view">
+                <a class="cmn-segment<?php echo $status === 'lead' ? ' is-active' : ''; ?>" href="<?php echo esc_url($pipeline_toggle_url); ?>">Pipeline</a>
+                <a class="cmn-segment<?php echo $status === 'all' ? ' is-active' : ''; ?>" href="<?php echo esc_url($portfolio_toggle_url); ?>">Portfolio</a>
+                <a class="cmn-segment<?php echo $status === 'client' ? ' is-active' : ''; ?>" href="<?php echo esc_url($clients_toggle_url); ?>">Clients</a>
             </div>
+            <a class="cmn-ghost cmn-btn-mini<?php echo $status === 'needs_attention' ? ' is-active' : ''; ?>" href="<?php echo esc_url($needs_attention_quick_url); ?>"><?php echo esc_html($segment_needs_attention_label); ?></a>
+        </section>
+        <section class="cmn-school-work-queue" aria-label="Work Queue">
+            <?php foreach ($work_queue_options as $queue_key => $queue_meta) : ?>
+                <?php
+                $queue_label = sanitize_text_field((string) ($queue_meta['label'] ?? $queue_key));
+                $queue_detail = sanitize_text_field((string) ($queue_meta['detail'] ?? ''));
+                $queue_count = (int) ($work_queue_counts[$queue_key] ?? 0);
+                $queue_url = $work_queue === $queue_key
+                    ? add_query_arg($work_queue_base, $portal_url)
+                    : add_query_arg(array_merge($work_queue_base, ['cmn_work_queue' => $queue_key]), $portal_url);
+                ?>
+                <a class="cmn-panel-card cmn-school-work-queue-card<?php echo $work_queue === $queue_key ? ' is-active' : ''; ?>" href="<?php echo esc_url($queue_url); ?>">
+                    <span class="cmn-school-work-queue-card-label"><?php echo esc_html($queue_label); ?></span>
+                    <strong><?php echo esc_html(number_format_i18n($queue_count)); ?></strong>
+                    <?php if ($queue_detail !== '') : ?>
+                        <span class="cmn-school-work-queue-card-detail"><?php echo esc_html($queue_detail); ?></span>
+                    <?php endif; ?>
+                </a>
+            <?php endforeach; ?>
         </section>
         <?php if ($import_message) : ?>
             <div class="cmn-panel-card">
@@ -40632,6 +40814,7 @@ global $wpdb;
             <input type="hidden" name="view_style" value="<?php echo esc_attr($view_style); ?>">
             <input type="hidden" name="sort" value="<?php echo esc_attr($sort); ?>">
             <input type="hidden" name="order" value="<?php echo esc_attr($sort !== '' ? $order : ''); ?>">
+            <input type="hidden" name="cmn_work_queue" value="<?php echo esc_attr($work_queue); ?>">
             <div class="cmn-panel-card cmn-school-toolbar-shell">
                 <div class="cmn-school-toolbar-head">
                     <div class="cmn-school-toolbar-head-copy">
@@ -40948,10 +41131,11 @@ global $wpdb;
                 <thead>
                     <tr>
                         <th><input type="checkbox" id="cmn-select-all-schools" aria-label="Select all schools"></th>
-                        <th><a class="cmn-table-sort-link<?php echo $sort === 'name' ? ' is-active' : ''; ?>" href="<?php echo esc_url($name_sort_url); ?>">Relationship<?php echo esc_html($name_sort_indicator); ?></a></th>
-                        <th>People</th>
-                        <th><a class="cmn-table-sort-link<?php echo $sort === 'last_interaction' ? ' is-active' : ''; ?>" href="<?php echo esc_url($last_interaction_sort_url); ?>">Momentum<?php echo esc_html($last_interaction_sort_indicator); ?></a></th>
-                        <th>Signals</th>
+                        <th><a class="cmn-table-sort-link<?php echo $sort === 'name' ? ' is-active' : ''; ?>" href="<?php echo esc_url($name_sort_url); ?>">School<?php echo esc_html($name_sort_indicator); ?></a></th>
+                        <th>Contact</th>
+                        <th><a class="cmn-table-sort-link<?php echo $sort === 'last_interaction' ? ' is-active' : ''; ?>" href="<?php echo esc_url($last_interaction_sort_url); ?>">Last Interaction<?php echo esc_html($last_interaction_sort_indicator); ?></a></th>
+                        <th>Next Action</th>
+                        <th>Owner</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -40975,6 +41159,7 @@ global $wpdb;
                         $status_label = sanitize_text_field((string) ($row_card['status_label'] ?? '-'));
                         $pipeline_value = sanitize_key((string) ($row_card['pipeline_value'] ?? ''));
                         $pipeline_label = sanitize_text_field((string) ($row_card['pipeline_label'] ?? ''));
+                        $stage_display_label = sanitize_text_field((string) ($row_card['stage_display_label'] ?? 'New Lead'));
                         $relationship_title = sanitize_text_field((string) ($row_card['title'] ?? get_the_title($school_post_id)));
                         $relationship_location = sanitize_text_field((string) ($row_card['location'] ?? ''));
                         $contact_name = sanitize_text_field((string) ($row_card['contact_name'] ?? ''));
@@ -40990,6 +41175,7 @@ global $wpdb;
                         $risk_flags = array_slice((array) ($row_card['risk_flags'] ?? []), 0, 3);
                         $import_issue_preview = sanitize_text_field((string) ($row_card['import_issue_preview'] ?? ''));
                         $contact_meta = array_values(array_filter([$contact_phone, $contact_email]));
+                        $primary_next_action = $next_action_label !== '' ? $next_action_label : 'Review relationship';
                         $view_url = add_query_arg(array_filter([
                             'view' => 'schools',
                             'school_id' => $school_code ?: null,
@@ -41000,9 +41186,14 @@ global $wpdb;
                             'cmn_location' => $location_filter ?: null,
                             'cmn_lead_group' => $lead_group_filter ?: null,
                             'cmn_last_activity' => $last_activity_filter ?: null,
+                            'cmn_work_queue' => $work_queue ?: null,
                             'q' => $search ?: null,
                             'cmn_bucket' => $bucket ?: null,
                         ]), $portal_url);
+                        $log_call_url = esc_url((string) ($row_card['log_call_url'] ?? (((string) ($row_card['activity_url'] ?? $view_url)) . '#cmn-school-activity-form')));
+                        $send_email_url = esc_url(add_query_arg(['cmn_school_focus_action' => 'email'], $view_url));
+                        $add_note_url = esc_url(add_query_arg(['cmn_school_focus_action' => 'note'], $view_url));
+                        $move_stage_url = esc_url(add_query_arg(['cmn_school_focus_action' => 'stage'], $view_url));
                         $resolve_url = add_query_arg([
                             'action' => 'cmn_mark_school_import_resolved',
                             'school_id' => $school_post_id,
@@ -41012,9 +41203,12 @@ global $wpdb;
                         ?>
                         <tr data-school-lead-table-row data-school-pid="<?php echo esc_attr((string) $school_post_id); ?>" data-stage="<?php echo esc_attr($pipeline_value); ?>">
                             <td><input type="checkbox" class="cmn-school-select" name="cmn_school_ids[]" value="<?php echo esc_attr($school_post_id); ?>"></td>
-                            <td class="cmn-school-crm-cell">
+                            <td class="cmn-school-crm-cell cmn-school-crm-cell--school">
                                 <div class="cmn-school-crm-relationship">
-                                    <strong class="cmn-school-crm-title"><?php echo esc_html($relationship_title); ?></strong>
+                                    <div class="cmn-school-crm-title-row">
+                                        <strong class="cmn-school-crm-title"><a href="<?php echo esc_url($view_url); ?>"><?php echo esc_html($relationship_title); ?></a></strong>
+                                        <span class="cmn-pill cmn-pill--pipeline cmn-school-crm-stage-badge" data-school-lead-stage-label><?php echo esc_html($pipeline_label !== '' ? $pipeline_label : $stage_display_label); ?></span>
+                                    </div>
                                     <div class="cmn-school-crm-meta">
                                         <?php if ($school_code) : ?>
                                             <span>ID: <?php echo esc_html($school_code); ?></span>
@@ -41023,58 +41217,7 @@ global $wpdb;
                                             <span><?php echo esc_html($relationship_location); ?></span>
                                         <?php endif; ?>
                                     </div>
-                                    <div class="cmn-school-crm-chip-row">
-                                        <span class="cmn-pill cmn-pill--status"><?php echo esc_html($status_label); ?></span>
-                                        <?php if ($pipeline_label !== '') : ?>
-                                            <span class="cmn-pill cmn-pill--pipeline" data-school-lead-stage-label><?php echo esc_html($pipeline_label); ?></span>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="cmn-school-crm-cell">
-                                <div class="cmn-school-crm-stack">
-                                    <div>
-                                        <span class="cmn-school-crm-label">Contact</span>
-                                        <strong><?php echo esc_html($contact_name !== '' ? $contact_name : 'Not set'); ?></strong>
-                                        <?php if ($contact_meta) : ?>
-                                            <div class="cmn-table-meta"><?php echo esc_html(implode(' · ', $contact_meta)); ?></div>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div>
-                                        <span class="cmn-school-crm-label">Owner</span>
-                                        <?php echo wp_kses_post($this->render_school_account_manager_identity_html($manager_display, [
-                                            'variant' => 'inline',
-                                        ])); ?>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="cmn-school-crm-cell">
-                                <div class="cmn-school-crm-stack">
-                                    <div>
-                                        <span class="cmn-school-crm-label">Last touch</span>
-                                        <strong><?php echo esc_html($last_activity_label); ?></strong>
-                                        <?php if ($last_activity_detail !== '') : ?>
-                                            <div class="cmn-table-meta"><?php echo esc_html($last_activity_detail); ?></div>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div>
-                                        <span class="cmn-school-crm-label">Added</span>
-                                        <strong><?php echo esc_html($created_label); ?></strong>
-                                        <?php if ($created_detail !== '') : ?>
-                                            <div class="cmn-table-meta"><?php echo esc_html($created_detail); ?></div>
-                                        <?php endif; ?>
-                                    </div>
-                                    <?php if ($next_action_label !== '') : ?>
-                                        <div>
-                                            <span class="cmn-school-crm-label">Next action</span>
-                                            <strong><?php echo esc_html($next_action_label); ?></strong>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                            <td class="cmn-school-crm-cell">
-                                <div class="cmn-school-crm-signals">
-                                    <?php if ($risk_flags) : ?>
+                                    <?php if ($risk_flags || $lead_group_labels || ($status_value === 'needs_attention' && $import_issue_preview !== '')) : ?>
                                         <div class="cmn-school-crm-chip-row">
                                             <?php foreach ($risk_flags as $risk_flag) : ?>
                                                 <?php
@@ -41092,33 +41235,49 @@ global $wpdb;
                                                 ?>
                                                 <span class="cmn-status-chip <?php echo esc_attr($risk_class); ?>"><?php echo esc_html($risk_label); ?></span>
                                             <?php endforeach; ?>
-                                        </div>
-                                    <?php endif; ?>
-                                    <?php if ($lead_group_labels) : ?>
-                                        <div class="cmn-school-crm-chip-row">
                                             <?php foreach ($lead_group_labels as $lead_group_label) : ?>
                                                 <span class="cmn-pill"><?php echo esc_html($lead_group_label); ?></span>
                                             <?php endforeach; ?>
+                                            <?php if ($status_value === 'needs_attention' && $import_issue_preview !== '') : ?>
+                                                <span class="cmn-table-meta cmn-table-meta--warn"><?php echo esc_html($import_issue_preview); ?></span>
+                                            <?php endif; ?>
                                         </div>
-                                    <?php endif; ?>
-                                    <?php if ($status_value === 'needs_attention' && $import_issue_preview !== '') : ?>
-                                        <div class="cmn-table-meta cmn-table-meta--warn"><?php echo esc_html($import_issue_preview); ?></div>
-                                    <?php elseif (!$risk_flags && !$lead_group_labels) : ?>
-                                        <span class="cmn-muted">No relationship signals yet.</span>
                                     <?php endif; ?>
                                 </div>
                             </td>
-                            <td class="cmn-schools-row-actions">
-                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($view_url); ?>">Open</a>
-                                <?php if ($school_code) : ?>
-                                    <?php if ($show_leads_board) : ?>
-                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['cmn_school_focus_action' => 'stage'], $view_url)); ?>">Stage</a>
-                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['cmn_school_focus_action' => 'note'], $view_url)); ?>">Note</a>
+                            <td class="cmn-school-crm-cell cmn-school-crm-cell--contact">
+                                <div class="cmn-school-crm-stack cmn-school-crm-stack--contact">
+                                    <span class="cmn-school-crm-label">Contact</span>
+                                    <strong><?php echo esc_html($contact_name !== '' ? $contact_name : 'Not set'); ?></strong>
+                                    <div class="cmn-table-meta"><?php echo esc_html($contact_meta ? implode(' · ', $contact_meta) : 'Add the main contact details'); ?></div>
+                                </div>
+                            </td>
+                            <td class="cmn-school-crm-cell cmn-school-crm-cell--interaction">
+                                <div class="cmn-school-crm-stack">
+                                    <span class="cmn-school-crm-label">Last interaction</span>
+                                    <strong><?php echo esc_html($last_activity_label); ?></strong>
+                                    <?php if ($last_activity_detail !== '') : ?>
+                                        <div class="cmn-table-meta"><?php echo esc_html($last_activity_detail); ?></div>
                                     <?php endif; ?>
-                                <?php endif; ?>
-                                <?php if ($show_leads_board) : ?>
-                                    <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-open-preview data-school-id="<?php echo esc_attr($school_code); ?>" data-school-pid="<?php echo esc_attr((string) $school_post_id); ?>" data-school-title="<?php echo esc_attr((string) get_the_title($school_post_id)); ?>">Preview</button>
-                                <?php endif; ?>
+                                </div>
+                            </td>
+                            <td class="cmn-school-crm-cell cmn-school-crm-cell--next">
+                                <div class="cmn-school-crm-stack">
+                                    <span class="cmn-school-crm-label">Next action</span>
+                                    <strong><?php echo esc_html($primary_next_action); ?></strong>
+                                    <div class="cmn-table-meta"><?php echo esc_html($created_label !== '' ? ('Added ' . $created_label) : $status_label); ?></div>
+                                </div>
+                            </td>
+                            <td class="cmn-school-crm-cell cmn-school-crm-cell--owner">
+                                <?php echo wp_kses_post($this->render_school_account_manager_identity_html($manager_display, [
+                                    'variant' => 'inline',
+                                ])); ?>
+                            </td>
+                            <td class="cmn-schools-row-actions cmn-school-crm-row-actions">
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $log_call_url; ?>">Log call</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $send_email_url; ?>">Send email</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $add_note_url; ?>">Add note</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $move_stage_url; ?>">Move stage</a>
                                 <?php if ($status_value === 'needs_attention') : ?>
                                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($resolve_url); ?>">Resolve issue</a>
                                 <?php endif; ?>
@@ -41126,7 +41285,7 @@ global $wpdb;
                         </tr>
                     <?php endforeach; ?>
                 <?php else : ?>
-                    <tr><td colspan="6">No schools found.</td></tr>
+                    <tr><td colspan="7">No schools found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

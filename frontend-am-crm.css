@@ -316,6 +316,110 @@ body.cmn-portal-page .cmn-task-panel-shell textarea {
   background: #ffffff;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-portfolio-toggle-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  text-decoration: none;
+  color: #0f172a;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: #ffffff;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 24px 44px rgba(15, 23, 42, 0.1);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card.is-active {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: linear-gradient(180deg, #ffffff 0%, #eff6ff 100%);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card strong {
+  font-size: 1.8rem;
+  line-height: 1;
+  color: #0f172a;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card-detail {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-title-row .cmn-school-crm-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-stage-badge {
+  flex-shrink: 0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-cell--school {
+  min-width: 280px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-cell--contact,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-cell--interaction,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-cell--next,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-cell--owner {
+  min-width: 160px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-stack--contact strong,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-cell--interaction strong,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-cell--next strong {
+  font-size: 14px;
+  color: #0f172a;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 220px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-row-actions .cmn-btn-mini {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
 @media (max-width: 900px) {
   body.cmn-portal-page .cmn-filter-bar {
     position: static;
@@ -333,5 +437,14 @@ body.cmn-portal-page .cmn-task-panel-shell textarea {
   body.cmn-portal-page .cmn-task-panel-shell .cmn-task-panel-summary,
   body.cmn-portal-page .cmn-task-panel-shell .cmn-task-panel-composer-grid {
     grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-portfolio-toggle-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
