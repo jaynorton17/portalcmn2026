@@ -1874,6 +1874,14 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       var statusEl = amNavContext.querySelector('[data-am-nav-context-status]');
+      var setNavBadgeValue = function (key, value) {
+        var badgeEls = document.querySelectorAll('[data-nav-badge-key="' + key + '"]');
+        Array.prototype.forEach.call(badgeEls, function (badgeEl) {
+          var count = Math.max(0, parseInt(value || 0, 10) || 0);
+          badgeEl.textContent = String(count);
+          badgeEl.hidden = count < 1;
+        });
+      };
       var setMetricValue = function (key, value) {
         var metricEl = amNavContext.querySelector('[data-am-nav-metric-value="' + key + '"]');
         if (metricEl) {
@@ -1900,6 +1908,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return response.json();
       }).then(function (json) {
         var context = json && json.success && json.data ? json.data.context : null;
+        var badges = json && json.success && json.data ? json.data.badges : null;
         if (!context || typeof context !== 'object') {
           throw new Error('Invalid response.');
         }
@@ -1907,6 +1916,16 @@ document.addEventListener('DOMContentLoaded', function () {
         setMetricValue('follow_up', parseInt(context.follow_up || 0, 10) || 0);
         setMetricValue('active_clients', parseInt(context.active_clients || 0, 10) || 0);
         setMetricValue('open_requests', parseInt(context.open_requests || 0, 10) || 0);
+        if (badges && typeof badges === 'object') {
+          Object.keys(badges).forEach(function (key) {
+            setNavBadgeValue(key, badges[key]);
+          });
+          var topbarCountNodes = document.querySelectorAll('[data-am-task-panel-count]');
+          var taskCount = Math.max(0, parseInt(badges.task_follow_up || 0, 10) || 0);
+          Array.prototype.forEach.call(topbarCountNodes, function (node) {
+            node.textContent = String(taskCount);
+          });
+        }
         amNavContext.classList.remove('is-loading');
         amNavContext.setAttribute('aria-busy', 'false');
         if (statusEl) {
@@ -2200,6 +2219,111 @@ document.addEventListener('DOMContentLoaded', function () {
       (window.requestAnimationFrame || function (cb) {
         return window.setTimeout(cb, 0);
       })(loadAccountManagerNavContext);
+    }
+    var amTaskPanelToggle = document.querySelector('[data-am-task-panel-toggle]');
+    var amTaskPanelRoot = document.querySelector('[data-am-task-panel-root]');
+    var amTaskPanelBody = document.querySelector('[data-am-task-panel-body]');
+    var amTaskPanelBackdrop = document.querySelector('[data-am-task-panel-backdrop]');
+    var amTaskPanelCloseButtons = document.querySelectorAll('[data-am-task-panel-close]');
+    var amTaskPanelStatusNodes = document.querySelectorAll('[data-am-task-panel-status], [data-am-task-panel-inline-status]');
+    if (amTaskPanelToggle && amTaskPanelRoot && amTaskPanelBody && window.cmnPortal && window.cmnPortal.ajaxUrl) {
+      var amTaskPanelLoaded = false;
+      var amTaskPanelLoading = false;
+      var setAmTaskPanelStatus = function (message) {
+        Array.prototype.forEach.call(amTaskPanelStatusNodes, function (node) {
+          node.textContent = String(message || '');
+        });
+      };
+      var setAmTaskPanelCount = function (count) {
+        var normalizedCount = Math.max(0, parseInt(count || 0, 10) || 0);
+        Array.prototype.forEach.call(document.querySelectorAll('[data-am-task-panel-count], [data-nav-badge-key="task_follow_up"]'), function (node) {
+          node.textContent = String(normalizedCount);
+          if (node.hasAttribute('data-nav-badge-key')) {
+            node.hidden = normalizedCount < 1;
+          }
+        });
+      };
+      var openAmTaskPanel = function () {
+        amTaskPanelRoot.hidden = false;
+        amTaskPanelRoot.setAttribute('aria-hidden', 'false');
+        amTaskPanelToggle.setAttribute('aria-expanded', 'true');
+        if (amTaskPanelBackdrop) {
+          amTaskPanelBackdrop.hidden = false;
+        }
+        document.body.classList.add('cmn-task-panel-open');
+      };
+      var closeAmTaskPanel = function () {
+        amTaskPanelRoot.hidden = true;
+        amTaskPanelRoot.setAttribute('aria-hidden', 'true');
+        amTaskPanelToggle.setAttribute('aria-expanded', 'false');
+        if (amTaskPanelBackdrop) {
+          amTaskPanelBackdrop.hidden = true;
+        }
+        document.body.classList.remove('cmn-task-panel-open');
+      };
+      var loadAmTaskPanel = function (forceReload) {
+        if (amTaskPanelLoading || (amTaskPanelLoaded && !forceReload)) {
+          return;
+        }
+        amTaskPanelLoading = true;
+        setAmTaskPanelStatus('Loading relationship follow-up tasks...');
+        amTaskPanelBody.setAttribute('data-state', 'loading');
+        var fd = new FormData();
+        fd.append('action', 'cmn_account_manager_task_panel');
+        fd.append('nonce', String(window.cmnPortal.staffDashboardNonce || window.cmnPortal.staffNonce || ''));
+        fetch(window.cmnPortal.ajaxUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd
+        }).then(function (response) {
+          if (!response || !response.ok) {
+            throw new Error('Unable to load the task panel.');
+          }
+          return response.json();
+        }).then(function (json) {
+          var payload = json && json.success && json.data ? json.data : null;
+          if (!payload || typeof payload !== 'object') {
+            throw new Error('Unable to load the task panel.');
+          }
+          amTaskPanelBody.innerHTML = String(payload.html || '<div class="cmn-empty">No tasks available.</div>');
+          amTaskPanelBody.setAttribute('data-state', 'loaded');
+          setAmTaskPanelStatus('Follow-up queue ready.');
+          if (payload.counts && typeof payload.counts === 'object') {
+            setAmTaskPanelCount(payload.counts.open || 0);
+          }
+          amTaskPanelLoaded = true;
+        }).catch(function (error) {
+          amTaskPanelBody.innerHTML = '<div class="cmn-empty">Task panel unavailable right now.</div>';
+          amTaskPanelBody.setAttribute('data-state', 'error');
+          setAmTaskPanelStatus(error && error.message ? error.message : 'Task panel unavailable right now.');
+        }).finally(function () {
+          amTaskPanelLoading = false;
+        });
+      };
+      amTaskPanelToggle.addEventListener('click', function () {
+        var isOpen = amTaskPanelToggle.getAttribute('aria-expanded') === 'true';
+        if (isOpen) {
+          closeAmTaskPanel();
+          return;
+        }
+        openAmTaskPanel();
+        loadAmTaskPanel(false);
+      });
+      Array.prototype.forEach.call(amTaskPanelCloseButtons, function (button) {
+        button.addEventListener('click', function () {
+          closeAmTaskPanel();
+        });
+      });
+      if (amTaskPanelBackdrop) {
+        amTaskPanelBackdrop.addEventListener('click', function () {
+          closeAmTaskPanel();
+        });
+      }
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && amTaskPanelToggle.getAttribute('aria-expanded') === 'true') {
+          closeAmTaskPanel();
+        }
+      });
     }
     document.addEventListener('click', function (event) {
       if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
@@ -4751,6 +4875,17 @@ document.addEventListener('DOMContentLoaded', function () {
       var readViewMode = function () {
         var defaultMode = String(workspace.getAttribute('data-default-view') || 'board').trim().toLowerCase();
         try {
+          if (window.URLSearchParams && window.location && window.location.search) {
+            var params = new window.URLSearchParams(window.location.search);
+            var queryMode = String(params.get('view_style') || '').trim().toLowerCase();
+            if (queryMode === 'board' || queryMode === 'list') {
+              return queryMode;
+            }
+          }
+        } catch (e) {
+          // Ignore URL parsing failures.
+        }
+        try {
           var storedMode = window.localStorage ? String(window.localStorage.getItem(storageKey) || '') : '';
           if (storedMode === 'board' || storedMode === 'list') {
             return storedMode;
@@ -4768,6 +4903,18 @@ document.addEventListener('DOMContentLoaded', function () {
           }
         } catch (e) {
           // Ignore storage failures.
+        }
+        Array.prototype.forEach.call(document.querySelectorAll('input[name="view_style"]'), function (inputEl) {
+          inputEl.value = mode;
+        });
+        try {
+          if (window.history && window.history.replaceState && window.URL && window.location) {
+            var url = new window.URL(window.location.href);
+            url.searchParams.set('view_style', mode);
+            window.history.replaceState({}, '', url.toString());
+          }
+        } catch (e) {
+          // Ignore history failures.
         }
       };
 

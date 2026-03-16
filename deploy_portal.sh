@@ -196,6 +196,7 @@ fi
 deploy_items=(
   "covermenowone-one.php"
   "frontend.css"
+  "frontend-am-crm.css"
   "frontend.js"
   "livechat-widget.css"
   "livechat-widget.js"
