@@ -2220,15 +2220,20 @@ document.addEventListener('DOMContentLoaded', function () {
         return window.setTimeout(cb, 0);
       })(loadAccountManagerNavContext);
     }
-    var amTaskPanelToggle = document.querySelector('[data-am-task-panel-toggle]');
+    var amTaskPanelToggles = document.querySelectorAll('[data-am-task-panel-toggle]');
     var amTaskPanelRoot = document.querySelector('[data-am-task-panel-root]');
     var amTaskPanelBody = document.querySelector('[data-am-task-panel-body]');
     var amTaskPanelBackdrop = document.querySelector('[data-am-task-panel-backdrop]');
     var amTaskPanelCloseButtons = document.querySelectorAll('[data-am-task-panel-close]');
     var amTaskPanelStatusNodes = document.querySelectorAll('[data-am-task-panel-status], [data-am-task-panel-inline-status]');
-    if (amTaskPanelToggle && amTaskPanelRoot && amTaskPanelBody && window.cmnPortal && window.cmnPortal.ajaxUrl) {
+    if (amTaskPanelToggles.length && amTaskPanelRoot && amTaskPanelBody && window.cmnPortal && window.cmnPortal.ajaxUrl) {
       var amTaskPanelLoaded = false;
       var amTaskPanelLoading = false;
+      var setAmTaskPanelExpanded = function (isExpanded) {
+        Array.prototype.forEach.call(amTaskPanelToggles, function (toggleNode) {
+          toggleNode.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        });
+      };
       var setAmTaskPanelStatus = function (message) {
         Array.prototype.forEach.call(amTaskPanelStatusNodes, function (node) {
           node.textContent = String(message || '');
@@ -2246,7 +2251,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var openAmTaskPanel = function () {
         amTaskPanelRoot.hidden = false;
         amTaskPanelRoot.setAttribute('aria-hidden', 'false');
-        amTaskPanelToggle.setAttribute('aria-expanded', 'true');
+        setAmTaskPanelExpanded(true);
         if (amTaskPanelBackdrop) {
           amTaskPanelBackdrop.hidden = false;
         }
@@ -2255,7 +2260,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var closeAmTaskPanel = function () {
         amTaskPanelRoot.hidden = true;
         amTaskPanelRoot.setAttribute('aria-hidden', 'true');
-        amTaskPanelToggle.setAttribute('aria-expanded', 'false');
+        setAmTaskPanelExpanded(false);
         if (amTaskPanelBackdrop) {
           amTaskPanelBackdrop.hidden = true;
         }
@@ -2300,14 +2305,17 @@ document.addEventListener('DOMContentLoaded', function () {
           amTaskPanelLoading = false;
         });
       };
-      amTaskPanelToggle.addEventListener('click', function () {
-        var isOpen = amTaskPanelToggle.getAttribute('aria-expanded') === 'true';
-        if (isOpen) {
-          closeAmTaskPanel();
-          return;
-        }
-        openAmTaskPanel();
-        loadAmTaskPanel(false);
+      Array.prototype.forEach.call(amTaskPanelToggles, function (toggleNode) {
+        toggleNode.addEventListener('click', function (event) {
+          event.preventDefault();
+          var isOpen = toggleNode.getAttribute('aria-expanded') === 'true' || amTaskPanelRoot.hidden === false;
+          if (isOpen) {
+            closeAmTaskPanel();
+            return;
+          }
+          openAmTaskPanel();
+          loadAmTaskPanel(false);
+        });
       });
       Array.prototype.forEach.call(amTaskPanelCloseButtons, function (button) {
         button.addEventListener('click', function () {
@@ -2320,7 +2328,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
       document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape' && amTaskPanelToggle.getAttribute('aria-expanded') === 'true') {
+        if (event.key === 'Escape' && amTaskPanelRoot.hidden === false) {
           closeAmTaskPanel();
         }
       });

@@ -420,6 +420,15 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-crm-row-actions .cmn-
   border-radius: 999px;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-link--work-queue {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
 @media (max-width: 900px) {
   body.cmn-portal-page .cmn-filter-bar {
     position: static;

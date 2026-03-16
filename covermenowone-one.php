@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.30
+ * Version: 0.1.31
  * Author: CoverMeNow
  */
 
@@ -603,7 +603,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.30';
+    const VERSION = '0.1.31';
     const SCHEMA_BASE_VERSION = 38;
     const SCHEMA_VERSION = 79;
     const OFFER_EXPIRY_SECONDS = 900;
@@ -18463,21 +18463,24 @@ global $wpdb;
 
     private function get_account_manager_nav_group_labels() {
         return [
-            'schools' => 'Relationships',
-            'candidates' => 'Candidates',
-            'bookings' => 'Requests / Jobs',
+            'schools' => 'CRM',
+            'candidates' => 'People',
+            'bookings' => 'Operations',
             'commercial' => 'Commercial',
-            'support' => 'Support',
-            'intelligence' => 'Insights',
+            'support' => 'Issues',
+            'intelligence' => 'Reports',
             'automation' => 'Templates',
+            'system' => 'Settings',
         ];
     }
 
     private function get_account_manager_nav_item_labels() {
         return [
             'all_schools' => 'Portfolio',
+            'schools_leads' => 'Leads',
+            'schools_needs_attention' => 'Issues',
             'schools_bulk_add' => 'Bulk Upload',
-            'school_requests' => 'School Applications',
+            'school_requests' => 'Onboarding',
             'rejected_archived' => 'Closed / Archived',
             'candidates' => 'Candidate Bench',
             'candidate_onboarding' => 'Pending Onboarding',
@@ -18485,7 +18488,10 @@ global $wpdb;
             'bookings' => 'Live Jobs',
             'bookings_completed' => 'Completed Jobs',
             'after_booking_support' => 'Aftercare',
+            'active_clients' => 'Clients',
+            'analytics' => 'Reports',
             'automation_templates' => 'Email Templates',
+            'settings' => 'Preferences',
         ];
     }
 
@@ -18513,7 +18519,7 @@ global $wpdb;
         }
         unset($group_config);
 
-        $desired_order = ['schools', 'bookings', 'candidates', 'commercial', 'support', 'intelligence', 'automation', 'system'];
+        $desired_order = ['schools', 'bookings', 'support', 'intelligence', 'automation', 'system', 'candidates', 'commercial'];
         $ordered_groups = [];
         foreach ($desired_order as $group_key) {
             if (isset($groups[$group_key])) {
@@ -18538,7 +18544,7 @@ global $wpdb;
         foreach (array_keys($groups) as $group_key) {
             $state[$group_key] = 0;
         }
-        foreach (['schools', 'bookings', 'candidates'] as $group_key) {
+        foreach (['schools', 'support', 'intelligence'] as $group_key) {
             if (isset($state[$group_key])) {
                 $state[$group_key] = 1;
             }
@@ -19976,13 +19982,22 @@ global $wpdb;
                         <?php endif; ?>
                     </div>
                     <nav class="cmn-school-nav-links cmn-staff-nav-links">
-                        <a class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--dashboard-root<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="Dashboard">
+                        <a class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--dashboard-root<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="<?php echo esc_attr($is_account_manager_workspace ? 'Home' : 'Dashboard'); ?>">
                             <?php echo $render_staff_nav_icon('dashboard'); ?>
-                            <span class="cmn-school-nav-label">Dashboard</span>
+                            <span class="cmn-school-nav-label"><?php echo esc_html($is_account_manager_workspace ? 'Home' : 'Dashboard'); ?></span>
                             <?php if ($is_account_manager_workspace && !empty($account_manager_nav_badges['task_follow_up'])) : ?>
                                 <span class="cmn-nav-badge" data-nav-badge-key="task_follow_up"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges['task_follow_up'])); ?></span>
                             <?php endif; ?>
                         </a>
+                        <?php if ($is_account_manager_workspace) : ?>
+                            <button type="button" class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--work-queue" data-am-task-panel-toggle aria-expanded="false" aria-controls="cmn-am-task-panel" data-tooltip="Work Queue">
+                                <?php echo $render_staff_nav_icon('logs'); ?>
+                                <span class="cmn-school-nav-label">Work Queue</span>
+                                <?php if (!empty($account_manager_nav_badges['task_follow_up'])) : ?>
+                                    <span class="cmn-nav-badge" data-nav-badge-key="task_follow_up"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges['task_follow_up'])); ?></span>
+                                <?php endif; ?>
+                            </button>
+                        <?php endif; ?>
                         <?php foreach ($groups as $group_key => $group) : ?>
                             <?php
                             $items = (array) ($group['items'] ?? []);
