@@ -22990,7 +22990,528 @@ body.cmn-portal-page .cmn-candidate-main--calendar .cmn-calendar-range-controls 
     font-size: clamp(24px, 7vw, 30px);
   }
 
-  body.cmn-portal-page .cmn-live-matches-head p {
-    font-size: 15px;
+body.cmn-portal-page .cmn-live-matches-head p {
+  font-size: 15px;
+}
+}
+
+/* Account Manager CRM shell: lighter Monday-style workspace treatment */
+body.cmn-portal-page .cmn-portal-light--am-crm {
+  --cmn-am-bg: #f3f6fb;
+  --cmn-am-bg-accent: #e9f0ff;
+  --cmn-am-surface: #ffffff;
+  --cmn-am-surface-muted: #f8fbff;
+  --cmn-am-surface-tint: #eef4ff;
+  --cmn-am-border: #d8e1ee;
+  --cmn-am-border-strong: #bfd0e8;
+  --cmn-am-text: #142033;
+  --cmn-am-muted: #607089;
+  --cmn-am-soft: #8ca0bb;
+  --cmn-am-primary: #2563eb;
+  --cmn-am-primary-soft: #e8f0ff;
+  --cmn-am-success: #16a34a;
+  --cmn-am-success-soft: #e9f8ee;
+  --cmn-am-warning: #d97706;
+  --cmn-am-warning-soft: #fff4df;
+  --cmn-am-danger: #dc2626;
+  --cmn-am-danger-soft: #feecec;
+  --cmn-am-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+  --cmn-am-shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm,
+body.cmn-portal-page .cmn-portal-light--am-crm :is(h1, h2, h3, h4, h5, h6, strong, dt, th, td, p, span, label, li, dd) {
+  color: var(--cmn-am-text);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-portal-topbar--am-crm {
+  min-height: 72px;
+  padding: 14px 22px;
+  border-bottom: 1px solid rgba(191, 208, 232, 0.72);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 253, 0.96)),
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 38%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-right,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-right span,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-logout {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-brand-link {
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm {
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 22px;
+  padding: 22px;
+  background: linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-main--am-crm {
+  padding: 8px 4px 40px;
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 28%),
+    radial-gradient(circle at 0% 22%, rgba(16, 185, 129, 0.05), transparent 24%),
+    var(--cmn-am-bg) !important;
+  border-radius: 30px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav {
+  padding: 16px;
+  border: 1px solid var(--cmn-am-border);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: var(--cmn-am-shadow);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-header {
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-links {
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-group {
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background: #f7faff;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-group.is-active-group {
+  border-color: var(--cmn-am-border);
+  background: #f2f7ff;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-staff-nav-toggle, .cmn-school-nav-link, .cmn-staff-nav-link) {
+  color: var(--cmn-am-muted) !important;
+  border-radius: 14px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-staff-nav-toggle, .cmn-school-nav-link, .cmn-staff-nav-link):hover,
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-staff-nav-toggle, .cmn-school-nav-link, .cmn-staff-nav-link):focus-visible {
+  color: var(--cmn-am-text) !important;
+  background: rgba(37, 99, 235, 0.08) !important;
+  border-color: rgba(37, 99, 235, 0.12) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-school-nav-link, .cmn-staff-nav-link).is-active,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-group.is-active-group .cmn-staff-nav-toggle {
+  color: var(--cmn-am-primary) !important;
+  background: linear-gradient(180deg, #edf4ff 0%, #e5efff 100%) !important;
+  border-color: rgba(37, 99, 235, 0.22) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-nav-icon {
+  color: currentColor !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace {
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(232, 240, 255, 0.9), rgba(255, 255, 255, 0.96)),
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 48%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-eyebrow,
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-school-toolbar-eyebrow, .cmn-school-toolbar-preset-label, .cmn-school-toolbar-active-label, .cmn-school-leads-eyebrow, .cmn-dashboard-widget-eyebrow, .cmn-exec-band-eyebrow, .cmn-dashboard-hero-eyebrow, .cmn-crm-workspace-hero-eyebrow, .cmn-school-profile-eyebrow, .cmn-school-profile-header-card-label, .cmn-school-relationship-overview-card-label, .cmn-school-task-system-card-label, .cmn-school-booking-widget-card-label, .cmn-school-bookings-workspace-card-label, .cmn-school-candidate-interaction-card-label, .cmn-school-document-status-card-label, .cmn-school-contact-summary-card-label, .cmn-school-owner-control-label, .cmn-school-task-inline-composer-label, .cmn-school-task-system-row-eyebrow, .cmn-school-contact-directory-slot, .cmn-school-profile-timeline-event-eyebrow, .cmn-school-profile-timeline-filter-label) {
+  color: var(--cmn-am-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-metric {
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-link {
+  color: var(--cmn-am-primary);
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(37, 99, 235, 0.16);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary) {
+  min-height: 42px;
+  border-radius: 12px !important;
+  border: 1px solid #1d4ed8 !important;
+  background: linear-gradient(180deg, #2f7cff 0%, #2563eb 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary):hover,
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-primary, .cmn-btn-primary, button.cmn-primary, a.cmn-primary):focus-visible {
+  background: linear-gradient(180deg, #4389ff 0%, #2b6eee 100%) !important;
+  transform: translateY(-1px);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-ghost, .cmn-btn-secondary, button.cmn-ghost, a.cmn-ghost) {
+  min-height: 40px;
+  border-radius: 12px !important;
+  border: 1px solid var(--cmn-am-border) !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: var(--cmn-am-text) !important;
+  box-shadow: none !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-ghost, .cmn-btn-secondary, button.cmn-ghost, a.cmn-ghost):hover,
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-ghost, .cmn-btn-secondary, button.cmn-ghost, a.cmn-ghost):focus-visible {
+  background: var(--cmn-am-surface-tint) !important;
+  border-color: var(--cmn-am-border-strong) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(input, textarea, select) {
+  background: #ffffff !important;
+  color: var(--cmn-am-text) !important;
+  border: 1px solid var(--cmn-am-border) !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(input, textarea, select):focus {
+  border-color: rgba(37, 99, 235, 0.42) !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12) !important;
+  outline: none;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-dashboard-hero, .cmn-crm-workspace-hero, .cmn-school-profile-crm-header, .cmn-school-profile-quick-actions, .cmn-school-toolbar-shell, .cmn-filter-panel, .cmn-exec-band, .cmn-dashboard-widget, .cmn-school-leads-summary-card, .cmn-school-leads-lane, .cmn-school-lead-card, .cmn-school-lead-preview-panel, .cmn-panel-card, .cmn-table-wrap, .cmn-staff-table-card, .cmn-school-profile-hub-shortcuts, .cmn-school-profile-issues-strip, .cmn-school-profile-timeline-summary-card, .cmn-school-profile-timeline-filter, .cmn-school-profile-timeline-event, .cmn-school-profile-timeline-load-more, .cmn-school-relationship-overview-card, .cmn-school-relationship-overview-block, .cmn-school-task-inline-composer, .cmn-school-task-reminder-planner, .cmn-school-task-system-card, .cmn-school-task-system-panel, .cmn-school-task-system-row, .cmn-school-booking-widget-card, .cmn-school-booking-widget-panel, .cmn-school-booking-widget-row, .cmn-school-bookings-workspace-card, .cmn-school-bookings-workspace-panel, .cmn-school-bookings-workspace-row, .cmn-school-candidate-interaction-card, .cmn-school-candidate-interaction-panel, .cmn-school-candidate-interaction-row, .cmn-school-document-status-card, .cmn-school-document-status-panel, .cmn-school-document-status-row, .cmn-school-contact-summary-card, .cmn-school-contact-block-panel, .cmn-school-contact-directory-card, .cmn-school-owner-control, .cmn-school-owner-control-panel) {
+  color: var(--cmn-am-text) !important;
+  background: var(--cmn-am-surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-dashboard-hero, .cmn-crm-workspace-hero, .cmn-school-profile-crm-header) {
+  border-radius: 28px !important;
+  padding: 24px !important;
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 34%),
+    radial-gradient(circle at 10% 0%, rgba(16, 185, 129, 0.06), transparent 28%),
+    #ffffff !important;
+  box-shadow: var(--cmn-am-shadow) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-dashboard-hero-copy p, .cmn-crm-workspace-hero-copy p, .cmn-school-profile-header-card p, .cmn-school-relationship-overview-card p, .cmn-school-task-system-card p, .cmn-school-booking-widget-card p, .cmn-school-bookings-workspace-card p, .cmn-school-candidate-interaction-card p, .cmn-school-document-status-card p, .cmn-school-contact-summary-card p, .cmn-dashboard-widget-detail, .cmn-school-leads-lane-head-main p, .cmn-school-lead-card-grid dd span, .cmn-school-lead-card-note p, .cmn-school-profile-timeline-event-summary, .cmn-school-profile-timeline-event-content, .cmn-school-profile-timeline-filter-summary, .cmn-muted, .cmn-table-meta) {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-hero-actions,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-crm-workspace-hero-actions {
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-dashboard-hero-action, .cmn-crm-workspace-hero-action) {
+  min-width: 170px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--cmn-am-border);
+  background: var(--cmn-am-surface-muted);
+  color: var(--cmn-am-text);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-dashboard-hero-action, .cmn-crm-workspace-hero-action):hover,
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-dashboard-hero-action, .cmn-crm-workspace-hero-action):focus-visible {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: var(--cmn-am-primary-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-loader-strip {
+  padding: 10px 14px;
+  border: 1px solid var(--cmn-am-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-exec-band {
+  border-radius: 24px;
+  padding: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget {
+  border-radius: 20px;
+  min-height: 176px;
+  padding: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget:focus-visible {
+  border-color: rgba(37, 99, 235, 0.24) !important;
+  transform: translateY(-2px);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget-cta {
+  color: var(--cmn-am-primary);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--metric.is-primary,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--metric.is-hot {
+  background: linear-gradient(180deg, #eef4ff 0%, #ffffff 100%) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-high,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-hot,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-medium {
+  background: linear-gradient(180deg, #fff8eb 0%, #ffffff 100%) !important;
+  border-color: rgba(217, 119, 6, 0.24) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-clear,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--system.is-green {
+  background: linear-gradient(180deg, #eefaf3 0%, #ffffff 100%) !important;
+  border-color: rgba(22, 163, 74, 0.2) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-toolbar-shell {
+  border-radius: 22px;
+  padding: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-school-toolbar-preset, .cmn-school-toolbar-active-chip, .cmn-school-profile-tab, .cmn-school-profile-hub-shortcuts-list a, .cmn-school-profile-hub-shortcuts-list button, .cmn-school-task-reminder-option, [data-timeline-filter-source]) {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px !important;
+  border: 1px solid var(--cmn-am-border) !important;
+  background: #ffffff !important;
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-school-toolbar-preset.is-active, .cmn-school-profile-tab.is-active, .cmn-school-task-reminder-option.is-active, [data-timeline-filter-source].is-active) {
+  color: var(--cmn-am-primary) !important;
+  background: var(--cmn-am-primary-soft) !important;
+  border-color: rgba(37, 99, 235, 0.26) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-leads-summary-strip {
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-leads-summary-card {
+  min-height: 116px;
+  border-radius: 20px;
+  padding: 16px;
+  background: linear-gradient(180deg, #f7faff 0%, #ffffff 100%) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-leads-board {
+  gap: 16px;
+  padding: 4px 2px 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-leads-lane {
+  gap: 14px;
+  min-height: 260px;
+  padding: 14px;
+  border-radius: 24px;
+  background: #eef3fb !important;
+  box-shadow: none !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-leads-lane.is-drop-target {
+  background: #e7f0ff !important;
+  border-color: rgba(37, 99, 235, 0.3) !important;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-leads-empty {
+  border-color: rgba(148, 163, 184, 0.42);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--cmn-am-muted);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-lead-card {
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background: #ffffff !important;
+  border-color: var(--cmn-am-border) !important;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-lead-card-intent,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-lead-card-note,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-lead-preview-stats > div {
+  background: var(--cmn-am-surface-muted) !important;
+  border-color: var(--cmn-am-border) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-lead-card-actions .cmn-btn-mini {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 999px !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-lead-preview-panel {
+  top: 92px;
+  right: 24px;
+  border-radius: 24px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-table-scroll,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-schools-table--crm {
+  border-radius: 22px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-schools-table--crm {
+  background: #ffffff;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-schools-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fbff;
+  color: var(--cmn-am-soft);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-schools-table td {
+  border-top: 1px solid #edf2f8;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-hub-tabs {
+  top: 84px;
+  padding: 10px 0 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-tabs {
+  gap: 10px;
+  padding: 10px;
+  border-radius: 20px;
+  border: 1px solid var(--cmn-am-border);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] {
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+  gap: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-grid--crm-hub[data-school-active-tab="activity"],
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-grid--crm-hub[data-school-active-tab="bookings"] {
+  gap: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-school-profile-header-meta-item, .cmn-school-profile-header-card, .cmn-school-owner-identity-avatar) {
+  background: var(--cmn-am-surface-muted) !important;
+  border-color: var(--cmn-am-border) !important;
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-school-relationship-overview, .cmn-school-task-system, .cmn-school-booking-widget, .cmn-school-bookings-workspace, .cmn-school-candidate-interaction-widget, .cmn-school-document-status, .cmn-school-contact-block, .cmn-school-profile-timeline-engine, .cmn-school-owner-control) {
+  gap: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-school-task-system-row-meta, .cmn-school-booking-widget-signals, .cmn-school-document-status-signals, .cmn-school-candidate-interaction-signals, .cmn-school-relationship-overview-signals, .cmn-school-profile-timeline-event-meta, .cmn-school-profile-timeline-event-tags) {
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-timeline-summary-card {
+  min-height: 120px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-timeline-filter-bar {
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-timeline-event {
+  grid-template-columns: 52px minmax(0, 1fr);
+  padding: 16px;
+  border-radius: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-timeline-event-icon {
+  box-shadow: none;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-pill, .cmn-status-chip) {
+  border-radius: 999px !important;
+  font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-pill {
+  background: #eef4ff;
+  color: #355078;
+  border-color: #cfe0fb;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-pill.cmn-pill--pipeline {
+  background: var(--cmn-am-primary-soft);
+  color: var(--cmn-am-primary);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-status-chip.is-critical {
+  background: var(--cmn-am-danger-soft);
+  color: var(--cmn-am-danger);
+  border-color: rgba(220, 38, 38, 0.18);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-status-chip.is-warning {
+  background: var(--cmn-am-warning-soft);
+  color: var(--cmn-am-warning);
+  border-color: rgba(217, 119, 6, 0.18);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-status-chip.is-info {
+  background: var(--cmn-am-primary-soft);
+  color: var(--cmn-am-primary);
+  border-color: rgba(37, 99, 235, 0.18);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-grid--crm-hub .cmn-school-tab-panel {
+  align-content: start;
+}
+
+@media (max-width: 1200px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"],
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-grid--crm-hub[data-school-active-tab="activity"],
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-grid--crm-hub[data-school-active-tab="bookings"] {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-main--am-crm {
+    padding: 0 0 28px;
+    border-radius: 0;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-dashboard-hero, .cmn-crm-workspace-hero, .cmn-school-profile-crm-header) {
+    padding: 18px !important;
+    border-radius: 22px !important;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-leads-board {
+    grid-auto-columns: minmax(88vw, 1fr);
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-tabs {
+    padding: 8px;
   }
 }

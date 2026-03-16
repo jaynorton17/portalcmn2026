@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.27
+ * Version: 0.1.28
  * Author: CoverMeNow
  */
 
@@ -603,7 +603,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.27';
+    const VERSION = '0.1.28';
     const SCHEMA_BASE_VERSION = 38;
     const SCHEMA_VERSION = 79;
     const OFFER_EXPIRY_SECONDS = 900;
@@ -19551,8 +19551,8 @@ global $wpdb;
 
         ob_start();
         ?>
-        <section class="cmn-portal cmn-portal-light">
-            <div class="cmn-portal-topbar">
+        <section class="cmn-portal cmn-portal-light<?php echo $is_account_manager_workspace ? ' cmn-portal-light--am-crm' : ''; ?>" data-staff-workspace="<?php echo esc_attr($is_account_manager_workspace ? 'account_manager' : 'staff'); ?>">
+            <div class="cmn-portal-topbar<?php echo $is_account_manager_workspace ? ' cmn-portal-topbar--am-crm' : ''; ?>">
                 <div class="cmn-topbar-left">
                     <a class="cmn-topbar-brand-link" href="<?php echo esc_url($dashboard_url); ?>"><?php echo $this->render_portal_branding(); ?></a>
                 </div>
@@ -19563,7 +19563,7 @@ global $wpdb;
                     <a class="cmn-topbar-logout" href="<?php echo esc_url($this->get_portal_logout_url($portal_url)); ?>">Logout</a>
                 </div>
             </div>
-            <div class="cmn-school-shell cmn-staff-shell">
+            <div class="cmn-school-shell cmn-staff-shell<?php echo $is_account_manager_workspace ? ' cmn-staff-shell--am-crm' : ''; ?>">
                 <aside class="cmn-school-nav cmn-staff-nav<?php echo $is_account_manager_workspace ? ' is-account-manager-nav' : ''; ?>" data-staff-nav data-user-id="<?php echo esc_attr((string) $user_id); ?>" data-nav-editable="<?php echo $show_nav_edit_controls ? '1' : '0'; ?>" data-nav-state="<?php echo esc_attr($stored_nav_state_json); ?>" data-nav-order="<?php echo esc_attr($stored_nav_order_json); ?>" data-nav-order-default="<?php echo esc_attr($default_nav_order_json); ?>">
                     <div class="cmn-staff-nav-header">
                         <div class="cmn-staff-nav-header-row">
@@ -19682,7 +19682,7 @@ global $wpdb;
                         <?php endforeach; ?>
                     </nav>
                 </aside>
-                <main class="cmn-school-main cmn-staff-main">
+                <main class="cmn-school-main cmn-staff-main<?php echo $is_account_manager_workspace ? ' cmn-staff-main--am-crm' : ''; ?>">
                     <?php echo $inner_html; ?>
                 </main>
             </div>
