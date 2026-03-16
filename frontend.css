@@ -8886,6 +8886,36 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   background: rgba(208, 42, 42, 0.22);
 }
 
+.cmn-school-profile-hub-tabs {
+  position: sticky;
+  top: 74px;
+  z-index: 8;
+  padding: 8px 0 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.cmn-school-profile-hub-shortcuts {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.cmn-school-profile-hub-shortcuts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cmn-school-profile-hub-shortcuts-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .cmn-school-profile-issues-strip {
   margin-bottom: 14px;
 }
@@ -8917,6 +8947,57 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 .cmn-school-profile-grid[data-school-active-tab="documents"] .cmn-school-tab-panel--documents,
 .cmn-school-profile-grid[data-school-active-tab="settings"] .cmn-school-tab-panel--settings {
   display: grid;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] {
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] .cmn-school-relationship-overview,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] .cmn-school-profile-timeline-engine,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] .cmn-school-task-system,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] .cmn-school-booking-widget,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] .cmn-school-candidate-interaction-widget,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] #cmn-school-lead-notes {
+  grid-column: 1;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] .cmn-school-contact-block,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] .cmn-school-document-status,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] .cmn-school-owner-control,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] > .cmn-school-tab-panel--overview:not(.cmn-school-relationship-overview):not(.cmn-school-profile-timeline-engine):not(.cmn-school-task-system):not(.cmn-school-booking-widget):not(.cmn-school-candidate-interaction-widget):not(#cmn-school-lead-notes) {
+  grid-column: 2;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="activity"] {
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="activity"] .cmn-school-profile-timeline-engine,
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="activity"] .cmn-school-task-system {
+  grid-column: 1;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="activity"] > .cmn-school-tab-panel--activity:not(.cmn-school-profile-timeline-engine):not(.cmn-school-task-system) {
+  grid-column: 2;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="bookings"] {
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="bookings"] .cmn-school-booking-widget {
+  grid-column: 1;
+}
+
+.cmn-school-profile-grid--crm-hub[data-school-active-tab="bookings"] .cmn-school-candidate-interaction-widget {
+  grid-column: 2;
 }
 
 .cmn-school-tab-panel-hidden {
@@ -9097,6 +9178,18 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   flex-wrap: wrap;
 }
 
+.cmn-school-profile-timeline-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.14);
+}
+
 .cmn-school-profile-timeline-empty {
   display: grid;
   gap: 6px;
@@ -9153,7 +9246,11 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 .cmn-school-profile-timeline-event-icon.is-chat-status,
 .cmn-school-profile-timeline-event-icon.is-lead-note,
 .cmn-school-profile-timeline-event-icon.is-activity,
-.cmn-school-profile-timeline-event-icon.is-application {
+.cmn-school-profile-timeline-event-icon.is-application,
+.cmn-school-profile-timeline-event-icon.is-stage,
+.cmn-school-profile-timeline-event-icon.is-booking,
+.cmn-school-profile-timeline-event-icon.is-email-log,
+.cmn-school-profile-timeline-event-icon.is-email-suppressed {
   border-color: rgba(148, 163, 184, 0.28);
   background: rgba(148, 163, 184, 0.14);
   color: rgba(226, 232, 240, 0.92);
@@ -9161,7 +9258,9 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 
 .cmn-school-profile-timeline-event-icon.is-task,
 .cmn-school-profile-timeline-event-icon.is-more-info,
-.cmn-school-profile-timeline-event-icon.is-reopened {
+.cmn-school-profile-timeline-event-icon.is-reopened,
+.cmn-school-profile-timeline-event-icon.is-email-queued,
+.cmn-school-profile-timeline-event-icon.is-booking-requested {
   border-color: rgba(251, 191, 36, 0.3);
   background: rgba(251, 191, 36, 0.14);
   color: #fcd34d;
@@ -9173,19 +9272,25 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
 .cmn-school-profile-timeline-event-icon.is-submitted,
 .cmn-school-profile-timeline-event-icon.is-assignment,
 .cmn-school-profile-timeline-event-icon.is-reply,
-.cmn-school-profile-timeline-event-icon.is-staff-update {
+.cmn-school-profile-timeline-event-icon.is-staff-update,
+.cmn-school-profile-timeline-event-icon.is-stage-change,
+.cmn-school-profile-timeline-event-icon.is-booking-update {
   border-color: rgba(96, 165, 250, 0.3);
   background: rgba(96, 165, 250, 0.14);
   color: #93c5fd;
 }
 
-.cmn-school-profile-timeline-event-icon.is-approved {
+.cmn-school-profile-timeline-event-icon.is-approved,
+.cmn-school-profile-timeline-event-icon.is-booking-accepted,
+.cmn-school-profile-timeline-event-icon.is-booking-completed {
   border-color: rgba(52, 211, 153, 0.32);
   background: rgba(52, 211, 153, 0.14);
   color: #6ee7b7;
 }
 
-.cmn-school-profile-timeline-event-icon.is-declined {
+.cmn-school-profile-timeline-event-icon.is-declined,
+.cmn-school-profile-timeline-event-icon.is-email-failed,
+.cmn-school-profile-timeline-event-icon.is-booking-cancelled {
   border-color: rgba(248, 113, 113, 0.32);
   background: rgba(248, 113, 113, 0.14);
   color: #fca5a5;
@@ -9440,6 +9545,38 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
     font-size: 11px;
   }
 
+  .cmn-crm-workspace-hero {
+    padding: 16px;
+  }
+
+  .cmn-crm-workspace-hero-actions {
+    width: 100%;
+  }
+
+  .cmn-crm-workspace-hero-action {
+    min-width: 0;
+    flex: 1 1 180px;
+  }
+
+  .cmn-school-profile-hub-tabs {
+    position: static;
+    padding: 0 0 12px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"],
+  .cmn-school-profile-grid--crm-hub[data-school-active-tab="activity"],
+  .cmn-school-profile-grid--crm-hub[data-school-active-tab="bookings"] {
+    grid-template-columns: 1fr;
+  }
+
+  .cmn-school-profile-grid--crm-hub[data-school-active-tab="overview"] > .cmn-school-tab-panel--overview,
+  .cmn-school-profile-grid--crm-hub[data-school-active-tab="activity"] > .cmn-school-tab-panel--activity,
+  .cmn-school-profile-grid--crm-hub[data-school-active-tab="bookings"] > .cmn-school-tab-panel--bookings {
+    grid-column: 1;
+  }
+
   .cmn-school-profile-header {
     align-items: stretch;
   }
@@ -9578,6 +9715,10 @@ body.cmn-portal-page .cmn-candidate-main--dashboard .cmn-candidate-section4-dot.
   }
 
   .cmn-school-profile-timeline-filter-summary {
+    align-items: flex-start;
+  }
+
+  .cmn-school-profile-timeline-load-more {
     align-items: flex-start;
   }
 
@@ -12490,6 +12631,161 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   align-items: center;
 }
 
+.cmn-crm-workspace-hero {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(88, 103, 146, 0.28);
+  background:
+    radial-gradient(circle at top left, rgba(208, 42, 42, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(15, 19, 30, 0.96), rgba(8, 12, 20, 0.96));
+  box-shadow: 0 22px 48px rgba(3, 8, 18, 0.26);
+}
+
+.cmn-crm-workspace-hero-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.cmn-crm-workspace-hero-copy {
+  display: grid;
+  gap: 8px;
+  max-width: 760px;
+}
+
+.cmn-crm-workspace-hero-copy h2 {
+  margin: 0;
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.08;
+}
+
+.cmn-crm-workspace-hero-copy p {
+  margin: 0;
+  color: rgba(214, 224, 244, 0.82);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.cmn-crm-workspace-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(110, 128, 171, 0.32);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(191, 204, 230, 0.8);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cmn-crm-workspace-hero-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cmn-crm-workspace-hero-action {
+  display: grid;
+  gap: 4px;
+  min-width: 152px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(92, 114, 158, 0.26);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f5f7fb;
+  text-decoration: none;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.cmn-crm-workspace-hero-action:hover,
+.cmn-crm-workspace-hero-action:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(234, 92, 92, 0.45);
+  background: rgba(208, 42, 42, 0.14);
+}
+
+.cmn-crm-workspace-hero-action small {
+  color: rgba(191, 204, 230, 0.74);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.cmn-crm-workspace-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.cmn-crm-workspace-hero-card {
+  display: grid;
+  gap: 6px;
+  min-height: 118px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(82, 100, 141, 0.26);
+  background: rgba(12, 17, 28, 0.72);
+}
+
+.cmn-crm-workspace-hero-card.is-accent {
+  border-color: rgba(80, 133, 255, 0.34);
+  background: linear-gradient(180deg, rgba(19, 32, 59, 0.9), rgba(10, 17, 29, 0.88));
+}
+
+.cmn-crm-workspace-hero-card.is-positive {
+  border-color: rgba(68, 177, 118, 0.3);
+  background: linear-gradient(180deg, rgba(17, 41, 33, 0.9), rgba(10, 17, 29, 0.88));
+}
+
+.cmn-crm-workspace-hero-card.is-warning {
+  border-color: rgba(212, 158, 51, 0.34);
+  background: linear-gradient(180deg, rgba(46, 33, 11, 0.9), rgba(10, 17, 29, 0.88));
+}
+
+.cmn-crm-workspace-hero-card.is-critical {
+  border-color: rgba(214, 82, 82, 0.36);
+  background: linear-gradient(180deg, rgba(51, 20, 20, 0.9), rgba(10, 17, 29, 0.88));
+}
+
+.cmn-crm-workspace-hero-card-label {
+  color: rgba(177, 189, 213, 0.76);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.cmn-crm-workspace-hero-card-value {
+  font-size: clamp(24px, 2vw, 30px);
+  line-height: 1;
+}
+
+.cmn-crm-workspace-hero-card p {
+  margin: 0;
+  color: rgba(191, 204, 230, 0.72);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.cmn-crm-workspace-hero-highlights {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cmn-crm-segment-bar {
+  margin-bottom: 14px;
+}
+
 .cmn-notification-card {
   display: inline-flex;
   align-items: center;
@@ -12883,11 +13179,13 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   border-top: 3px solid rgba(96, 165, 250, 0.8);
 }
 
-.cmn-school-leads-lane[data-school-lead-stage-column='contacted'] {
+.cmn-school-leads-lane[data-school-lead-stage-column='contacted'],
+.cmn-school-leads-lane[data-school-lead-stage-column='spoken_to_cover_manager'] {
   border-top: 3px solid rgba(74, 222, 128, 0.8);
 }
 
-.cmn-school-leads-lane[data-school-lead-stage-column='follow_up'] {
+.cmn-school-leads-lane[data-school-lead-stage-column='follow_up'],
+.cmn-school-leads-lane[data-school-lead-stage-column='meeting_booked'] {
   border-top: 3px solid rgba(250, 204, 21, 0.8);
 }
 
@@ -12899,12 +13197,18 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
   border-top: 3px solid rgba(251, 146, 60, 0.8);
 }
 
-.cmn-school-leads-lane[data-school-lead-stage-column='won'] {
+.cmn-school-leads-lane[data-school-lead-stage-column='won'],
+.cmn-school-leads-lane[data-school-lead-stage-column='closed_won'] {
   border-top: 3px solid rgba(45, 212, 191, 0.8);
 }
 
-.cmn-school-leads-lane[data-school-lead-stage-column='lost'] {
+.cmn-school-leads-lane[data-school-lead-stage-column='lost'],
+.cmn-school-leads-lane[data-school-lead-stage-column='closed_lost'] {
   border-top: 3px solid rgba(248, 113, 113, 0.8);
+}
+
+.cmn-school-leads-lane[data-school-lead-stage-column='not_interested'] {
+  border-top: 3px solid rgba(148, 163, 184, 0.8);
 }
 
 .cmn-school-leads-lane.is-drop-target {
@@ -13396,6 +13700,24 @@ body.cmn-portal-page .cmn-bell-actions .cmn-btn-mini:focus-visible {
 
 .cmn-schools-table .cmn-table-meta--warn {
   color: #fca5a5;
+}
+
+.cmn-candidates-crm-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.cmn-candidates-crm-filters {
+  margin-bottom: 0;
+}
+
+.cmn-candidates-crm-table td,
+.cmn-candidates-crm-table th {
+  vertical-align: top;
+}
+
+.cmn-candidates-crm-table td:nth-child(4) {
+  min-width: 140px;
 }
 
 .cmn-schools-row-actions {

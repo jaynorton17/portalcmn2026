@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CoverMeNow ONE
  * Description: CRM + portal for schools and candidates.
- * Version: 0.1.25
+ * Version: 0.1.27
  * Author: CoverMeNow
  */
 
@@ -603,7 +603,7 @@ final class CmnFeedbackInsights {
 }
 
 final class CMN_One_Plugin {
-    const VERSION = '0.1.25';
+    const VERSION = '0.1.27';
     const SCHEMA_BASE_VERSION = 38;
     const SCHEMA_VERSION = 79;
     const OFFER_EXPIRY_SECONDS = 900;
@@ -11462,8 +11462,8 @@ global $wpdb;
                 $score += 500;
             }
 
-            $pipeline_stage = sanitize_key((string) get_post_meta($candidate_school_id, 'cmn_pipeline_stage', true));
-            if ($pipeline_stage !== '' && $pipeline_stage !== 'lost') {
+            $pipeline_stage = $this->normalize_school_lead_stage((string) get_post_meta($candidate_school_id, 'cmn_pipeline_stage', true));
+            if ($pipeline_stage !== '' && $pipeline_stage !== 'closed_lost') {
                 $score += 60;
             }
 
@@ -12338,6 +12338,55 @@ global $wpdb;
             $set_latest(strtotime($timeline_at), $timeline_title !== '' ? $timeline_title : 'Application updated');
         }
 
+        $email_logs = is_array($context['email_logs'] ?? null) ? $context['email_logs'] : [];
+        foreach ($email_logs as $email_log_row) {
+            if (!is_array($email_log_row)) {
+                continue;
+            }
+            $email_created_at = trim((string) ($email_log_row['created_at'] ?? ''));
+            if ($email_created_at === '') {
+                continue;
+            }
+            $email_status = $this->normalize_email_log_status((string) ($email_log_row['status'] ?? ($email_log_row['send_status'] ?? 'queued')), 'queued');
+            $email_subject = sanitize_text_field((string) ($email_log_row['subject'] ?? ''));
+            $email_source = $email_status === 'failed' ? 'Email failed' : ($email_status === 'sent' ? 'Email sent' : 'Email queued');
+            if ($email_subject !== '') {
+                $email_source .= ' · ' . $email_subject;
+            }
+            $set_latest(strtotime($email_created_at), $email_source);
+        }
+
+        $stage_history = is_array($context['stage_history'] ?? null) ? $context['stage_history'] : [];
+        foreach ($stage_history as $stage_row) {
+            if (!is_array($stage_row)) {
+                continue;
+            }
+            $stage_created_at = trim((string) ($stage_row['created_at'] ?? ''));
+            if ($stage_created_at === '') {
+                continue;
+            }
+            $stage_summary = sanitize_text_field((string) ($stage_row['summary'] ?? 'Stage changed'));
+            $set_latest(strtotime($stage_created_at), $stage_summary !== '' ? $stage_summary : 'Stage changed');
+        }
+
+        $recent_bookings = is_array($context['recent_bookings'] ?? null) ? $context['recent_bookings'] : [];
+        foreach ($recent_bookings as $booking_row) {
+            if (!is_array($booking_row)) {
+                continue;
+            }
+            $booking_event_at = trim((string) ($booking_row['event_at'] ?? $booking_row['updated_at'] ?? $booking_row['created_at'] ?? ''));
+            if ($booking_event_at === '') {
+                continue;
+            }
+            $booking_label = sanitize_text_field((string) ($booking_row['status_label'] ?? 'Booking updated'));
+            $booking_title = sanitize_text_field((string) ($booking_row['title'] ?? ''));
+            $booking_source = $booking_label !== '' ? $booking_label : 'Booking updated';
+            if ($booking_title !== '') {
+                $booking_source .= ' · ' . $booking_title;
+            }
+            $set_latest(strtotime($booking_event_at), $booking_source);
+        }
+
         if ($latest_timestamp < 1) {
             return [
                 'label' => '-',
@@ -12847,56 +12896,38 @@ global $wpdb;
         }
 
         $link_actions = [];
-        if ($can_update_assignment && !empty($urls['owner'])) {
-            $link_actions[] = [
-                'label' => $owner_name !== '' ? 'Reassign owner' : 'Assign owner',
-                'url' => (string) ($urls['owner'] ?? ''),
-                'class' => 'cmn-ghost cmn-btn-mini',
-            ];
-        }
         if (!empty($urls['email'])) {
             $link_actions[] = [
-                'label' => 'Draft email',
+                'label' => 'Send email',
                 'url' => (string) ($urls['email'] ?? ''),
                 'class' => 'cmn-ghost cmn-btn-mini',
                 'action' => 'email',
             ];
         }
-        if ($is_lead_record) {
+        if (!empty($urls['task'])) {
             $link_actions[] = [
-                'label' => 'Open activity',
-                'url' => (string) ($urls['activity'] ?? ''),
+                'label' => 'Create task',
+                'url' => (string) ($urls['task'] ?? ''),
                 'class' => 'cmn-ghost cmn-btn-mini',
             ];
+        } elseif (!empty($urls['add_activity'])) {
             $link_actions[] = [
-                'label' => 'Open contacts',
-                'url' => (string) ($urls['contacts'] ?? ''),
+                'label' => 'Create task',
+                'url' => (string) ($urls['add_activity'] ?? ''),
                 'class' => 'cmn-ghost cmn-btn-mini',
             ];
+        }
+        if (!$is_lead_record && !empty($urls['add_activity'])) {
             $link_actions[] = [
-                'label' => $profile_issues ? 'Fix profile' : 'Open bookings',
-                'url' => $profile_issues ? (string) ($urls['details'] ?? '') : (string) ($urls['bookings'] ?? ''),
-                'class' => 'cmn-ghost cmn-btn-mini',
-            ];
-        } else {
-            $link_actions[] = [
-                'label' => 'Log activity',
+                'label' => 'Add note',
                 'url' => (string) ($urls['add_activity'] ?? ''),
                 'class' => 'cmn-primary cmn-btn-mini',
             ];
+        }
+        if ($can_update_assignment && !empty($urls['owner'])) {
             $link_actions[] = [
-                'label' => 'Open contacts',
-                'url' => (string) ($urls['contacts'] ?? ''),
-                'class' => 'cmn-ghost cmn-btn-mini',
-            ];
-            $link_actions[] = [
-                'label' => 'Open bookings',
-                'url' => (string) ($urls['bookings'] ?? ''),
-                'class' => 'cmn-ghost cmn-btn-mini',
-            ];
-            $link_actions[] = [
-                'label' => $profile_issues ? 'Fix profile' : 'Open documents',
-                'url' => $profile_issues ? (string) ($urls['details'] ?? '') : (string) ($urls['documents'] ?? ''),
+                'label' => $owner_name !== '' ? 'Reassign owner' : 'Assign owner',
+                'url' => (string) ($urls['owner'] ?? ''),
                 'class' => 'cmn-ghost cmn-btn-mini',
             ];
         }
@@ -12908,14 +12939,9 @@ global $wpdb;
         if ($is_lead_record) {
             $lead_actions = [
                 [
-                    'label' => 'Edit details',
-                    'action' => 'edit',
+                    'label' => 'Add note',
+                    'action' => 'quick_note',
                     'class' => 'cmn-primary cmn-btn-mini',
-                ],
-                [
-                    'label' => 'Move stage',
-                    'action' => 'stage',
-                    'class' => 'cmn-ghost cmn-btn-mini',
                 ],
             ];
         }
@@ -15630,6 +15656,42 @@ global $wpdb;
                     'update' => ['label' => 'Update', 'tone' => 'is-muted', 'icon' => 'UP', 'icon_variant' => 'is-update'],
                 ],
             ],
+            'email_log' => [
+                'source_label' => 'Email log',
+                'source_icon' => 'EL',
+                'source_variant' => 'is-email-log',
+                'default_tone' => 'is-info',
+                'types' => [
+                    'sent' => ['label' => 'Sent email', 'tone' => 'is-info', 'icon' => 'EM', 'icon_variant' => 'is-email'],
+                    'queued' => ['label' => 'Queued email', 'tone' => 'is-pending', 'icon' => 'QD', 'icon_variant' => 'is-email-queued'],
+                    'failed' => ['label' => 'Failed email', 'tone' => 'is-declined', 'icon' => 'FL', 'icon_variant' => 'is-email-failed'],
+                    'suppressed' => ['label' => 'Suppressed email', 'tone' => 'is-warning', 'icon' => 'SP', 'icon_variant' => 'is-email-suppressed'],
+                ],
+            ],
+            'stage_history' => [
+                'source_label' => 'Stage',
+                'source_icon' => 'SG',
+                'source_variant' => 'is-stage',
+                'default_tone' => 'is-info',
+                'types' => [
+                    'stage_change' => ['label' => 'Stage change', 'tone' => 'is-info', 'icon' => 'SG', 'icon_variant' => 'is-stage-change'],
+                ],
+            ],
+            'booking' => [
+                'source_label' => 'Booking',
+                'source_icon' => 'BK',
+                'source_variant' => 'is-booking',
+                'default_tone' => 'is-info',
+                'types' => [
+                    'requested' => ['label' => 'Requested booking', 'tone' => 'is-pending', 'icon' => 'RQ', 'icon_variant' => 'is-booking-requested'],
+                    'offered' => ['label' => 'Offered booking', 'tone' => 'is-pending', 'icon' => 'OF', 'icon_variant' => 'is-booking-requested'],
+                    'accepted' => ['label' => 'Accepted booking', 'tone' => 'is-verified', 'icon' => 'OK', 'icon_variant' => 'is-booking-accepted'],
+                    'confirmed' => ['label' => 'Confirmed booking', 'tone' => 'is-verified', 'icon' => 'CF', 'icon_variant' => 'is-booking-accepted'],
+                    'completed' => ['label' => 'Completed booking', 'tone' => 'is-verified', 'icon' => 'CP', 'icon_variant' => 'is-booking-completed'],
+                    'cancelled' => ['label' => 'Cancelled booking', 'tone' => 'is-declined', 'icon' => 'CX', 'icon_variant' => 'is-booking-cancelled'],
+                    'update' => ['label' => 'Booking update', 'tone' => 'is-info', 'icon' => 'BK', 'icon_variant' => 'is-booking-update'],
+                ],
+            ],
         ];
     }
 
@@ -15662,6 +15724,194 @@ global $wpdb;
             $icon_label = 'UP';
         }
         return substr($icon_label, 0, 2);
+    }
+
+    private function decode_email_log_metadata_array($metadata_raw) {
+        if (is_array($metadata_raw)) {
+            return $metadata_raw;
+        }
+
+        $metadata_raw = trim((string) $metadata_raw);
+        if ($metadata_raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($metadata_raw, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function get_school_profile_email_log_match_emails($school_id, array $context = []) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [];
+        }
+
+        $emails = [];
+        $add_email = static function ($raw_email) use (&$emails) {
+            $email = sanitize_email((string) $raw_email);
+            if ($email === '' || !is_email($email)) {
+                return;
+            }
+            $emails[strtolower($email)] = $email;
+        };
+
+        $primary_contact_summary = is_array($context['primary_contact_summary'] ?? null)
+            ? $context['primary_contact_summary']
+            : $this->get_school_primary_contact_summary($school_id);
+        $add_email((string) ($primary_contact_summary['email'] ?? ''));
+
+        foreach ([
+            'cmn_email',
+            'cmn_contact_email',
+            'cmn_primary_contact_email',
+            'cmn_contact1_email',
+            'cmn_contact2_email',
+            'cmn_contact3_email',
+        ] as $meta_key) {
+            $add_email((string) get_post_meta($school_id, $meta_key, true));
+        }
+
+        $school_domain = strtolower(trim((string) get_post_meta($school_id, 'cmn_school_email_domain', true)));
+        if ($school_domain !== '') {
+            foreach ((array) $this->get_school_contact_ids($school_domain) as $contact_id) {
+                $contact_id = (int) $contact_id;
+                if ($contact_id < 1) {
+                    continue;
+                }
+                $add_email((string) get_post_meta($contact_id, 'cmn_contact_email', true));
+            }
+        }
+
+        $contact_block = is_array($context['contact_block'] ?? null) ? $context['contact_block'] : [];
+        foreach ((array) ($contact_block['assigned_contacts'] ?? []) as $assigned_contact) {
+            if (!is_array($assigned_contact)) {
+                continue;
+            }
+            $add_email((string) ($assigned_contact['email'] ?? ''));
+        }
+
+        $school_users = get_users([
+            'meta_key' => 'cmn_school_id',
+            'meta_value' => $school_id,
+            'fields' => ['ID', 'user_email'],
+            'number' => 20,
+        ]);
+        foreach ((array) $school_users as $school_user) {
+            if (!($school_user instanceof WP_User)) {
+                continue;
+            }
+            $add_email((string) $school_user->user_email);
+        }
+
+        return array_values($emails);
+    }
+
+    private function get_school_profile_email_log_rows($school_id, array $context = [], $limit = 24) {
+        global $wpdb;
+
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return [];
+        }
+
+        $table = self::get_email_logs_table_name();
+        if (!self::table_has_column($table, 'recipient_email')) {
+            return [];
+        }
+
+        $limit = max(1, min(60, (int) $limit));
+        $match_emails = $this->get_school_profile_email_log_match_emails($school_id, $context);
+
+        $where_sql_parts = [];
+        $params = [];
+
+        if (self::table_has_column($table, 'related_entity_type') && self::table_has_column($table, 'related_entity_id')) {
+            $where_sql_parts[] = '(related_entity_type = %s AND related_entity_id = %d)';
+            $params[] = 'school';
+            $params[] = $school_id;
+        }
+
+        if ($match_emails) {
+            $email_placeholders = implode(', ', array_fill(0, count($match_emails), '%s'));
+            $email_where_sql = 'recipient_email IN (' . $email_placeholders . ')';
+            if (self::table_has_column($table, 'recipient_role')) {
+                $email_where_sql = '(recipient_role = %s AND ' . $email_where_sql . ')';
+                $params[] = 'school';
+            }
+            $where_sql_parts[] = '(' . $email_where_sql . ')';
+            foreach ($match_emails as $match_email) {
+                $params[] = $match_email;
+            }
+        }
+
+        if (!$where_sql_parts) {
+            return [];
+        }
+
+        $from_email_select = "'' AS from_email";
+        if (self::table_has_column($table, 'from_email')) {
+            $from_email_select = 'from_email';
+        } elseif (self::table_has_column($table, 'sender_email')) {
+            $from_email_select = 'sender_email AS from_email';
+        }
+        $from_name_select = "'' AS from_name";
+        if (self::table_has_column($table, 'from_name')) {
+            $from_name_select = 'from_name';
+        } elseif (self::table_has_column($table, 'sender_name')) {
+            $from_name_select = 'sender_name AS from_name';
+        }
+        $metadata_select = "'' AS metadata";
+        if (self::table_has_column($table, 'metadata') && self::table_has_column($table, 'meta_json')) {
+            $metadata_select = "CASE WHEN metadata IS NOT NULL AND metadata <> '' THEN metadata ELSE meta_json END AS metadata";
+        } elseif (self::table_has_column($table, 'metadata')) {
+            $metadata_select = 'metadata';
+        } elseif (self::table_has_column($table, 'meta_json')) {
+            $metadata_select = 'meta_json AS metadata';
+        }
+
+        $select_fields = [
+            'id',
+            self::table_has_column($table, 'template_key') ? 'template_key' : "'' AS template_key",
+            self::table_has_column($table, 'module') ? 'module' : "'' AS module",
+            'recipient_email',
+            self::table_has_column($table, 'recipient_user_id') ? 'recipient_user_id' : 'NULL AS recipient_user_id',
+            self::table_has_column($table, 'recipient_role') ? 'recipient_role' : "'' AS recipient_role",
+            $from_email_select,
+            $from_name_select,
+            'subject',
+            self::table_has_column($table, 'status') ? 'status' : (self::table_has_column($table, 'send_status') ? 'send_status AS status' : "'queued' AS status"),
+            'error_message',
+            self::table_has_column($table, 'related_entity_type') ? 'related_entity_type' : "'' AS related_entity_type",
+            self::table_has_column($table, 'related_entity_id') ? 'related_entity_id' : 'NULL AS related_entity_id',
+            $metadata_select,
+            self::table_has_column($table, 'rendered_html_body') ? 'rendered_html_body' : "'' AS rendered_html_body",
+            self::table_has_column($table, 'rendered_text_body') ? 'rendered_text_body' : "'' AS rendered_text_body",
+            'created_at',
+            self::table_has_column($table, 'updated_at') ? 'updated_at' : 'created_at AS updated_at',
+        ];
+
+        $order_by = self::table_has_column($table, 'created_at')
+            ? 'created_at DESC, id DESC'
+            : 'id DESC';
+
+        $query_sql = "SELECT " . implode(', ', $select_fields) . "
+            FROM {$table}
+            WHERE (" . implode(' OR ', $where_sql_parts) . ")
+            ORDER BY {$order_by}
+            LIMIT %d";
+        $params[] = $limit;
+
+        $rows = $wpdb->get_results($wpdb->prepare($query_sql, $params), ARRAY_A);
+        $prepared_rows = [];
+        foreach ((array) $rows as $row) {
+            $prepared_row = $this->prepare_email_log_row((array) $row);
+            if ((int) ($prepared_row['id'] ?? 0) < 1) {
+                continue;
+            }
+            $prepared_rows[] = $prepared_row;
+        }
+
+        return $prepared_rows;
     }
 
     private function build_school_profile_timeline_event(array $event, array $registry = []) {
@@ -15756,6 +16006,9 @@ global $wpdb;
         $lead_notes = array_values(array_filter((array) ($context['lead_notes'] ?? []), 'is_array'));
         $activities = array_values(array_filter((array) ($context['activities'] ?? []), 'is_array'));
         $request_timeline = array_values(array_filter((array) ($context['request_timeline'] ?? []), 'is_array'));
+        $email_logs = array_values(array_filter((array) ($context['email_logs'] ?? []), 'is_array'));
+        $stage_history = array_values(array_filter((array) ($context['stage_history'] ?? []), 'is_array'));
+        $recent_bookings = array_values(array_filter((array) ($context['recent_bookings'] ?? []), 'is_array'));
         $registry = $this->get_school_profile_timeline_event_registry();
         $events = [];
         $sequence = 0;
@@ -15842,6 +16095,139 @@ global $wpdb;
             ]);
         }
 
+        foreach ($email_logs as $email_log_row) {
+            $email_log_id = (int) ($email_log_row['id'] ?? 0);
+            if ($email_log_id < 1) {
+                continue;
+            }
+
+            $email_metadata = $this->decode_email_log_metadata_array($email_log_row['metadata'] ?? '');
+            $email_status = $this->normalize_email_log_status((string) ($email_log_row['status'] ?? ($email_log_row['send_status'] ?? 'queued')), 'queued');
+            $delivery_decision = sanitize_key((string) ($email_metadata['delivery_decision'] ?? ''));
+            $email_type_key = $delivery_decision === 'suppressed'
+                ? 'suppressed'
+                : ($email_status === 'failed' ? 'failed' : ($email_status === 'sent' ? 'sent' : 'queued'));
+            $email_time = $this->get_school_profile_timeline_timestamp_value($email_log_row, ['created_at', 'updated_at']);
+
+            $template_key = sanitize_key((string) ($email_log_row['template_key'] ?? ''));
+            $module = sanitize_key((string) ($email_log_row['module'] ?? ''));
+            $subject = sanitize_text_field((string) ($email_log_row['subject'] ?? ''));
+            $template_label = $template_key !== '' ? ucwords(str_replace('_', ' ', $template_key)) : '';
+            $module_label = $module !== '' ? ucwords(str_replace('_', ' ', $module)) : '';
+
+            $body_text = sanitize_textarea_field((string) ($email_log_row['rendered_text_body'] ?? ''));
+            if ($body_text === '') {
+                $body_text = sanitize_textarea_field((string) wp_strip_all_tags((string) ($email_log_row['rendered_html_body'] ?? '')));
+            }
+            if (strlen($body_text) > 1800) {
+                $body_text = substr($body_text, 0, 1800);
+            }
+
+            $error_message = sanitize_textarea_field((string) ($email_log_row['error_message'] ?? ''));
+            if ($error_message !== '' && strlen($error_message) > 500) {
+                $error_message = substr($error_message, 0, 500);
+            }
+
+            $body_preview = $error_message !== '' && $email_type_key !== 'sent'
+                ? $error_message
+                : sanitize_text_field((string) wp_trim_words(preg_replace('/\s+/', ' ', $body_text), 20, '...'));
+            if ($body_preview === '' && $template_label !== '') {
+                $body_preview = 'Template ' . $template_label;
+            }
+
+            $meta = [];
+            $recipient_email = sanitize_email((string) ($email_log_row['recipient_email'] ?? ''));
+            if ($recipient_email !== '') {
+                $meta[] = 'To ' . $recipient_email;
+            }
+            if ($template_label !== '') {
+                $meta[] = 'Template ' . $template_label;
+            }
+            if ($module_label !== '') {
+                $meta[] = 'Module ' . $module_label;
+            }
+            if ($delivery_decision === 'suppressed') {
+                $meta[] = 'Suppressed by delivery preferences';
+            }
+
+            $sender_name = sanitize_text_field((string) ($email_log_row['from_name'] ?? ''));
+            $sender_email = sanitize_email((string) ($email_log_row['from_email'] ?? ''));
+            $actor_label = $sender_name !== '' ? $sender_name : $sender_email;
+
+            $title = $subject !== '' ? $subject : ($template_label !== '' ? ('Email: ' . $template_label) : 'Logged email');
+
+            $append_event([
+                'id' => 'email_log_' . $email_log_id,
+                'source_key' => 'email_log',
+                'type_key' => $email_type_key,
+                'title' => $title,
+                'body' => $body_text !== '' ? $body_text : $error_message,
+                'body_preview' => $body_preview,
+                'actor_label' => $actor_label,
+                'occurred_at' => (string) ($email_time['raw'] ?? ''),
+                'occurred_ts' => (int) ($email_time['timestamp'] ?? 0),
+                'meta' => $meta,
+            ]);
+        }
+
+        foreach ($stage_history as $stage_row) {
+            $stage_created_at = sanitize_text_field((string) ($stage_row['created_at'] ?? ''));
+            $stage_to_value = sanitize_key((string) ($stage_row['to_value'] ?? ''));
+            $stage_tone = 'is-info';
+            if ($stage_to_value === 'closed_won') {
+                $stage_tone = 'is-verified';
+            } elseif ($stage_to_value === 'closed_lost') {
+                $stage_tone = 'is-declined';
+            } elseif ($stage_to_value === 'not_interested') {
+                $stage_tone = 'is-warning';
+            }
+            $stage_meta = array_values(array_filter([
+                sanitize_text_field((string) ($stage_row['source_label'] ?? '')),
+                sanitize_text_field((string) ($stage_row['to_label'] ?? '')),
+            ]));
+            $append_event([
+                'id' => 'stage_history_' . absint($stage_row['audit_id'] ?? 0),
+                'source_key' => 'stage_history',
+                'type_key' => 'stage_change',
+                'title' => sanitize_text_field((string) ($stage_row['summary'] ?? 'Stage changed')),
+                'body' => sanitize_textarea_field((string) ($stage_row['source_detail'] ?? '')),
+                'actor_label' => sanitize_text_field((string) ($stage_row['actor_name'] ?? '')),
+                'tone' => $stage_tone,
+                'occurred_at' => $stage_created_at,
+                'occurred_ts' => $stage_created_at !== '' && strtotime($stage_created_at) ? (int) strtotime($stage_created_at) : 0,
+                'meta' => $stage_meta,
+            ]);
+        }
+
+        foreach ($recent_bookings as $booking_row) {
+            $booking_id = max(0, (int) ($booking_row['id'] ?? 0));
+            if ($booking_id < 1) {
+                continue;
+            }
+            $booking_status_key = sanitize_key((string) ($booking_row['status_key'] ?? 'update'));
+            if (!in_array($booking_status_key, ['requested', 'offered', 'accepted', 'confirmed', 'completed', 'cancelled'], true)) {
+                $booking_status_key = 'update';
+            }
+            $booking_event_time = $this->get_school_profile_timeline_timestamp_value($booking_row, ['event_at', 'updated_at', 'created_at', 'date_raw']);
+            $booking_meta = [];
+            if (!empty($booking_row['date_label'])) {
+                $booking_meta[] = 'For ' . sanitize_text_field((string) $booking_row['date_label']);
+            }
+            if (!empty($booking_row['candidate'])) {
+                $booking_meta[] = 'Candidate ' . sanitize_text_field((string) $booking_row['candidate']);
+            }
+            $append_event([
+                'id' => 'booking_' . $booking_id,
+                'source_key' => 'booking',
+                'type_key' => $booking_status_key,
+                'title' => sanitize_text_field((string) ($booking_row['title'] ?? ('Booking #' . $booking_id))),
+                'body_preview' => sanitize_text_field((string) ($booking_row['status_label'] ?? 'Booking update')),
+                'occurred_at' => (string) ($booking_event_time['raw'] ?? ''),
+                'occurred_ts' => (int) ($booking_event_time['timestamp'] ?? 0),
+                'meta' => $booking_meta,
+            ]);
+        }
+
         usort($events, static function ($a, $b) {
             $a_timestamp = (int) ($a['occurred_ts'] ?? 0);
             $b_timestamp = (int) ($b['occurred_ts'] ?? 0);
@@ -15867,15 +16253,21 @@ global $wpdb;
         $lead_notes = array_values(array_filter((array) ($context['lead_notes'] ?? []), 'is_array'));
         $activities = array_values(array_filter((array) ($context['activities'] ?? []), 'is_array'));
         $request_timeline = array_values(array_filter((array) ($context['request_timeline'] ?? []), 'is_array'));
+        $email_logs = array_values(array_filter((array) ($context['email_logs'] ?? []), 'is_array'));
+        $stage_history = array_values(array_filter((array) ($context['stage_history'] ?? []), 'is_array'));
+        $recent_bookings = array_values(array_filter((array) ($context['recent_bookings'] ?? []), 'is_array'));
         $open_tasks = array_values(array_filter((array) ($context['open_tasks'] ?? []), 'is_array'));
         $last_touch_summary = is_array($context['last_touch_summary'] ?? null) ? $context['last_touch_summary'] : [];
         $critical_meta_missing = !empty($context['critical_meta_missing']);
-        $visible_limit = max(12, min(60, (int) ($context['visible_limit'] ?? 24)));
+        $visible_limit = max(12, min(120, (int) ($context['visible_limit'] ?? 24)));
 
         $events = $this->get_school_profile_timeline_events($school_id, [
             'lead_notes' => $lead_notes,
             'activities' => $activities,
             'request_timeline' => $request_timeline,
+            'email_logs' => $email_logs,
+            'stage_history' => $stage_history,
+            'recent_bookings' => $recent_bookings,
         ]);
 
         $latest_request_title = '';
@@ -15902,6 +16294,9 @@ global $wpdb;
             'lead_note' => 0,
             'activity' => 0,
             'application' => 0,
+            'email_log' => 0,
+            'stage_history' => 0,
+            'booking' => 0,
         ];
         foreach ($events as $event) {
             $source_key = sanitize_key((string) ($event['source_key'] ?? ''));
@@ -15910,50 +16305,66 @@ global $wpdb;
             }
         }
 
+        $latest_stage_summary = '';
+        if ($stage_history) {
+            $latest_stage_summary = sanitize_text_field((string) ($stage_history[0]['summary'] ?? ''));
+        }
+        $latest_booking_summary = '';
+        if ($recent_bookings) {
+            $latest_booking = (array) $recent_bookings[0];
+            $latest_booking_summary = sanitize_text_field((string) ($latest_booking['status_label'] ?? 'Booking updated'));
+            if (!empty($latest_booking['date_label'])) {
+                $latest_booking_summary .= ' · ' . sanitize_text_field((string) $latest_booking['date_label']);
+            }
+        }
+
         $summary_cards = [
             [
-                'label' => 'Latest touch',
+                'label' => 'Latest interaction',
                 'value' => sanitize_text_field((string) ($last_touch_summary['label'] ?? '-')),
                 'detail' => sanitize_text_field((string) ($last_touch_summary['detail'] ?? '')),
             ],
             [
-                'label' => 'Open tasks',
-                'value' => count($open_tasks) > 0
-                    ? (number_format_i18n(count($open_tasks)) . ' open')
-                    : 'Nothing open',
-                'detail' => $next_open_task
-                    ? sanitize_text_field((string) ($next_open_task['subject'] ?? 'Next task')) . ($next_open_task_ts ? (' · due ' . date_i18n('M j, Y', $next_open_task_ts)) : '')
-                    : 'No outstanding follow-up task in the activity log',
-            ],
-            [
-                'label' => 'Application history',
-                'value' => $source_counts['application'] > 0
-                    ? (number_format_i18n($source_counts['application']) . ' update' . ($source_counts['application'] === 1 ? '' : 's'))
-                    : 'No request history',
-                'detail' => $critical_meta_missing
-                    ? 'Save domain + postcode to unlock full access/application history'
-                    : ($latest_request_title !== '' ? $latest_request_title : 'No application events captured yet'),
-            ],
-            [
-                'label' => 'Notes & activity',
-                'value' => ($source_counts['lead_note'] + $source_counts['activity']) > 0
-                    ? (number_format_i18n($source_counts['lead_note'] + $source_counts['activity']) . ' item' . (($source_counts['lead_note'] + $source_counts['activity']) === 1 ? '' : 's'))
+                'label' => 'Notes, calls & emails',
+                'value' => ($source_counts['lead_note'] + $source_counts['activity'] + $source_counts['email_log']) > 0
+                    ? (number_format_i18n($source_counts['lead_note'] + $source_counts['activity'] + $source_counts['email_log']) . ' item' . (($source_counts['lead_note'] + $source_counts['activity'] + $source_counts['email_log']) === 1 ? '' : 's'))
                     : 'No notes yet',
-                'detail' => number_format_i18n($source_counts['lead_note']) . ' lead note' . ($source_counts['lead_note'] === 1 ? '' : 's')
+                'detail' => number_format_i18n($source_counts['lead_note']) . ' note' . ($source_counts['lead_note'] === 1 ? '' : 's')
                     . ' · '
-                    . number_format_i18n($source_counts['activity']) . ' logged activit' . ($source_counts['activity'] === 1 ? 'y' : 'ies'),
+                    . number_format_i18n($source_counts['activity']) . ' logged activit' . ($source_counts['activity'] === 1 ? 'y' : 'ies')
+                    . ' · '
+                    . number_format_i18n($source_counts['email_log']) . ' email log' . ($source_counts['email_log'] === 1 ? '' : 's'),
+            ],
+            [
+                'label' => 'Stage changes',
+                'value' => $source_counts['stage_history'] > 0
+                    ? (number_format_i18n($source_counts['stage_history']) . ' change' . ($source_counts['stage_history'] === 1 ? '' : 's'))
+                    : 'No stage changes',
+                'detail' => $latest_stage_summary !== '' ? $latest_stage_summary : 'Stage movement appears here when a lead is moved.',
+            ],
+            [
+                'label' => 'Bookings',
+                'value' => $source_counts['booking'] > 0
+                    ? (number_format_i18n($source_counts['booking']) . ' booking event' . ($source_counts['booking'] === 1 ? '' : 's'))
+                    : 'No booking events',
+                'detail' => $latest_booking_summary !== '' ? $latest_booking_summary : 'Bookings appear here alongside the wider relationship history.',
             ],
         ];
 
         $visible_events = array_slice($events, 0, $visible_limit);
-        $hidden_count = max(0, count($events) - count($visible_events));
+        $total_events = count($events);
+        $hidden_count = max(0, $total_events - count($visible_events));
+        $next_visible_limit = min(120, count($visible_events) + 20);
         $footnote = $hidden_count > 0
-            ? ('Showing the latest ' . number_format_i18n(count($visible_events)) . ' timeline entries across notes, activity, and application history.')
-            : 'One read-only timeline across lead notes, logged activity, and application history.';
+            ? ('Showing the latest ' . number_format_i18n(count($visible_events)) . ' of ' . number_format_i18n($total_events) . ' CRM timeline events.')
+            : 'One newest-first CRM timeline across notes, calls, emails, stage changes, bookings, and relationship activity.';
 
         return [
             'summary_cards' => $summary_cards,
             'events' => $visible_events,
+            'total_events' => $total_events,
+            'has_more' => $hidden_count > 0,
+            'next_visible_limit' => $next_visible_limit,
             'footnote' => $footnote,
         ];
     }
@@ -16052,7 +16463,8 @@ global $wpdb;
             return new WP_Error('cmn_school_not_found', 'School record not found.');
         }
 
-        $visible_limit = max(12, min(60, (int) ($options['visible_limit'] ?? 24)));
+        $visible_limit = max(12, min(120, (int) ($options['visible_limit'] ?? 24)));
+        $fetch_limit = max(30, min(180, $visible_limit + 20));
         $school_email = sanitize_email((string) get_post_meta($school_id, 'cmn_email', true));
         $school_domain = $this->get_email_domain($school_email);
         if ($school_domain === '') {
@@ -16066,9 +16478,11 @@ global $wpdb;
         $open_tasks = [];
         $activities = [];
         $request_timeline = [];
+        $stage_history = $this->get_school_lead_stage_history($school_id, max(12, min(40, $fetch_limit)));
+        $recent_bookings = $this->get_school_profile_recent_bookings($school_id, max(8, min(40, $fetch_limit)));
         try {
             $open_tasks = $this->get_school_tasks($school_domain, 5, $school_id);
-            $activities = $this->get_school_activities($school_domain, 20, $school_id);
+            $activities = $this->get_school_activities($school_domain, min(60, $fetch_limit), $school_id);
         } catch (Throwable $e) {
             $this->log_school_debug('school_profile_timeline_lazy_related_failed', [
                 'school_post_id' => $school_id,
@@ -16078,7 +16492,7 @@ global $wpdb;
         }
         if (!$critical_meta_missing) {
             try {
-                $request_timeline = $this->get_school_request_timeline($school_id, 30);
+                $request_timeline = $this->get_school_request_timeline($school_id, min(60, $fetch_limit));
             } catch (Throwable $e) {
                 $this->log_school_debug('school_profile_timeline_lazy_request_failed', [
                     'school_post_id' => $school_id,
@@ -16087,18 +16501,27 @@ global $wpdb;
             }
         }
 
-        $lead_notes = $this->get_school_lead_notes($school_id, 250);
+        $lead_notes = $this->get_school_lead_notes($school_id, max(80, $fetch_limit));
+        $email_logs = $this->get_school_profile_email_log_rows($school_id, [
+            'primary_contact_summary' => $this->get_school_primary_contact_summary($school_id),
+        ], min(60, $fetch_limit));
         $last_touch_summary = $this->get_school_profile_last_touch_summary($school_id, [
             'created_at' => (string) get_post_field('post_date', $school_id),
             'modified_at' => (string) get_post_field('post_modified', $school_id),
             'lead_notes' => $lead_notes,
             'activities' => $activities,
             'request_timeline' => $request_timeline,
+            'email_logs' => $email_logs,
+            'stage_history' => $stage_history,
+            'recent_bookings' => $recent_bookings,
         ]);
         $payload = $this->build_school_profile_activity_timeline_payload($school_id, [
             'lead_notes' => $lead_notes,
             'activities' => $activities,
             'request_timeline' => $request_timeline,
+            'email_logs' => $email_logs,
+            'stage_history' => $stage_history,
+            'recent_bookings' => $recent_bookings,
             'open_tasks' => $open_tasks,
             'last_touch_summary' => $last_touch_summary,
             'critical_meta_missing' => $critical_meta_missing,
@@ -16167,6 +16590,13 @@ global $wpdb;
         $filter_options = $this->build_school_profile_timeline_filter_options($timeline_events);
         $source_filter_options = (array) ($filter_options['sources'] ?? []);
         $type_filter_options = (array) ($filter_options['types'] ?? []);
+        $loaded_event_count = count($timeline_events);
+        $total_event_count = max($loaded_event_count, (int) ($activity_timeline_payload['total_events'] ?? $loaded_event_count));
+        $has_more_events = !empty($activity_timeline_payload['has_more']);
+        $next_visible_limit = max($loaded_event_count, (int) ($activity_timeline_payload['next_visible_limit'] ?? $loaded_event_count));
+        $loaded_state_copy = $total_event_count > $loaded_event_count
+            ? (number_format_i18n($loaded_event_count) . ' of ' . number_format_i18n($total_event_count) . ' events loaded so far.')
+            : (number_format_i18n($loaded_event_count) . ' event' . ($loaded_event_count === 1 ? '' : 's') . ' loaded.');
 
         ob_start();
         ?>
@@ -16186,7 +16616,7 @@ global $wpdb;
                         <span class="cmn-school-profile-timeline-filter-label">Search timeline</span>
                         <input type="search"
                                class="cmn-input"
-                               placeholder="Search notes, tasks, calls, application updates..."
+                               placeholder="Search notes, emails, calls, stage changes, bookings, and relationship updates..."
                                autocomplete="off"
                                data-timeline-filter-search />
                     </label>
@@ -16235,14 +16665,14 @@ global $wpdb;
                     <strong data-timeline-filter-results>
                         <?php
                         echo esc_html(
-                            number_format_i18n(count($timeline_events))
+                            number_format_i18n($loaded_event_count)
                             . ' of '
-                            . number_format_i18n(count($timeline_events))
-                            . ' events shown'
+                            . number_format_i18n($loaded_event_count)
+                            . ' loaded events shown'
                         );
                         ?>
                     </strong>
-                    <span class="cmn-muted">Filters only affect the currently loaded timeline entries.</span>
+                    <span class="cmn-muted"><?php echo esc_html($loaded_state_copy); ?> Filters only affect the currently loaded timeline entries.</span>
                 </div>
             </div>
             <div class="cmn-school-profile-timeline-list" data-timeline-filter-list>
@@ -16254,6 +16684,16 @@ global $wpdb;
                 <strong>No timeline matches</strong>
                 <p class="cmn-muted">Try a different search term or clear the current source/type filters.</p>
             </div>
+            <?php if ($has_more_events) : ?>
+                <div class="cmn-school-profile-timeline-load-more">
+                    <button type="button"
+                            class="cmn-ghost cmn-btn-mini"
+                            data-school-profile-timeline-load-more="<?php echo esc_attr((string) $next_visible_limit); ?>">
+                        Load older events
+                    </button>
+                    <span class="cmn-muted">Load more of the older CRM history without leaving this profile.</span>
+                </div>
+            <?php endif; ?>
             <?php if (!empty($activity_timeline_payload['footnote'])) : ?>
                 <p class="cmn-muted"><?php echo esc_html((string) $activity_timeline_payload['footnote']); ?></p>
             <?php endif; ?>
@@ -16274,41 +16714,35 @@ global $wpdb;
                 'description' => 'Brand-new lead ready for first outreach.',
                 'next_action' => 'Make first contact',
             ],
-            'contacted' => [
-                'label' => 'Contacted',
-                'eyebrow' => 'Outreach',
-                'description' => 'Initial outreach has happened and needs a reply.',
-                'next_action' => 'Log reply or nudge again',
+            'spoken_to_cover_manager' => [
+                'label' => 'Spoken to Cover Manager',
+                'eyebrow' => 'Conversation',
+                'description' => 'The first real conversation has happened and the relationship needs a follow-up.',
+                'next_action' => 'Log the next touch or book the meeting',
             ],
-            'follow_up' => [
-                'label' => 'Follow Up',
-                'eyebrow' => 'Follow Up',
-                'description' => 'Warm lead that needs the next scheduled touch.',
-                'next_action' => 'Book the next touchpoint',
+            'meeting_booked' => [
+                'label' => 'Meeting Booked',
+                'eyebrow' => 'Meeting',
+                'description' => 'A meeting or demo is booked and needs preparation or confirmation.',
+                'next_action' => 'Prepare the meeting and confirm attendance',
             ],
-            'demo' => [
-                'label' => 'Demo',
-                'eyebrow' => 'Demo',
-                'description' => 'Lead is reviewing the product or next-step proposal.',
-                'next_action' => 'Prepare and run the demo',
-            ],
-            'negotiation' => [
-                'label' => 'Negotiation',
-                'eyebrow' => 'Commercial',
-                'description' => 'Commercial discussion is active and needs a decision.',
-                'next_action' => 'Confirm commercials',
-            ],
-            'won' => [
-                'label' => 'Won',
+            'closed_won' => [
+                'label' => 'Closed Won',
                 'eyebrow' => 'Closed Won',
-                'description' => 'Lead is ready for operational handover.',
-                'next_action' => 'Convert into active client work',
+                'description' => 'The school has moved into a client relationship.',
+                'next_action' => 'Hand over into live client work',
             ],
-            'lost' => [
-                'label' => 'Lost',
+            'closed_lost' => [
+                'label' => 'Closed Lost',
                 'eyebrow' => 'Closed Lost',
-                'description' => 'Lead is parked and should keep a reason on record.',
-                'next_action' => 'Capture the reason and archive cleanly',
+                'description' => 'The opportunity has been lost and should stay on record.',
+                'next_action' => 'Capture the reason and close cleanly',
+            ],
+            'not_interested' => [
+                'label' => 'Not Interested',
+                'eyebrow' => 'Closed',
+                'description' => 'The school is not interested right now.',
+                'next_action' => 'Record the reason and revisit only if context changes',
             ],
         ];
     }
@@ -16571,6 +17005,498 @@ global $wpdb;
         return $chips;
     }
 
+    private function render_crm_workspace_hero_html(array $context = []) {
+        $title = sanitize_text_field((string) ($context['title'] ?? 'CRM Workspace'));
+        if ($title === '') {
+            $title = 'CRM Workspace';
+        }
+        $description = sanitize_text_field((string) ($context['description'] ?? ''));
+        $eyebrow = sanitize_text_field((string) ($context['eyebrow'] ?? ''));
+        $classes = ['cmn-crm-workspace-hero'];
+        $extra_class = sanitize_html_class((string) ($context['class'] ?? ''));
+        if ($extra_class !== '') {
+            $classes[] = $extra_class;
+        }
+        $actions = array_values(array_filter((array) ($context['actions'] ?? []), 'is_array'));
+        $cards = array_values(array_filter((array) ($context['cards'] ?? []), 'is_array'));
+        $highlights = array_values(array_filter(array_map('sanitize_text_field', (array) ($context['highlights'] ?? []))));
+
+        ob_start();
+        ?>
+        <section class="<?php echo esc_attr(implode(' ', $classes)); ?>">
+            <div class="cmn-crm-workspace-hero-head">
+                <div class="cmn-crm-workspace-hero-copy">
+                    <?php if ($eyebrow !== '') : ?>
+                        <span class="cmn-crm-workspace-hero-eyebrow"><?php echo esc_html($eyebrow); ?></span>
+                    <?php endif; ?>
+                    <h2><?php echo esc_html($title); ?></h2>
+                    <?php if ($description !== '') : ?>
+                        <p><?php echo esc_html($description); ?></p>
+                    <?php endif; ?>
+                </div>
+                <?php if ($actions) : ?>
+                    <div class="cmn-crm-workspace-hero-actions">
+                        <?php foreach ($actions as $action) : ?>
+                            <?php
+                            $action_label = sanitize_text_field((string) ($action['label'] ?? 'Open'));
+                            $action_detail = sanitize_text_field((string) ($action['detail'] ?? ''));
+                            $action_url = esc_url((string) ($action['url'] ?? '#'));
+                            $action_class = trim((string) ($action['class'] ?? 'cmn-ghost cmn-btn-mini'));
+                            ?>
+                            <a class="<?php echo esc_attr($action_class); ?>" href="<?php echo $action_url; ?>">
+                                <span><?php echo esc_html($action_label); ?></span>
+                                <?php if ($action_detail !== '') : ?>
+                                    <small><?php echo esc_html($action_detail); ?></small>
+                                <?php endif; ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <?php if ($cards) : ?>
+                <div class="cmn-crm-workspace-hero-stats">
+                    <?php foreach ($cards as $card) : ?>
+                        <?php
+                        $card_label = sanitize_text_field((string) ($card['label'] ?? ''));
+                        $card_value = sanitize_text_field((string) ($card['value'] ?? '-'));
+                        $card_detail = sanitize_text_field((string) ($card['detail'] ?? ''));
+                        $card_tone = sanitize_key((string) ($card['tone'] ?? 'neutral'));
+                        ?>
+                        <article class="cmn-crm-workspace-hero-card is-<?php echo esc_attr($card_tone !== '' ? $card_tone : 'neutral'); ?>">
+                            <?php if ($card_label !== '') : ?>
+                                <span class="cmn-crm-workspace-hero-card-label"><?php echo esc_html($card_label); ?></span>
+                            <?php endif; ?>
+                            <strong class="cmn-crm-workspace-hero-card-value"><?php echo esc_html($card_value); ?></strong>
+                            <?php if ($card_detail !== '') : ?>
+                                <p><?php echo esc_html($card_detail); ?></p>
+                            <?php endif; ?>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($highlights) : ?>
+                <div class="cmn-crm-workspace-hero-highlights">
+                    <?php foreach ($highlights as $highlight) : ?>
+                        <span class="cmn-pill"><?php echo esc_html($highlight); ?></span>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
+    private function build_school_workspace_hero_context($status, array $rows = [], array $lead_board_summary = [], $total_results = 0, $active_filter_count = 0, $search = '', array $urls = []) {
+        $status = sanitize_key((string) $status);
+        $total_results = max(0, (int) $total_results);
+        $active_filter_count = max(0, (int) $active_filter_count);
+        $search = sanitize_text_field((string) $search);
+
+        $lead_count = 0;
+        $client_count = 0;
+        $needs_attention_count = 0;
+        $quiet_count = 0;
+        $no_owner_count = 0;
+        $no_contact_count = 0;
+        $follow_up_count = 0;
+        $healthy_count = 0;
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $row_status = sanitize_key((string) ($row['status_value'] ?? ''));
+            if ($row_status === 'lead') {
+                $lead_count++;
+            } elseif ($row_status === 'client') {
+                $client_count++;
+            } elseif ($row_status === 'needs_attention') {
+                $needs_attention_count++;
+            }
+            $labels = array_values(array_filter(array_map(static function ($flag) {
+                return sanitize_text_field((string) ($flag['label'] ?? ''));
+            }, (array) ($row['risk_flags'] ?? []))));
+            if (!$labels) {
+                $healthy_count++;
+            }
+            foreach ($labels as $label) {
+                $label_lower = strtolower($label);
+                if (strpos($label_lower, 'quiet') !== false || strpos($label_lower, 'stale') !== false) {
+                    $quiet_count++;
+                }
+                if ($label_lower === 'no owner') {
+                    $no_owner_count++;
+                }
+                if ($label_lower === 'no contact') {
+                    $no_contact_count++;
+                }
+                if (strpos($label_lower, 'follow up') !== false) {
+                    $follow_up_count++;
+                }
+            }
+        }
+
+        $lead_total = max($total_results, (int) ($lead_board_summary['total'] ?? 0), $lead_count);
+        $highlights = [];
+        if ($search !== '') {
+            $highlights[] = 'Search: ' . $search;
+        }
+        if ($active_filter_count > 0) {
+            $highlights[] = number_format_i18n($active_filter_count) . ' active filter' . ($active_filter_count === 1 ? '' : 's');
+        }
+
+        $actions = [];
+        $action_map = [
+            'portfolio' => ['label' => 'Portfolio', 'detail' => 'Open all schools'],
+            'leads' => ['label' => 'Leads', 'detail' => 'Open the pipeline'],
+            'needs_attention' => ['label' => 'Follow-up queue', 'detail' => 'Work risks and stale schools'],
+            'clients' => ['label' => 'Active clients', 'detail' => 'Review live relationships'],
+        ];
+        foreach ($action_map as $action_key => $action_copy) {
+            $action_url = trim((string) ($urls[$action_key] ?? ''));
+            if ($action_url === '') {
+                continue;
+            }
+            $actions[] = [
+                'label' => $action_copy['label'],
+                'detail' => $action_copy['detail'],
+                'url' => $action_url,
+                'class' => 'cmn-crm-workspace-hero-action',
+            ];
+        }
+
+        if ($status === 'client') {
+            return [
+                'class' => 'cmn-crm-workspace-hero--clients',
+                'eyebrow' => 'Account Manager CRM',
+                'title' => 'Active Client Portfolio',
+                'description' => 'Monitor relationship health, recent contact, and delivery momentum across your live client schools.',
+                'actions' => $actions,
+                'cards' => [
+                    [
+                        'label' => 'Active clients',
+                        'value' => number_format_i18n($total_results),
+                        'detail' => 'Live client relationships in this view',
+                        'tone' => 'accent',
+                    ],
+                    [
+                        'label' => 'Healthy',
+                        'value' => number_format_i18n($healthy_count),
+                        'detail' => 'No immediate CRM risk flags',
+                        'tone' => 'positive',
+                    ],
+                    [
+                        'label' => 'Quiet 30d+',
+                        'value' => number_format_i18n($quiet_count),
+                        'detail' => 'Client relationships needing a touch',
+                        'tone' => $quiet_count > 0 ? 'warning' : 'neutral',
+                    ],
+                    [
+                        'label' => 'Needs owner',
+                        'value' => number_format_i18n($no_owner_count),
+                        'detail' => 'Relationships without AM ownership',
+                        'tone' => $no_owner_count > 0 ? 'critical' : 'neutral',
+                    ],
+                ],
+                'highlights' => $highlights,
+            ];
+        }
+
+        if ($status === 'needs_attention') {
+            return [
+                'class' => 'cmn-crm-workspace-hero--attention',
+                'eyebrow' => 'Account Manager CRM',
+                'title' => 'Follow-Up Queue',
+                'description' => 'Every school relationship that is stale, missing context, or needs the next action from your team.',
+                'actions' => $actions,
+                'cards' => [
+                    [
+                        'label' => 'Schools needing action',
+                        'value' => number_format_i18n($total_results),
+                        'detail' => 'Current follow-up workload',
+                        'tone' => 'critical',
+                    ],
+                    [
+                        'label' => 'Follow up due',
+                        'value' => number_format_i18n($follow_up_count),
+                        'detail' => 'Schools with explicit follow-up risk',
+                        'tone' => $follow_up_count > 0 ? 'warning' : 'neutral',
+                    ],
+                    [
+                        'label' => 'No owner',
+                        'value' => number_format_i18n($no_owner_count),
+                        'detail' => 'Relationships missing AM assignment',
+                        'tone' => $no_owner_count > 0 ? 'critical' : 'neutral',
+                    ],
+                    [
+                        'label' => 'No contact',
+                        'value' => number_format_i18n($no_contact_count),
+                        'detail' => 'Schools without direct contact details',
+                        'tone' => $no_contact_count > 0 ? 'warning' : 'neutral',
+                    ],
+                ],
+                'highlights' => $highlights,
+            ];
+        }
+
+        if ($status === 'all') {
+            return [
+                'class' => 'cmn-crm-workspace-hero--portfolio',
+                'eyebrow' => 'Account Manager CRM',
+                'title' => 'Portfolio Schools',
+                'description' => 'Work your whole school portfolio with one search, one filter layer, and clear relationship context at list speed.',
+                'actions' => $actions,
+                'cards' => [
+                    [
+                        'label' => 'Schools in view',
+                        'value' => number_format_i18n($total_results),
+                        'detail' => 'All portfolio schools matching this search',
+                        'tone' => 'accent',
+                    ],
+                    [
+                        'label' => 'Leads',
+                        'value' => number_format_i18n($lead_count),
+                        'detail' => 'Lead-stage school relationships',
+                        'tone' => 'warning',
+                    ],
+                    [
+                        'label' => 'Clients',
+                        'value' => number_format_i18n($client_count),
+                        'detail' => 'Active client relationships',
+                        'tone' => 'positive',
+                    ],
+                    [
+                        'label' => 'Needs attention',
+                        'value' => number_format_i18n($needs_attention_count),
+                        'detail' => 'Schools flagged for follow-up',
+                        'tone' => $needs_attention_count > 0 ? 'critical' : 'neutral',
+                    ],
+                ],
+                'highlights' => $highlights,
+            ];
+        }
+
+        return [
+            'class' => 'cmn-crm-workspace-hero--leads',
+            'eyebrow' => 'Account Manager CRM',
+            'title' => 'Leads Pipeline',
+            'description' => 'Work new school opportunities through first contact, meetings, and close-out from one board-first CRM view.',
+            'actions' => $actions,
+            'cards' => [
+                [
+                    'label' => 'Leads in pipeline',
+                    'value' => number_format_i18n($lead_total),
+                    'detail' => 'All visible leads in this board/list view',
+                    'tone' => 'accent',
+                ],
+                [
+                    'label' => 'Spoken to CM',
+                    'value' => number_format_i18n((int) ($lead_board_summary['spoken_to_cover_manager'] ?? 0)),
+                    'detail' => 'Leads already contacted by Cover Manager',
+                    'tone' => 'positive',
+                ],
+                [
+                    'label' => 'Meeting booked',
+                    'value' => number_format_i18n((int) ($lead_board_summary['meeting_booked'] ?? 0)),
+                    'detail' => 'Leads ready for the next conversation',
+                    'tone' => 'warning',
+                ],
+                [
+                    'label' => 'Needs owner',
+                    'value' => number_format_i18n((int) ($lead_board_summary['unassigned'] ?? $no_owner_count)),
+                    'detail' => 'Pipeline cards without clear AM ownership',
+                    'tone' => ((int) ($lead_board_summary['unassigned'] ?? $no_owner_count)) > 0 ? 'critical' : 'neutral',
+                ],
+                [
+                    'label' => 'Quiet 30d+',
+                    'value' => number_format_i18n($quiet_count),
+                    'detail' => 'Leads that need a fresh touchpoint',
+                    'tone' => $quiet_count > 0 ? 'warning' : 'neutral',
+                ],
+            ],
+            'highlights' => $highlights,
+        ];
+    }
+
+    private function build_candidate_workspace_hero_context($visible_count = 0, $total_count = 0, $pending_doc_review_count = 0, $deletion_request_count = 0, $status = '', $doc_review = '', $search = '', array $urls = []) {
+        $visible_count = max(0, (int) $visible_count);
+        $total_count = max($visible_count, (int) $total_count);
+        $pending_doc_review_count = max(0, (int) $pending_doc_review_count);
+        $deletion_request_count = max(0, (int) $deletion_request_count);
+        $status = sanitize_key((string) $status);
+        $doc_review = sanitize_key((string) $doc_review);
+        $search = sanitize_text_field((string) $search);
+
+        $highlights = [];
+        if ($status !== '') {
+            $highlights[] = 'Status filter: ' . ucwords(str_replace('_', ' ', $status));
+        }
+        if ($doc_review === 'pending') {
+            $highlights[] = 'Document review queue active';
+        }
+        if ($search !== '') {
+            $highlights[] = 'Search: ' . $search;
+        }
+
+        $actions = [];
+        foreach ([
+            'candidates' => ['label' => 'All candidates', 'detail' => 'Full candidate pool'],
+            'compliance_review' => ['label' => 'Compliance review', 'detail' => 'Open vetting queue'],
+        ] as $action_key => $action_copy) {
+            $action_url = trim((string) ($urls[$action_key] ?? ''));
+            if ($action_url === '') {
+                continue;
+            }
+            $actions[] = [
+                'label' => $action_copy['label'],
+                'detail' => $action_copy['detail'],
+                'url' => $action_url,
+                'class' => 'cmn-crm-workspace-hero-action',
+            ];
+        }
+
+        return [
+            'class' => 'cmn-crm-workspace-hero--candidates',
+            'eyebrow' => 'Account Manager CRM',
+            'title' => 'Candidate Management',
+            'description' => 'Scan supply, document readiness, and candidate actions from one clean AM-facing workspace.',
+            'actions' => $actions,
+            'cards' => [
+                [
+                    'label' => 'Visible now',
+                    'value' => number_format_i18n($visible_count),
+                    'detail' => $total_count > $visible_count ? ('Showing ' . number_format_i18n($visible_count) . ' of ' . number_format_i18n($total_count)) : 'Candidates in the current view',
+                    'tone' => 'accent',
+                ],
+                [
+                    'label' => 'Pending doc review',
+                    'value' => number_format_i18n($pending_doc_review_count),
+                    'detail' => 'Candidates waiting on document checks',
+                    'tone' => $pending_doc_review_count > 0 ? 'warning' : 'neutral',
+                ],
+                [
+                    'label' => 'Deletion requests',
+                    'value' => number_format_i18n($deletion_request_count),
+                    'detail' => 'Profiles requesting account removal',
+                    'tone' => $deletion_request_count > 0 ? 'critical' : 'neutral',
+                ],
+                [
+                    'label' => 'Current scope',
+                    'value' => $doc_review === 'pending' ? 'Compliance queue' : ($status !== '' ? ucwords(str_replace('_', ' ', $status)) : 'All statuses'),
+                    'detail' => 'Use filters to change the working set',
+                    'tone' => 'positive',
+                ],
+            ],
+            'highlights' => $highlights,
+        ];
+    }
+
+    private function build_marketing_workspace_hero_context(array $overview = [], array $lists = [], array $campaigns = [], array $queue_snapshot = [], array $templates = [], array $segments = [], array $unsub_rows = [], $sending_paused = false) {
+        $queued_count = max(0, (int) ($queue_snapshot['queued'] ?? 0));
+        $failed_count = max(0, (int) ($queue_snapshot['failed'] ?? 0));
+        $sent_7d = max(0, (int) ($overview['emails_sent_7d'] ?? 0));
+        $unsubs_30d = max(0, (int) ($overview['unsubscribes_30d'] ?? 0));
+
+        $highlights = [
+            'Sent 7d: ' . number_format_i18n($sent_7d),
+            'Unsubscribes 30d: ' . number_format_i18n($unsubs_30d),
+            'Segments: ' . number_format_i18n(count($segments)),
+        ];
+        if ($sending_paused) {
+            $highlights[] = 'Sending paused by admin';
+        }
+
+        return [
+            'class' => 'cmn-crm-workspace-hero--marketing',
+            'eyebrow' => 'Account Manager CRM',
+            'title' => 'Marketing Workspace',
+            'description' => 'Build lists, run campaigns, and monitor outreach performance from one CRM-style growth workspace.',
+            'cards' => [
+                [
+                    'label' => 'Saved lists',
+                    'value' => number_format_i18n(count($lists)),
+                    'detail' => 'Reusable school audiences',
+                    'tone' => 'accent',
+                ],
+                [
+                    'label' => 'Campaigns',
+                    'value' => number_format_i18n(count($campaigns)),
+                    'detail' => 'Current campaign drafts and live sends',
+                    'tone' => 'positive',
+                ],
+                [
+                    'label' => 'Queued sends',
+                    'value' => number_format_i18n($queued_count),
+                    'detail' => 'Emails waiting in the send queue',
+                    'tone' => $queued_count > 0 ? 'warning' : 'neutral',
+                ],
+                [
+                    'label' => 'Failed sends',
+                    'value' => number_format_i18n($failed_count),
+                    'detail' => 'Messages needing attention',
+                    'tone' => $failed_count > 0 ? 'critical' : 'neutral',
+                ],
+                [
+                    'label' => 'Templates',
+                    'value' => number_format_i18n(count($templates)),
+                    'detail' => 'Reusable outreach building blocks',
+                    'tone' => 'neutral',
+                ],
+                [
+                    'label' => 'Suppressed emails',
+                    'value' => number_format_i18n(count($unsub_rows)),
+                    'detail' => 'Current unsubscribe list size',
+                    'tone' => 'neutral',
+                ],
+            ],
+            'highlights' => $highlights,
+        ];
+    }
+
+    private function build_email_centre_workspace_hero_context(array $registry_rows = [], array $sender_rows = [], $email_logs_total = 0, $active_tab = 'templates', $can_access_delivery = false) {
+        $sender_active_count = 0;
+        foreach ($sender_rows as $sender_row) {
+            if (!empty($sender_row['is_active'])) {
+                $sender_active_count++;
+            }
+        }
+
+        $highlights = [
+            'Active tab: ' . ucwords(str_replace('_', ' ', sanitize_key((string) $active_tab))),
+        ];
+        if (!$can_access_delivery) {
+            $highlights[] = 'Template-only access';
+        }
+
+        return [
+            'class' => 'cmn-crm-workspace-hero--email-centre',
+            'eyebrow' => 'CRM Operations',
+            'title' => 'Email Centre',
+            'description' => 'Manage reusable template content, sender identities, and delivery logs in one consistent CRM workspace.',
+            'cards' => [
+                [
+                    'label' => 'Templates',
+                    'value' => number_format_i18n(count($registry_rows)),
+                    'detail' => 'Registered email templates',
+                    'tone' => 'accent',
+                ],
+                [
+                    'label' => 'Active senders',
+                    'value' => number_format_i18n($sender_active_count),
+                    'detail' => 'Ready-to-use sender identities',
+                    'tone' => 'positive',
+                ],
+                [
+                    'label' => 'Logs in scope',
+                    'value' => number_format_i18n(max(0, (int) $email_logs_total)),
+                    'detail' => 'Current delivery log result set',
+                    'tone' => 'neutral',
+                ],
+            ],
+            'highlights' => $highlights,
+        ];
+    }
+
     private function build_school_crm_list_row_data($school_post_id, array $visible_lead_groups, $portal_url, array $query_context = [], array $interaction_summaries = []) {
         $school_post_id = (int) $school_post_id;
         if ($school_post_id < 1 || get_post_type($school_post_id) !== 'cmn_school') {
@@ -16648,24 +17574,25 @@ global $wpdb;
             $flags['data_issue'] = ['label' => 'Data issue', 'tone' => 'critical'];
         }
 
+        $is_closed_stage = in_array($stage_value, ['closed_won', 'closed_lost', 'not_interested'], true);
         if ($quiet_days >= 30) {
             $flags['quiet_30'] = [
-                'label' => $stage_value === 'follow_up' ? 'Follow up stale 30d+' : 'Quiet 30d+',
-                'tone' => 'critical',
+                'label' => $stage_value === 'meeting_booked' ? 'Meeting stale 30d+' : 'Quiet 30d+',
+                'tone' => $is_closed_stage ? 'warning' : 'critical',
             ];
         } elseif ($quiet_days >= 14) {
             $flags['quiet_14'] = [
-                'label' => $stage_value === 'follow_up' ? 'Follow up overdue' : 'Quiet 14d+',
+                'label' => $stage_value === 'meeting_booked' ? 'Meeting overdue' : 'Quiet 14d+',
                 'tone' => 'warning',
             ];
-        } elseif ($stage_value === 'follow_up' && $quiet_days >= 7) {
+        } elseif ($stage_value === 'spoken_to_cover_manager' && $quiet_days >= 7) {
             $flags['follow_up_due'] = [
                 'label' => 'Follow up due',
                 'tone' => 'warning',
             ];
         }
 
-        if ($latest_note === '' && !in_array($stage_value, ['new_lead', 'won', 'lost'], true)) {
+        if ($latest_note === '' && !in_array($stage_value, ['new_lead', 'closed_won', 'closed_lost', 'not_interested'], true)) {
             $flags['no_note'] = ['label' => 'No note logged', 'tone' => 'info'];
         }
 
@@ -16675,7 +17602,7 @@ global $wpdb;
     private function get_school_lead_stage_history($school_post_id, $limit = 6) {
         global $wpdb;
         $school_post_id = (int) $school_post_id;
-        $limit = max(1, min(12, (int) $limit));
+        $limit = max(1, min(40, (int) $limit));
         if ($school_post_id < 1 || get_post_type($school_post_id) !== 'cmn_school') {
             return [];
         }
@@ -16708,14 +17635,13 @@ global $wpdb;
             return [];
         }
 
-        $stage_options = $this->get_school_lead_stage_options();
-        $read_history_stage = static function ($raw_stage) use ($stage_options) {
+        $read_history_stage = function ($raw_stage) {
             $stage = sanitize_key((string) $raw_stage);
-            return isset($stage_options[$stage]) ? $stage : '';
+            return $stage !== '' ? $this->normalize_school_lead_stage($stage) : '';
         };
 
         $history = [];
-        $current_stage = sanitize_key((string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true));
+        $current_stage = $this->normalize_school_lead_stage((string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true));
         foreach ($rows as $row) {
             $action_type = sanitize_key((string) ($row['action_type'] ?? ''));
             $details = $this->decode_json_payload((string) ($row['details_json'] ?? ''), []);
@@ -17190,7 +18116,7 @@ global $wpdb;
         }
 
         $school_post_id = (int) ($context['school_post_id'] ?? 0);
-        $visible_limit = max(12, min(60, (int) ($_POST['visible_limit'] ?? 24)));
+        $visible_limit = max(12, min(120, (int) ($_POST['visible_limit'] ?? 24)));
 
         try {
             $panel_payload = $this->build_school_profile_timeline_panel_payload($school_post_id, [
@@ -17971,6 +18897,238 @@ global $wpdb;
         return [
             'rows' => array_merge($default_rows, array_slice($display_rows, 0, max(0, $limit - 2))),
             'counts' => $counts,
+        ];
+    }
+
+    private function build_account_manager_dashboard_school_widget_rows(array $school_cards, array $options = []) {
+        $title = sanitize_text_field((string) ($options['title'] ?? 'Relationships'));
+        $summary_url = esc_url_raw((string) ($options['summary_url'] ?? $this->get_portal_base_url()));
+        $summary_tone = sanitize_key((string) ($options['summary_tone'] ?? 'primary'));
+        $summary_detail = sanitize_text_field((string) ($options['summary_detail'] ?? ''));
+        $empty_label = sanitize_text_field((string) ($options['empty_label'] ?? 'Nothing needs attention right now.'));
+        $empty_detail = sanitize_text_field((string) ($options['empty_detail'] ?? 'Your relationship queue is clear.'));
+        $card_eyebrow = sanitize_text_field((string) ($options['card_eyebrow'] ?? 'School'));
+        $limit = max(1, min(4, (int) ($options['limit'] ?? 3)));
+
+        $rows = [
+            [
+                'variant' => 'metric',
+                'tone' => $summary_tone !== '' ? $summary_tone : 'primary',
+                'eyebrow' => 'CRM',
+                'label' => $title,
+                'value' => number_format_i18n(count($school_cards)),
+                'detail' => $summary_detail !== '' ? $summary_detail : ('Open ' . strtolower($title) . ' in the CRM workspace.'),
+                'cta' => 'Open workspace',
+                'url' => $summary_url,
+            ],
+        ];
+
+        if (!$school_cards) {
+            $rows[] = [
+                'variant' => 'activity',
+                'tone' => 'clear',
+                'eyebrow' => $card_eyebrow !== '' ? $card_eyebrow : 'School',
+                'label' => $empty_label,
+                'value' => 'Up to date',
+                'detail' => $empty_detail,
+                'cta' => 'Open schools',
+                'url' => $summary_url,
+            ];
+            return $rows;
+        }
+
+        foreach (array_slice($school_cards, 0, $limit) as $card) {
+            if (!is_array($card)) {
+                continue;
+            }
+            $detail_parts = [];
+            $location = sanitize_text_field((string) ($card['location'] ?? ''));
+            $contact_name = sanitize_text_field((string) ($card['contact_name'] ?? ''));
+            $last_touch_label = sanitize_text_field((string) ($card['last_activity_label'] ?? '-'));
+            if ($location !== '') {
+                $detail_parts[] = $location;
+            }
+            if ($last_touch_label !== '' && $last_touch_label !== '-') {
+                $detail_parts[] = 'Last interaction ' . $last_touch_label;
+            }
+            $rows[] = [
+                'variant' => 'activity',
+                'tone' => sanitize_key((string) ($card['dashboard_tone'] ?? 'neutral')),
+                'eyebrow' => sanitize_text_field((string) ($card['stage_label'] ?? $card_eyebrow)),
+                'label' => sanitize_text_field((string) ($card['title'] ?? 'School')),
+                'value' => $contact_name !== '' ? $contact_name : 'No contact saved',
+                'detail' => $detail_parts ? implode(' · ', $detail_parts) : 'Open the school profile for the latest relationship context.',
+                'cta' => 'Open school',
+                'url' => esc_url_raw((string) ($card['overview_url'] ?? $card['view_url'] ?? $summary_url)),
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function build_account_manager_dashboard_task_widget_rows(array $task_snapshot, array $options = []) {
+        $summary_url = esc_url_raw((string) ($options['summary_url'] ?? $this->get_portal_base_url()));
+        $rows = array_values(array_filter((array) ($task_snapshot['rows'] ?? []), 'is_array'));
+        $counts = is_array($task_snapshot['counts'] ?? null) ? $task_snapshot['counts'] : [];
+        $due_today_rows = array_values(array_filter($rows, static function ($row) {
+            return sanitize_text_field((string) ($row['value'] ?? '')) === 'Due today';
+        }));
+        $due_today_count = max(0, (int) ($counts['due_today'] ?? count($due_today_rows)));
+
+        $widgets = [
+            [
+                'variant' => 'metric',
+                'tone' => $due_today_count > 0 ? 'primary' : 'clear',
+                'eyebrow' => 'CRM',
+                'label' => 'Tasks Due Today',
+                'value' => number_format_i18n($due_today_count),
+                'detail' => $due_today_count > 0
+                    ? 'Today’s school follow-up tasks ready to work.'
+                    : 'No school follow-up tasks are due today.',
+                'cta' => 'Open schools',
+                'url' => $summary_url,
+            ],
+        ];
+
+        if (!$due_today_rows) {
+            $widgets[] = [
+                'variant' => 'activity',
+                'tone' => 'clear',
+                'eyebrow' => 'Task',
+                'label' => 'No due tasks today',
+                'value' => 'Queue clear',
+                'detail' => 'Open tasks are either scheduled later or already complete.',
+                'cta' => 'Open schools',
+                'url' => $summary_url,
+            ];
+            return $widgets;
+        }
+
+        foreach (array_slice($due_today_rows, 0, 3) as $due_today_row) {
+            $widgets[] = [
+                'variant' => sanitize_key((string) ($due_today_row['variant'] ?? 'activity')),
+                'tone' => sanitize_key((string) ($due_today_row['tone'] ?? 'urgent')),
+                'eyebrow' => sanitize_text_field((string) ($due_today_row['eyebrow'] ?? 'Task')),
+                'label' => sanitize_text_field((string) ($due_today_row['label'] ?? 'Task')),
+                'value' => sanitize_text_field((string) ($due_today_row['value'] ?? 'Due today')),
+                'detail' => sanitize_text_field((string) ($due_today_row['detail'] ?? '')),
+                'cta' => sanitize_text_field((string) ($due_today_row['cta'] ?? 'Open school')),
+                'url' => esc_url_raw((string) ($due_today_row['url'] ?? $summary_url)),
+            ];
+        }
+
+        return $widgets;
+    }
+
+    private function get_account_manager_dashboard_crm_snapshot($user_id = 0, $limit = 4) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        $limit = max(2, min(6, (int) $limit));
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return [];
+        }
+
+        $manageable_school_ids = array_values(array_unique(array_map('intval', $this->get_manageable_school_ids_for_user($user_id))));
+        $portal_url = $this->get_portal_base_url();
+        $interaction_summaries = $manageable_school_ids ? $this->get_school_last_interaction_summaries($manageable_school_ids) : [];
+        $current_ts = (int) current_time('timestamp');
+        $school_cards = [];
+
+        foreach ($manageable_school_ids as $school_id) {
+            if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+                continue;
+            }
+
+            $card = $this->build_school_lead_board_card_data($school_id, [], $portal_url, ['view' => 'schools'], $interaction_summaries);
+            if (!$card) {
+                continue;
+            }
+
+            $status_value = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+            $stage_value = $this->normalize_school_lead_stage((string) get_post_meta($school_id, 'cmn_pipeline_stage', true));
+            $created_at = trim((string) get_post_field('post_date', $school_id));
+            $created_ts = $created_at !== '' ? strtotime($created_at) : 0;
+            $last_touch_ts = (int) ($interaction_summaries[$school_id]['timestamp'] ?? 0);
+            $quiet_days = $last_touch_ts > 0
+                ? max(0, (int) floor(($current_ts - $last_touch_ts) / DAY_IN_SECONDS))
+                : PHP_INT_MAX;
+            $is_closed_stage = in_array($stage_value, ['closed_won', 'closed_lost', 'not_interested'], true);
+            $is_lead_card = $this->is_school_lead_record($school_id) || in_array($status_value, ['lead', 'needs_attention'], true);
+
+            $card['status_value'] = $status_value !== '' ? $status_value : 'lead';
+            $card['stage_value'] = $stage_value;
+            $card['created_ts'] = $created_ts;
+            $card['last_touch_ts'] = $last_touch_ts;
+            $card['quiet_days'] = $quiet_days;
+            $card['is_lead_card'] = $is_lead_card;
+            $card['is_closed_stage'] = $is_closed_stage;
+            $card['dashboard_tone'] = !empty($card['attention_flags']) ? 'hot' : ($stage_value === 'meeting_booked' ? 'primary' : 'neutral');
+            $school_cards[] = $card;
+        }
+
+        $sort_by_created_desc = static function ($left, $right) {
+            return (int) ($right['created_ts'] ?? 0) <=> (int) ($left['created_ts'] ?? 0);
+        };
+        $sort_by_last_touch_desc = static function ($left, $right) {
+            return (int) ($right['last_touch_ts'] ?? 0) <=> (int) ($left['last_touch_ts'] ?? 0);
+        };
+        $sort_by_follow_up_priority = static function ($left, $right) {
+            $quiet_compare = (int) ($right['quiet_days'] ?? 0) <=> (int) ($left['quiet_days'] ?? 0);
+            if ($quiet_compare !== 0) {
+                return $quiet_compare;
+            }
+            return (int) ($left['created_ts'] ?? 0) <=> (int) ($right['created_ts'] ?? 0);
+        };
+
+        $leads_needing_follow_up = array_values(array_filter($school_cards, static function ($card) {
+            if (empty($card['is_lead_card']) || !empty($card['is_closed_stage'])) {
+                return false;
+            }
+            $stage_value = sanitize_key((string) ($card['stage_value'] ?? 'new_lead'));
+            $quiet_days = (int) ($card['quiet_days'] ?? 0);
+            if ($quiet_days === PHP_INT_MAX) {
+                return true;
+            }
+            if ($stage_value === 'meeting_booked' && $quiet_days >= 3) {
+                return true;
+            }
+            if ($stage_value === 'spoken_to_cover_manager' && $quiet_days >= 5) {
+                return true;
+            }
+            return $stage_value === 'new_lead' && $quiet_days >= 3;
+        }));
+        usort($leads_needing_follow_up, $sort_by_follow_up_priority);
+
+        $new_leads = array_values(array_filter($school_cards, static function ($card) {
+            return !empty($card['is_lead_card']) && sanitize_key((string) ($card['stage_value'] ?? '')) === 'new_lead';
+        }));
+        usort($new_leads, $sort_by_created_desc);
+
+        $meetings_booked = array_values(array_filter($school_cards, static function ($card) {
+            return !empty($card['is_lead_card']) && sanitize_key((string) ($card['stage_value'] ?? '')) === 'meeting_booked';
+        }));
+        usort($meetings_booked, $sort_by_last_touch_desc);
+
+        $recently_contacted = array_values(array_filter($school_cards, static function ($card) use ($current_ts) {
+            $last_touch_ts = (int) ($card['last_touch_ts'] ?? 0);
+            return $last_touch_ts > 0 && $last_touch_ts >= ($current_ts - (14 * DAY_IN_SECONDS));
+        }));
+        usort($recently_contacted, $sort_by_last_touch_desc);
+
+        $task_snapshot = $this->get_staff_dashboard_school_task_snapshot($user_id, max(5, $limit + 2));
+
+        return [
+            'leads_needing_follow_up' => array_slice($leads_needing_follow_up, 0, $limit),
+            'new_leads' => array_slice($new_leads, 0, $limit),
+            'meetings_booked' => array_slice($meetings_booked, 0, $limit),
+            'recently_contacted' => array_slice($recently_contacted, 0, $limit),
+            'task_snapshot' => $task_snapshot,
+            'counts' => [
+                'leads_needing_follow_up' => count($leads_needing_follow_up),
+                'new_leads' => count($new_leads),
+                'meetings_booked' => count($meetings_booked),
+                'recently_contacted' => count($recently_contacted),
+                'tasks_due_today' => max(0, (int) (($task_snapshot['counts']['due_today'] ?? 0))),
+            ],
         ];
     }
 
@@ -33222,17 +34380,53 @@ global $wpdb;
     private function get_school_lead_stage_options() {
         return [
             'new_lead' => 'New Lead',
-            'contacted' => 'Contacted',
-            'follow_up' => 'Follow Up',
-            'demo' => 'Demo',
-            'negotiation' => 'Negotiation',
-            'won' => 'Won',
-            'lost' => 'Lost',
+            'spoken_to_cover_manager' => 'Spoken to Cover Manager',
+            'meeting_booked' => 'Meeting Booked',
+            'closed_won' => 'Closed Won',
+            'closed_lost' => 'Closed Lost',
+            'not_interested' => 'Not Interested',
         ];
+    }
+
+    private function get_school_lead_stage_aliases() {
+        return [
+            'new_lead' => 'new_lead',
+            'contacted' => 'spoken_to_cover_manager',
+            'follow_up' => 'spoken_to_cover_manager',
+            'spoken_to_cover_manager' => 'spoken_to_cover_manager',
+            'demo' => 'meeting_booked',
+            'meeting_booked' => 'meeting_booked',
+            'negotiation' => 'meeting_booked',
+            'won' => 'closed_won',
+            'closed_won' => 'closed_won',
+            'lost' => 'closed_lost',
+            'closed_lost' => 'closed_lost',
+            'not_interested' => 'not_interested',
+        ];
+    }
+
+    private function get_school_lead_stage_storage_values($raw_stage) {
+        $normalized_stage = $this->normalize_school_lead_stage($raw_stage);
+        if ($normalized_stage === '') {
+            return [];
+        }
+
+        $values = [$normalized_stage];
+        foreach ($this->get_school_lead_stage_aliases() as $alias_stage => $canonical_stage) {
+            if ($canonical_stage === $normalized_stage) {
+                $values[] = sanitize_key((string) $alias_stage);
+            }
+        }
+
+        return array_values(array_unique(array_filter($values)));
     }
 
     private function normalize_school_lead_stage($raw_stage) {
         $stage = sanitize_key((string) $raw_stage);
+        $aliases = $this->get_school_lead_stage_aliases();
+        if ($stage !== '' && isset($aliases[$stage])) {
+            return $aliases[$stage];
+        }
         $options = $this->get_school_lead_stage_options();
         if ($stage !== '' && isset($options[$stage])) {
             return $stage;
@@ -37099,27 +38293,27 @@ global $wpdb;
             return [
                 'eyebrow' => 'Account Manager workspace',
                 'title' => 'CRM Dashboard',
-                'description' => 'Relationship-led dashboard for your school portfolio. Heavy widgets stream in after the shell so the workspace stays fast.',
+                'description' => 'Work the school relationship pipeline from one place: follow-ups, new leads, meetings, recent contact, and today’s tasks.',
                 'actions' => [
+                    [
+                        'label' => 'Leads',
+                        'detail' => 'Open the pipeline board',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
+                    ],
                     [
                         'label' => 'Portfolio',
                         'detail' => 'Open all assigned schools',
                         'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
                     ],
                     [
-                        'label' => 'Open Requests',
-                        'detail' => 'Prioritise live demand',
-                        'url' => add_query_arg(['view' => 'requests'], $portal_url),
+                        'label' => 'Tasks',
+                        'detail' => 'Open relationship work',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
                     ],
                     [
-                        'label' => 'Pending Onboarding',
-                        'detail' => 'Move candidates forward',
-                        'url' => add_query_arg(['view' => 'candidates', 'cmn_status' => 'pending'], $portal_url),
-                    ],
-                    [
-                        'label' => 'Templates',
-                        'detail' => 'Send the right next message',
-                        'url' => add_query_arg(['view' => 'email-centre', 'cmn_email_centre_tab' => 'templates'], $portal_url),
+                        'label' => 'Recently Contacted',
+                        'detail' => 'Pick up the latest conversations',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
                     ],
                 ],
             ];
@@ -37161,17 +38355,67 @@ global $wpdb;
         $sections = [];
 
         if ($is_account_manager_workspace) {
-            $sections['relationship_focus'] = [
-                'title' => 'Relationship Focus',
-                'description' => 'Your assigned school portfolio, follow-up load, and live requests in one place.',
-                'layout_class' => 'cmn-exec-kpi-grid',
-                'placeholder_count' => 4,
-                'load_priority' => 1,
-                'load_mode' => 'critical',
-                'eyebrow' => 'CRM',
-                'action_label' => 'Open portfolio',
-                'action_url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
-                'status_placeholder' => 'Loading relationship context...',
+            return [
+                'leads_needing_follow_up' => [
+                    'title' => 'Leads Needing Follow-Up',
+                    'description' => 'The relationship opportunities that have gone quiet and need the next touch.',
+                    'layout_class' => 'cmn-exec-activity-grid',
+                    'placeholder_count' => 4,
+                    'load_priority' => 1,
+                    'load_mode' => 'critical',
+                    'eyebrow' => 'CRM',
+                    'action_label' => 'Open leads',
+                    'action_url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
+                    'status_placeholder' => 'Loading follow-up queue...',
+                ],
+                'new_leads' => [
+                    'title' => 'New Leads',
+                    'description' => 'Fresh school opportunities ready for first outreach.',
+                    'layout_class' => 'cmn-exec-activity-grid',
+                    'placeholder_count' => 4,
+                    'load_priority' => 2,
+                    'load_mode' => 'critical',
+                    'eyebrow' => 'Pipeline',
+                    'action_label' => 'Open new leads',
+                    'action_url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_stage' => 'new_lead', 'cmn_bucket' => false], $portal_url),
+                    'status_placeholder' => 'Loading new leads...',
+                ],
+                'meetings_booked' => [
+                    'title' => 'Meetings Booked',
+                    'description' => 'Leads that already have the next conversation booked and need preparation.',
+                    'layout_class' => 'cmn-exec-activity-grid',
+                    'placeholder_count' => 4,
+                    'load_priority' => 3,
+                    'load_mode' => 'eager',
+                    'eyebrow' => 'Meetings',
+                    'action_label' => 'Open meeting stage',
+                    'action_url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_stage' => 'meeting_booked', 'cmn_bucket' => false], $portal_url),
+                    'status_placeholder' => 'Loading booked meetings...',
+                ],
+                'schools_recently_contacted' => [
+                    'title' => 'Schools Recently Contacted',
+                    'description' => 'The latest school relationships touched across your portfolio.',
+                    'layout_class' => 'cmn-exec-activity-grid',
+                    'placeholder_count' => 4,
+                    'load_priority' => 4,
+                    'load_mode' => 'eager',
+                    'eyebrow' => 'Recent',
+                    'action_label' => 'Open portfolio',
+                    'action_url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
+                    'status_placeholder' => 'Loading recent contact...',
+                ],
+                'tasks_due_today' => [
+                    'title' => 'Tasks Due Today',
+                    'description' => 'School follow-up tasks that should be completed today.',
+                    'layout_class' => 'cmn-exec-activity-grid',
+                    'placeholder_count' => 4,
+                    'load_priority' => 5,
+                    'load_mode' => 'eager',
+                    'eyebrow' => 'Tasks',
+                    'action_label' => 'Open school tasks',
+                    'action_url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
+                    'status_placeholder' => 'Loading today’s tasks...',
+                ],
             ];
         }
 
@@ -37351,6 +38595,56 @@ global $wpdb;
 
         $rows = [];
         switch ($group_key) {
+            case 'leads_needing_follow_up':
+            case 'new_leads':
+            case 'meetings_booked':
+            case 'schools_recently_contacted':
+            case 'tasks_due_today':
+                $dashboard_snapshot = (array) $metric('am_crm_dashboard_snapshot', 60, function () use ($user_id) {
+                    return (array) $this->get_account_manager_dashboard_crm_snapshot($user_id, 4);
+                });
+                if ($group_key === 'tasks_due_today') {
+                    $rows = $this->build_account_manager_dashboard_task_widget_rows((array) ($dashboard_snapshot['task_snapshot'] ?? []), [
+                        'summary_url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
+                    ]);
+                    break;
+                }
+
+                $school_rows = [];
+                $section_title = $definitions[$group_key]['title'] ?? 'CRM';
+                $section_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url);
+                $section_detail = '';
+                $card_eyebrow = 'School';
+                if ($group_key === 'leads_needing_follow_up') {
+                    $school_rows = (array) ($dashboard_snapshot['leads_needing_follow_up'] ?? []);
+                    $section_detail = 'Prioritise the schools that have gone quiet and need the next touch.';
+                    $card_eyebrow = 'Follow up';
+                } elseif ($group_key === 'new_leads') {
+                    $school_rows = (array) ($dashboard_snapshot['new_leads'] ?? []);
+                    $section_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_stage' => 'new_lead', 'cmn_bucket' => false], $portal_url);
+                    $section_detail = 'Fresh school relationships waiting for first outreach.';
+                    $card_eyebrow = 'New lead';
+                } elseif ($group_key === 'meetings_booked') {
+                    $school_rows = (array) ($dashboard_snapshot['meetings_booked'] ?? []);
+                    $section_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_stage' => 'meeting_booked', 'cmn_bucket' => false], $portal_url);
+                    $section_detail = 'Prepare the next booked meeting or demo conversation.';
+                    $card_eyebrow = 'Meeting';
+                } elseif ($group_key === 'schools_recently_contacted') {
+                    $school_rows = (array) ($dashboard_snapshot['recently_contacted'] ?? []);
+                    $section_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url);
+                    $section_detail = 'Pick back up with the relationships you have touched most recently.';
+                    $card_eyebrow = 'Recent';
+                }
+
+                $rows = $this->build_account_manager_dashboard_school_widget_rows($school_rows, [
+                    'title' => (string) $section_title,
+                    'summary_url' => $section_url,
+                    'summary_detail' => $section_detail,
+                    'card_eyebrow' => $card_eyebrow,
+                    'summary_tone' => $group_key === 'leads_needing_follow_up' ? 'hot' : 'primary',
+                ]);
+                break;
+
             case 'relationship_focus':
                 $relationship_snapshot = (array) $metric('relationship_focus_snapshot', 90, function () use ($user_id) {
                     return (array) $this->get_account_manager_nav_context_snapshot($user_id);
@@ -37844,6 +39138,24 @@ global $wpdb;
                     ];
                 }
                 break;
+
+            default:
+                foreach ($rows as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $widgets[] = [
+                        'variant' => sanitize_key((string) ($row['variant'] ?? 'activity')),
+                        'tone' => sanitize_key((string) ($row['tone'] ?? 'neutral')),
+                        'eyebrow' => sanitize_text_field((string) ($row['eyebrow'] ?? 'CRM')),
+                        'label' => sanitize_text_field((string) ($row['label'] ?? '')),
+                        'value' => (string) ($row['value'] ?? ''),
+                        'detail' => sanitize_text_field((string) ($row['detail'] ?? '')),
+                        'cta' => sanitize_text_field((string) ($row['cta'] ?? 'Open')),
+                        'url' => (string) ($row['url'] ?? '#'),
+                    ];
+                }
+                break;
         }
 
         return $widgets;
@@ -38275,10 +39587,14 @@ global $wpdb;
             ];
         }
         if ($stage !== '') {
-            $meta_query[] = [
-                'key' => 'cmn_pipeline_stage',
-                'value' => $stage,
-            ];
+            $stage_values = $this->get_school_lead_stage_storage_values($stage);
+            if ($stage_values) {
+                $meta_query[] = [
+                    'key' => 'cmn_pipeline_stage',
+                    'value' => count($stage_values) === 1 ? $stage_values[0] : $stage_values,
+                    'compare' => count($stage_values) === 1 ? '=' : 'IN',
+                ];
+            }
         }
         if ($location_filter !== '') {
             $meta_query[] = [
@@ -38537,9 +39853,9 @@ global $wpdb;
                 'is_active' => $status === 'lead' && $stage === '' && $last_activity_filter === '',
             ],
             [
-                'label' => 'Follow Up',
-                'url' => add_query_arg(array_merge($lead_filter_preset_base, ['cmn_status' => 'lead', 'cmn_stage' => 'follow_up']), $portal_url),
-                'is_active' => $status === 'lead' && $stage === 'follow_up',
+                'label' => 'Spoken to CM',
+                'url' => add_query_arg(array_merge($lead_filter_preset_base, ['cmn_status' => 'lead', 'cmn_stage' => 'spoken_to_cover_manager']), $portal_url),
+                'is_active' => $status === 'lead' && $stage === 'spoken_to_cover_manager',
             ],
             [
                 'label' => 'Quiet 30d+',
@@ -38584,7 +39900,8 @@ global $wpdb;
         $lead_board_cards_by_stage = [];
         $lead_board_summary = [
             'total' => 0,
-            'follow_up' => 0,
+            'spoken_to_cover_manager' => 0,
+            'meeting_booked' => 0,
             'unassigned' => 0,
             'attention' => 0,
         ];
@@ -38607,8 +39924,11 @@ global $wpdb;
                 }
                 $lead_board_cards_by_stage[$card_stage][] = $card;
                 $lead_board_summary['total']++;
-                if ($card_stage === 'follow_up') {
-                    $lead_board_summary['follow_up']++;
+                if ($card_stage === 'spoken_to_cover_manager') {
+                    $lead_board_summary['spoken_to_cover_manager']++;
+                }
+                if ($card_stage === 'meeting_booked') {
+                    $lead_board_summary['meeting_booked']++;
                 }
                 if (empty($card['manager_name'])) {
                     $lead_board_summary['unassigned']++;
@@ -38618,22 +39938,24 @@ global $wpdb;
                 }
             }
         }
+        $school_workspace_context = $this->build_school_workspace_hero_context($status, array_values($school_crm_rows), $lead_board_summary, $total_results_count, $active_filter_chip_count, $search, [
+            'portfolio' => $segment_all_url,
+            'leads' => $segment_leads_url,
+            'needs_attention' => $segment_needs_attention_url,
+            'clients' => $segment_clients_url,
+        ]);
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <div class="cmn-header-row">
-                <div>
-                    <h2>Schools CRM</h2>
-                </div>
-            </div>
+        <?php echo $this->render_crm_workspace_hero_html($school_workspace_context); ?>
+        <section class="cmn-panel-card cmn-crm-segment-bar">
             <div class="cmn-segmented" role="tablist" aria-label="Schools view">
                 <a class="cmn-segment<?php echo $status === 'lead' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_leads_url); ?>"><?php echo esc_html($segment_leads_label); ?></a>
                 <a class="cmn-segment<?php echo $status === 'needs_attention' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_needs_attention_url); ?>"><?php echo esc_html($segment_needs_attention_label); ?></a>
                 <a class="cmn-segment<?php echo $status === 'client' ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_clients_url); ?>">Clients</a>
                 <a class="cmn-segment<?php echo ($status !== 'lead' && $status !== 'needs_attention' && $status !== 'client') ? ' is-active' : ''; ?>" href="<?php echo esc_url($segment_all_url); ?>">All</a>
             </div>
-        </header>
+        </section>
         <?php if ($import_message) : ?>
             <div class="cmn-panel-card">
                 <strong><?php echo esc_html($import_note ?: 'Import complete.'); ?></strong>
@@ -38963,8 +40285,8 @@ global $wpdb;
                         <label>Pipeline Stage
                             <select name="cmn_stage">
                                 <option value="">All Pipeline Stages</option>
-                                <?php foreach (['new_lead', 'contacted', 'follow_up', 'demo', 'negotiation', 'won', 'lost'] as $opt) : ?>
-                                    <option value="<?php echo esc_attr($opt); ?>"<?php echo $stage === $opt ? ' selected' : ''; ?>><?php echo esc_html(ucwords(str_replace('_', ' ', $opt))); ?></option>
+                                <?php foreach ($this->get_school_lead_stage_options() as $opt => $opt_label) : ?>
+                                    <option value="<?php echo esc_attr((string) $opt); ?>"<?php echo $stage === (string) $opt ? ' selected' : ''; ?>><?php echo esc_html((string) $opt_label); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </label>
@@ -39026,16 +40348,16 @@ global $wpdb;
                         <strong><?php echo esc_html(number_format_i18n((int) $lead_board_summary['total'])); ?></strong>
                     </article>
                     <article class="cmn-school-leads-summary-card">
-                        <span class="cmn-school-leads-summary-label">Follow up</span>
-                        <strong><?php echo esc_html(number_format_i18n((int) $lead_board_summary['follow_up'])); ?></strong>
+                        <span class="cmn-school-leads-summary-label">Spoken to CM</span>
+                        <strong><?php echo esc_html(number_format_i18n((int) $lead_board_summary['spoken_to_cover_manager'])); ?></strong>
+                    </article>
+                    <article class="cmn-school-leads-summary-card">
+                        <span class="cmn-school-leads-summary-label">Meeting booked</span>
+                        <strong><?php echo esc_html(number_format_i18n((int) $lead_board_summary['meeting_booked'])); ?></strong>
                     </article>
                     <article class="cmn-school-leads-summary-card">
                         <span class="cmn-school-leads-summary-label">Unassigned</span>
                         <strong><?php echo esc_html(number_format_i18n((int) $lead_board_summary['unassigned'])); ?></strong>
-                    </article>
-                    <article class="cmn-school-leads-summary-card">
-                        <span class="cmn-school-leads-summary-label">Needs attention</span>
-                        <strong><?php echo esc_html(number_format_i18n((int) $lead_board_summary['attention'])); ?></strong>
                     </article>
                 </div>
                 <p class="cmn-school-leads-board-status cmn-muted" data-school-leads-board-status>Board ready. Drag a lead card across the pipeline when you want to move stage.</p>
@@ -39107,6 +40429,31 @@ global $wpdb;
                                             </div>
                                             <span class="cmn-pill cmn-pill--pipeline" data-school-lead-stage-chip><?php echo esc_html($card_stage_label); ?></span>
                                         </div>
+                                        <dl class="cmn-school-lead-card-grid">
+                                            <div>
+                                                <dt>Contact</dt>
+                                                <dd>
+                                                    <strong><?php echo esc_html($card_contact_name !== '' ? $card_contact_name : 'Not set'); ?></strong>
+                                                    <span><?php echo esc_html($card_contact_meta ? implode(' · ', $card_contact_meta) : 'Add the main contact details'); ?></span>
+                                                </dd>
+                                            </div>
+                                            <div>
+                                                <dt>Last interaction</dt>
+                                                <dd>
+                                                    <strong><?php echo esc_html($card_last_activity_label); ?></strong>
+                                                    <?php if ($card_last_activity_detail !== '') : ?>
+                                                        <span><?php echo esc_html($card_last_activity_detail); ?></span>
+                                                    <?php endif; ?>
+                                                </dd>
+                                            </div>
+                                            <div>
+                                                <dt>Next step</dt>
+                                                <dd>
+                                                    <strong data-school-lead-card-next><?php echo esc_html($card_next_action); ?></strong>
+                                                    <span><?php echo esc_html($card_stage_label); ?></span>
+                                                </dd>
+                                            </div>
+                                        </dl>
                                         <div class="cmn-school-lead-card-chips">
                                             <?php foreach ($card_risk_flags as $risk_flag) : ?>
                                                 <?php
@@ -39128,58 +40475,6 @@ global $wpdb;
                                                 <span class="cmn-pill"><?php echo esc_html($lead_group_label); ?></span>
                                             <?php endforeach; ?>
                                         </div>
-                                        <div class="cmn-school-lead-card-intent">
-                                            <span>Next action</span>
-                                            <strong data-school-lead-card-next><?php echo esc_html($card_next_action); ?></strong>
-                                        </div>
-                                        <dl class="cmn-school-lead-card-grid">
-                                            <div>
-                                                <dt>Contact</dt>
-                                                <dd>
-                                                    <strong><?php echo esc_html($card_contact_name !== '' ? $card_contact_name : 'Not set'); ?></strong>
-                                                    <?php if ($card_contact_meta) : ?>
-                                                        <span><?php echo esc_html(implode(' · ', $card_contact_meta)); ?></span>
-                                                    <?php endif; ?>
-                                                </dd>
-                                            </div>
-                                            <div>
-                                                <dt>Owner</dt>
-                                                <dd>
-                                                    <?php echo wp_kses_post($this->render_school_account_manager_identity_html($card_manager_display, [
-                                                        'variant' => 'inline',
-                                                    ])); ?>
-                                                </dd>
-                                            </div>
-                                            <div>
-                                                <dt>Last touch</dt>
-                                                <dd>
-                                                    <strong><?php echo esc_html($card_last_activity_label); ?></strong>
-                                                    <?php if ($card_last_activity_detail !== '') : ?>
-                                                        <span><?php echo esc_html($card_last_activity_detail); ?></span>
-                                                    <?php endif; ?>
-                                                </dd>
-                                            </div>
-                                            <div>
-                                                <dt>Added</dt>
-                                                <dd>
-                                                    <strong><?php echo esc_html($card_created_label); ?></strong>
-                                                    <?php if ($card_created_detail !== '') : ?>
-                                                        <span><?php echo esc_html($card_created_detail); ?></span>
-                                                    <?php endif; ?>
-                                                </dd>
-                                            </div>
-                                        </dl>
-                                        <?php if ($card_latest_note !== '') : ?>
-                                            <div class="cmn-school-lead-card-note">
-                                                <span>Latest note</span>
-                                                <p><?php echo esc_html($card_latest_note); ?></p>
-                                            </div>
-                                        <?php else : ?>
-                                            <div class="cmn-school-lead-card-note cmn-school-lead-card-note--empty">
-                                                <span>Latest note</span>
-                                                <p>No lead note logged yet.</p>
-                                            </div>
-                                        <?php endif; ?>
                                         <div class="cmn-school-lead-card-actions">
                                             <a class="cmn-ghost cmn-btn-mini" href="<?php echo $card_edit_url; ?>">Edit details</a>
                                             <a class="cmn-ghost cmn-btn-mini" href="<?php echo $card_stage_url; ?>">Move stage</a>
@@ -39229,13 +40524,9 @@ global $wpdb;
                 </select>
                 <select name="cmn_bulk_pipeline">
                     <option value="">Pipeline...</option>
-                    <option value="new_lead">New Lead</option>
-                    <option value="contacted">Contacted</option>
-                    <option value="follow_up">Follow Up</option>
-                    <option value="demo">Demo</option>
-                    <option value="negotiation">Negotiation</option>
-                    <option value="won">Won</option>
-                    <option value="lost">Lost</option>
+                    <?php foreach ($this->get_school_lead_stage_options() as $bulk_stage_key => $bulk_stage_label) : ?>
+                        <option value="<?php echo esc_attr((string) $bulk_stage_key); ?>"><?php echo esc_html((string) $bulk_stage_label); ?></option>
+                    <?php endforeach; ?>
                 </select>
                 <input type="text" name="cmn_bulk_groups" value="" placeholder="Groups (comma separated)">
                 <label class="cmn-bulk-shared-toggle">
@@ -39510,110 +40801,118 @@ global $wpdb;
             }
         }
         $query = new WP_Query($args);
+        $portal_url = $this->get_portal_base_url();
+        $pending_doc_review_count = count($this->get_candidates_awaiting_document_review(600));
+        $deletion_request_count = count($this->get_candidate_ids_with_deletion_request());
+        $candidate_workspace_context = $this->build_candidate_workspace_hero_context((int) $query->post_count, max((int) $query->post_count, (int) $query->found_posts), $pending_doc_review_count, $deletion_request_count, $status, $doc_review, $search, [
+            'candidates' => add_query_arg(['view' => 'candidates'], $portal_url),
+            'compliance_review' => add_query_arg(['view' => 'compliance-review'], $portal_url),
+        ]);
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Candidates CRM</h2>
-            <p>Front-end CRM for staff. No WordPress admin required.</p>
-        </header>
-        <form method="get" class="cmn-filters">
-            <input type="hidden" name="view" value="candidates">
-            <input type="search" name="s" placeholder="Search candidates..." value="<?php echo esc_attr($search); ?>">
-            <input type="hidden" name="cmn_doc_review" value="<?php echo esc_attr($doc_review); ?>">
-            <select name="cmn_status">
-                <option value="">All Statuses</option>
-                <?php foreach (['approved', 'rejected', 'deletion_requested'] as $opt) : ?>
-                    <option value="<?php echo esc_attr($opt); ?>"<?php echo $status === $opt ? ' selected' : ''; ?>><?php echo esc_html(ucfirst(str_replace('_', ' ', $opt))); ?></option>
-                <?php endforeach; ?>
-            </select>
-            <button class="cmn-ghost" type="submit">Filter</button>
-            <?php if ($doc_review === 'pending') : ?>
-                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates']), home_url('/portal'))); ?>">Clear pending-doc filter</a>
-            <?php endif; ?>
-        </form>
-        <table class="cmn-approval-table">
-            <thead>
-                <tr>
-                    <th>Candidate</th>
-                    <th>Location</th>
-                    <th>Email</th>
-                    <th>Documents</th>
-                    <th>Status</th>
-                    <th>Profile</th>
-                    <?php if ($this->can_manage_staff_users()) : ?>
-                        <th>Actions</th>
-                    <?php endif; ?>
-                </tr>
-            </thead>
-            <tbody>
-            <?php if ($query->have_posts()) : ?>
-                <?php while ($query->have_posts()) : $query->the_post(); ?>
-                    <?php
-                    $candidate_user_id = (int) get_post_meta(get_the_ID(), 'cmn_user_id', true);
-                    $deletion_requested = $candidate_user_id ? get_user_meta($candidate_user_id, 'cmn_deletion_requested', true) : '';
-                    $status_value = strtolower((string) get_post_meta(get_the_ID(), 'cmn_status', true));
-                    if ($status_value === '' || $status_value === 'pending') {
-                        $status_value = 'approved';
-                    }
-                    if ($deletion_requested) {
-                        $status_value = 'deletion_requested';
-                    }
-                    $dbs_status = $this->get_candidate_doc_status((int) get_the_ID(), $candidate_user_id, 'dbs');
-                    $id_status = $this->get_candidate_doc_status((int) get_the_ID(), $candidate_user_id, 'id');
-                    $cv_status = $this->get_candidate_doc_status((int) get_the_ID(), $candidate_user_id, 'cv');
-                    $doc_states = [
-                        (string) ($dbs_status['doc_status'] ?? 'not_uploaded'),
-                        (string) ($id_status['doc_status'] ?? 'not_uploaded'),
-                        (string) ($cv_status['doc_status'] ?? 'not_uploaded'),
-                    ];
-                    $doc_uploaded_count = 0;
-                    $doc_approved_count = 0;
-                    $doc_pending_count = 0;
-                    $doc_rejected_count = 0;
-                    foreach ($doc_states as $doc_state) {
-                        if ($doc_state !== 'not_uploaded') {
-                            $doc_uploaded_count++;
-                        }
-                        if ($doc_state === 'approved') {
-                            $doc_approved_count++;
-                        } elseif ($doc_state === 'pending') {
-                            $doc_pending_count++;
-                        } elseif ($doc_state === 'rejected') {
-                            $doc_rejected_count++;
-                        }
-                    }
-                    ?>
-                    <tr>
-                        <td><?php the_title(); ?></td>
-                        <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_location', true)); ?></td>
-                        <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_email', true)); ?></td>
-                        <td>
-                            <span class="cmn-muted"><?php echo esc_html($doc_uploaded_count); ?>/3 uploaded</span><br>
-                            <span class="cmn-muted">A: <?php echo esc_html($doc_approved_count); ?> - P: <?php echo esc_html($doc_pending_count); ?> - R: <?php echo esc_html($doc_rejected_count); ?></span>
-                        </td>
-                        <td><?php echo esc_html(str_replace('_', ' ', ucfirst($status_value))); ?></td>
-                        <td>
-                            <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), home_url('/portal'))); ?>">View profile</a>
-                            <br>
-                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), home_url('/portal')) . '#candidate-documents'); ?>">View docs</a>
-                        </td>
-                        <?php if ($this->can_manage_staff_users()) : ?>
-                            <td>
-                                <?php if ($deletion_requested && $candidate_user_id) : ?>
-                                    <button class="cmn-danger" type="button" data-candidate-delete-btn data-candidate-id="<?php echo esc_attr(get_the_ID()); ?>" data-candidate-name="<?php echo esc_attr(get_the_title()); ?>" data-candidate-email="<?php echo esc_attr(get_post_meta(get_the_ID(), 'cmn_email', true)); ?>">Delete candidate</button>
-                                <?php else : ?>
-                                    <span class="cmn-muted">-</span>
+        <?php echo $this->render_crm_workspace_hero_html($candidate_workspace_context); ?>
+        <section class="cmn-panel-card cmn-panel-card-wide cmn-candidates-crm-shell">
+            <form method="get" class="cmn-filters cmn-candidates-crm-filters">
+                <input type="hidden" name="view" value="candidates">
+                <input type="search" name="s" placeholder="Search candidates..." value="<?php echo esc_attr($search); ?>">
+                <input type="hidden" name="cmn_doc_review" value="<?php echo esc_attr($doc_review); ?>">
+                <select name="cmn_status">
+                    <option value="">All Statuses</option>
+                    <?php foreach (['approved', 'rejected', 'deletion_requested'] as $opt) : ?>
+                        <option value="<?php echo esc_attr($opt); ?>"<?php echo $status === $opt ? ' selected' : ''; ?>><?php echo esc_html(ucfirst(str_replace('_', ' ', $opt))); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button class="cmn-ghost" type="submit">Filter</button>
+                <?php if ($doc_review === 'pending') : ?>
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates']), $portal_url)); ?>">Clear pending-doc filter</a>
+                <?php endif; ?>
+            </form>
+            <div class="cmn-table-scroll">
+                <table class="cmn-approval-table cmn-candidates-crm-table">
+                    <thead>
+                        <tr>
+                            <th>Candidate</th>
+                            <th>Location</th>
+                            <th>Email</th>
+                            <th>Documents</th>
+                            <th>Status</th>
+                            <th>Profile</th>
+                            <?php if ($this->can_manage_staff_users()) : ?>
+                                <th>Actions</th>
+                            <?php endif; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if ($query->have_posts()) : ?>
+                        <?php while ($query->have_posts()) : $query->the_post(); ?>
+                            <?php
+                            $candidate_user_id = (int) get_post_meta(get_the_ID(), 'cmn_user_id', true);
+                            $deletion_requested = $candidate_user_id ? get_user_meta($candidate_user_id, 'cmn_deletion_requested', true) : '';
+                            $status_value = strtolower((string) get_post_meta(get_the_ID(), 'cmn_status', true));
+                            if ($status_value === '' || $status_value === 'pending') {
+                                $status_value = 'approved';
+                            }
+                            if ($deletion_requested) {
+                                $status_value = 'deletion_requested';
+                            }
+                            $dbs_status = $this->get_candidate_doc_status((int) get_the_ID(), $candidate_user_id, 'dbs');
+                            $id_status = $this->get_candidate_doc_status((int) get_the_ID(), $candidate_user_id, 'id');
+                            $cv_status = $this->get_candidate_doc_status((int) get_the_ID(), $candidate_user_id, 'cv');
+                            $doc_states = [
+                                (string) ($dbs_status['doc_status'] ?? 'not_uploaded'),
+                                (string) ($id_status['doc_status'] ?? 'not_uploaded'),
+                                (string) ($cv_status['doc_status'] ?? 'not_uploaded'),
+                            ];
+                            $doc_uploaded_count = 0;
+                            $doc_approved_count = 0;
+                            $doc_pending_count = 0;
+                            $doc_rejected_count = 0;
+                            foreach ($doc_states as $doc_state) {
+                                if ($doc_state !== 'not_uploaded') {
+                                    $doc_uploaded_count++;
+                                }
+                                if ($doc_state === 'approved') {
+                                    $doc_approved_count++;
+                                } elseif ($doc_state === 'pending') {
+                                    $doc_pending_count++;
+                                } elseif ($doc_state === 'rejected') {
+                                    $doc_rejected_count++;
+                                }
+                            }
+                            ?>
+                            <tr>
+                                <td><?php the_title(); ?></td>
+                                <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_location', true)); ?></td>
+                                <td><?php echo esc_html(get_post_meta(get_the_ID(), 'cmn_email', true)); ?></td>
+                                <td>
+                                    <span class="cmn-muted"><?php echo esc_html($doc_uploaded_count); ?>/3 uploaded</span><br>
+                                    <span class="cmn-muted">A: <?php echo esc_html($doc_approved_count); ?> · P: <?php echo esc_html($doc_pending_count); ?> · R: <?php echo esc_html($doc_rejected_count); ?></span>
+                                </td>
+                                <td><?php echo esc_html(str_replace('_', ' ', ucfirst($status_value))); ?></td>
+                                <td>
+                                    <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), $portal_url)); ?>">View profile</a>
+                                    <br>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(array_filter(['view' => 'candidates', 'candidate_id' => get_the_ID()]), $portal_url) . '#candidate-documents'); ?>">View docs</a>
+                                </td>
+                                <?php if ($this->can_manage_staff_users()) : ?>
+                                    <td>
+                                        <?php if ($deletion_requested && $candidate_user_id) : ?>
+                                            <button class="cmn-danger" type="button" data-candidate-delete-btn data-candidate-id="<?php echo esc_attr(get_the_ID()); ?>" data-candidate-name="<?php echo esc_attr(get_the_title()); ?>" data-candidate-email="<?php echo esc_attr(get_post_meta(get_the_ID(), 'cmn_email', true)); ?>">Delete candidate</button>
+                                        <?php else : ?>
+                                            <span class="cmn-muted">-</span>
+                                        <?php endif; ?>
+                                    </td>
                                 <?php endif; ?>
-                            </td>
-                        <?php endif; ?>
-                    </tr>
-                <?php endwhile; wp_reset_postdata(); ?>
-            <?php else : ?>
-                <tr><td colspan="<?php echo $this->can_manage_staff_users() ? '7' : '6'; ?>">No candidates found.</td></tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
+                            </tr>
+                        <?php endwhile; wp_reset_postdata(); ?>
+                    <?php else : ?>
+                        <tr><td colspan="<?php echo $this->can_manage_staff_users() ? '7' : '6'; ?>">No candidates found.</td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
         <?php
         $inner = ob_get_clean();
         $active_nav = ($doc_review === 'pending' && in_array($current_view, ['compliance-review', 'compliance_review'], true)) ? 'compliance_review' : 'candidates';
@@ -40042,6 +41341,7 @@ global $wpdb;
         $manager_users = $this->get_account_manager_users();
         $preview_schools = $this->get_marketing_preview_school_options($user_id, 80);
         $is_admin_scope = $this->is_admin_user($user_id) || $this->is_staff_role($user_id);
+        $marketing_workspace_context = $this->build_marketing_workspace_hero_context($overview, $lists, $campaigns, $queue_snapshot, $templates, $segments, $unsub_rows, !empty($marketing_settings['sending_paused']));
         $smart_tags = [
             'school_name',
             'email_name',
@@ -40060,14 +41360,7 @@ global $wpdb;
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <div class="cmn-header-row">
-                <div>
-                    <h2>Marketing</h2>
-                    <p>Lead finder, lists, campaigns, send queue, and replies.</p>
-                </div>
-            </div>
-        </header>
+        <?php echo $this->render_crm_workspace_hero_html($marketing_workspace_context); ?>
         <section class="cmn-marketing-root" data-marketing-root>
             <div class="cmn-dashboard-card" data-marketing-overview>
                 <div class="cmn-panel-header">
@@ -40088,7 +41381,7 @@ global $wpdb;
                     <button type="button" class="cmn-ghost cmn-btn-mini" data-marketing-action="refresh-overview">Refresh</button>
                 </div>
             </div>
-            <div class="cmn-marketing-tabs">
+            <div class="cmn-marketing-tabs" id="cmn-marketing-tabs">
                 <button type="button" class="cmn-ghost is-active" data-marketing-tab="lead_finder">Lead Finder</button>
                 <button type="button" class="cmn-ghost" data-marketing-tab="lists">Saved Lists</button>
                 <button type="button" class="cmn-ghost" data-marketing-tab="campaigns">Campaigns</button>
@@ -40098,7 +41391,7 @@ global $wpdb;
                 <button type="button" class="cmn-ghost" data-marketing-tab="unsubscribes">Unsubscribes</button>
             </div>
 
-            <div class="cmn-dashboard-card" data-marketing-panel="lead_finder">
+            <div class="cmn-dashboard-card" id="cmn-marketing-panel-lead_finder" data-marketing-panel="lead_finder">
                 <div class="cmn-panel-header">
                     <h3>Lead Finder</h3>
                     <span class="cmn-muted">Smart filtering for outreach</span>
@@ -40115,12 +41408,11 @@ global $wpdb;
                         <select data-marketing-filter="stage">
                             <option value="">All</option>
                             <option value="new_lead">New lead</option>
-                            <option value="contacted">Contacted</option>
-                            <option value="follow_up">Follow Up</option>
-                            <option value="demo">Demo</option>
-                            <option value="negotiation">Negotiation</option>
-                            <option value="won">Won</option>
-                            <option value="lost">Lost</option>
+                            <option value="spoken_to_cover_manager">Spoken to Cover Manager</option>
+                            <option value="meeting_booked">Meeting Booked</option>
+                            <option value="closed_won">Closed Won</option>
+                            <option value="closed_lost">Closed Lost</option>
+                            <option value="not_interested">Not Interested</option>
                         </select>
                     </label>
                     <label>Contacting
@@ -40201,7 +41493,7 @@ global $wpdb;
                 </div>
             </div>
 
-            <div class="cmn-dashboard-card" data-marketing-panel="lists" hidden>
+            <div class="cmn-dashboard-card" id="cmn-marketing-panel-lists" data-marketing-panel="lists" hidden>
                 <div class="cmn-panel-header">
                     <h3>Saved Lists</h3>
                 </div>
@@ -40233,7 +41525,7 @@ global $wpdb;
                 </table>
             </div>
 
-            <div class="cmn-dashboard-card" data-marketing-panel="campaigns" hidden>
+            <div class="cmn-dashboard-card" id="cmn-marketing-panel-campaigns" data-marketing-panel="campaigns" hidden>
                 <div class="cmn-panel-header">
                     <h3>Campaign Composer</h3>
                     <span class="cmn-muted">Tags: {{school_name}}, {{email_name}}, {{location}}, {{unsubscribe_link}}</span>
@@ -40355,7 +41647,7 @@ global $wpdb;
                 </table>
             </div>
 
-            <div class="cmn-dashboard-card" data-marketing-panel="templates" hidden>
+            <div class="cmn-dashboard-card" id="cmn-marketing-panel-templates" data-marketing-panel="templates" hidden>
                 <div class="cmn-panel-header">
                     <h3>Templates</h3>
                     <span class="cmn-muted">Create, validate, preview, and test-send</span>
@@ -40405,7 +41697,7 @@ global $wpdb;
                 </table>
             </div>
 
-            <div class="cmn-dashboard-card" data-marketing-panel="send_log" hidden>
+            <div class="cmn-dashboard-card" id="cmn-marketing-panel-send_log" data-marketing-panel="send_log" hidden>
                 <div class="cmn-panel-header">
                     <h3>Send Log</h3>
                     <span class="cmn-muted">Audit all sends and skips</span>
@@ -40450,7 +41742,7 @@ global $wpdb;
                 </table>
             </div>
 
-            <div class="cmn-dashboard-card" data-marketing-panel="segments" hidden>
+            <div class="cmn-dashboard-card" id="cmn-marketing-panel-segments" data-marketing-panel="segments" hidden>
                 <div class="cmn-panel-header">
                     <h3>Segments</h3>
                     <span class="cmn-muted">Saved filters you can rerun anytime</span>
@@ -40486,7 +41778,7 @@ global $wpdb;
                 </div>
             </div>
 
-            <div class="cmn-dashboard-card" data-marketing-panel="unsubscribes" hidden>
+            <div class="cmn-dashboard-card" id="cmn-marketing-panel-unsubscribes" data-marketing-panel="unsubscribes" hidden>
                 <div class="cmn-panel-header">
                     <h3>Unsubscribes</h3>
                     <span class="cmn-muted">Manage suppression list</span>
@@ -55932,13 +57224,33 @@ global $wpdb;
             'view' => 'email-centre',
             'tab' => $email_centre_tab,
         ], $user_id);
+        $email_centre_workspace_context = $this->build_email_centre_workspace_hero_context($registry_rows, $sender_rows, $email_logs_total, $email_centre_tab, $can_access_delivery);
+        $email_centre_workspace_context['actions'] = [
+            [
+                'label' => 'Templates',
+                'detail' => 'Open template library',
+                'url' => $templates_url,
+                'class' => 'cmn-crm-workspace-hero-action',
+            ],
+        ];
+        if ($can_access_delivery) {
+            $email_centre_workspace_context['actions'][] = [
+                'label' => 'Senders',
+                'detail' => 'Manage from addresses',
+                'url' => $senders_url,
+                'class' => 'cmn-crm-workspace-hero-action',
+            ];
+            $email_centre_workspace_context['actions'][] = [
+                'label' => 'Logs',
+                'detail' => 'Review delivery history',
+                'url' => $logs_url,
+                'class' => 'cmn-crm-workspace-hero-action',
+            ];
+        }
 
         ob_start();
         ?>
-        <header class="cmn-school-header">
-            <h2>Email Centre</h2>
-            <p>Manage templates, sender addresses, and delivery logs.</p>
-        </header>
+        <?php echo $this->render_crm_workspace_hero_html($email_centre_workspace_context); ?>
         <div class="cmn-panel-card cmn-email-centre-subnav">
             <div class="cmn-email-centre-subnav-links">
                 <a class="cmn-ghost<?php echo $email_centre_tab === 'templates' ? ' is-active' : ''; ?>" href="<?php echo esc_url($templates_url); ?>">Templates</a>
@@ -58595,7 +59907,7 @@ global $wpdb;
                 'meeting' => 'Meeting',
             ];
             $school_lead_stage_options = $this->get_school_lead_stage_options();
-            $school_lead_stage_key = sanitize_key((string) $meta('cmn_pipeline_stage'));
+            $school_lead_stage_key = $this->normalize_school_lead_stage((string) $meta('cmn_pipeline_stage'));
             if ($is_school_lead_record && $school_lead_stage_key === '') {
                 $school_lead_stage_key = 'new_lead';
             }
@@ -58650,43 +59962,40 @@ global $wpdb;
             }
             $status_display_label = ucwords(str_replace('_', ' ', $status_display));
             $profile_header_eyebrow = $is_school_lead_record ? 'School lead workspace' : 'School relationship workspace';
-            $relationship_detail_parts = [
-                $is_school_lead_record ? 'Lead relationship' : 'School relationship',
-                'Access ' . $request_status_label,
-            ];
-            if ($profile_issues) {
-                $relationship_detail_parts[] = count($profile_issues) . ' issue' . (count($profile_issues) === 1 ? '' : 's');
-            }
-            $contact_detail_parts = array_values(array_filter([
-                sanitize_email((string) ($primary_contact_summary['email'] ?? '')),
-                sanitize_text_field((string) ($primary_contact_summary['phone'] ?? '')),
-            ]));
+            $profile_stage_value = $is_school_lead_record ? 'Lead' : ($status_display_label !== '' ? $status_display_label : 'Client');
+            $profile_stage_detail = $is_school_lead_record
+                ? ($school_lead_stage_label !== '' ? ('Pipeline · ' . $school_lead_stage_label) : 'Pipeline stage not set')
+                : ('Access ' . $request_status_label);
             $profile_header_cards = [
                 [
-                    'label' => 'Relationship',
-                    'value' => $is_school_lead_record ? $school_lead_stage_label : $status_display_label,
-                    'detail' => implode(' · ', array_filter($relationship_detail_parts)),
+                    'label' => 'Location',
+                    'value' => sanitize_text_field((string) $school_location_label),
+                    'detail' => sanitize_text_field((string) $school_code),
                 ],
                 [
-                    'label' => 'Owner',
-                    'html' => $this->render_school_account_manager_identity_html($manager_display, [
-                        'variant' => 'card',
-                    ]),
+                    'label' => 'Contact person',
+                    'value' => !empty($primary_contact_summary['name']) ? sanitize_text_field((string) $primary_contact_summary['name']) : 'No contact saved',
+                    'detail' => sanitize_text_field((string) ($primary_contact_summary['role'] ?? 'Add a contact in the Contacts tab')),
                 ],
                 [
-                    'label' => 'Primary contact',
-                    'value' => !empty($primary_contact_summary['name']) ? sanitize_text_field((string) $primary_contact_summary['name']) : 'No primary contact',
-                    'detail' => $contact_detail_parts ? implode(' · ', $contact_detail_parts) : 'Add a contact in the Contacts tab',
+                    'label' => 'Contact email',
+                    'value' => !empty($primary_contact_summary['email']) ? sanitize_email((string) $primary_contact_summary['email']) : 'No email saved',
+                    'detail' => 'Primary school contact email',
                 ],
                 [
-                    'label' => 'Last touch',
+                    'label' => 'Contact phone',
+                    'value' => !empty($primary_contact_summary['phone']) ? sanitize_text_field((string) $primary_contact_summary['phone']) : 'No phone saved',
+                    'detail' => 'Primary school contact phone',
+                ],
+                [
+                    'label' => 'Stage',
+                    'value' => $profile_stage_value,
+                    'detail' => $profile_stage_detail,
+                ],
+                [
+                    'label' => 'Last interaction',
                     'value' => sanitize_text_field((string) ($last_touch_summary['label'] ?? '-')),
                     'detail' => sanitize_text_field((string) ($last_touch_summary['detail'] ?? '')),
-                ],
-                [
-                    'label' => 'Next action',
-                    'value' => sanitize_text_field((string) ($next_action_summary['label'] ?? 'Review relationship')),
-                    'detail' => sanitize_text_field((string) ($next_action_summary['detail'] ?? '')),
                 ],
             ];
             $profile_header_meta_items = [
@@ -58765,6 +60074,7 @@ global $wpdb;
                     'documents' => $build_tab_url('documents'),
                     'details' => $overview_tab_url . '#cmn-school-details',
                     'add_activity' => $build_tab_url('activity') . '#cmn-school-add-activity',
+                    'task' => $build_tab_url('activity') . '#cmn-school-task-inline-composer',
                     'email' => $email_focus_url,
                     'owner' => $owner_focus_url,
                 ],
@@ -58927,7 +60237,39 @@ global $wpdb;
             </div>
         </header>
         <?php if ($watchdog('after_header')) { return ob_get_clean(); } ?>
-        <nav class="cmn-school-profile-tabs" aria-label="School profile sections">
+        <?php
+        $hub_shortcuts = [];
+        if ($active_profile_tab === 'overview') {
+            $hub_shortcuts = [
+                ['label' => 'Relationship', 'url' => '#cmn-school-relationship-overview'],
+                ['label' => 'Tasks', 'url' => '#cmn-school-task-system'],
+                ['label' => 'Bookings', 'url' => '#cmn-school-booking-widget'],
+                ['label' => 'Candidates', 'url' => '#cmn-school-candidate-interaction-widget'],
+                ['label' => 'Contacts', 'url' => $build_tab_url('contacts') . '#cmn-school-contact-block'],
+                ['label' => 'Documents', 'url' => $build_tab_url('documents') . '#cmn-school-document-status'],
+            ];
+        } elseif ($active_profile_tab === 'activity') {
+            $hub_shortcuts = [
+                ['label' => 'Timeline', 'url' => '#cmn-school-relationship-timeline'],
+                ['label' => 'Tasks', 'url' => '#cmn-school-open-tasks'],
+                ['label' => 'Add activity', 'url' => '#cmn-school-add-activity'],
+                ['label' => 'Contacts', 'url' => $build_tab_url('contacts') . '#cmn-school-contact-block'],
+            ];
+        } elseif ($active_profile_tab === 'bookings') {
+            $hub_shortcuts = [
+                ['label' => 'Booking summary', 'url' => '#cmn-school-booking-widget'],
+                ['label' => 'Candidate interaction', 'url' => '#cmn-school-candidate-interaction-widget'],
+                ['label' => 'Timeline', 'url' => $build_tab_url('activity') . '#cmn-school-relationship-timeline'],
+            ];
+        } elseif ($active_profile_tab === 'contacts') {
+            $hub_shortcuts = [
+                ['label' => 'Contact information', 'url' => '#cmn-school-contact-block'],
+                ['label' => 'Draft email', 'url' => $email_focus_url],
+                ['label' => 'Timeline', 'url' => $build_tab_url('activity') . '#cmn-school-relationship-timeline'],
+            ];
+        }
+        ?>
+        <nav class="cmn-school-profile-tabs cmn-school-profile-hub-tabs" aria-label="School profile sections">
             <?php
             $profile_tabs = [
                 'overview' => 'Overview',
@@ -58946,6 +60288,21 @@ global $wpdb;
                 </a>
             <?php endforeach; ?>
         </nav>
+        <?php if ($hub_shortcuts) : ?>
+            <section class="cmn-panel-card cmn-school-profile-hub-shortcuts">
+                <div class="cmn-school-profile-hub-shortcuts-head">
+                    <strong>Jump to</strong>
+                    <span class="cmn-muted">Work this relationship as one CRM hub.</span>
+                </div>
+                <div class="cmn-school-profile-hub-shortcuts-list">
+                    <?php foreach ($hub_shortcuts as $hub_shortcut) : ?>
+                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($hub_shortcut['url'] ?? '#')); ?>">
+                            <?php echo esc_html((string) ($hub_shortcut['label'] ?? 'Open')); ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+        <?php endif; ?>
         <section class="cmn-panel-card cmn-school-profile-action-bar<?php echo $is_school_lead_record ? ' cmn-school-profile-action-bar--lead' : ''; ?>"
                  data-school-email-composer-root="1"
                  data-school-email-school-id="<?php echo esc_attr((string) $school_id); ?>"<?php echo $is_school_lead_record ? ' data-school-lead-overview="1" data-school-id="' . esc_attr((string) $school_code) . '" data-school-pid="' . esc_attr((string) $school_id) . '" data-school-lead-nonce="' . esc_attr($school_lead_actions_nonce) . '"' : ''; ?>>
@@ -58967,6 +60324,8 @@ global $wpdb;
                         $lead_action_attr = 'data-school-lead-open-stage';
                     } elseif ($lead_action_key === 'note') {
                         $lead_action_attr = 'data-school-lead-open-note';
+                    } elseif ($lead_action_key === 'quick_note') {
+                        $lead_action_attr = 'data-school-lead-focus-quick-note';
                     }
                     ?>
                     <button class="<?php echo esc_attr((string) ($lead_action['class'] ?? 'cmn-ghost cmn-btn-mini')); ?>" type="button" <?php echo $lead_action_attr; ?>>
@@ -59167,8 +60526,8 @@ global $wpdb;
             <?php error_log('[CMN_SCHOOL_VIEW] panel_end timeline school_id=' . (int) $school_id); ?>
         </section>
         <?php if ($watchdog('before_profile_grid')) { return ob_get_clean(); } ?>
-        <div class="cmn-profile-grid cmn-school-profile-grid" data-school-active-tab="<?php echo esc_attr($active_profile_tab); ?>">
-            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-relationship-overview">
+        <div class="cmn-profile-grid cmn-school-profile-grid cmn-school-profile-grid--crm-hub" data-school-active-tab="<?php echo esc_attr($active_profile_tab); ?>">
+            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-relationship-overview" id="cmn-school-relationship-overview">
                 <div class="cmn-school-relationship-overview-head">
                     <div>
                         <h3>Relationship Overview</h3>
@@ -59238,7 +60597,7 @@ global $wpdb;
                      id="cmn-school-task-system">
                 <?php echo $this->render_school_profile_task_follow_up_html($task_follow_up_system, $redirect_url); ?>
             </section>
-            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--bookings cmn-school-booking-widget">
+            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--bookings cmn-school-booking-widget" id="cmn-school-booking-widget">
                 <?php if ($watchdog('panel_booking_widget')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start booking_widget school_id=' . (int) $school_id); ?>
                 <?php echo $this->render_school_profile_booking_widget_html($booking_widget); ?>
@@ -59250,7 +60609,7 @@ global $wpdb;
                 <?php echo $this->render_school_profile_bookings_tab_html($bookings_workspace); ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end bookings_workspace school_id=' . (int) $school_id); ?>
             </section>
-            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--bookings cmn-school-candidate-interaction-widget">
+            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--bookings cmn-school-candidate-interaction-widget" id="cmn-school-candidate-interaction-widget">
                 <?php if ($watchdog('panel_candidate_interaction_widget')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start candidate_interaction_widget school_id=' . (int) $school_id); ?>
                 <?php echo $this->render_school_profile_candidate_interaction_widget_html($candidate_interaction_widget); ?>
@@ -59343,7 +60702,7 @@ global $wpdb;
                 </div>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end feedback_summary school_id=' . (int) $school_id); ?>
             </div>
-            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--contacts cmn-school-contact-block">
+            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--contacts cmn-school-contact-block" id="cmn-school-contact-block">
                 <?php if ($watchdog('panel_contacts')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start contacts school_id=' . (int) $school_id); ?>
                 <div class="cmn-school-contact-block-head">
@@ -59592,7 +60951,8 @@ global $wpdb;
 	                <?php endif; ?>
 	            </div>
             <?php endif; ?>
-            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--activity cmn-school-profile-timeline-engine"
+            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--activity cmn-school-profile-timeline-engine"
+                     id="cmn-school-relationship-timeline"
                      data-school-profile-timeline-root
                      data-school-id="<?php echo esc_attr((string) $school_code); ?>"
                      data-school-pid="<?php echo esc_attr((string) $school_id); ?>"
@@ -59604,7 +60964,7 @@ global $wpdb;
                 <div class="cmn-school-profile-timeline-engine-head">
                     <div>
                         <h3>Relationship Timeline</h3>
-                        <p class="cmn-muted">One timeline across lead notes, application history, and logged school activity.</p>
+                        <p class="cmn-muted">One newest-first CRM timeline across notes, emails, calls, stage changes, bookings, and relationship activity.</p>
                     </div>
                     <div class="cmn-school-profile-quick-actions">
                         <a class="cmn-ghost cmn-btn-mini" href="#cmn-school-add-activity">Add activity</a>
@@ -59615,7 +60975,7 @@ global $wpdb;
                     <div class="cmn-school-profile-timeline-loading">
                         <div class="cmn-school-profile-timeline-loading-copy">
                             <strong>Timeline loads when this section is opened.</strong>
-                            <span class="cmn-muted" data-school-profile-timeline-status>Preparing the relationship timeline.</span>
+                            <span class="cmn-muted" data-school-profile-timeline-status>Preparing notes, emails, stage changes, bookings, and relationship activity.</span>
                         </div>
                         <div class="cmn-school-profile-timeline-loading-cards">
                             <span class="cmn-school-profile-timeline-loading-card"></span>
@@ -59634,7 +60994,7 @@ global $wpdb;
                 </div>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end activity_timeline_engine school_id=' . (int) $school_id); ?>
             </section>
-            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--activity" id="cmn-school-open-tasks">
                 <h3>Activity Quick Actions</h3>
                 <div class="cmn-school-profile-summary-strip">
                     <span class="cmn-pill">Open tasks: <?php echo esc_html((string) $activity_quick_counts['open_tasks']); ?></span>
@@ -59717,7 +61077,7 @@ global $wpdb;
                 <p class="cmn-muted">Tip: set Type = Task and add a date to surface it on the main dashboard.</p>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end add_activity school_id=' . (int) $school_id); ?>
             </div>
-            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--commercial">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--commercial">
                 <h3>Commercial</h3>
                 <div class="cmn-meta-grid">
                     <div><strong>Pipeline stage:</strong> <span data-school-overview-field="pipeline_stage"><?php echo esc_html($school_lead_stage_label); ?></span></div>
@@ -59726,7 +61086,7 @@ global $wpdb;
                     <div><strong>Agency count:</strong> <?php echo esc_html($display($meta('cmn_agency_count'))); ?></div>
                 </div>
             </div>
-            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--marketing">
+            <div class="cmn-panel-card cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--marketing">
                 <h3>Marketing</h3>
                 <div class="cmn-meta-grid">
                     <div><strong>Website:</strong> <?php echo esc_html($display($meta('cmn_website'))); ?></div>
@@ -59735,13 +61095,13 @@ global $wpdb;
                     <div><strong>Cover manager email:</strong> <?php echo esc_html($display($meta('cmn_cover_manager_email'))); ?></div>
                 </div>
             </div>
-            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--documents cmn-school-document-status">
+            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--documents cmn-school-document-status" id="cmn-school-document-status">
                 <?php if ($watchdog('panel_document_status')) { return ob_get_clean(); } ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_start document_status school_id=' . (int) $school_id); ?>
                 <?php echo $this->render_school_profile_document_status_html($document_status_panel); ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end document_status school_id=' . (int) $school_id); ?>
             </section>
-            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--settings cmn-school-owner-control"
+            <section class="cmn-panel-card cmn-panel-card-wide cmn-school-tab-panel cmn-school-tab-panel--overview cmn-school-tab-panel--settings cmn-school-owner-control"
                      id="cmn-school-owner-control"
                      data-school-owner-control
                      tabindex="-1">
@@ -59788,7 +61148,7 @@ global $wpdb;
 
     private function get_school_profile_recent_bookings($school_id, $limit = 8) {
         $school_id = (int) $school_id;
-        $limit = max(1, min(20, (int) $limit));
+        $limit = max(1, min(40, (int) $limit));
         if ($school_id < 1) {
             return [];
         }
@@ -59825,6 +61185,11 @@ global $wpdb;
                 $date_raw = trim((string) get_post_meta($booking_id, 'cmn_day_date', true));
             }
             $date_label = $date_raw !== '' && strtotime($date_raw) ? date_i18n('M j, Y', strtotime($date_raw)) : '';
+            $created_at = (string) get_post_field('post_date', $booking_id);
+            $updated_at = (string) get_post_field('post_modified', $booking_id);
+            $event_at = $updated_at !== '' && $updated_at !== '0000-00-00 00:00:00'
+                ? $updated_at
+                : ($created_at !== '' ? $created_at : $date_raw);
             $rows[] = [
                 'id' => $booking_id,
                 'title' => get_the_title() ?: ('Booking #' . $booking_id),
@@ -59833,7 +61198,11 @@ global $wpdb;
                 'status_chip_class' => $this->get_booking_status_chip_class($status_key),
                 'candidate_id' => $candidate_id,
                 'candidate' => $candidate_name,
+                'date_raw' => $date_raw,
                 'date_label' => $date_label,
+                'created_at' => $created_at,
+                'updated_at' => $updated_at,
+                'event_at' => $event_at,
             ];
         }
         wp_reset_postdata();
@@ -103567,8 +104936,8 @@ global $wpdb;
         }
 
         update_post_meta($school_post_id, 'cmn_status', 'client');
-        $current_stage = sanitize_key((string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true));
-        if ($current_stage !== 'lost') {
+        $current_stage = $this->normalize_school_lead_stage((string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true));
+        if ($current_stage !== 'closed_lost') {
             update_post_meta($school_post_id, 'cmn_pipeline_stage', 'won');
         }
 
@@ -108635,7 +110004,7 @@ p{margin:0;line-height:1.5}
         $target_reason = sanitize_key((string) ($target_payload['reason'] ?? 'no_change'));
         $target_pipeline_stage = $current_pipeline_stage;
 
-        if ($target_status === 'client' && $current_pipeline_stage !== 'lost') {
+        if ($target_status === 'client' && $this->normalize_school_lead_stage($current_pipeline_stage) !== 'closed_lost') {
             $target_pipeline_stage = 'won';
         } elseif ($target_status === 'lead' && $current_pipeline_stage === '') {
             $target_pipeline_stage = 'new_lead';
@@ -116284,13 +117653,13 @@ p{margin:0;line-height:1.5}
             update_post_meta($school_post_id, 'cmn_status', $status);
             $pipeline_stage = sanitize_text_field($_POST['cmn_pipeline_stage'] ?? '');
             if ($pipeline_stage) {
-                if ($status === 'client' && $pipeline_stage !== 'lost') {
+                if ($status === 'client' && $this->normalize_school_lead_stage($pipeline_stage) !== 'closed_lost') {
                     $pipeline_stage = 'won';
                 }
                 update_post_meta($school_post_id, 'cmn_pipeline_stage', $pipeline_stage);
             } elseif ($status === 'client') {
-                $current_stage = get_post_meta($school_post_id, 'cmn_pipeline_stage', true);
-                if ($current_stage !== 'lost') {
+                $current_stage = $this->normalize_school_lead_stage((string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true));
+                if ($current_stage !== 'closed_lost') {
                     update_post_meta($school_post_id, 'cmn_pipeline_stage', 'won');
                 }
             }
@@ -118983,14 +120352,14 @@ p{margin:0;line-height:1.5}
                 'cmn_switchboard' => isset($map['Switchboard']) ? ($row[$map['Switchboard']] ?? '') : '',
                 'cmn_website' => isset($map['Website']) ? ($row[$map['Website']] ?? '') : '',
                 'cmn_status' => isset($map['Status']) ? ($row[$map['Status']] ?? '') : '',
-                'cmn_pipeline_stage' => isset($map['Pipeline Stage']) ? ($row[$map['Pipeline Stage']] ?? '') : 'new_lead',
+                'cmn_pipeline_stage' => isset($map['Pipeline Stage']) ? $this->normalize_school_lead_stage((string) ($row[$map['Pipeline Stage']] ?? '')) : 'new_lead',
                 'cmn_school_id' => $school_code,
                 'cmn_school_email_domain' => $school_domain,
             ];
             if (trim($meta['cmn_status']) === '') {
                 $meta['cmn_status'] = 'lead';
             }
-            if ($meta['cmn_status'] === 'client' && $meta['cmn_pipeline_stage'] !== 'lost') {
+            if ($meta['cmn_status'] === 'client' && $this->normalize_school_lead_stage((string) ($meta['cmn_pipeline_stage'] ?? '')) !== 'closed_lost') {
                 $meta['cmn_pipeline_stage'] = $meta['cmn_pipeline_stage'] ?: 'won';
             }
             foreach ($meta as $key => $value) {
@@ -119367,7 +120736,7 @@ p{margin:0;line-height:1.5}
         if (!empty($import_issues)) {
             $status = 'needs_attention';
         }
-        $pipeline_stage = sanitize_key((string) $this->csv_value($row, $map['cmn_pipeline_stage'] ?? ''));
+        $pipeline_stage = $this->normalize_school_lead_stage((string) $this->csv_value($row, $map['cmn_pipeline_stage'] ?? ''));
         if ($pipeline_stage === '') {
             $pipeline_stage = 'new_lead';
         }
@@ -119391,7 +120760,7 @@ p{margin:0;line-height:1.5}
         if ($school_domain !== '') {
             $meta['cmn_school_email_domain'] = $school_domain;
         }
-        if ($meta['cmn_status'] === 'client' && $meta['cmn_pipeline_stage'] !== 'lost') {
+        if ($meta['cmn_status'] === 'client' && $this->normalize_school_lead_stage((string) ($meta['cmn_pipeline_stage'] ?? '')) !== 'closed_lost') {
             $meta['cmn_pipeline_stage'] = $meta['cmn_pipeline_stage'] ?: 'won';
         }
         foreach ($meta as $key => $value) {
@@ -122652,7 +124021,7 @@ p{margin:0;line-height:1.5}
             }
         } elseif ($action === 'set_pipeline') {
             $pipeline = sanitize_key((string) ($_POST['cmn_bulk_pipeline'] ?? ''));
-            $allowed_pipeline = ['new_lead', 'contacted', 'follow_up', 'demo', 'negotiation', 'won', 'lost'];
+            $allowed_pipeline = array_keys($this->get_school_lead_stage_options());
             if (!in_array($pipeline, $allowed_pipeline, true)) {
                 $message = 'Select a valid pipeline stage first.';
             } else {
@@ -123644,12 +125013,12 @@ p{margin:0;line-height:1.5}
                 'cmn_website' => $this->csv_value($row, $map['cmn_website'] ?? ''),
                 'cmn_school_id' => $school_code,
                 'cmn_status' => $status,
-                'cmn_pipeline_stage' => $this->csv_value($row, $map['cmn_pipeline_stage'] ?? '') ?: 'new_lead',
+                'cmn_pipeline_stage' => $this->normalize_school_lead_stage((string) ($this->csv_value($row, $map['cmn_pipeline_stage'] ?? '') ?: 'new_lead')),
             ];
             if ($school_domain !== '') {
                 $meta['cmn_school_email_domain'] = $school_domain;
             }
-            if ($meta['cmn_status'] === 'client' && $meta['cmn_pipeline_stage'] !== 'lost') {
+            if ($meta['cmn_status'] === 'client' && $this->normalize_school_lead_stage((string) ($meta['cmn_pipeline_stage'] ?? '')) !== 'closed_lost') {
                 $meta['cmn_pipeline_stage'] = $meta['cmn_pipeline_stage'] ?: 'won';
             }
             foreach ($meta as $key => $value) {

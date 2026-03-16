@@ -2952,6 +2952,20 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       };
 
+      var focusQuickNoteField = function () {
+        if (!quickNoteForm || !quickNoteField) {
+          return;
+        }
+        if (typeof quickNoteForm.scrollIntoView === 'function') {
+          quickNoteForm.scrollIntoView({behavior: 'smooth', block: 'center'});
+        }
+        window.setTimeout(function () {
+          if (typeof quickNoteField.focus === 'function') {
+            quickNoteField.focus();
+          }
+        }, 120);
+      };
+
       var runWithBusyButton = function (button, busyLabel, runner) {
         var originalLabel = '';
         if (button) {
@@ -3431,6 +3445,15 @@ document.addEventListener('DOMContentLoaded', function () {
         });
       }
 
+      root.addEventListener('click', function (event) {
+        var quickNoteFocusBtn = event.target && event.target.closest ? event.target.closest('[data-school-lead-focus-quick-note]') : null;
+        if (!quickNoteFocusBtn || !root.contains(quickNoteFocusBtn)) {
+          return;
+        }
+        event.preventDefault();
+        focusQuickNoteField();
+      });
+
       try {
         var searchParams = new URLSearchParams(window.location.search || '');
         var focusAction = String(searchParams.get('cmn_school_focus_action') || '').trim().toLowerCase();
@@ -3453,6 +3476,14 @@ document.addEventListener('DOMContentLoaded', function () {
             var nextSearch = searchParams.toString();
             var nextUrl = window.location.pathname + (nextSearch ? ('?' + nextSearch) : '') + window.location.hash;
             window.history.replaceState({}, '', nextUrl);
+          }
+        } else if (focusAction === 'quick_note') {
+          focusQuickNoteField();
+          searchParams.delete('cmn_school_focus_action');
+          if (window.history && typeof window.history.replaceState === 'function') {
+            var quickNoteSearch = searchParams.toString();
+            var quickNoteUrl = window.location.pathname + (quickNoteSearch ? ('?' + quickNoteSearch) : '') + window.location.hash;
+            window.history.replaceState({}, '', quickNoteUrl);
           }
         }
       } catch (e) {
@@ -4517,7 +4548,7 @@ document.addEventListener('DOMContentLoaded', function () {
           });
 
           if (resultNode) {
-            resultNode.textContent = visibleCount + ' of ' + totalCount + ' events shown';
+            resultNode.textContent = visibleCount + ' of ' + totalCount + ' loaded events shown';
           }
           if (emptyNode) {
             emptyNode.hidden = visibleCount > 0;
@@ -4582,13 +4613,16 @@ document.addEventListener('DOMContentLoaded', function () {
         body.appendChild(errorWrap);
       };
 
-      var requestTimeline = function () {
-        if (isLoaded || isLoading) {
+      var requestTimeline = function (requestedLimit, forceReload) {
+        if (typeof requestedLimit === 'number' && requestedLimit > 0) {
+          visibleLimit = requestedLimit;
+        }
+        if ((!forceReload && isLoaded) || isLoading) {
           return;
         }
         isLoading = true;
         body.setAttribute('data-school-profile-timeline-state', 'loading');
-        setStatus('Loading the latest notes, activity, and application history...');
+        setStatus('Loading notes, emails, stage changes, bookings, and relationship activity...');
 
         var formData = new FormData();
         formData.append('action', 'cmn_get_school_profile_timeline');
@@ -4639,11 +4673,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
       body.addEventListener('click', function (event) {
         var retryButton = event.target && event.target.closest ? event.target.closest('[data-school-profile-timeline-retry]') : null;
-        if (!retryButton) {
+        var loadMoreButton = event.target && event.target.closest ? event.target.closest('[data-school-profile-timeline-load-more]') : null;
+        if (!retryButton && !loadMoreButton) {
           return;
         }
         event.preventDefault();
-        requestTimeline();
+        if (retryButton) {
+          requestTimeline(visibleLimit, true);
+          return;
+        }
+        var nextVisibleLimit = parseInt(String(loadMoreButton.getAttribute('data-school-profile-timeline-load-more') || '0'), 10);
+        if (!nextVisibleLimit || nextVisibleLimit <= visibleLimit) {
+          nextVisibleLimit = visibleLimit + 20;
+        }
+        requestTimeline(nextVisibleLimit, true);
       });
 
       var rootRect = typeof root.getBoundingClientRect === 'function' ? root.getBoundingClientRect() : null;
