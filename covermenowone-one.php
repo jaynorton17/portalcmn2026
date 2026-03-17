@@ -22441,69 +22441,19 @@ global $wpdb;
                         <?php endif; ?>
                     </div>
                     <nav class="cmn-school-nav-links cmn-staff-nav-links">
-                        <a class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--dashboard-root<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="<?php echo esc_attr($is_account_manager_workspace ? 'Home' : 'Dashboard'); ?>">
-                            <?php echo $render_staff_nav_icon('dashboard'); ?>
-                            <span class="cmn-school-nav-label"><?php echo esc_html($is_account_manager_workspace ? 'Home' : 'Dashboard'); ?></span>
-                            <?php if ($is_account_manager_workspace && !empty($account_manager_nav_badges['task_follow_up'])) : ?>
-                                <span class="cmn-nav-badge" data-nav-badge-key="task_follow_up"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges['task_follow_up'])); ?></span>
-                            <?php endif; ?>
-                        </a>
-                        <?php $am_work_queue_rendered = false; ?>
-                        <?php foreach ($groups as $group_key => $group) : ?>
+                        <?php if ($is_account_manager_workspace) : ?>
                             <?php
-                            $items = (array) ($group['items'] ?? []);
-                            if (!$items) {
-                                continue;
-                            }
-                            $is_group_active = false;
-                            foreach ($items as $group_item) {
-                                if ($is_staff_nav_item_active($group_item)) {
-                                    $is_group_active = true;
-                                    break;
-                                }
-                            }
-                            $group_label = (string) ($group['label'] ?? ucfirst($group_key));
-                            $group_icon = (string) ($group['icon'] ?? 'system');
+                            $am_my_accounts_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url);
+                            $am_pipeline_url = add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url);
+                            $am_activity_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_stage' => 'follow_up', 'cmn_bucket' => false], $portal_url);
+                            $am_pipeline_active = ($current_view === 'leads' || ($current_view === 'schools' && sanitize_key((string) ($_GET['cmn_status'] ?? '')) === 'lead'));
+                            $am_activity_active = ($current_view === 'schools' && sanitize_key((string) ($_GET['cmn_stage'] ?? '')) === 'follow_up');
                             ?>
-                            <section class="cmn-staff-nav-group<?php echo $is_group_active ? ' is-open is-active-group' : ''; ?>" data-staff-nav-group="<?php echo esc_attr($group_key); ?>" draggable="false">
-                                <div class="cmn-staff-nav-group-head">
-                                    <button type="button" class="cmn-staff-nav-toggle" data-staff-nav-toggle="<?php echo esc_attr($group_key); ?>" aria-expanded="<?php echo $is_group_active ? 'true' : 'false'; ?>" data-tooltip="<?php echo esc_attr($group_label); ?>">
-                                        <span class="cmn-staff-nav-toggle-main">
-                                            <?php echo $render_staff_nav_icon($group_icon); ?>
-                                            <span class="cmn-staff-nav-toggle-label"><?php echo esc_html($group_label); ?></span>
-                                        </span>
-                                        <span class="cmn-staff-nav-caret" aria-hidden="true"></span>
-                                    </button>
-                                    <?php if ($show_nav_edit_controls) : ?>
-                                        <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-group-handle cmn-edit-control" data-staff-nav-group-handle aria-label="<?php echo esc_attr('Reorder ' . $group_label); ?>" tabindex="-1">⋮⋮</button>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="cmn-staff-nav-group-body" data-staff-nav-body="<?php echo esc_attr($group_key); ?>">
-                                    <?php foreach ($items as $group_item) : ?>
-                                        <?php
-                                        $group_item_key = (string) ($group_item['key'] ?? '');
-                                        $group_item_label = (string) ($group_item['label'] ?? 'Item');
-                                        $group_item_icon = sanitize_key((string) ($group_item['icon'] ?? ''));
-                                        $group_item_is_submenu = !empty($group_item['submenu']);
-                                        $group_item_is_active = $is_staff_nav_item_active($group_item);
-                                        ?>
-                                        <div class="cmn-staff-nav-item" data-staff-nav-item data-staff-nav-item-group="<?php echo esc_attr($group_key); ?>" data-staff-nav-item-key="<?php echo esc_attr($group_item_key); ?>" draggable="false">
-                                            <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $group_item_is_active ? ' is-active' : ''; ?><?php echo $group_item_is_submenu ? ' cmn-staff-nav-link--submenu' : ''; ?>" href="<?php echo esc_url((string) ($group_item['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr($group_item_label); ?>">
-                                                <?php echo $render_staff_nav_icon($group_item_icon); ?>
-                                                <span class="cmn-school-nav-label"><?php echo esc_html($group_item_label); ?></span>
-                                                <?php if ($is_account_manager_workspace && isset($account_manager_nav_badges[$group_item_key]) && (int) $account_manager_nav_badges[$group_item_key] > 0) : ?>
-                                                    <span class="cmn-nav-badge" data-nav-badge-key="<?php echo esc_attr($group_item_key); ?>"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges[$group_item_key])); ?></span>
-                                                <?php endif; ?>
-                                            </a>
-                                            <?php if ($show_nav_edit_controls) : ?>
-                                                <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-item-handle cmn-edit-control" data-staff-nav-item-handle aria-label="<?php echo esc_attr('Reorder ' . $group_item_label); ?>" tabindex="-1">⋮⋮</button>
-                                            <?php endif; ?>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </section>
-                            <?php if ($is_account_manager_workspace && !$am_work_queue_rendered && $group_key === 'schools') : ?>
-                                <?php $am_work_queue_rendered = true; ?>
+                            <div class="cmn-am-nav-list">
+                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="Home">
+                                    <?php echo $render_staff_nav_icon('dashboard'); ?>
+                                    <span class="cmn-school-nav-label">Home</span>
+                                </a>
                                 <button type="button" class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--work-queue" data-am-task-panel-toggle aria-expanded="false" aria-controls="cmn-am-task-panel" data-tooltip="My Tasks / Follow-Up">
                                     <?php echo $render_staff_nav_icon('logs'); ?>
                                     <span class="cmn-school-nav-label">My Tasks / Follow-Up</span>
@@ -22511,8 +22461,76 @@ global $wpdb;
                                         <span class="cmn-nav-badge" data-nav-badge-key="task_follow_up"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges['task_follow_up'])); ?></span>
                                     <?php endif; ?>
                                 </button>
-                            <?php endif; ?>
-                        <?php endforeach; ?>
+                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo ($current_view === 'schools' && !$am_activity_active && sanitize_key((string) ($_GET['cmn_status'] ?? 'all')) === 'all') ? ' is-active' : ''; ?>" href="<?php echo esc_url($am_my_accounts_url); ?>" data-tooltip="My Accounts">
+                                    <?php echo $render_staff_nav_icon('schools'); ?>
+                                    <span class="cmn-school-nav-label">My Accounts</span>
+                                </a>
+                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $am_pipeline_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($am_pipeline_url); ?>" data-tooltip="Pipeline">
+                                    <?php echo $render_staff_nav_icon('pipeline'); ?>
+                                    <span class="cmn-school-nav-label">Pipeline</span>
+                                </a>
+                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $am_activity_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($am_activity_url); ?>" data-tooltip="Activity">
+                                    <?php echo $render_staff_nav_icon('logs'); ?>
+                                    <span class="cmn-school-nav-label">Activity</span>
+                                </a>
+                            </div>
+                        <?php else : ?>
+                            <a class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--dashboard-root<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="<?php echo esc_attr($is_account_manager_workspace ? 'Home' : 'Dashboard'); ?>">
+                                <?php echo $render_staff_nav_icon('dashboard'); ?>
+                                <span class="cmn-school-nav-label"><?php echo esc_html($is_account_manager_workspace ? 'Home' : 'Dashboard'); ?></span>
+                            </a>
+                            <?php foreach ($groups as $group_key => $group) : ?>
+                                <?php
+                                $items = (array) ($group['items'] ?? []);
+                                if (!$items) {
+                                    continue;
+                                }
+                                $is_group_active = false;
+                                foreach ($items as $group_item) {
+                                    if ($is_staff_nav_item_active($group_item)) {
+                                        $is_group_active = true;
+                                        break;
+                                    }
+                                }
+                                $group_label = (string) ($group['label'] ?? ucfirst($group_key));
+                                $group_icon = (string) ($group['icon'] ?? 'system');
+                                ?>
+                                <section class="cmn-staff-nav-group<?php echo $is_group_active ? ' is-open is-active-group' : ''; ?>" data-staff-nav-group="<?php echo esc_attr($group_key); ?>" draggable="false">
+                                    <div class="cmn-staff-nav-group-head">
+                                        <button type="button" class="cmn-staff-nav-toggle" data-staff-nav-toggle="<?php echo esc_attr($group_key); ?>" aria-expanded="<?php echo $is_group_active ? 'true' : 'false'; ?>" data-tooltip="<?php echo esc_attr($group_label); ?>">
+                                            <span class="cmn-staff-nav-toggle-main">
+                                                <?php echo $render_staff_nav_icon($group_icon); ?>
+                                                <span class="cmn-staff-nav-toggle-label"><?php echo esc_html($group_label); ?></span>
+                                            </span>
+                                            <span class="cmn-staff-nav-caret" aria-hidden="true"></span>
+                                        </button>
+                                        <?php if ($show_nav_edit_controls) : ?>
+                                            <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-group-handle cmn-edit-control" data-staff-nav-group-handle aria-label="<?php echo esc_attr('Reorder ' . $group_label); ?>" tabindex="-1">⋮⋮</button>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="cmn-staff-nav-group-body" data-staff-nav-body="<?php echo esc_attr($group_key); ?>">
+                                        <?php foreach ($items as $group_item) : ?>
+                                            <?php
+                                            $group_item_key = (string) ($group_item['key'] ?? '');
+                                            $group_item_label = (string) ($group_item['label'] ?? 'Item');
+                                            $group_item_icon = sanitize_key((string) ($group_item['icon'] ?? ''));
+                                            $group_item_is_submenu = !empty($group_item['submenu']);
+                                            $group_item_is_active = $is_staff_nav_item_active($group_item);
+                                            ?>
+                                            <div class="cmn-staff-nav-item" data-staff-nav-item data-staff-nav-item-group="<?php echo esc_attr($group_key); ?>" data-staff-nav-item-key="<?php echo esc_attr($group_item_key); ?>" draggable="false">
+                                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $group_item_is_active ? ' is-active' : ''; ?><?php echo $group_item_is_submenu ? ' cmn-staff-nav-link--submenu' : ''; ?>" href="<?php echo esc_url((string) ($group_item['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr($group_item_label); ?>">
+                                                    <?php echo $render_staff_nav_icon($group_item_icon); ?>
+                                                    <span class="cmn-school-nav-label"><?php echo esc_html($group_item_label); ?></span>
+                                                </a>
+                                                <?php if ($show_nav_edit_controls) : ?>
+                                                    <button type="button" class="cmn-staff-nav-handle cmn-staff-nav-item-handle cmn-edit-control" data-staff-nav-item-handle aria-label="<?php echo esc_attr('Reorder ' . $group_item_label); ?>" tabindex="-1">⋮⋮</button>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </section>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </nav>
                 </aside>
                 <main class="cmn-school-main cmn-staff-main<?php echo $is_account_manager_workspace ? ' cmn-staff-main--am-crm' : ''; ?>">
@@ -41552,7 +41570,7 @@ global $wpdb;
             $row_summary = sanitize_text_field((string) ($task_row['label'] ?? 'Task'));
             [$row_meta, $row_context] = $split_dashboard_detail((string) ($task_row['detail'] ?? ''));
             $row_value = sanitize_text_field((string) ($task_row['value'] ?? 'Open'));
-            $editor_label = sanitize_text_field((string) ($task_row['editor_label'] ?? 'Open task editor'));
+            $editor_label = 'Set next action';
 
             ob_start();
             ?>
@@ -41560,7 +41578,6 @@ global $wpdb;
                 <div class="cmn-am-home-tile-top">
                     <div class="cmn-am-home-tile-title-group">
                         <strong class="cmn-am-home-tile-title"><a href="<?php echo $open_url; ?>"><?php echo esc_html($school_name); ?></a></strong>
-                        <span class="cmn-am-home-tile-stage">Follow-up task</span>
                     </div>
                     <div class="cmn-am-home-tile-badges">
                         <span class="cmn-status-chip <?php echo esc_attr($chip_class); ?>"><?php echo esc_html($row_value); ?></span>

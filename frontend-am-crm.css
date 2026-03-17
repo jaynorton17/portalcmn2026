@@ -35,6 +35,11 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-links {
   gap: 8px;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-list {
+  display: grid;
+  gap: 6px;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-group {
   padding: 6px;
   border-radius: 14px;
