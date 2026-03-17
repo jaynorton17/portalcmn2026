@@ -1912,10 +1912,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!context || typeof context !== 'object') {
           throw new Error('Invalid response.');
         }
-        setMetricValue('portfolio', parseInt(context.portfolio || 0, 10) || 0);
-        setMetricValue('follow_up', parseInt(context.follow_up || 0, 10) || 0);
-        setMetricValue('active_clients', parseInt(context.active_clients || 0, 10) || 0);
-        setMetricValue('open_requests', parseInt(context.open_requests || 0, 10) || 0);
+        setMetricValue('accounts', parseInt(context.accounts || context.portfolio || 0, 10) || 0);
+        setMetricValue('candidates', parseInt(context.candidates || 0, 10) || 0);
+        setMetricValue('bookings', parseInt(context.bookings || 0, 10) || 0);
+        setMetricValue('issues', parseInt(context.issues || 0, 10) || 0);
         if (badges && typeof badges === 'object') {
           Object.keys(badges).forEach(function (key) {
             setNavBadgeValue(key, badges[key]);
@@ -4317,6 +4317,50 @@ document.addEventListener('DOMContentLoaded', function () {
           Array.prototype.forEach.call(schoolOwnerControls, function (control) {
             control.classList.remove('is-focused');
           });
+        }, 2200);
+      }
+    } catch (e) {
+      // Ignore invalid URLSearchParams support or history errors.
+    }
+  }
+
+  var schoolActivityPanel = document.getElementById('cmn-school-add-activity');
+  if (schoolActivityPanel) {
+    try {
+      var activitySearchParams = new URLSearchParams(window.location.search || '');
+      var activityFocusAction = String(activitySearchParams.get('cmn_school_focus_action') || '').trim().toLowerCase();
+      var activityTypeMap = {
+        activity_call: 'call',
+        activity_note: 'note'
+      };
+      var targetActivityType = activityTypeMap[activityFocusAction] || '';
+      if (targetActivityType) {
+        var activityForm = schoolActivityPanel.querySelector('form.cmn-activity-form');
+        var activityTypeSelect = activityForm ? activityForm.querySelector('select[name="cmn_activity_type"]') : null;
+        var activityTitleInput = activityForm ? activityForm.querySelector('input[name="cmn_activity_title"]') : null;
+        var activityContentField = activityForm ? activityForm.querySelector('textarea[name="cmn_activity_content"]') : null;
+        if (activityTypeSelect) {
+          activityTypeSelect.value = targetActivityType;
+        }
+        schoolActivityPanel.classList.add('is-focused');
+        if (typeof schoolActivityPanel.scrollIntoView === 'function') {
+          schoolActivityPanel.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+        window.setTimeout(function () {
+          if (activityTitleInput && typeof activityTitleInput.focus === 'function') {
+            activityTitleInput.focus();
+          } else if (activityContentField && typeof activityContentField.focus === 'function') {
+            activityContentField.focus();
+          }
+        }, 120);
+        activitySearchParams.delete('cmn_school_focus_action');
+        if (window.history && typeof window.history.replaceState === 'function') {
+          var activityNextSearch = activitySearchParams.toString();
+          var activityNextUrl = window.location.pathname + (activityNextSearch ? ('?' + activityNextSearch) : '') + window.location.hash;
+          window.history.replaceState({}, '', activityNextUrl);
+        }
+        window.setTimeout(function () {
+          schoolActivityPanel.classList.remove('is-focused');
         }, 2200);
       }
     } catch (e) {
@@ -9063,12 +9107,20 @@ document.addEventListener('DOMContentLoaded', function () {
         insightsList.appendChild(out);
       };
 
-      var buildTicketListItem = function (ticket) {
+        var buildTicketListItem = function (ticket) {
         var visual = getTicketVisualState(ticket);
         var item = document.createElement('button');
         item.type = 'button';
         item.className = 'cmn-support-ticket';
         item.setAttribute('data-ticket-id', ticket.id);
+        var contextLabel = String(ticket.context_label || '').trim();
+        var statusBits = [visual.statusLabel];
+        if (contextLabel) {
+          statusBits.push(contextLabel);
+        }
+        if (ticket.updated_at) {
+          statusBits.push(ticket.updated_at);
+        }
         var channelBadge = '';
         if (mode === 'admin' && String(ticket.channel_key || '') === 'website_live_chat') {
           channelBadge = '<span class="cmn-support-ticket-badge cmn-support-ticket-badge--channel">' + supportEsc(ticket.channel_label || 'Website Live Chat') + '</span>';
@@ -9082,7 +9134,7 @@ document.addEventListener('DOMContentLoaded', function () {
           } else if (needsFeedback) {
             feedbackBadge = '<span class="cmn-support-ticket-badge is-warning">Needs feedback</span>';
           }
-          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || '') + '</span><em>' + supportEsc(visual.statusLabel + ' - ' + (ticket.updated_at || '')) + '</em>' + channelBadge + feedbackBadge;
+          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || '') + '</span><em>' + supportEsc(statusBits.join(' - ')) + '</em>' + channelBadge + feedbackBadge;
         } else {
           var userFeedbackCount = parseInt(ticket.feedback_count || 0, 10);
           var userNeedsFeedback = !!parseInt(ticket.requires_feedback || '0', 10);
@@ -9092,7 +9144,7 @@ document.addEventListener('DOMContentLoaded', function () {
           } else if (userNeedsFeedback) {
             userFeedbackBadge = '<span class="cmn-support-ticket-badge is-warning">Needs feedback</span>';
           }
-          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || 'Support ticket') + '</span><em>' + supportEsc(visual.statusLabel + ' - ' + (ticket.updated_at || '')) + '</em>' + userFeedbackBadge;
+          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || 'Support ticket') + '</span><em>' + supportEsc(statusBits.join(' - ')) + '</em>' + userFeedbackBadge;
         }
         item.addEventListener('click', function () {
           root.querySelectorAll('.cmn-support-ticket').forEach(function (row) { row.classList.remove('is-selected'); });
@@ -9186,6 +9238,11 @@ document.addEventListener('DOMContentLoaded', function () {
         var titleEl = threadEl.querySelector('[data-support-thread-title]');
         var refEl = threadEl.querySelector('[data-support-thread-ref]');
         var channelEl = threadEl.querySelector('[data-support-thread-channel]');
+        var bookingLabel = ticket ? String(ticket.booking_context_label || '').trim() : '';
+        var bookingUrl = ticket ? String(ticket.booking_context_url || '').trim() : '';
+        var bookingDetail = ticket ? String(ticket.booking_context_detail || '').trim() : '';
+        var bookingIsFirstClass = ticket ? !!parseInt(ticket.booking_context_is_first_class || '0', 10) : false;
+        var bookingContextPrefix = bookingIsFirstClass ? 'Linked booking' : 'Booking context';
         if (titleEl) {
           titleEl.textContent = ticket ? ticket.subject : 'Support';
         }
@@ -9209,10 +9266,25 @@ document.addEventListener('DOMContentLoaded', function () {
             if (guestEmail) {
               details += ' (' + supportEsc(guestEmail) + ')';
             }
+            if (bookingLabel) {
+              details += ' · ' + supportEsc(bookingContextPrefix + ': ' + bookingLabel);
+            }
             channelEl.innerHTML = details;
             channelEl.hidden = false;
           } else if (ticket && String(ticket.channel_key || '') === 'account_manager_direct') {
-            channelEl.textContent = String(ticket.channel_label || 'Account Manager Live Chat');
+            var directLabel = String(ticket.channel_label || 'Account Manager Live Chat');
+            if (bookingLabel) {
+              directLabel += ' · ' + bookingContextPrefix + ': ' + bookingLabel;
+            }
+            channelEl.textContent = directLabel;
+            channelEl.hidden = false;
+          } else if (ticket && bookingLabel) {
+            if (bookingUrl) {
+              var bookingMeta = bookingDetail ? '<span class="cmn-muted"> · ' + supportEsc(bookingDetail) + '</span>' : '';
+              channelEl.innerHTML = '<span class="cmn-muted">' + supportEsc(bookingContextPrefix + ': ') + '</span><a href="' + supportEsc(bookingUrl) + '">' + supportEsc(bookingLabel) + '</a>' + bookingMeta;
+            } else {
+              channelEl.textContent = bookingDetail ? (bookingContextPrefix + ': ' + bookingLabel + ' · ' + bookingDetail) : (bookingContextPrefix + ': ' + bookingLabel);
+            }
             channelEl.hidden = false;
           } else {
             channelEl.textContent = '';
