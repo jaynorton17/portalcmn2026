@@ -22278,11 +22278,6 @@ global $wpdb;
                     'label' => 'Candidates',
                     'url' => add_query_arg(['view' => 'candidates'], $portal_url),
                 ],
-                [
-                    'key' => 'issues',
-                    'label' => 'Issues',
-                    'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
-                ],
             ];
             $account_manager_workspace_links = [];
         }
@@ -41544,105 +41539,81 @@ global $wpdb;
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Dashboard unavailable</h3><p>This home view is only available for portfolio-scoped account managers.</p></div></section>';
         }
 
-        $kpis = is_array($payload['kpis'] ?? null) ? $payload['kpis'] : [];
-        $due_now_rows = array_values(array_filter((array) ($payload['due_now_rows'] ?? []), 'is_array'));
-        $upcoming_rows = array_values(array_filter((array) ($payload['upcoming_rows'] ?? []), 'is_array'));
         $needs_attention_rows = array_values(array_filter((array) ($payload['needs_attention_rows'] ?? []), 'is_array'));
-        $counts = is_array($payload['counts'] ?? null) ? $payload['counts'] : [];
+        $recent_activity_snapshot = (array) $this->get_account_manager_recent_activity_snapshot($user_id, 4);
+        $recent_activity_rows = array_values(array_filter((array) ($recent_activity_snapshot['rows'] ?? []), 'is_array'));
+        $booking_snapshot = (array) $this->get_account_manager_booking_scope_snapshot($user_id, 4);
+        $booking_rows = array_values(array_filter((array) ($booking_snapshot['rows'] ?? []), 'is_array'));
+        $nav_context = (array) $this->get_account_manager_nav_context_snapshot($user_id);
         $urls = is_array($payload['urls'] ?? null) ? $payload['urls'] : [];
-        $split_dashboard_detail = static function ($detail) {
-            $detail = trim((string) $detail);
-            if ($detail === '') {
-                return ['', ''];
-            }
-            $parts = preg_split('/\s+·\s+/u', $detail);
-            if (!is_array($parts) || !$parts) {
-                return [sanitize_text_field($detail), ''];
-            }
-            $meta = sanitize_text_field((string) array_shift($parts));
-            $context = sanitize_text_field((string) implode(' · ', array_filter(array_map('sanitize_text_field', $parts))));
-            return [$meta, $context];
+        $render_summary_tile = static function ($value, $label, $url) {
+            ob_start();
+            ?>
+            <a class="cmn-am-overview-tile" href="<?php echo esc_url((string) $url); ?>">
+                <strong><?php echo esc_html(number_format_i18n((int) $value)); ?></strong>
+                <span><?php echo esc_html((string) $label); ?></span>
+            </a>
+            <?php
+            return (string) ob_get_clean();
         };
-        $render_task_dashboard_tile = function (array $task_row, $chip_class = 'is-info') use ($split_dashboard_detail) {
-            $editor_url = esc_url((string) ($task_row['edit_url'] ?? $task_row['url'] ?? '#'));
-            $open_url = esc_url((string) ($task_row['overview_url'] ?? $task_row['url'] ?? $editor_url));
-            $school_name = sanitize_text_field((string) ($task_row['school_name'] ?? $task_row['eyebrow'] ?? 'School'));
-            $row_summary = sanitize_text_field((string) ($task_row['label'] ?? 'Task'));
-            [$row_meta, $row_context] = $split_dashboard_detail((string) ($task_row['detail'] ?? ''));
-            $row_value = sanitize_text_field((string) ($task_row['value'] ?? 'Open'));
-            $editor_label = 'Set next action';
+        $render_school_overview_row = function (array $row, array $config = []) use ($urls) {
+            $open_url = esc_url((string) ($row['overview_url'] ?? $row['view_url'] ?? $urls['accounts'] ?? '#'));
+            $title = sanitize_text_field((string) ($row['title'] ?? $row['label'] ?? 'School'));
+            $status_value = sanitize_key((string) ($row['status_value'] ?? ''));
+            $pipeline_value = sanitize_key((string) ($row['pipeline_value'] ?? ''));
+            $stage_label = $this->get_account_manager_sales_stage_label($status_value, $pipeline_value, $status_value === 'lead');
+            $summary = sanitize_text_field((string) ($config['summary'] ?? ($row['next_action_label'] ?? $row['status_label'] ?? 'Open account')));
+            $meta = sanitize_text_field((string) ($config['meta'] ?? ($row['last_activity_detail'] ?? $row['follow_up_state_detail'] ?? '')));
+            $badge_label = sanitize_text_field((string) ($config['badge_label'] ?? ''));
+            $badge_class = sanitize_html_class((string) ($config['badge_class'] ?? 'is-info'));
 
             ob_start();
             ?>
-            <article class="cmn-am-home-tile cmn-am-home-tile--task" data-row-href="<?php echo $open_url; ?>" tabindex="0">
-                <div class="cmn-am-home-tile-top">
-                    <div class="cmn-am-home-tile-title-group">
-                        <strong class="cmn-am-home-tile-title"><a href="<?php echo $open_url; ?>"><?php echo esc_html($school_name); ?></a></strong>
+            <article class="cmn-am-overview-list-item" data-row-href="<?php echo $open_url; ?>" tabindex="0">
+                <div class="cmn-am-overview-list-item-head">
+                    <div class="cmn-am-overview-list-item-title-wrap">
+                        <strong class="cmn-am-overview-list-item-title"><a href="<?php echo $open_url; ?>"><?php echo esc_html($title); ?></a></strong>
+                        <?php if ($stage_label !== '') : ?>
+                            <span class="cmn-am-overview-list-item-stage"><?php echo esc_html($stage_label); ?></span>
+                        <?php endif; ?>
                     </div>
-                    <div class="cmn-am-home-tile-badges">
-                        <span class="cmn-status-chip <?php echo esc_attr($chip_class); ?>"><?php echo esc_html($row_value); ?></span>
-                    </div>
-                </div>
-                <div class="cmn-am-home-tile-body">
-                    <div class="cmn-am-home-tile-summary"><?php echo esc_html($row_summary); ?></div>
-                    <?php if ($row_context !== '') : ?>
-                        <div class="cmn-am-home-tile-context"><?php echo esc_html($row_context); ?></div>
-                    <?php endif; ?>
-                    <?php if ($row_meta !== '') : ?>
-                        <div class="cmn-am-home-tile-meta"><?php echo esc_html($row_meta); ?></div>
+                    <?php if ($badge_label !== '') : ?>
+                        <span class="cmn-status-chip <?php echo esc_attr($badge_class); ?>"><?php echo esc_html($badge_label); ?></span>
                     <?php endif; ?>
                 </div>
-                <div class="cmn-am-home-tile-actions">
-                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo $open_url; ?>">Open</a>
-                    <a class="cmn-primary cmn-btn-mini" href="<?php echo $editor_url; ?>"><?php echo esc_html($editor_label); ?></a>
-                </div>
+                <?php if ($summary !== '') : ?>
+                    <div class="cmn-am-overview-list-item-summary"><?php echo esc_html($summary); ?></div>
+                <?php endif; ?>
+                <?php if ($meta !== '') : ?>
+                    <div class="cmn-am-overview-list-item-meta"><?php echo esc_html($meta); ?></div>
+                <?php endif; ?>
             </article>
             <?php
             return (string) ob_get_clean();
         };
-        $render_attention_dashboard_tile = function (array $attention_row) use ($urls) {
-            $open_account_url = esc_url((string) ($attention_row['overview_url'] ?? $attention_row['view_url'] ?? $urls['accounts'] ?? '#'));
-            $edit_next_action_url = esc_url((string) ($attention_row['task_editor_url'] ?? $open_account_url));
-            $attention_reason = sanitize_text_field((string) ($attention_row['attention_reason'] ?? 'Needs attention'));
-            $status_chip_class = $attention_reason === 'At risk' ? 'is-declined' : 'is-warning';
-            $stage_label = $this->get_account_manager_sales_stage_label(
-                (string) ($attention_row['status_value'] ?? ''),
-                (string) ($attention_row['pipeline_value'] ?? ''),
-                sanitize_key((string) ($attention_row['status_value'] ?? '')) === 'lead'
-            );
-            $row_title = sanitize_text_field((string) ($attention_row['title'] ?? 'School'));
-            $row_summary = sanitize_text_field((string) ($attention_row['next_action_label'] ?? 'No next action logged'));
-            $row_context = sanitize_text_field((string) ($attention_row['account_risk_detail'] ?? $attention_row['follow_up_state_detail'] ?? 'Use the account record to log the next follow-up.'));
-            $row_meta = sanitize_text_field((string) ($attention_row['last_activity_detail'] ?? ''));
-            $task_editor_label = sanitize_text_field((string) ($attention_row['task_editor_label'] ?? 'Set next action'));
+        $render_booking_overview_row = static function (array $row, $fallback_url = '#') {
+            $open_url = esc_url((string) ($row['url'] ?? $fallback_url));
+            $title = sanitize_text_field((string) ($row['school_name'] ?? $row['eyebrow'] ?? 'Booking'));
+            $summary = sanitize_text_field((string) ($row['candidate_name'] ?? $row['status_label'] ?? 'Booking context'));
+            $meta = sanitize_text_field((string) ($row['date_label'] ?? $row['detail'] ?? ''));
+            $badge_label = sanitize_text_field((string) ($row['status_label'] ?? 'Booking'));
+            $badge_class = sanitize_html_class((string) ($row['status_chip_class'] ?? 'is-info'));
 
             ob_start();
             ?>
-            <article class="cmn-am-home-tile cmn-am-home-tile--account" data-row-href="<?php echo $open_account_url; ?>" tabindex="0">
-                <div class="cmn-am-home-tile-top">
-                    <div class="cmn-am-home-tile-title-group">
-                        <strong class="cmn-am-home-tile-title"><a href="<?php echo $open_account_url; ?>"><?php echo esc_html($row_title); ?></a></strong>
-                        <?php if ($stage_label !== '') : ?>
-                            <span class="cmn-am-home-tile-stage"><?php echo esc_html($stage_label); ?></span>
-                        <?php endif; ?>
+            <article class="cmn-am-overview-list-item" data-row-href="<?php echo $open_url; ?>" tabindex="0">
+                <div class="cmn-am-overview-list-item-head">
+                    <div class="cmn-am-overview-list-item-title-wrap">
+                        <strong class="cmn-am-overview-list-item-title"><a href="<?php echo $open_url; ?>"><?php echo esc_html($title); ?></a></strong>
                     </div>
-                    <div class="cmn-am-home-tile-badges">
-                        <span class="cmn-status-chip <?php echo esc_attr($status_chip_class); ?>"><?php echo esc_html($attention_reason); ?></span>
-                    </div>
+                    <span class="cmn-status-chip <?php echo esc_attr($badge_class); ?>"><?php echo esc_html($badge_label); ?></span>
                 </div>
-                <div class="cmn-am-home-tile-body">
-                    <div class="cmn-am-home-tile-summary"><?php echo esc_html($row_summary); ?></div>
-                    <?php if ($row_context !== '') : ?>
-                        <div class="cmn-am-home-tile-context"><?php echo esc_html($row_context); ?></div>
-                    <?php endif; ?>
-                    <?php if ($row_meta !== '') : ?>
-                        <div class="cmn-am-home-tile-meta"><?php echo esc_html($row_meta); ?></div>
-                    <?php endif; ?>
-                </div>
-                <div class="cmn-am-home-tile-actions">
-                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo $open_account_url; ?>">Open</a>
-                    <a class="cmn-primary cmn-btn-mini" href="<?php echo $edit_next_action_url; ?>"><?php echo esc_html($task_editor_label); ?></a>
-                </div>
+                <?php if ($summary !== '') : ?>
+                    <div class="cmn-am-overview-list-item-summary"><?php echo esc_html($summary); ?></div>
+                <?php endif; ?>
+                <?php if ($meta !== '') : ?>
+                    <div class="cmn-am-overview-list-item-meta"><?php echo esc_html($meta); ?></div>
+                <?php endif; ?>
             </article>
             <?php
             return (string) ob_get_clean();
@@ -41650,77 +41621,74 @@ global $wpdb;
 
         ob_start();
         ?>
-        <div class="cmn-am-dashboard-container">
-            <div class="cmn-am-sales-kpi-strip" aria-label="Weekly CRM activity">
-                <div class="cmn-am-sales-kpi-tile">
-                    <span class="cmn-am-sales-kpi-label">Calls</span>
-                    <strong class="cmn-am-sales-kpi-value"><?php echo esc_html(number_format_i18n((int) ($kpis['calls'] ?? 0))); ?></strong>
-                </div>
-                <div class="cmn-am-sales-kpi-tile">
-                    <span class="cmn-am-sales-kpi-label">Emails</span>
-                    <strong class="cmn-am-sales-kpi-value"><?php echo esc_html(number_format_i18n((int) ($kpis['emails'] ?? 0))); ?></strong>
-                </div>
-                <div class="cmn-am-sales-kpi-tile">
-                    <span class="cmn-am-sales-kpi-label">Tasks</span>
-                    <strong class="cmn-am-sales-kpi-value"><?php echo esc_html(number_format_i18n((int) ($kpis['tasks_completed'] ?? 0))); ?></strong>
-                </div>
-            </div>
+        <div class="cmn-am-dashboard-container cmn-am-dashboard-container--minimal">
+            <section class="cmn-am-overview-grid" aria-label="Portfolio overview">
+                <?php
+                echo $render_summary_tile((int) ($nav_context['clients'] ?? 0), 'Clients', add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $this->get_portal_base_url()));
+                echo $render_summary_tile((int) ($nav_context['leads'] ?? 0), 'Leads', add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $this->get_portal_base_url()));
+                echo $render_summary_tile((int) ($nav_context['candidates'] ?? 0), 'Candidates', add_query_arg(['view' => 'candidates'], $this->get_portal_base_url()));
+                echo $render_summary_tile((int) ($nav_context['bookings'] ?? 0), 'Bookings', add_query_arg(['view' => 'bookings'], $this->get_portal_base_url()));
+                ?>
+            </section>
 
-            <div class="cmn-am-sales-dashboard-stack">
-                <section class="cmn-am-home-section cmn-am-home-section--primary">
-                    <div class="cmn-am-home-section-shell">
-                        <div class="cmn-am-home-section-head">
-                            <h3>Tasks Due Now</h3>
-                            <a class="cmn-am-home-link" href="<?php echo esc_url((string) ($urls['tasks'] ?? '#')); ?>">Open follow-up queue</a>
-                        </div>
-                        <?php if ($due_now_rows) : ?>
-                            <div class="cmn-am-home-grid cmn-am-home-grid--tasks">
-                                <?php foreach ($due_now_rows as $task_row) : ?>
-                                    <?php echo $render_task_dashboard_tile($task_row, 'is-warning'); ?>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else : ?>
-                            <div class="cmn-am-home-empty-tile">No tasks due today</div>
-                        <?php endif; ?>
+            <div class="cmn-am-overview-panels">
+                <section class="cmn-am-overview-panel">
+                    <div class="cmn-am-overview-panel-head">
+                        <h3>Recent Activity</h3>
                     </div>
+                    <?php if ($recent_activity_rows) : ?>
+                        <div class="cmn-am-overview-list">
+                            <?php foreach ($recent_activity_rows as $activity_row) : ?>
+                                <?php
+                                echo $render_school_overview_row($activity_row, [
+                                    'summary' => (string) ($activity_row['next_action_label'] ?? $activity_row['status_label'] ?? 'Open account'),
+                                    'meta' => (string) ($activity_row['last_activity_detail'] ?? ''),
+                                ]);
+                                ?>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else : ?>
+                        <div class="cmn-am-overview-empty">No recent activity</div>
+                    <?php endif; ?>
                 </section>
 
-                <section class="cmn-am-home-section">
-                    <div class="cmn-am-home-section-shell">
-                        <div class="cmn-am-home-section-head">
-                            <h3>Upcoming Tasks</h3>
-                        </div>
-                        <?php if ($upcoming_rows) : ?>
-                            <div class="cmn-am-home-grid cmn-am-home-grid--tasks">
-                                <?php foreach ($upcoming_rows as $task_row) : ?>
-                                    <?php echo $render_task_dashboard_tile($task_row, 'is-info'); ?>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else : ?>
-                            <div class="cmn-am-home-empty-tile">No upcoming tasks</div>
-                        <?php endif; ?>
+                <section class="cmn-am-overview-panel">
+                    <div class="cmn-am-overview-panel-head">
+                        <h3>Latest Bookings</h3>
                     </div>
+                    <?php if ($booking_rows) : ?>
+                        <div class="cmn-am-overview-list">
+                            <?php foreach ($booking_rows as $booking_row) : ?>
+                                <?php echo $render_booking_overview_row($booking_row, (string) ($urls['bookings'] ?? '#')); ?>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else : ?>
+                        <div class="cmn-am-overview-empty">No recent bookings</div>
+                    <?php endif; ?>
                 </section>
 
-                <section class="cmn-am-home-section cmn-am-home-section--attention">
-                    <div class="cmn-am-home-section-shell">
-                        <div class="cmn-am-home-section-head">
-                            <h3>Needs Attention</h3>
-                            <div class="cmn-am-home-section-meta">
-                                <span><?php echo esc_html(number_format_i18n((int) ($counts['no_follow_up'] ?? 0))); ?> no follow-up</span>
-                                <a class="cmn-am-home-link" href="<?php echo esc_url((string) ($urls['needs_attention'] ?? '#')); ?>">Open My Accounts</a>
-                            </div>
-                        </div>
-                        <?php if ($needs_attention_rows) : ?>
-                            <div class="cmn-am-home-grid cmn-am-home-grid--attention">
-                                <?php foreach ($needs_attention_rows as $attention_row) : ?>
-                                    <?php echo $render_attention_dashboard_tile($attention_row); ?>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else : ?>
-                            <div class="cmn-am-home-empty-tile">No accounts need attention</div>
-                        <?php endif; ?>
+                <section class="cmn-am-overview-panel">
+                    <div class="cmn-am-overview-panel-head">
+                        <h3>Needs Attention</h3>
                     </div>
+                    <?php if ($needs_attention_rows) : ?>
+                        <div class="cmn-am-overview-list">
+                            <?php foreach (array_slice($needs_attention_rows, 0, 4) as $attention_row) : ?>
+                                <?php
+                                $attention_reason = sanitize_text_field((string) ($attention_row['attention_reason'] ?? 'Needs attention'));
+                                $attention_chip_class = $attention_reason === 'At risk' ? 'is-declined' : 'is-warning';
+                                echo $render_school_overview_row($attention_row, [
+                                    'summary' => (string) ($attention_row['next_action_label'] ?? 'No next action logged'),
+                                    'meta' => (string) ($attention_row['account_risk_detail'] ?? $attention_row['follow_up_state_detail'] ?? ''),
+                                    'badge_label' => $attention_reason,
+                                    'badge_class' => $attention_chip_class,
+                                ]);
+                                ?>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else : ?>
+                        <div class="cmn-am-overview-empty">No accounts need attention</div>
+                    <?php endif; ?>
                 </section>
             </div>
         </div>
