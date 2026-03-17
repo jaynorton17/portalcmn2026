@@ -41636,47 +41636,50 @@ global $wpdb;
                     margin: 0 auto;
                     padding: 18px;
                     border-radius: 28px;
-                    border: 1px solid rgba(227, 232, 242, 0.42);
-                    background: linear-gradient(180deg, rgba(250, 251, 255, 0.98) 0%, rgba(245, 247, 252, 0.98) 100%);
+                    border: 1px solid rgba(216, 224, 236, 0.78);
+                    background: linear-gradient(180deg, rgba(248, 250, 255, 0.99) 0%, rgba(243, 246, 252, 0.99) 100%);
                     box-shadow: 0 22px 54px rgba(0, 0, 0, 0.22);
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid {
-                    display: grid;
+                    display: grid !important;
                     grid-template-columns: repeat(4, minmax(0, 1fr));
                     gap: 14px;
                     margin-bottom: 18px;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-tile {
-                    display: grid;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile {
+                    display: flex !important;
+                    flex-direction: column;
                     gap: 8px;
                     min-height: 112px;
-                    align-content: end;
+                    justify-content: flex-end;
                     padding: 18px;
                     border-radius: 16px;
-                    border: 1px solid rgba(226, 231, 241, 0.96);
-                    background: #ffffff;
-                    color: #141b2d;
-                    text-decoration: none;
-                    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+                    border: 1px solid rgba(217, 225, 238, 0.98);
+                    background: #ffffff !important;
+                    color: #0f172a !important;
+                    text-decoration: none !important;
+                    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
                     transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-tile:hover,
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-tile:focus-visible {
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile:hover,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile:focus-visible {
                     transform: translateY(-2px);
-                    border-color: rgba(53, 114, 255, 0.26);
-                    box-shadow: 0 14px 28px rgba(53, 114, 255, 0.09);
+                    border-color: rgba(53, 114, 255, 0.34);
+                    box-shadow: 0 14px 28px rgba(53, 114, 255, 0.12);
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-tile strong {
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile strong {
                     display: block;
                     font-size: clamp(34px, 4vw, 42px);
                     line-height: 1;
-                    color: #141b2d;
+                    color: #0f172a !important;
+                    font-weight: 800;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-tile span {
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile span {
                     display: block;
-                    color: #8b93a5;
+                    color: #475569 !important;
                     font-size: 12px;
                     font-weight: 700;
+                    letter-spacing: 0.02em;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-panels {
                     display: grid;
@@ -41689,17 +41692,17 @@ global $wpdb;
                     align-content: start;
                     padding: 16px;
                     border-radius: 20px;
-                    border: 1px solid rgba(226, 231, 241, 0.96);
-                    background: rgba(255, 255, 255, 0.82);
-                    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+                    border: 1px solid rgba(217, 225, 238, 0.98);
+                    background: rgba(255, 255, 255, 0.94);
+                    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
                     backdrop-filter: blur(10px);
                     -webkit-backdrop-filter: blur(10px);
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-panel-head h3 {
                     margin: 0;
-                    color: #141b2d;
-                    font-size: 16px;
-                    font-weight: 700;
+                    color: #0f172a;
+                    font-size: 17px;
+                    font-weight: 800;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list {
                     display: grid;
@@ -41711,10 +41714,10 @@ global $wpdb;
                     gap: 6px;
                     padding: 14px;
                     border-radius: 16px;
-                    border: 1px solid rgba(230, 234, 243, 0.98);
+                    border: 1px solid rgba(220, 227, 239, 0.98);
                     background: #ffffff;
-                    color: #141b2d;
-                    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+                    color: #0f172a;
+                    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-head {
                     display: flex;
@@ -41729,41 +41732,44 @@ global $wpdb;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-title,
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-title a {
-                    color: #141b2d;
-                    font-size: 15px;
+                    color: #0f172a !important;
+                    font-size: 17px;
                     line-height: 1.25;
+                    font-weight: 800;
                     text-decoration: none;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-stage,
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-meta,
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-empty {
-                    color: #8b93a5;
-                    font-size: 11px;
-                    line-height: 1.45;
+                    color: #64748b;
+                    font-size: 12px;
+                    line-height: 1.5;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-summary {
-                    color: #4c5568;
-                    font-size: 13px;
-                    line-height: 1.45;
+                    color: #334155;
+                    font-size: 14px;
+                    font-weight: 600;
+                    line-height: 1.5;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal .cmn-status-chip {
                     min-height: 26px;
                     padding: 0 10px;
                     border-radius: 999px;
-                    border: 1px solid rgba(235, 238, 245, 0.98);
-                    background: #f6f8fc;
-                    color: #7d8494;
+                    border: 1px solid rgba(217, 225, 238, 0.98);
+                    background: #f8fafc;
+                    color: #475569;
+                    font-weight: 700;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal .cmn-status-chip.is-warning {
-                    border-color: rgba(255, 210, 129, 0.8);
-                    background: #fff5dd;
-                    color: #d38a00;
+                    border-color: rgba(251, 191, 36, 0.55);
+                    background: #fffbeb;
+                    color: #b45309;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal .cmn-status-chip.is-declined,
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal .cmn-status-chip.is-critical {
-                    border-color: rgba(255, 194, 194, 0.9);
-                    background: #fff0f0;
-                    color: #ed5d5d;
+                    border-color: rgba(248, 113, 113, 0.4);
+                    background: #fff1f2;
+                    color: #be123c;
                 }
                 @media (max-width: 1100px) {
                     body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid,
