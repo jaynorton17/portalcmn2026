@@ -41554,10 +41554,10 @@ global $wpdb;
         $booking_rows = array_values(array_filter((array) ($booking_snapshot['rows'] ?? []), 'is_array'));
         $nav_context = (array) $this->get_account_manager_nav_context_snapshot($user_id);
         $urls = is_array($payload['urls'] ?? null) ? $payload['urls'] : [];
-        $render_summary_tile = static function ($value, $label, $url) {
+        $render_summary_tile = static function ($value, $label, $url, $extra_class = '') {
             ob_start();
             ?>
-            <a class="cmn-am-overview-tile" href="<?php echo esc_url((string) $url); ?>">
+            <a class="cmn-am-overview-tile <?php echo esc_attr(trim((string) $extra_class)); ?>" href="<?php echo esc_url((string) $url); ?>">
                 <strong><?php echo esc_html(number_format_i18n((int) $value)); ?></strong>
                 <span><?php echo esc_html((string) $label); ?></span>
             </a>
@@ -41681,6 +41681,20 @@ global $wpdb;
                     font-weight: 700;
                     letter-spacing: 0.02em;
                 }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile.is-accent {
+                    border-color: rgba(240, 67, 64, 0.88);
+                    background: linear-gradient(180deg, #f45b57 0%, #f04340 100%) !important;
+                    box-shadow: 0 14px 30px rgba(240, 67, 64, 0.22);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile.is-accent strong,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile.is-accent span {
+                    color: #ffffff !important;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile.is-accent:hover,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile.is-accent:focus-visible {
+                    border-color: rgba(240, 67, 64, 0.95);
+                    box-shadow: 0 18px 36px rgba(240, 67, 64, 0.26);
+                }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-panels {
                     display: grid;
                     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -41791,7 +41805,7 @@ global $wpdb;
             <section class="cmn-am-overview-grid" aria-label="Portfolio overview">
                 <?php
                 echo $render_summary_tile((int) ($nav_context['clients'] ?? 0), 'Clients', add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $this->get_portal_base_url()));
-                echo $render_summary_tile((int) ($nav_context['leads'] ?? 0), 'Leads', add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $this->get_portal_base_url()));
+                echo $render_summary_tile((int) ($nav_context['leads'] ?? 0), 'Leads', add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $this->get_portal_base_url()), 'is-accent');
                 echo $render_summary_tile((int) ($nav_context['candidates'] ?? 0), 'Candidates', add_query_arg(['view' => 'candidates'], $this->get_portal_base_url()));
                 echo $render_summary_tile((int) ($nav_context['bookings'] ?? 0), 'Bookings', add_query_arg(['view' => 'bookings'], $this->get_portal_base_url()));
                 ?>
