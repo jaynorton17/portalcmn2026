@@ -1912,9 +1912,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!context || typeof context !== 'object') {
           throw new Error('Invalid response.');
         }
-        setMetricValue('accounts', parseInt(context.accounts || context.portfolio || 0, 10) || 0);
+        setMetricValue('clients', parseInt(context.clients || 0, 10) || 0);
+        setMetricValue('leads', parseInt(context.leads || 0, 10) || 0);
         setMetricValue('candidates', parseInt(context.candidates || 0, 10) || 0);
-        setMetricValue('bookings', parseInt(context.bookings || 0, 10) || 0);
         setMetricValue('issues', parseInt(context.issues || 0, 10) || 0);
         if (badges && typeof badges === 'object') {
           Object.keys(badges).forEach(function (key) {

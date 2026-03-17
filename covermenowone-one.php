@@ -19830,6 +19830,8 @@ global $wpdb;
         $issues_snapshot = (array) $this->get_account_manager_issue_scope_snapshot($user_id, 4);
         $context = [
             'accounts' => (int) (($accounts_snapshot['counts']['accounts'] ?? 0)),
+            'clients' => (int) (($accounts_snapshot['counts']['clients'] ?? 0)),
+            'leads' => (int) (($accounts_snapshot['counts']['leads'] ?? 0)),
             'candidates' => (int) (($candidates_snapshot['counts']['total'] ?? 0)),
             'bookings' => (int) (($bookings_snapshot['counts']['open'] ?? 0)),
             'issues' => (int) (($issues_snapshot['counts']['open'] ?? 0)),
@@ -20982,7 +20984,6 @@ global $wpdb;
             return $cache[$cache_key];
         }
 
-        $candidate_ids = array_values(array_unique(array_map('intval', $this->get_manageable_candidate_ids_for_user($user_id))));
         $school_ids = array_values(array_unique(array_map('intval', $this->get_manageable_school_ids_for_user($user_id))));
         $booking_ids = array_values(array_unique(array_map('intval', $this->get_manageable_booking_ids_for_user($user_id))));
         $portal_url = $this->get_portal_base_url();
@@ -20995,11 +20996,6 @@ global $wpdb;
             ],
             'rows' => [],
         ];
-        if (!$candidate_ids) {
-            $cache[$cache_key] = $snapshot;
-            return $cache[$cache_key];
-        }
-
         $candidate_school_map = [];
         foreach ($school_ids as $school_id) {
             foreach ((array) $this->get_assigned_candidates($school_id) as $candidate_id) {
@@ -21066,7 +21062,6 @@ global $wpdb;
 
         $candidate_posts = get_posts([
             'post_type' => 'cmn_candidate',
-            'post__in' => $candidate_ids,
             'posts_per_page' => -1,
             'orderby' => 'modified',
             'order' => 'DESC',
@@ -21112,13 +21107,17 @@ global $wpdb;
                 $compliance_detail_parts[] = $risk_level . ' risk';
             }
 
+            $signal_label = 'Shared candidate pool';
             $signal_detail = $linked_school_count > 0
                 ? (number_format_i18n($linked_school_count) . ' portfolio school' . ($linked_school_count === 1 ? '' : 's'))
-                : 'No direct school link surfaced yet';
+                : 'Visible to account managers across the shared candidate pool.';
             if ($live_booking_count > 0) {
+                $signal_label = 'Live in portfolio';
                 $signal_detail .= ' · ' . number_format_i18n($live_booking_count) . ' live booking' . ($live_booking_count === 1 ? '' : 's');
             } elseif (!empty($candidate_booking_map[$candidate_id]['latest_detail'])) {
                 $signal_detail .= ' · ' . sanitize_text_field((string) $candidate_booking_map[$candidate_id]['latest_detail']);
+            } elseif ($linked_school_count > 0) {
+                $signal_label = 'Portfolio relationship';
             }
 
             $snapshot['counts']['total']++;
@@ -21144,7 +21143,7 @@ global $wpdb;
                     'role_label' => $role_label,
                     'compliance_label' => $compliance_label,
                     'compliance_detail' => implode(' · ', array_filter($compliance_detail_parts)),
-                    'signal_label' => $live_booking_count > 0 ? 'Live in portfolio' : 'Portfolio relationship',
+                    'signal_label' => $signal_label,
                     'signal_detail' => $signal_detail,
                 ];
             }
@@ -22265,44 +22264,27 @@ global $wpdb;
             $account_manager_task_panel_payload = $this->get_account_manager_task_panel_payload($user_id, 12, $this->get_current_url());
             $account_manager_workspace_metrics = [
                 [
-                    'key' => 'accounts',
-                    'label' => 'My Accounts',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
-                ],
-                [
-                    'key' => 'candidates',
-                    'label' => 'My Candidates',
-                    'url' => add_query_arg(['view' => 'candidates'], $portal_url),
-                ],
-                [
-                    'key' => 'bookings',
-                    'label' => 'My Bookings',
-                    'url' => add_query_arg(['view' => 'bookings'], $portal_url),
-                ],
-                [
-                    'key' => 'issues',
-                    'label' => 'My Issues',
-                    'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
-                ],
-            ];
-            $account_manager_workspace_links = array_values(array_filter([
-                [
-                    'label' => 'Leads',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
-                ],
-                [
+                    'key' => 'clients',
                     'label' => 'Clients',
                     'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
                 ],
                 [
-                    'label' => 'Compliance',
-                    'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
+                    'key' => 'leads',
+                    'label' => 'Leads',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
                 ],
-                $this->can_access_invoicing_workspace($user_id) ? [
-                    'label' => 'Invoices',
-                    'url' => add_query_arg(['view' => 'invoicing'], $portal_url),
-                ] : null,
-            ]));
+                [
+                    'key' => 'candidates',
+                    'label' => 'Candidates',
+                    'url' => add_query_arg(['view' => 'candidates'], $portal_url),
+                ],
+                [
+                    'key' => 'issues',
+                    'label' => 'Issues',
+                    'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
+                ],
+            ];
+            $account_manager_workspace_links = [];
         }
 
         $render_staff_nav_icon = static function ($icon_key) {
@@ -22424,9 +22406,8 @@ global $wpdb;
                         <?php if ($is_account_manager_workspace) : ?>
                             <section class="cmn-am-nav-workspace is-loading" data-am-nav-context aria-live="polite" aria-busy="true">
                                 <div class="cmn-am-nav-workspace-head">
-                                    <span class="cmn-am-nav-eyebrow">Account Manager workspace</span>
-                                    <h3>Portfolio CRM</h3>
-                                    <p>Work the bounded portfolio only: accounts, candidates, bookings, and issues.</p>
+                                    <span class="cmn-am-nav-eyebrow">Account Manager CRM</span>
+                                    <h3>Portfolio</h3>
                                 </div>
                                 <div class="cmn-am-nav-workspace-metrics">
                                     <?php foreach ($account_manager_workspace_metrics as $metric) : ?>
@@ -22436,15 +22417,6 @@ global $wpdb;
                                         </a>
                                     <?php endforeach; ?>
                                 </div>
-                                <?php if ($account_manager_workspace_links) : ?>
-                                    <div class="cmn-am-nav-workspace-links">
-                                        <?php foreach ($account_manager_workspace_links as $link) : ?>
-                                            <a class="cmn-am-nav-workspace-link" href="<?php echo esc_url((string) ($link['url'] ?? $portal_url)); ?>">
-                                                <?php echo esc_html((string) ($link['label'] ?? 'Open')); ?>
-                                            </a>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
                                 <p class="cmn-am-nav-workspace-status" data-am-nav-context-status>Loading live counts...</p>
                             </section>
                         <?php endif; ?>
@@ -44980,10 +44952,6 @@ global $wpdb;
             $bucket = '';
         }
         $is_restricted_am = $this->is_restricted_account_manager($current_user_id);
-        $manageable_candidate_ids = $is_restricted_am ? $this->get_manageable_candidate_ids_for_user($current_user_id) : [];
-        $manageable_candidate_lookup = $is_restricted_am
-            ? array_fill_keys(array_map('intval', $manageable_candidate_ids), true)
-            : [];
         $candidate_id = isset($_GET['candidate_id']) ? intval($_GET['candidate_id']) : 0;
         if ($candidate_id) {
             if (!$this->user_can_view_candidate($candidate_id, $current_user_id)) {
@@ -45004,15 +44972,7 @@ global $wpdb;
             'posts_per_page' => 50,
             's' => $search,
         ];
-        if ($is_restricted_am) {
-            $args['post__in'] = $manageable_candidate_ids ? $manageable_candidate_ids : [0];
-        }
         $deletion_request_ids = $this->get_candidate_ids_with_deletion_request();
-        if ($is_restricted_am) {
-            $deletion_request_ids = array_values(array_filter(array_map('intval', $deletion_request_ids), function ($candidate_id) use ($manageable_candidate_lookup) {
-                return isset($manageable_candidate_lookup[(int) $candidate_id]);
-            }));
-        }
         if ($status === 'deletion_requested') {
             $args['post__in'] = $deletion_request_ids ? $deletion_request_ids : [0];
         } elseif ($status !== '') {
@@ -45024,11 +44984,6 @@ global $wpdb;
             ];
         }
         $pending_rows = $this->get_candidates_awaiting_document_review(600);
-        if ($is_restricted_am) {
-            $pending_rows = array_values(array_filter($pending_rows, function ($row) use ($manageable_candidate_lookup) {
-                return isset($manageable_candidate_lookup[(int) ($row['candidate_id'] ?? 0)]);
-            }));
-        }
         if ($doc_review === 'pending') {
             $pending_ids = array_values(array_filter(array_map(function ($row) {
                 return (int) ($row['candidate_id'] ?? 0);
@@ -45191,8 +45146,6 @@ global $wpdb;
     private function get_staff_compliance_review_rows($search = '', $limit = 300) {
         $search = trim((string) $search);
         $current_user_id = (int) get_current_user_id();
-        $is_restricted_am = $this->is_restricted_account_manager($current_user_id);
-        $manageable_candidate_ids = $is_restricted_am ? $this->get_manageable_candidate_ids_for_user($current_user_id) : [];
         $args = [
             'post_type' => 'cmn_candidate',
             'posts_per_page' => max(1, (int) $limit),
@@ -45200,9 +45153,6 @@ global $wpdb;
             'order' => 'DESC',
             'fields' => 'ids',
         ];
-        if ($is_restricted_am) {
-            $args['post__in'] = $manageable_candidate_ids ? $manageable_candidate_ids : [0];
-        }
         if ($search !== '') {
             $args['s'] = $search;
         }
@@ -45399,10 +45349,6 @@ global $wpdb;
             'orderby' => 'date',
             'order' => 'DESC',
         ];
-        if ($this->is_restricted_account_manager($user_id)) {
-            $manageable_candidate_ids = $this->get_manageable_candidate_ids_for_user($user_id);
-            $args['post__in'] = $manageable_candidate_ids ? $manageable_candidate_ids : [0];
-        }
         if ($search !== '') {
             $args['s'] = $search;
         }
@@ -114793,8 +114739,7 @@ p{margin:0;line-height:1.5}
             return true;
         }
         if ($this->is_restricted_account_manager($user_id)) {
-            $manageable_candidate_ids = $this->get_manageable_candidate_ids_for_user($user_id);
-            return in_array($candidate_id, $manageable_candidate_ids, true);
+            return true;
         }
         if ($this->is_candidate_user($user_id)) {
             $user = get_user_by('id', $user_id);

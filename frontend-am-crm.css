@@ -65,42 +65,78 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-nav-link {
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace {
   margin: 2px 8px 0;
-  padding: 10px;
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, rgba(244, 247, 252, 0.94), rgba(255, 255, 255, 0.96)),
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 46%);
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.9);
   box-shadow: none;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-head {
+  display: grid;
+  gap: 4px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-head h3 {
+  margin: 0;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-eyebrow {
-  min-height: 18px;
-  padding: 0 7px;
+  min-height: 16px;
+  padding: 0;
   font-size: 9px;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace h3 {
-  font-size: 14px;
+  font-size: 13px;
 }
 
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace p,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-status {
-  font-size: 11px;
+  font-size: 10px;
   color: #64748b;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-metric {
-  padding: 7px 8px;
-  border-radius: 10px;
+  min-height: 62px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  background: #f8fafc;
+  text-decoration: none;
+  color: #0f172a;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-metric:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-metric:focus-visible {
+  background: #ffffff;
+  border-color: rgba(191, 219, 254, 0.95);
+  transform: translateY(-1px);
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-metric strong {
-  font-size: 15px;
+  font-size: 18px;
+  line-height: 1;
 }
 
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-metric span,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-link {
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-metric span {
   font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-status {
+  margin: 8px 0 0;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sales-kpi-strip {
