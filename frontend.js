@@ -2334,6 +2334,20 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     }
     document.addEventListener('click', function (event) {
+      var interactiveRow = event.target.closest('[data-row-href]');
+      if (!interactiveRow) {
+        return;
+      }
+      if (event.target.closest('a, button, input, textarea, select, label, summary')) {
+        return;
+      }
+      var rowHref = String(interactiveRow.getAttribute('data-row-href') || '').trim();
+      if (!rowHref) {
+        return;
+      }
+      window.location.href = rowHref;
+    });
+    document.addEventListener('click', function (event) {
       if (!staffNavPeekOpen || !staffNav.classList.contains('is-collapsed')) {
         return;
       }
@@ -2343,6 +2357,17 @@ document.addEventListener('DOMContentLoaded', function () {
       setStaffNavPeekState(false);
     });
     document.addEventListener('keydown', function (event) {
+      if ((event.key || '') === 'Enter' || (event.key || '') === ' ') {
+        var interactiveRow = event.target.closest('[data-row-href]');
+        if (interactiveRow && !event.target.closest('a, button, input, textarea, select, label, summary')) {
+          var rowHref = String(interactiveRow.getAttribute('data-row-href') || '').trim();
+          if (rowHref) {
+            event.preventDefault();
+            window.location.href = rowHref;
+            return;
+          }
+        }
+      }
       if ((event.key || '') !== 'Escape') {
         return;
       }
