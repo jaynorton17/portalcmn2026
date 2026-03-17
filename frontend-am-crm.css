@@ -1668,3 +1668,86 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--mini
     grid-template-columns: 1fr;
   }
 }
+
+/* Keep the broader AM workspace on light surfaces, not dark blocks. */
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-school-toolbar-shell,
+  .cmn-filter-panel,
+  .cmn-panel-card,
+  .cmn-table-wrap,
+  .cmn-staff-table-card,
+  .cmn-school-leads-summary-card,
+  .cmn-school-leads-lane,
+  .cmn-school-lead-card,
+  .cmn-school-lead-preview-panel,
+  .cmn-school-profile-hub-shortcuts,
+  .cmn-school-profile-issues-strip,
+  .cmn-school-profile-timeline-summary-card,
+  .cmn-school-profile-timeline-filter,
+  .cmn-school-profile-timeline-event,
+  .cmn-school-profile-timeline-load-more,
+  .cmn-school-relationship-overview-card,
+  .cmn-school-relationship-overview-block,
+  .cmn-school-task-inline-composer,
+  .cmn-school-task-reminder-planner,
+  .cmn-school-task-system-card,
+  .cmn-school-task-system-panel,
+  .cmn-school-task-system-row,
+  .cmn-school-booking-widget-card,
+  .cmn-school-booking-widget-panel,
+  .cmn-school-booking-widget-row,
+  .cmn-school-bookings-workspace-card,
+  .cmn-school-bookings-workspace-panel,
+  .cmn-school-bookings-workspace-row,
+  .cmn-school-candidate-interaction-card,
+  .cmn-school-candidate-interaction-panel,
+  .cmn-school-candidate-interaction-row,
+  .cmn-school-document-status-card,
+  .cmn-school-document-status-panel,
+  .cmn-school-document-status-row,
+  .cmn-school-contact-summary-card,
+  .cmn-school-contact-block-panel,
+  .cmn-school-contact-directory-card,
+  .cmn-school-owner-control,
+  .cmn-school-owner-control-panel,
+  .cmn-school-work-queue-card
+) {
+  background: #ffffff !important;
+  background-image: none !important;
+  border-color: rgba(226, 231, 241, 0.96) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05) !important;
+  color: #141b2d !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-school-toolbar-shell,
+  .cmn-filter-panel,
+  .cmn-panel-card,
+  .cmn-staff-table-card,
+  .cmn-school-leads-summary-card,
+  .cmn-school-lead-card,
+  .cmn-school-lead-preview-panel,
+  .cmn-school-work-queue-card
+) :is(h1, h2, h3, h4, h5, h6, strong, th, td, p, span, label, li, dd, dt, a) {
+  color: inherit;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-school-toolbar-eyebrow,
+  .cmn-school-toolbar-preset-label,
+  .cmn-school-toolbar-active-label,
+  .cmn-school-leads-eyebrow,
+  .cmn-school-lead-card-grid dd span,
+  .cmn-school-lead-card-note p,
+  .cmn-school-work-queue-card-label,
+  .cmn-school-work-queue-card-detail,
+  .cmn-muted,
+  .cmn-table-meta
+) {
+  color: #8b93a5 !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card.is-active {
+  background: linear-gradient(180deg, #ffffff 0%, #edf3ff 100%) !important;
+  border-color: rgba(53, 114, 255, 0.22) !important;
+}
