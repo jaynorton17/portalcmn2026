@@ -20275,6 +20275,7 @@ global $wpdb;
                 'cta' => 'Open task editor',
                 'url' => (string) ($task_edit_url ?: ($school_context['activity_url'] ?? $fallback_url)),
                 'edit_url' => $task_edit_url,
+                'overview_url' => (string) ($school_context['overview_url'] ?? ''),
                 'editor_label' => 'Open task editor',
                 'school_name' => sanitize_text_field((string) ($school_context['school_name'] ?? 'School relationship')),
                 'task_id' => $task_id,
@@ -41556,40 +41557,61 @@ global $wpdb;
         $kpis = is_array($payload['kpis'] ?? null) ? $payload['kpis'] : [];
         $due_now_rows = array_values(array_filter((array) ($payload['due_now_rows'] ?? []), 'is_array'));
         $upcoming_rows = array_values(array_filter((array) ($payload['upcoming_rows'] ?? []), 'is_array'));
-        $future_rows = array_values(array_filter((array) ($payload['future_rows'] ?? []), 'is_array'));
         $needs_attention_rows = array_values(array_filter((array) ($payload['needs_attention_rows'] ?? []), 'is_array'));
         $counts = is_array($payload['counts'] ?? null) ? $payload['counts'] : [];
         $urls = is_array($payload['urls'] ?? null) ? $payload['urls'] : [];
-        $render_task_dashboard_row = function (array $task_row, $chip_class = 'is-info') {
-            $row_url = esc_url((string) ($task_row['edit_url'] ?? $task_row['url'] ?? '#'));
-            $row_title = sanitize_text_field((string) ($task_row['label'] ?? 'Task'));
-            $row_detail = sanitize_text_field((string) ($task_row['detail'] ?? ''));
-            $row_meta = sanitize_text_field((string) ($task_row['eyebrow'] ?? 'School'));
+        $split_dashboard_detail = static function ($detail) {
+            $detail = trim((string) $detail);
+            if ($detail === '') {
+                return ['', ''];
+            }
+            $parts = preg_split('/\s+·\s+/u', $detail);
+            if (!is_array($parts) || !$parts) {
+                return [sanitize_text_field($detail), ''];
+            }
+            $meta = sanitize_text_field((string) array_shift($parts));
+            $context = sanitize_text_field((string) implode(' · ', array_filter(array_map('sanitize_text_field', $parts))));
+            return [$meta, $context];
+        };
+        $render_task_dashboard_tile = function (array $task_row, $chip_class = 'is-info') use ($split_dashboard_detail) {
+            $editor_url = esc_url((string) ($task_row['edit_url'] ?? $task_row['url'] ?? '#'));
+            $open_url = esc_url((string) ($task_row['overview_url'] ?? $task_row['url'] ?? $editor_url));
+            $school_name = sanitize_text_field((string) ($task_row['school_name'] ?? $task_row['eyebrow'] ?? 'School'));
+            $row_summary = sanitize_text_field((string) ($task_row['label'] ?? 'Task'));
+            [$row_meta, $row_context] = $split_dashboard_detail((string) ($task_row['detail'] ?? ''));
             $row_value = sanitize_text_field((string) ($task_row['value'] ?? 'Open'));
+            $editor_label = sanitize_text_field((string) ($task_row['editor_label'] ?? 'Open task editor'));
 
             ob_start();
             ?>
-            <article class="cmn-am-home-row cmn-am-home-row--task" data-row-href="<?php echo $row_url; ?>" tabindex="0">
-                <div class="cmn-am-home-row-main">
-                    <div class="cmn-am-home-row-top">
-                        <strong class="cmn-am-home-row-title"><a href="<?php echo $row_url; ?>"><?php echo esc_html($row_title); ?></a></strong>
+            <article class="cmn-am-home-tile cmn-am-home-tile--task" data-row-href="<?php echo $open_url; ?>" tabindex="0">
+                <div class="cmn-am-home-tile-top">
+                    <div class="cmn-am-home-tile-title-group">
+                        <strong class="cmn-am-home-tile-title"><a href="<?php echo $open_url; ?>"><?php echo esc_html($school_name); ?></a></strong>
+                        <span class="cmn-am-home-tile-stage">Follow-up task</span>
+                    </div>
+                    <div class="cmn-am-home-tile-badges">
                         <span class="cmn-status-chip <?php echo esc_attr($chip_class); ?>"><?php echo esc_html($row_value); ?></span>
                     </div>
-                    <?php if ($row_detail !== '') : ?>
-                        <div class="cmn-am-home-row-description"><?php echo esc_html($row_detail); ?></div>
+                </div>
+                <div class="cmn-am-home-tile-body">
+                    <div class="cmn-am-home-tile-summary"><?php echo esc_html($row_summary); ?></div>
+                    <?php if ($row_context !== '') : ?>
+                        <div class="cmn-am-home-tile-context"><?php echo esc_html($row_context); ?></div>
                     <?php endif; ?>
                     <?php if ($row_meta !== '') : ?>
-                        <div class="cmn-am-home-row-meta"><?php echo esc_html($row_meta); ?></div>
+                        <div class="cmn-am-home-tile-meta"><?php echo esc_html($row_meta); ?></div>
                     <?php endif; ?>
                 </div>
-                <div class="cmn-am-home-row-actions">
-                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo $row_url; ?>">Open</a>
+                <div class="cmn-am-home-tile-actions">
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo $open_url; ?>">Open</a>
+                    <a class="cmn-primary cmn-btn-mini" href="<?php echo $editor_url; ?>"><?php echo esc_html($editor_label); ?></a>
                 </div>
             </article>
             <?php
             return (string) ob_get_clean();
         };
-        $render_attention_dashboard_row = function (array $attention_row) use ($urls) {
+        $render_attention_dashboard_tile = function (array $attention_row) use ($urls) {
             $open_account_url = esc_url((string) ($attention_row['overview_url'] ?? $attention_row['view_url'] ?? $urls['accounts'] ?? '#'));
             $edit_next_action_url = esc_url((string) ($attention_row['task_editor_url'] ?? $open_account_url));
             $attention_reason = sanitize_text_field((string) ($attention_row['attention_reason'] ?? 'Needs attention'));
@@ -41600,27 +41622,35 @@ global $wpdb;
                 sanitize_key((string) ($attention_row['status_value'] ?? '')) === 'lead'
             );
             $row_title = sanitize_text_field((string) ($attention_row['title'] ?? 'School'));
-            $row_description = sanitize_text_field((string) ($attention_row['next_action_label'] ?? 'No next action logged'));
-            $row_meta = implode(' · ', array_filter([
-                $stage_label,
-                sanitize_text_field((string) ($attention_row['last_activity_detail'] ?? '')),
-            ]));
+            $row_summary = sanitize_text_field((string) ($attention_row['next_action_label'] ?? 'No next action logged'));
+            $row_context = sanitize_text_field((string) ($attention_row['account_risk_detail'] ?? $attention_row['follow_up_state_detail'] ?? 'Use the account record to log the next follow-up.'));
+            $row_meta = sanitize_text_field((string) ($attention_row['last_activity_detail'] ?? ''));
             $task_editor_label = sanitize_text_field((string) ($attention_row['task_editor_label'] ?? 'Set next action'));
 
             ob_start();
             ?>
-            <article class="cmn-am-home-row cmn-am-home-row--account" data-row-href="<?php echo $open_account_url; ?>" tabindex="0">
-                <div class="cmn-am-home-row-main">
-                    <div class="cmn-am-home-row-top">
-                        <strong class="cmn-am-home-row-title"><a href="<?php echo $open_account_url; ?>"><?php echo esc_html($row_title); ?></a></strong>
+            <article class="cmn-am-home-tile cmn-am-home-tile--account" data-row-href="<?php echo $open_account_url; ?>" tabindex="0">
+                <div class="cmn-am-home-tile-top">
+                    <div class="cmn-am-home-tile-title-group">
+                        <strong class="cmn-am-home-tile-title"><a href="<?php echo $open_account_url; ?>"><?php echo esc_html($row_title); ?></a></strong>
+                        <?php if ($stage_label !== '') : ?>
+                            <span class="cmn-am-home-tile-stage"><?php echo esc_html($stage_label); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="cmn-am-home-tile-badges">
                         <span class="cmn-status-chip <?php echo esc_attr($status_chip_class); ?>"><?php echo esc_html($attention_reason); ?></span>
                     </div>
-                    <div class="cmn-am-home-row-description"><?php echo esc_html($row_description); ?></div>
+                </div>
+                <div class="cmn-am-home-tile-body">
+                    <div class="cmn-am-home-tile-summary"><?php echo esc_html($row_summary); ?></div>
+                    <?php if ($row_context !== '') : ?>
+                        <div class="cmn-am-home-tile-context"><?php echo esc_html($row_context); ?></div>
+                    <?php endif; ?>
                     <?php if ($row_meta !== '') : ?>
-                        <div class="cmn-am-home-row-meta"><?php echo esc_html($row_meta); ?></div>
+                        <div class="cmn-am-home-tile-meta"><?php echo esc_html($row_meta); ?></div>
                     <?php endif; ?>
                 </div>
-                <div class="cmn-am-home-row-actions">
+                <div class="cmn-am-home-tile-actions">
                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo $open_account_url; ?>">Open</a>
                     <a class="cmn-primary cmn-btn-mini" href="<?php echo $edit_next_action_url; ?>"><?php echo esc_html($task_editor_label); ?></a>
                 </div>
@@ -41633,11 +41663,18 @@ global $wpdb;
         ?>
         <div class="cmn-am-dashboard-container">
             <div class="cmn-am-sales-kpi-strip" aria-label="Weekly CRM activity">
-                <span class="cmn-am-sales-kpi-inline"><span>Calls</span><strong><?php echo esc_html(number_format_i18n((int) ($kpis['calls'] ?? 0))); ?></strong></span>
-                <span class="cmn-am-sales-kpi-divider" aria-hidden="true">|</span>
-                <span class="cmn-am-sales-kpi-inline"><span>Emails</span><strong><?php echo esc_html(number_format_i18n((int) ($kpis['emails'] ?? 0))); ?></strong></span>
-                <span class="cmn-am-sales-kpi-divider" aria-hidden="true">|</span>
-                <span class="cmn-am-sales-kpi-inline"><span>Tasks</span><strong><?php echo esc_html(number_format_i18n((int) ($kpis['tasks_completed'] ?? 0))); ?></strong></span>
+                <div class="cmn-am-sales-kpi-tile">
+                    <span class="cmn-am-sales-kpi-label">Calls</span>
+                    <strong class="cmn-am-sales-kpi-value"><?php echo esc_html(number_format_i18n((int) ($kpis['calls'] ?? 0))); ?></strong>
+                </div>
+                <div class="cmn-am-sales-kpi-tile">
+                    <span class="cmn-am-sales-kpi-label">Emails</span>
+                    <strong class="cmn-am-sales-kpi-value"><?php echo esc_html(number_format_i18n((int) ($kpis['emails'] ?? 0))); ?></strong>
+                </div>
+                <div class="cmn-am-sales-kpi-tile">
+                    <span class="cmn-am-sales-kpi-label">Tasks</span>
+                    <strong class="cmn-am-sales-kpi-value"><?php echo esc_html(number_format_i18n((int) ($kpis['tasks_completed'] ?? 0))); ?></strong>
+                </div>
             </div>
 
             <div class="cmn-am-sales-dashboard-stack">
@@ -41648,13 +41685,13 @@ global $wpdb;
                             <a class="cmn-am-home-link" href="<?php echo esc_url((string) ($urls['tasks'] ?? '#')); ?>">Open follow-up queue</a>
                         </div>
                         <?php if ($due_now_rows) : ?>
-                            <div class="cmn-am-home-list">
+                            <div class="cmn-am-home-grid cmn-am-home-grid--tasks">
                                 <?php foreach ($due_now_rows as $task_row) : ?>
-                                    <?php echo $render_task_dashboard_row($task_row, 'is-warning'); ?>
+                                    <?php echo $render_task_dashboard_tile($task_row, 'is-warning'); ?>
                                 <?php endforeach; ?>
                             </div>
                         <?php else : ?>
-                            <p class="cmn-am-home-empty">No tasks due today 👍</p>
+                            <div class="cmn-am-home-empty-tile">No tasks due today</div>
                         <?php endif; ?>
                     </div>
                 </section>
@@ -41665,13 +41702,13 @@ global $wpdb;
                             <h3>Upcoming Tasks</h3>
                         </div>
                         <?php if ($upcoming_rows) : ?>
-                            <div class="cmn-am-home-list">
+                            <div class="cmn-am-home-grid cmn-am-home-grid--tasks">
                                 <?php foreach ($upcoming_rows as $task_row) : ?>
-                                    <?php echo $render_task_dashboard_row($task_row, 'is-info'); ?>
+                                    <?php echo $render_task_dashboard_tile($task_row, 'is-info'); ?>
                                 <?php endforeach; ?>
                             </div>
                         <?php else : ?>
-                            <p class="cmn-am-home-empty">No upcoming tasks</p>
+                            <div class="cmn-am-home-empty-tile">No upcoming tasks</div>
                         <?php endif; ?>
                     </div>
                 </section>
@@ -41686,30 +41723,13 @@ global $wpdb;
                             </div>
                         </div>
                         <?php if ($needs_attention_rows) : ?>
-                            <div class="cmn-am-home-list">
+                            <div class="cmn-am-home-grid cmn-am-home-grid--attention">
                                 <?php foreach ($needs_attention_rows as $attention_row) : ?>
-                                    <?php echo $render_attention_dashboard_row($attention_row); ?>
+                                    <?php echo $render_attention_dashboard_tile($attention_row); ?>
                                 <?php endforeach; ?>
                             </div>
                         <?php else : ?>
-                            <p class="cmn-am-home-empty">All accounts are up to date</p>
-                        <?php endif; ?>
-                    </div>
-                </section>
-
-                <section class="cmn-am-home-section">
-                    <div class="cmn-am-home-section-shell">
-                        <div class="cmn-am-home-section-head">
-                            <h3>Future Tasks</h3>
-                        </div>
-                        <?php if ($future_rows) : ?>
-                            <div class="cmn-am-home-list">
-                                <?php foreach ($future_rows as $task_row) : ?>
-                                    <?php echo $render_task_dashboard_row($task_row, 'is-muted'); ?>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else : ?>
-                            <p class="cmn-am-home-empty">No future tasks</p>
+                            <div class="cmn-am-home-empty-tile">No accounts need attention</div>
                         <?php endif; ?>
                     </div>
                 </section>
