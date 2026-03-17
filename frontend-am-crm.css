@@ -1751,3 +1751,43 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card.is-ac
   background: linear-gradient(180deg, #ffffff 0%, #edf3ff 100%) !important;
   border-color: rgba(53, 114, 255, 0.22) !important;
 }
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--metric.is-primary,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--metric.is-hot,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-high,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-hot,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-medium,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-clear,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--activity.is-urgent,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--system.is-red,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--system.is-amber,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--system.is-green {
+  background: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid rgba(230, 234, 243, 0.98) !important;
+  color: #141b2d !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget:focus-visible {
+  border-color: rgba(53, 114, 255, 0.2) !important;
+  background: #ffffff !important;
+  box-shadow: 0 14px 28px rgba(53, 114, 255, 0.08) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-dashboard-widget-label,
+  .cmn-dashboard-widget-value,
+  .cmn-dashboard-widget-cta
+) {
+  color: #141b2d !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-dashboard-widget-eyebrow,
+  .cmn-dashboard-widget-detail
+) {
+  color: #8b93a5 !important;
+}
