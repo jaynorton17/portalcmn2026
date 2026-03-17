@@ -22009,7 +22009,9 @@ global $wpdb;
             $current_email_centre_tab = 'templates';
         }
 
-        $dashboard_url = add_query_arg(['view' => false, 'cmn_tab' => false], $portal_url);
+        $dashboard_url = $is_account_manager_workspace
+            ? add_query_arg(['view' => 'home', 'cmn_tab' => false], $portal_url)
+            : add_query_arg(['view' => false, 'cmn_tab' => false], $portal_url);
         $automation_tab_url = function ($tab) {
             return $this->get_automation_console_url($tab);
         };
@@ -41092,6 +41094,9 @@ global $wpdb;
             if (!$this->is_staff_user()) {
                 return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to staff users only.</p></div></section>';
             }
+            if ($this->is_restricted_account_manager((int) get_current_user_id())) {
+                return $this->render_staff_home_shortcode();
+            }
             return $this->render_staff_dashboard_shortcode();
         }
         if ($view === 'email-centre' || $view === 'email_centre') {
@@ -41137,6 +41142,9 @@ global $wpdb;
         }
 
         $user = wp_get_current_user();
+        if ($this->is_restricted_account_manager((int) ($user->ID ?? 0))) {
+            return $this->render_staff_home_shortcode();
+        }
         if (in_array('cmn_admin', (array) $user->roles, true)
             || in_array('cmn_staff', (array) $user->roles, true)
             || in_array('cmn_account_manager', (array) $user->roles, true)
