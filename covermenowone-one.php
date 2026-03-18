@@ -41735,8 +41735,8 @@ global $wpdb;
             $chip_class = $attention_reason === 'At risk' ? 'is-critical' : 'is-warning';
             $summary = sanitize_text_field((string) ($row['next_action_label'] ?? 'No next action logged'));
             $detail_lines = array_values(array_filter([
-                sanitize_text_field((string) ($row['account_risk_detail'] ?? '')),
                 sanitize_text_field((string) ($row['follow_up_state_detail'] ?? '')),
+                sanitize_text_field((string) ($row['account_risk_detail'] ?? '')),
                 sanitize_text_field((string) ($row['last_activity_detail'] ?? '')),
             ]));
             $detail_lines = array_slice($detail_lines, 0, 2);
@@ -41749,24 +41749,24 @@ global $wpdb;
             <article class="cmn-am-home-attention-card">
                 <div class="cmn-am-home-attention-card-head">
                     <div class="cmn-am-home-attention-card-title-group">
-                        <strong><?php echo esc_html($title); ?></strong>
                         <?php if ($stage_label !== '') : ?>
-                            <span><?php echo esc_html($stage_label); ?></span>
+                            <span class="cmn-am-home-attention-stage"><?php echo esc_html($stage_label); ?></span>
                         <?php endif; ?>
+                        <strong><?php echo esc_html($title); ?></strong>
                     </div>
                     <span class="cmn-status-chip <?php echo esc_attr($chip_class); ?>"><?php echo esc_html($attention_reason); ?></span>
                 </div>
                 <p class="cmn-am-home-attention-summary"><?php echo esc_html($summary); ?></p>
                 <?php if ($detail_lines) : ?>
-                    <ul class="cmn-am-home-attention-list">
+                    <div class="cmn-am-home-attention-meta">
                         <?php foreach ($detail_lines as $detail_line) : ?>
-                            <li><?php echo esc_html($detail_line); ?></li>
+                            <span class="cmn-am-home-attention-meta-item"><?php echo esc_html($detail_line); ?></span>
                         <?php endforeach; ?>
-                    </ul>
+                    </div>
                 <?php endif; ?>
-                <div class="cmn-am-home-task-card-actions">
-                    <a class="cmn-am-home-btn cmn-am-home-btn--ghost" href="<?php echo $open_url; ?>">Open account</a>
-                    <a class="cmn-am-home-btn cmn-am-home-btn--text" href="<?php echo $task_url; ?>"><?php echo esc_html($task_label); ?></a>
+                <div class="cmn-am-home-task-card-actions cmn-am-home-attention-actions">
+                    <a class="cmn-am-home-btn cmn-am-home-btn--ghost" href="<?php echo $open_url; ?>">Open</a>
+                    <a class="cmn-am-home-btn cmn-am-home-btn--primary" href="<?php echo $task_url; ?>"><?php echo esc_html($task_label); ?></a>
                 </div>
             </article>
             <?php
@@ -41803,20 +41803,24 @@ global $wpdb;
                     box-shadow: 0 18px 42px rgba(24, 24, 24, 0.08);
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-staff-nav-header {
-                    gap: 14px;
+                    gap: 10px;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home {
                     margin: 4px 4px 0;
-                    padding: 18px 16px 14px;
-                    border-radius: 22px;
+                    padding: 14px 14px 12px;
+                    border-radius: 20px;
                     border: 1px solid rgba(72, 72, 72, 0.08);
                     background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
                     box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 10px 26px rgba(24, 24, 24, 0.05);
                 }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home .cmn-am-nav-workspace-head {
+                    display: grid;
+                    gap: 4px;
+                }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home .cmn-am-nav-eyebrow {
                     padding: 0;
                     min-height: auto;
-                    font-size: 12px;
+                    font-size: 11px;
                     font-weight: 700;
                     color: #677189;
                     letter-spacing: 0;
@@ -41825,10 +41829,14 @@ global $wpdb;
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home h3 {
                     margin: 0;
                     font-family: "Space Grotesk", "League Spartan", "Inter", sans-serif;
-                    font-size: 32px;
+                    font-size: 24px;
                     font-weight: 700;
                     line-height: 1;
                     color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home .cmn-am-nav-workspace-copy,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home .cmn-am-nav-workspace-pills {
+                    display: none;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-copy {
                     margin: 8px 0 0;
@@ -41863,32 +41871,34 @@ global $wpdb;
                     background: #edf4ff;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace-metrics {
-                    gap: 10px;
-                    margin-top: 16px;
+                    gap: 8px;
+                    margin-top: 12px;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-metric {
-                    min-height: 74px;
-                    padding: 12px;
-                    border-radius: 16px;
+                    min-height: 60px;
+                    padding: 10px;
+                    border-radius: 14px;
                     background: #ffffff;
                     border: 1px solid rgba(72, 72, 72, 0.08);
                     box-shadow: 0 8px 20px rgba(24, 24, 24, 0.04);
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-metric strong {
-                    font-size: 30px;
+                    font-size: 24px;
                     font-weight: 800;
                     color: #181818 !important;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-metric span {
-                    font-size: 12px;
+                    font-size: 11px;
                     color: #4f5768 !important;
                     font-weight: 700;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace-status {
-                    margin-top: 12px;
-                    font-size: 12px;
+                    margin-top: 10px;
+                    padding-top: 10px;
+                    border-top: 1px solid rgba(72, 72, 72, 0.08);
+                    font-size: 11px;
                     font-weight: 700;
-                    color: #181818;
+                    color: #677189;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-list {
                     gap: 8px;
@@ -42174,19 +42184,26 @@ global $wpdb;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-grid {
                     display: grid;
-                    grid-template-columns: repeat(3, minmax(0, 1fr));
-                    gap: 14px;
+                    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                    gap: 16px;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card {
-                    min-height: 232px;
-                    display: grid;
-                    gap: 14px;
-                    align-content: start;
-                    padding: 18px;
+                    min-height: 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    padding: 16px;
                     border-radius: 18px;
                     border: 1px solid rgba(72, 72, 72, 0.08);
                     background: #ffffff;
                     box-shadow: 0 10px 24px rgba(24, 24, 24, 0.04);
+                    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card:hover,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card:focus-within {
+                    transform: translateY(-1px);
+                    border-color: rgba(47, 99, 255, 0.18);
+                    box-shadow: 0 16px 32px rgba(24, 24, 24, 0.07);
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card-head {
                     display: flex;
@@ -42196,7 +42213,15 @@ global $wpdb;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card-title-group {
                     display: grid;
-                    gap: 4px;
+                    gap: 6px;
+                    min-width: 0;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-stage {
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.02em;
+                    text-transform: uppercase;
+                    color: #697486;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card-title-group strong {
                     font-size: 17px;
@@ -42216,15 +42241,30 @@ global $wpdb;
                     font-weight: 800;
                     line-height: 1.45;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-list {
-                    margin: 0;
-                    padding: 0 0 0 16px;
-                    display: grid;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-meta {
+                    display: flex;
+                    flex-wrap: wrap;
                     gap: 8px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-meta-item {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 30px;
+                    padding: 0 10px;
+                    border-radius: 999px;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    background: #f6f7f9;
                     color: #5f6b7d;
-                    font-size: 13px;
-                    font-weight: 600;
-                    line-height: 1.5;
+                    font-size: 12px;
+                    font-weight: 700;
+                    line-height: 1.4;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-actions {
+                    margin-top: auto;
+                    padding-top: 4px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-actions .cmn-am-home-btn {
+                    flex: 1 1 0;
                 }
                 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-actions {
                     display: grid;
