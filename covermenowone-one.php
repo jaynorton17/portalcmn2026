@@ -2531,7 +2531,7 @@ final class CMN_One_Plugin {
         ob_start();
         ?>
         <div class="cmn-brand-block">
-            <div class="cmn-brand-title">CoverMeNow <span class="cmn-topbar-accent">ONE</span></div>
+            <div class="cmn-brand-title">CoverMeNow <span class="cmn-topbar-accent" style="color:#F04340;-webkit-text-fill-color:#F04340;">ONE</span></div>
             <div class="cmn-brand-version">V<?php echo esc_html($version); ?></div>
         </div>
         <?php
