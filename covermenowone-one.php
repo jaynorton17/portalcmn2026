@@ -65081,6 +65081,1510 @@ global $wpdb;
         exit;
     }
 
+    private function render_account_manager_lead_school_profile_workspace_html(array $payload = []) {
+        $school_id = max(0, (int) ($payload['school_id'] ?? 0));
+        $school_name = sanitize_text_field((string) ($payload['school_name'] ?? 'School'));
+        $school_code = sanitize_text_field((string) ($payload['school_code'] ?? ''));
+        $school_location_label = sanitize_text_field((string) ($payload['school_location_label'] ?? 'Location not saved'));
+        $active_profile_tab = sanitize_key((string) ($payload['active_profile_tab'] ?? 'overview'));
+        $profile_stage_value = sanitize_text_field((string) ($payload['profile_stage_value'] ?? 'Lead'));
+        $stage_payload = is_array($payload['stage_payload'] ?? null) ? $payload['stage_payload'] : [];
+        $primary_contact_summary = is_array($payload['primary_contact_summary'] ?? null) ? $payload['primary_contact_summary'] : [];
+        $manager_summary = is_array($payload['manager_summary'] ?? null) ? $payload['manager_summary'] : [];
+        $last_touch_summary = is_array($payload['last_touch_summary'] ?? null) ? $payload['last_touch_summary'] : [];
+        $login_summary = is_array($payload['login_summary'] ?? null) ? $payload['login_summary'] : [];
+        $relationship_overview = is_array($payload['relationship_overview'] ?? null) ? $payload['relationship_overview'] : [];
+        $contact_block = is_array($payload['contact_block'] ?? null) ? $payload['contact_block'] : [];
+        $task_follow_up_system = is_array($payload['task_follow_up_system'] ?? null) ? $payload['task_follow_up_system'] : [];
+        $booking_widget = is_array($payload['booking_widget'] ?? null) ? $payload['booking_widget'] : [];
+        $bookings_workspace = is_array($payload['bookings_workspace'] ?? null) ? $payload['bookings_workspace'] : [];
+        $candidate_widget = is_array($payload['candidate_widget'] ?? null) ? $payload['candidate_widget'] : [];
+        $document_status_panel = is_array($payload['document_status_panel'] ?? null) ? $payload['document_status_panel'] : [];
+        $school_light_context = is_array($payload['school_light_context'] ?? null) ? $payload['school_light_context'] : [];
+        $school_issue_snapshot = is_array($payload['school_issue_snapshot'] ?? null) ? $payload['school_issue_snapshot'] : [];
+        $school_lead_notes = array_values(array_filter((array) ($payload['school_lead_notes'] ?? []), 'is_array'));
+        $school_lead_notes_preview = array_slice($school_lead_notes, 0, 4);
+        $school_lead_note_type_labels = is_array($payload['school_lead_note_type_labels'] ?? null) ? $payload['school_lead_note_type_labels'] : [];
+        $school_lead_stage_options = is_array($payload['school_lead_stage_options'] ?? null) ? $payload['school_lead_stage_options'] : [];
+        $school_lead_field_values = is_array($payload['school_lead_field_values'] ?? null) ? $payload['school_lead_field_values'] : [];
+        $school_lead_actions_nonce = sanitize_text_field((string) ($payload['school_lead_actions_nonce'] ?? ''));
+        $email_composer = is_array($payload['email_composer'] ?? null) ? $payload['email_composer'] : [];
+        $school_profile_timeline_nonce = sanitize_text_field((string) ($payload['school_profile_timeline_nonce'] ?? ''));
+        $activity_quick_counts = is_array($payload['activity_quick_counts'] ?? null) ? $payload['activity_quick_counts'] : [];
+        $profile_issues = array_values(array_filter(array_map('sanitize_text_field', (array) ($payload['profile_issues'] ?? []))));
+        $support_focus_url = esc_url((string) ($payload['support_focus_url'] ?? ''));
+        $overview_tab_url = esc_url((string) ($payload['overview_tab_url'] ?? ''));
+        $lead_list_url = esc_url((string) ($payload['lead_list_url'] ?? ''));
+        $home_url = esc_url((string) ($payload['home_url'] ?? ''));
+        $build_tab_url = $payload['build_tab_url'] ?? null;
+        $call_focus_url = esc_url((string) ($payload['call_focus_url'] ?? ''));
+        $email_focus_url = esc_url((string) ($payload['email_focus_url'] ?? ''));
+        $note_focus_url = esc_url((string) ($payload['note_focus_url'] ?? ''));
+        $status_display_label = sanitize_text_field((string) ($payload['status_display_label'] ?? 'Lead'));
+        $request_status_label = sanitize_text_field((string) ($payload['request_status_label'] ?? 'Pending'));
+        $booking_counts = is_array($payload['booking_counts'] ?? null) ? $payload['booking_counts'] : [];
+        $meta_rows = is_array($payload['meta_rows'] ?? null) ? $payload['meta_rows'] : [];
+
+        $stage_detail = sanitize_text_field((string) ($stage_payload['detail'] ?? ''));
+        $primary_contact_name = sanitize_text_field((string) ($primary_contact_summary['name'] ?? 'No contact saved'));
+        $primary_contact_role = sanitize_text_field((string) ($primary_contact_summary['role'] ?? ''));
+        $primary_contact_email = sanitize_email((string) ($primary_contact_summary['email'] ?? ''));
+        $primary_contact_phone = sanitize_text_field((string) ($primary_contact_summary['phone'] ?? ''));
+        $owner_name = sanitize_text_field((string) ($manager_summary['name'] ?? 'Unassigned'));
+        $last_touch_label = sanitize_text_field((string) ($last_touch_summary['label'] ?? 'No contact logged'));
+        $last_touch_detail = sanitize_text_field((string) ($last_touch_summary['detail'] ?? 'No recent CRM interaction found.'));
+        $last_login_label = sanitize_text_field((string) ($login_summary['label'] ?? 'No login recorded'));
+        $last_login_detail = sanitize_text_field((string) ($login_summary['detail'] ?? ''));
+
+        $summary_cards = array_values(array_filter((array) ($task_follow_up_system['summary_cards'] ?? []), 'is_array'));
+        $next_action_card = is_array($summary_cards[0] ?? null) ? $summary_cards[0] : [];
+        $follow_up_card = is_array($summary_cards[1] ?? null) ? $summary_cards[1] : [];
+        $relationship_health_card = is_array($summary_cards[2] ?? null) ? $summary_cards[2] : [];
+        $account_risk_card = is_array($summary_cards[3] ?? null) ? $summary_cards[3] : [];
+        $task_actions = array_values(array_filter((array) ($task_follow_up_system['actions'] ?? []), 'is_array'));
+        $task_primary_action = is_array($task_actions[0] ?? null) ? $task_actions[0] : [];
+        $task_editor_url = esc_url((string) ($task_primary_action['url'] ?? ''));
+        $task_editor_label = sanitize_text_field((string) ($task_primary_action['label'] ?? 'Edit next action'));
+
+        $candidate_summary_cards = array_values(array_filter((array) ($candidate_widget['summary_cards'] ?? []), 'is_array'));
+        $candidate_count = sanitize_text_field((string) (($candidate_summary_cards[0]['value'] ?? '0')));
+        $open_issue_count = max(0, (int) (($school_issue_snapshot['counts']['open'] ?? 0)));
+        $requested_booking_count = max(0, (int) ($booking_counts['requested'] ?? 0));
+        $accepted_booking_count = max(0, (int) ($booking_counts['accepted'] ?? 0));
+        $note_count = max(0, (int) count($school_lead_notes));
+
+        $is_timeline_tab = in_array($active_profile_tab, ['overview', 'activity'], true);
+        $is_account_details_tab = ($active_profile_tab === 'contacts');
+        $is_bookings_tab = ($active_profile_tab === 'bookings');
+        $is_files_tab = ($active_profile_tab === 'documents');
+        $is_settings_tab = ($active_profile_tab === 'settings');
+
+        $pipeline_stat_tone = 'neutral';
+        $follow_up_tone = sanitize_key((string) ($follow_up_card['tone'] ?? ''));
+        $risk_tone = sanitize_key((string) ($account_risk_card['tone'] ?? ''));
+        $health_tone = sanitize_key((string) ($relationship_health_card['tone'] ?? ''));
+        $follow_up_label = sanitize_text_field((string) ($follow_up_card['value'] ?? 'No follow-up logged'));
+        $follow_up_detail = sanitize_text_field((string) ($follow_up_card['detail'] ?? 'No open follow-up task exists yet.'));
+        $next_action_label = sanitize_text_field((string) ($next_action_card['value'] ?? 'Set your first follow-up task'));
+        $next_action_detail = sanitize_text_field((string) ($next_action_card['detail'] ?? 'No open follow-up task is currently driving this lead.'));
+        $relationship_health_label = sanitize_text_field((string) ($relationship_health_card['value'] ?? 'Healthy'));
+        $relationship_health_detail = sanitize_text_field((string) ($relationship_health_card['detail'] ?? 'No immediate relationship drift is visible.'));
+        $account_risk_label = sanitize_text_field((string) ($account_risk_card['value'] ?? 'Clear'));
+        $account_risk_detail = sanitize_text_field((string) ($account_risk_card['detail'] ?? 'No urgent account risk is visible.'));
+
+        $tab_url = static function ($tab_key, $anchor = '') use ($build_tab_url) {
+            if (!is_callable($build_tab_url)) {
+                return '';
+            }
+            $url = (string) call_user_func($build_tab_url, $tab_key);
+            if ($anchor !== '') {
+                $url .= $anchor;
+            }
+            return esc_url($url);
+        };
+        $timeline_tab_url = $tab_url('overview');
+        $account_details_tab_url = $tab_url('contacts');
+        $bookings_tab_url = $tab_url('bookings');
+        $files_tab_url = $tab_url('documents');
+        $settings_tab_url = $tab_url('settings');
+
+        $workspace_tabs = [
+            [
+                'label' => 'Timeline',
+                'url' => $timeline_tab_url,
+                'active' => $is_timeline_tab,
+            ],
+            [
+                'label' => 'Account Details',
+                'url' => $account_details_tab_url,
+                'active' => $is_account_details_tab,
+            ],
+            [
+                'label' => 'Bookings',
+                'url' => $bookings_tab_url,
+                'active' => $is_bookings_tab,
+            ],
+            [
+                'label' => 'Files',
+                'url' => $files_tab_url,
+                'active' => $is_files_tab,
+            ],
+            [
+                'label' => 'Issues',
+                'url' => $support_focus_url,
+                'active' => false,
+            ],
+        ];
+
+        $render_chip = function ($label, $variant = 'muted') {
+            $label = sanitize_text_field((string) $label);
+            if ($label === '') {
+                return '';
+            }
+            $variant = sanitize_key((string) $variant);
+            $class = 'cmn-am-lead-chip';
+            if ($variant === 'accent') {
+                $class .= ' cmn-am-lead-chip--accent';
+            } elseif ($variant === 'danger') {
+                $class .= ' cmn-am-lead-chip--danger';
+            } elseif ($variant === 'success') {
+                $class .= ' cmn-am-lead-chip--success';
+            } elseif ($variant === 'warning') {
+                $class .= ' cmn-am-lead-chip--warning';
+            } else {
+                $class .= ' cmn-am-lead-chip--muted';
+            }
+
+            return '<span class="' . esc_attr($class) . '">' . esc_html($label) . '</span>';
+        };
+
+        $render_stat_card = function ($label, $value, $detail = '', $variant = 'neutral') {
+            $label = sanitize_text_field((string) $label);
+            $value = sanitize_text_field((string) $value);
+            $detail = sanitize_text_field((string) $detail);
+            $variant = sanitize_key((string) $variant);
+            $class = 'cmn-am-lead-stat-card';
+            if ($variant === 'accent') {
+                $class .= ' is-accent';
+            } elseif ($variant === 'danger') {
+                $class .= ' is-danger';
+            }
+
+            ob_start();
+            ?>
+            <article class="<?php echo esc_attr($class); ?>">
+                <span class="cmn-am-lead-stat-label"><?php echo esc_html($label); ?></span>
+                <strong class="cmn-am-lead-stat-value"><?php echo esc_html($value !== '' ? $value : '—'); ?></strong>
+                <?php if ($detail !== '') : ?>
+                    <p><?php echo esc_html($detail); ?></p>
+                <?php endif; ?>
+            </article>
+            <?php
+            return (string) ob_get_clean();
+        };
+
+        $render_resource_link = function ($label, $url) {
+            $label = sanitize_text_field((string) $label);
+            $url = esc_url((string) $url);
+            if ($label === '' || $url === '') {
+                return '';
+            }
+            return '<a class="cmn-am-lead-resource" href="' . $url . '">' . esc_html($label) . '</a>';
+        };
+
+        $detail_rows = [
+            ['label' => 'School ID', 'value' => $school_code !== '' ? $school_code : '—'],
+            ['label' => 'Location', 'value' => $school_location_label !== '' ? $school_location_label : '—'],
+            ['label' => 'Phone', 'value' => sanitize_text_field((string) ($meta_rows['phone'] ?? $primary_contact_phone ?: '—')), 'field' => 'phone'],
+            ['label' => 'Email', 'value' => sanitize_text_field((string) ($meta_rows['email'] ?? $primary_contact_email ?: '—')), 'field' => 'email'],
+            ['label' => 'Website', 'value' => sanitize_text_field((string) ($meta_rows['website'] ?? '—'))],
+            ['label' => 'Status', 'value' => $status_display_label !== '' ? $status_display_label : 'Lead'],
+            ['label' => 'Request status', 'value' => $request_status_label !== '' ? $request_status_label : 'Pending'],
+            ['label' => 'Assigned AM', 'value' => $owner_name !== '' ? $owner_name : 'Unassigned'],
+        ];
+
+        $resource_links = array_filter([
+            $render_resource_link('Account Details', $account_details_tab_url),
+            $render_resource_link('Bookings', $bookings_tab_url),
+            $render_resource_link('Files', $files_tab_url),
+            $render_resource_link('Issues', $support_focus_url),
+        ]);
+
+        $issue_rows = array_values(array_filter((array) ($relationship_overview['issue_rows'] ?? []), 'is_array'));
+        $light_context_rows = array_values(array_filter((array) ($school_light_context['rows'] ?? []), 'is_array'));
+        $directory_rows = array_values(array_filter((array) ($contact_block['directory'] ?? []), 'is_array'));
+
+        ob_start();
+        ?>
+        <section class="cmn-am-lead-workspace"
+                 data-school-email-composer-root="1"
+                 data-school-email-school-id="<?php echo esc_attr((string) $school_id); ?>"
+                 data-school-lead-overview="1"
+                 data-school-id="<?php echo esc_attr((string) $school_code); ?>"
+                 data-school-pid="<?php echo esc_attr((string) $school_id); ?>"
+                 data-school-lead-nonce="<?php echo esc_attr($school_lead_actions_nonce); ?>">
+            <style>
+                .cmn-am-lead-workspace {
+                    --cmn-am-bg: #ffffff;
+                    --cmn-am-surface: #f0f0f0;
+                    --cmn-am-surface-strong: #f7f7f7;
+                    --cmn-am-border: rgba(144, 144, 144, 0.24);
+                    --cmn-am-border-strong: rgba(72, 72, 72, 0.18);
+                    --cmn-am-text: #181818;
+                    --cmn-am-muted: #5f5f5f;
+                    --cmn-am-soft: #909090;
+                    --cmn-am-accent: #d8d8f0;
+                    --cmn-am-accent-strong: #c8c9e8;
+                    --cmn-am-danger: #ffe4e2;
+                    --cmn-am-success: #e7f5ea;
+                    --cmn-am-warning: #fff2dd;
+                    color: var(--cmn-am-text);
+                    font-family: Manrope, "Helvetica Neue", Arial, sans-serif;
+                }
+                .cmn-am-lead-workspace * { box-sizing: border-box; }
+                .cmn-am-lead-shell {
+                    max-width: 1320px;
+                    margin: 0 auto;
+                    padding: 24px;
+                    border-radius: 28px;
+                    background: linear-gradient(180deg, #fbfbfc 0%, #f4f4f6 100%);
+                    box-shadow: 0 24px 80px rgba(17, 17, 17, 0.08);
+                    border: 1px solid rgba(255,255,255,0.55);
+                }
+                .cmn-am-lead-breadcrumbs {
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
+                    margin-bottom: 18px;
+                    font-size: 12px;
+                    font-weight: 700;
+                    letter-spacing: .02em;
+                    color: var(--cmn-am-soft);
+                    text-transform: uppercase;
+                }
+                .cmn-am-lead-breadcrumbs a {
+                    color: inherit;
+                    text-decoration: none;
+                }
+                .cmn-am-lead-hero {
+                    border-radius: 24px;
+                    padding: 28px;
+                    background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(240,240,240,0.96) 100%);
+                    border: 1px solid rgba(144, 144, 144, 0.16);
+                }
+                .cmn-am-lead-hero-top {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 24px;
+                    align-items: flex-start;
+                }
+                .cmn-am-lead-hero-main {
+                    display: flex;
+                    gap: 18px;
+                    align-items: flex-start;
+                    min-width: 0;
+                }
+                .cmn-am-lead-hero-icon {
+                    width: 64px;
+                    height: 64px;
+                    flex: 0 0 64px;
+                    border-radius: 18px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: #e0efe8;
+                    color: #3e7f66;
+                }
+                .cmn-am-lead-hero-copy {
+                    min-width: 0;
+                }
+                .cmn-am-lead-kicker {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    font-size: 12px;
+                    font-weight: 800;
+                    letter-spacing: .04em;
+                    text-transform: uppercase;
+                    color: var(--cmn-am-soft);
+                    margin-bottom: 10px;
+                }
+                .cmn-am-lead-kicker::before {
+                    content: "";
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 999px;
+                    background: #87cbb2;
+                }
+                .cmn-am-lead-title-row {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 12px;
+                    margin-bottom: 10px;
+                }
+                .cmn-am-lead-title-row h1 {
+                    margin: 0;
+                    font-family: "Space Grotesk", Manrope, sans-serif;
+                    font-size: clamp(32px, 3vw, 40px);
+                    line-height: 1.08;
+                    font-weight: 700;
+                    letter-spacing: -.03em;
+                    color: #181818;
+                }
+                .cmn-am-lead-submeta {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px 16px;
+                    font-size: 14px;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-submeta strong {
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-hero-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    align-items: center;
+                    justify-content: flex-end;
+                    max-width: 420px;
+                }
+                .cmn-am-lead-btn,
+                .cmn-am-lead-workspace .cmn-am-lead-btn {
+                    appearance: none;
+                    border: 1px solid var(--cmn-am-border-strong);
+                    background: #fff;
+                    color: var(--cmn-am-text);
+                    border-radius: 999px;
+                    height: 40px;
+                    padding: 0 16px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    text-decoration: none;
+                    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
+                }
+                .cmn-am-lead-btn:hover,
+                .cmn-am-lead-btn:focus-visible {
+                    transform: translateY(-1px);
+                    box-shadow: 0 10px 24px rgba(17, 17, 17, 0.08);
+                    border-color: rgba(24, 24, 24, 0.25);
+                    outline: none;
+                }
+                .cmn-am-lead-btn--primary {
+                    background: var(--cmn-am-accent);
+                    border-color: rgba(90, 94, 160, 0.16);
+                }
+                .cmn-am-lead-btn--danger {
+                    background: #fff4f4;
+                    border-color: rgba(240, 67, 64, 0.18);
+                    color: #8f2e2b;
+                }
+                .cmn-am-lead-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 30px;
+                    padding: 0 12px;
+                    border-radius: 999px;
+                    font-size: 12px;
+                    font-weight: 800;
+                    letter-spacing: .02em;
+                    border: 1px solid transparent;
+                }
+                .cmn-am-lead-chip--muted { background: #efefef; color: #535353; border-color: rgba(72,72,72,0.08); }
+                .cmn-am-lead-chip--accent { background: #ecebfd; color: #545899; border-color: rgba(84,88,153,.16); }
+                .cmn-am-lead-chip--danger { background: #fff0ef; color: #a8433d; border-color: rgba(240,67,64,.22); }
+                .cmn-am-lead-chip--success { background: #e9f8ef; color: #377c57; border-color: rgba(55,124,87,.18); }
+                .cmn-am-lead-chip--warning { background: #fff4e4; color: #9a6b1d; border-color: rgba(154,107,29,.18); }
+                .cmn-am-lead-stats {
+                    display: grid;
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    gap: 16px;
+                    margin-top: 24px;
+                }
+                .cmn-am-lead-stat-card {
+                    min-height: 118px;
+                    border-radius: 18px;
+                    padding: 18px 18px 16px;
+                    background: rgba(255,255,255,0.78);
+                    border: 1px solid rgba(144,144,144,0.16);
+                }
+                .cmn-am-lead-stat-card.is-accent {
+                    background: linear-gradient(135deg, #ebeafc 0%, #f5f4ff 100%);
+                    border-color: rgba(90,94,160,0.15);
+                }
+                .cmn-am-lead-stat-card.is-danger {
+                    background: linear-gradient(135deg, #fff0ef 0%, #fff8f7 100%);
+                    border-color: rgba(240,67,64,0.16);
+                }
+                .cmn-am-lead-stat-label {
+                    display: block;
+                    margin-bottom: 12px;
+                    font-size: 12px;
+                    font-weight: 800;
+                    letter-spacing: .03em;
+                    text-transform: uppercase;
+                    color: var(--cmn-am-soft);
+                }
+                .cmn-am-lead-stat-value {
+                    display: block;
+                    font-family: "Space Grotesk", Manrope, sans-serif;
+                    font-size: 22px;
+                    line-height: 1.15;
+                    font-weight: 700;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-stat-card p {
+                    margin: 10px 0 0;
+                    font-size: 13px;
+                    line-height: 1.55;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-tabs {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                    margin-top: 24px;
+                    padding-top: 18px;
+                    border-top: 1px solid rgba(144,144,144,0.16);
+                }
+                .cmn-am-lead-tab {
+                    padding: 10px 14px;
+                    border-radius: 999px;
+                    text-decoration: none;
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: var(--cmn-am-muted);
+                    transition: background .18s ease, color .18s ease;
+                }
+                .cmn-am-lead-tab:hover,
+                .cmn-am-lead-tab:focus-visible {
+                    background: rgba(216,216,240,.48);
+                    color: var(--cmn-am-text);
+                    outline: none;
+                }
+                .cmn-am-lead-tab.is-active {
+                    background: rgba(216,216,240,.86);
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-layout {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1.7fr) minmax(320px, .9fr);
+                    gap: 28px;
+                    margin-top: 28px;
+                }
+                .cmn-am-lead-main,
+                .cmn-am-lead-rail {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 20px;
+                    min-width: 0;
+                }
+                .cmn-am-lead-surface {
+                    border-radius: 22px;
+                    padding: 20px;
+                    background: rgba(255,255,255,0.9);
+                    border: 1px solid rgba(144,144,144,0.14);
+                    box-shadow: 0 18px 48px rgba(17,17,17,0.04);
+                }
+                .cmn-am-lead-surface-head {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    gap: 16px;
+                    margin-bottom: 16px;
+                }
+                .cmn-am-lead-surface-head h2,
+                .cmn-am-lead-surface-head h3 {
+                    margin: 0;
+                    font-family: "Space Grotesk", Manrope, sans-serif;
+                    font-size: 24px;
+                    line-height: 1.2;
+                    letter-spacing: -.02em;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-surface-head p,
+                .cmn-am-lead-surface-intro {
+                    margin: 6px 0 0;
+                    font-size: 14px;
+                    line-height: 1.6;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-toolbar {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 14px;
+                    flex-wrap: wrap;
+                    margin-bottom: 16px;
+                }
+                .cmn-am-lead-toolbar-filters,
+                .cmn-am-lead-toolbar-actions {
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                    flex-wrap: wrap;
+                }
+                .cmn-am-lead-toolbar-filter {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    height: 40px;
+                    padding: 0 14px;
+                    border-radius: 14px;
+                    border: 1px solid rgba(144,144,144,0.16);
+                    background: #fff;
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-notice {
+                    display: flex;
+                    gap: 14px;
+                    align-items: center;
+                    margin-bottom: 18px;
+                    padding: 16px 18px;
+                    border-radius: 18px;
+                    border: 1px solid rgba(144,144,144,0.14);
+                    background: #fff;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-notice svg { flex: 0 0 20px; color: #8b90bc; }
+                .cmn-am-lead-notice strong {
+                    display: block;
+                    margin-bottom: 4px;
+                    font-size: 16px;
+                    line-height: 1.35;
+                }
+                .cmn-am-lead-notice span {
+                    display: block;
+                    font-size: 14px;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-card-stack {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 16px;
+                }
+                .cmn-am-lead-risk-card {
+                    border-radius: 20px;
+                    padding: 20px;
+                    background: linear-gradient(180deg, #fff7f6 0%, #fff 100%);
+                    border: 1px solid rgba(240,67,64,0.14);
+                }
+                .cmn-am-lead-risk-head {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 12px;
+                    align-items: flex-start;
+                    margin-bottom: 12px;
+                }
+                .cmn-am-lead-risk-title {
+                    margin: 0;
+                    font-family: "Space Grotesk", Manrope, sans-serif;
+                    font-size: 15px;
+                    font-weight: 700;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-risk-copy {
+                    margin: 4px 0 0;
+                    font-size: 14px;
+                    line-height: 1.55;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-risk-metric {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 10px;
+                    padding-top: 14px;
+                    border-top: 1px solid rgba(144,144,144,0.12);
+                }
+                .cmn-am-lead-risk-metric strong {
+                    display: block;
+                    font-size: 28px;
+                    line-height: 1;
+                    margin-bottom: 6px;
+                    color: #181818;
+                }
+                .cmn-am-lead-risk-metric span {
+                    display: block;
+                    font-size: 12px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: .03em;
+                    color: var(--cmn-am-soft);
+                }
+                .cmn-am-lead-rail-card h3 {
+                    margin: 0 0 12px;
+                    font-size: 15px;
+                    line-height: 1.3;
+                    font-weight: 700;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-rail-card p {
+                    margin: 0;
+                    font-size: 14px;
+                    line-height: 1.6;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-rail-card-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    margin-top: 16px;
+                }
+                .cmn-am-lead-contact-card {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                }
+                .cmn-am-lead-contact-row {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    padding: 12px 0;
+                    border-top: 1px solid rgba(144,144,144,0.12);
+                }
+                .cmn-am-lead-contact-row:first-child { border-top: 0; padding-top: 0; }
+                .cmn-am-lead-contact-row strong {
+                    font-size: 16px;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-contact-row span,
+                .cmn-am-lead-contact-row a {
+                    font-size: 14px;
+                    color: var(--cmn-am-muted);
+                    text-decoration: none;
+                }
+                .cmn-am-lead-resource-list {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 10px;
+                }
+                .cmn-am-lead-resource {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 42px;
+                    padding: 10px 12px;
+                    border-radius: 14px;
+                    border: 1px solid rgba(144,144,144,0.14);
+                    background: #fff;
+                    text-decoration: none;
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: var(--cmn-am-text);
+                    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+                }
+                .cmn-am-lead-resource:hover,
+                .cmn-am-lead-resource:focus-visible {
+                    transform: translateY(-1px);
+                    box-shadow: 0 10px 24px rgba(17,17,17,0.06);
+                    border-color: rgba(24,24,24,0.22);
+                    outline: none;
+                }
+                .cmn-am-lead-notes-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                }
+                .cmn-am-lead-note {
+                    padding: 14px;
+                    border-radius: 16px;
+                    background: #fff;
+                    border: 1px solid rgba(144,144,144,0.12);
+                }
+                .cmn-am-lead-note-head {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 12px;
+                    align-items: flex-start;
+                    margin-bottom: 8px;
+                }
+                .cmn-am-lead-note-head strong {
+                    display: block;
+                    font-size: 14px;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-note-head span,
+                .cmn-am-lead-note-body,
+                .cmn-am-lead-note-context {
+                    font-size: 13px;
+                    line-height: 1.55;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-note-context { margin-top: 8px; }
+                .cmn-am-lead-account-grid,
+                .cmn-am-lead-secondary-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 20px;
+                }
+                .cmn-am-lead-detail-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 12px 18px;
+                }
+                .cmn-am-lead-detail-row {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    padding-bottom: 10px;
+                    border-bottom: 1px solid rgba(144,144,144,0.12);
+                }
+                .cmn-am-lead-detail-row span {
+                    font-size: 12px;
+                    font-weight: 800;
+                    letter-spacing: .03em;
+                    text-transform: uppercase;
+                    color: var(--cmn-am-soft);
+                }
+                .cmn-am-lead-detail-row strong {
+                    font-size: 15px;
+                    line-height: 1.45;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-directory,
+                .cmn-am-lead-issue-list,
+                .cmn-am-lead-context-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                }
+                .cmn-am-lead-directory-card,
+                .cmn-am-lead-issue-row,
+                .cmn-am-lead-context-card {
+                    padding: 14px;
+                    border-radius: 16px;
+                    background: #fff;
+                    border: 1px solid rgba(144,144,144,0.12);
+                }
+                .cmn-am-lead-directory-card strong,
+                .cmn-am-lead-issue-row strong,
+                .cmn-am-lead-context-card strong {
+                    display: block;
+                    font-size: 15px;
+                    line-height: 1.35;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-directory-card p,
+                .cmn-am-lead-issue-row p,
+                .cmn-am-lead-context-card p {
+                    margin: 6px 0 0;
+                    font-size: 13px;
+                    line-height: 1.55;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-directory-actions,
+                .cmn-am-lead-issue-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    margin-top: 10px;
+                }
+                .cmn-am-lead-timeline-root .cmn-school-profile-timeline-engine-head {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 16px;
+                    align-items: flex-start;
+                    margin-bottom: 16px;
+                }
+                .cmn-am-lead-timeline-root .cmn-school-profile-timeline-engine-head h3 {
+                    margin: 0;
+                    font-family: "Space Grotesk", Manrope, sans-serif;
+                    font-size: 28px;
+                    line-height: 1.2;
+                    letter-spacing: -.02em;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-timeline-root .cmn-school-profile-timeline-engine-head p {
+                    margin: 6px 0 0;
+                    font-size: 14px;
+                    line-height: 1.6;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-timeline-root .cmn-school-profile-timeline-shell,
+                .cmn-am-lead-workspace .cmn-school-task-system-workspace,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-head,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-summary,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-foot,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-head,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-summary,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-body,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-head,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-summary,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-foot,
+                .cmn-am-lead-workspace .cmn-school-document-status-head,
+                .cmn-am-lead-workspace .cmn-school-document-status-summary,
+                .cmn-am-lead-workspace .cmn-school-document-status-foot {
+                    background: transparent;
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-summary,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-summary,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-summary,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-summary,
+                .cmn-am-lead-workspace .cmn-school-document-status-summary,
+                .cmn-am-lead-workspace .cmn-school-task-system-summary {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 12px;
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-summary-card,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-card,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-card,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-card,
+                .cmn-am-lead-workspace .cmn-school-document-status-card,
+                .cmn-am-lead-workspace .cmn-school-task-system-card {
+                    border-radius: 16px;
+                    padding: 14px;
+                    background: #fff;
+                    border: 1px solid rgba(144,144,144,0.12);
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-filter-bar,
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-filter-chips,
+                .cmn-am-lead-workspace .cmn-school-task-system-row,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-row,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-row,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-row,
+                .cmn-am-lead-workspace .cmn-school-document-status-row {
+                    background: #fff;
+                    border-radius: 14px;
+                    border: 1px solid rgba(144,144,144,0.12);
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 14px;
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-item {
+                    background: #fff;
+                    border: 1px solid rgba(144,144,144,0.12);
+                    border-radius: 18px;
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-item:hover {
+                    box-shadow: 0 14px 30px rgba(17,17,17,0.05);
+                }
+                .cmn-am-lead-workspace .cmn-status-chip,
+                .cmn-am-lead-workspace .cmn-pill {
+                    border-radius: 999px;
+                }
+                .cmn-am-lead-workspace .cmn-school-task-system-head h3,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-head h3,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-head h3,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-head h3,
+                .cmn-am-lead-workspace .cmn-school-document-status-head h3 {
+                    margin: 0;
+                    font-family: "Space Grotesk", Manrope, sans-serif;
+                    font-size: 22px;
+                    line-height: 1.25;
+                    letter-spacing: -.02em;
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-workspace .cmn-school-task-system-head p,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-head p,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-head p,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-head p,
+                .cmn-am-lead-workspace .cmn-school-document-status-head p {
+                    margin: 6px 0 0;
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-workspace .cmn-school-task-inline-composer,
+                .cmn-am-lead-workspace .cmn-school-task-system-panel,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-panel,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-panel,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-panel,
+                .cmn-am-lead-workspace .cmn-school-document-status-panel {
+                    border-radius: 18px;
+                    background: #fff;
+                    border: 1px solid rgba(144,144,144,0.12);
+                    padding: 16px;
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-loading {
+                    border-radius: 18px;
+                    padding: 18px;
+                    background: #fff;
+                    border: 1px dashed rgba(144,144,144,0.22);
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-loading-copy strong,
+                .cmn-am-lead-workspace .cmn-school-task-system-row-copy strong,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-row-copy strong,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-row-copy strong,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-row-copy strong,
+                .cmn-am-lead-workspace .cmn-school-document-status-row-copy strong {
+                    color: var(--cmn-am-text);
+                }
+                .cmn-am-lead-workspace .cmn-school-profile-timeline-summary-card p,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-card p,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-card p,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-card p,
+                .cmn-am-lead-workspace .cmn-school-document-status-card p,
+                .cmn-am-lead-workspace .cmn-school-task-system-card p,
+                .cmn-am-lead-workspace .cmn-school-task-system-row-copy .cmn-muted,
+                .cmn-am-lead-workspace .cmn-school-booking-widget-row-copy .cmn-muted,
+                .cmn-am-lead-workspace .cmn-school-bookings-workspace-row-copy .cmn-muted,
+                .cmn-am-lead-workspace .cmn-school-candidate-interaction-row-copy .cmn-muted,
+                .cmn-am-lead-workspace .cmn-school-document-status-row-copy .cmn-muted {
+                    color: var(--cmn-am-muted);
+                }
+                .cmn-am-lead-inline-help {
+                    margin-top: 10px;
+                    font-size: 12px;
+                    line-height: 1.6;
+                    color: var(--cmn-am-soft);
+                }
+                .cmn-am-lead-empty {
+                    padding: 18px;
+                    border-radius: 16px;
+                    border: 1px dashed rgba(144,144,144,0.22);
+                    background: rgba(255,255,255,0.72);
+                    color: var(--cmn-am-muted);
+                    font-size: 14px;
+                    line-height: 1.55;
+                }
+                .cmn-am-lead-modals {
+                    display: contents;
+                }
+                @media (max-width: 1180px) {
+                    .cmn-am-lead-stats,
+                    .cmn-am-lead-account-grid,
+                    .cmn-am-lead-secondary-grid {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+                    .cmn-am-lead-layout {
+                        grid-template-columns: 1fr;
+                    }
+                }
+                @media (max-width: 840px) {
+                    .cmn-am-lead-shell { padding: 16px; border-radius: 22px; }
+                    .cmn-am-lead-hero { padding: 20px; }
+                    .cmn-am-lead-hero-top,
+                    .cmn-am-lead-surface-head,
+                    .cmn-am-lead-timeline-root .cmn-school-profile-timeline-engine-head {
+                        flex-direction: column;
+                    }
+                    .cmn-am-lead-hero-actions { justify-content: flex-start; max-width: none; }
+                    .cmn-am-lead-stats,
+                    .cmn-am-lead-account-grid,
+                    .cmn-am-lead-secondary-grid,
+                    .cmn-am-lead-detail-grid,
+                    .cmn-am-lead-resource-list,
+                    .cmn-am-lead-risk-metric,
+                    .cmn-am-lead-workspace .cmn-school-profile-timeline-summary,
+                    .cmn-am-lead-workspace .cmn-school-booking-widget-summary,
+                    .cmn-am-lead-workspace .cmn-school-bookings-workspace-summary,
+                    .cmn-am-lead-workspace .cmn-school-candidate-interaction-summary,
+                    .cmn-am-lead-workspace .cmn-school-document-status-summary,
+                    .cmn-am-lead-workspace .cmn-school-task-system-summary {
+                        grid-template-columns: 1fr;
+                    }
+                }
+            </style>
+            <div class="cmn-am-lead-shell">
+                <div class="cmn-am-lead-breadcrumbs" aria-label="Breadcrumb">
+                    <?php if ($home_url !== '') : ?><a href="<?php echo $home_url; ?>">Account Manager</a><?php endif; ?>
+                    <span>/</span>
+                    <?php if ($lead_list_url !== '') : ?><a href="<?php echo $lead_list_url; ?>">Leads</a><?php else : ?><span>Leads</span><?php endif; ?>
+                    <span>/</span>
+                    <span><?php echo esc_html($school_name); ?></span>
+                </div>
+
+                <header class="cmn-am-lead-hero">
+                    <div class="cmn-am-lead-hero-top">
+                        <div class="cmn-am-lead-hero-main">
+                            <div class="cmn-am-lead-hero-icon" aria-hidden="true">
+                                <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+                                    <path d="M3 20h18M5 20V7l7-3 7 3v13M9 20v-4h6v4M8 10h2M14 10h2M8 13h2M14 13h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="cmn-am-lead-hero-copy">
+                                <span class="cmn-am-lead-kicker">Lead workspace</span>
+                                <div class="cmn-am-lead-title-row">
+                                    <h1><span data-school-overview-field="school_name"><?php echo esc_html($school_name); ?></span></h1>
+                                    <?php echo wp_kses_post($render_chip($profile_stage_value, 'accent')); ?>
+                                    <?php if ($account_risk_label !== '' && strcasecmp($account_risk_label, 'clear') !== 0) : ?>
+                                        <?php echo wp_kses_post($render_chip($account_risk_label, $risk_tone === 'critical' ? 'danger' : 'warning')); ?>
+                                    <?php else : ?>
+                                        <?php echo wp_kses_post($render_chip($relationship_health_label, $health_tone === 'positive' ? 'success' : 'muted')); ?>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="cmn-am-lead-submeta">
+                                    <span><strong>Location:</strong> <?php echo esc_html($school_location_label); ?></span>
+                                    <?php if ($owner_name !== '') : ?><span><strong>Account manager:</strong> <?php echo esc_html($owner_name); ?></span><?php endif; ?>
+                                    <span><strong>Main contact:</strong> <?php echo esc_html($primary_contact_name); ?><?php echo $primary_contact_role !== '' ? ' · ' . esc_html($primary_contact_role) : ''; ?></span>
+                                    <?php if ($primary_contact_phone !== '') : ?><span><strong>Phone:</strong> <span data-school-overview-field="phone"><?php echo esc_html($primary_contact_phone); ?></span></span><?php endif; ?>
+                                    <?php if ($primary_contact_email !== '') : ?><span><strong>Email:</strong> <span data-school-overview-field="email"><?php echo esc_html($primary_contact_email); ?></span></span><?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cmn-am-lead-hero-actions">
+                            <?php if ($task_editor_url !== '') : ?>
+                                <a class="cmn-am-lead-btn cmn-am-lead-btn--primary" href="<?php echo $task_editor_url; ?>"><?php echo esc_html($task_editor_label); ?></a>
+                            <?php endif; ?>
+                            <?php if ($call_focus_url !== '') : ?>
+                                <a class="cmn-am-lead-btn" href="<?php echo $call_focus_url; ?>">Log call</a>
+                            <?php endif; ?>
+                            <?php if ($email_focus_url !== '') : ?>
+                                <a class="cmn-am-lead-btn" href="<?php echo $email_focus_url; ?>" data-school-email-open data-school-email-school-id="<?php echo esc_attr((string) $school_id); ?>">Send email</a>
+                            <?php endif; ?>
+                            <button class="cmn-am-lead-btn" type="button" data-school-lead-open-note>Add note</button>
+                            <button class="cmn-am-lead-btn" type="button" data-school-lead-open-stage>Move stage</button>
+                        </div>
+                    </div>
+
+                    <div class="cmn-am-lead-stats">
+                        <?php
+                        echo wp_kses_post($render_stat_card('Pipeline stage', $profile_stage_value, $stage_detail, $pipeline_stat_tone));
+                        echo wp_kses_post($render_stat_card('Follow-up', $follow_up_label, $follow_up_detail, in_array($risk_tone, ['critical'], true) || stripos($follow_up_label, 'overdue') !== false ? 'danger' : 'accent'));
+                        echo wp_kses_post($render_stat_card('Last contact', $last_touch_label, $last_touch_detail));
+                        echo wp_kses_post($render_stat_card('Last login', $last_login_label, $last_login_detail));
+                        ?>
+                    </div>
+
+                    <nav class="cmn-am-lead-tabs" aria-label="Lead workspace sections">
+                        <?php foreach ($workspace_tabs as $workspace_tab) : ?>
+                            <a class="cmn-am-lead-tab<?php echo !empty($workspace_tab['active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($workspace_tab['url'] ?? '#')); ?>">
+                                <?php echo esc_html((string) ($workspace_tab['label'] ?? 'Open')); ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </nav>
+                </header>
+
+                <div class="cmn-am-lead-layout">
+                    <main class="cmn-am-lead-main">
+                        <?php if ($is_timeline_tab) : ?>
+                            <section class="cmn-am-lead-surface">
+                                <div class="cmn-am-lead-toolbar">
+                                    <div class="cmn-am-lead-toolbar-filters">
+                                        <span class="cmn-am-lead-toolbar-filter">All interactions</span>
+                                        <span class="cmn-am-lead-toolbar-filter">This week</span>
+                                    </div>
+                                    <div class="cmn-am-lead-toolbar-actions">
+                                        <?php if ($email_focus_url !== '') : ?>
+                                            <a class="cmn-am-lead-btn" href="<?php echo $email_focus_url; ?>" data-school-email-open data-school-email-school-id="<?php echo esc_attr((string) $school_id); ?>">Send email</a>
+                                        <?php endif; ?>
+                                        <button class="cmn-am-lead-btn" type="button" data-school-lead-open-note>Add new</button>
+                                    </div>
+                                </div>
+
+                                <?php if ($follow_up_label === '' || stripos(strtolower($follow_up_label), 'no follow-up') !== false) : ?>
+                                    <div class="cmn-am-lead-notice">
+                                        <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+                                            <path d="M7 3h10M8 1h8M6 7h12M6 10v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                        <div>
+                                            <strong>Set your first follow-up task to start moving this account forward.</strong>
+                                            <span>No open next action is currently driving this lead.</span>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+
+                                <div class="cmn-am-lead-timeline-root">
+                                    <section class="cmn-school-profile-timeline-engine"
+                                             id="cmn-school-relationship-timeline"
+                                             data-school-profile-timeline-root
+                                             data-school-id="<?php echo esc_attr((string) $school_code); ?>"
+                                             data-school-pid="<?php echo esc_attr((string) $school_id); ?>"
+                                             data-school-profile-timeline-nonce="<?php echo esc_attr($school_profile_timeline_nonce); ?>"
+                                             data-school-profile-timeline-visible-limit="24"
+                                             data-school-profile-timeline-active="1">
+                                        <div class="cmn-school-profile-timeline-engine-head">
+                                            <div>
+                                                <h3>Timeline</h3>
+                                                <p>Calls, emails, notes, tasks, stage movement, and relationship history in one place.</p>
+                                            </div>
+                                            <div class="cmn-school-profile-quick-actions">
+                                                <?php if ($call_focus_url !== '') : ?>
+                                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo $call_focus_url; ?>">Log call</a>
+                                                <?php endif; ?>
+                                                <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-open-note>Add note</button>
+                                            </div>
+                                        </div>
+                                        <div class="cmn-school-profile-timeline-shell" data-school-profile-timeline-body data-school-profile-timeline-state="idle" aria-live="polite">
+                                            <div class="cmn-school-profile-timeline-loading">
+                                                <div class="cmn-school-profile-timeline-loading-copy">
+                                                    <strong>Loading the latest relationship history.</strong>
+                                                    <span class="cmn-muted" data-school-profile-timeline-status>Preparing notes, emails, calls, stage changes, bookings, and relationship activity.</span>
+                                                </div>
+                                                <div class="cmn-school-profile-timeline-loading-cards">
+                                                    <span class="cmn-school-profile-timeline-loading-card"></span>
+                                                    <span class="cmn-school-profile-timeline-loading-card"></span>
+                                                    <span class="cmn-school-profile-timeline-loading-card"></span>
+                                                </div>
+                                                <div class="cmn-school-profile-timeline-loading-list">
+                                                    <span class="cmn-school-profile-timeline-loading-line"></span>
+                                                    <span class="cmn-school-profile-timeline-loading-line"></span>
+                                                    <span class="cmn-school-profile-timeline-loading-line is-short"></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </section>
+
+                            <div class="cmn-am-lead-secondary-grid">
+                                <section class="cmn-am-lead-surface">
+                                    <?php echo $this->render_school_profile_task_follow_up_html($task_follow_up_system, $this->add_task_notice_to_url($overview_tab_url, 'Task completed.', 'success') . '#cmn-school-task-inline-composer'); ?>
+                                </section>
+                                <section class="cmn-am-lead-surface">
+                                    <div class="cmn-am-lead-surface-head">
+                                        <div>
+                                            <h3>Light context</h3>
+                                            <p>Only the context you need to decide whether this lead is moving or drifting.</p>
+                                        </div>
+                                    </div>
+                                    <?php if ($light_context_rows) : ?>
+                                        <div class="cmn-am-lead-context-list">
+                                            <?php foreach ($light_context_rows as $context_row) : ?>
+                                                <article class="cmn-am-lead-context-card">
+                                                    <span class="cmn-am-lead-stat-label"><?php echo esc_html((string) ($context_row['label'] ?? '')); ?></span>
+                                                    <strong><?php echo esc_html((string) ($context_row['value'] ?? '—')); ?></strong>
+                                                    <?php if (!empty($context_row['detail'])) : ?>
+                                                        <p><?php echo esc_html((string) $context_row['detail']); ?></p>
+                                                    <?php endif; ?>
+                                                </article>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else : ?>
+                                        <div class="cmn-am-lead-empty">No extra account context is visible yet.</div>
+                                    <?php endif; ?>
+                                    <?php if ($profile_issues) : ?>
+                                        <p class="cmn-am-lead-inline-help"><?php echo esc_html(implode(' · ', array_slice($profile_issues, 0, 3))); ?></p>
+                                    <?php endif; ?>
+                                </section>
+                            </div>
+                        <?php elseif ($is_account_details_tab) : ?>
+                            <div class="cmn-am-lead-account-grid">
+                                <section class="cmn-am-lead-surface">
+                                    <div class="cmn-am-lead-surface-head">
+                                        <div>
+                                            <h3>Account details</h3>
+                                            <p>Keep the lead summary, direct contact channels, and ownership context together.</p>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-am-lead-detail-grid">
+                                        <?php foreach ($detail_rows as $detail_row) : ?>
+                                            <div class="cmn-am-lead-detail-row">
+                                                <span><?php echo esc_html((string) ($detail_row['label'] ?? 'Detail')); ?></span>
+                                                <strong<?php echo !empty($detail_row['field']) ? ' data-school-overview-field="' . esc_attr((string) $detail_row['field']) . '"' : ''; ?>>
+                                                    <?php echo esc_html((string) ($detail_row['value'] ?? '—')); ?>
+                                                </strong>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </section>
+                                <section class="cmn-am-lead-surface">
+                                    <div class="cmn-am-lead-surface-head">
+                                        <div>
+                                            <h3>Main contact</h3>
+                                            <p>Direct contact channels for the person most likely to move the lead forward.</p>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-am-lead-contact-card">
+                                        <div class="cmn-am-lead-contact-row">
+                                            <strong><?php echo esc_html($primary_contact_name); ?></strong>
+                                            <?php if ($primary_contact_role !== '') : ?><span><?php echo esc_html($primary_contact_role); ?></span><?php endif; ?>
+                                        </div>
+                                        <?php if ($primary_contact_email !== '') : ?>
+                                            <div class="cmn-am-lead-contact-row"><a href="mailto:<?php echo esc_attr($primary_contact_email); ?>"><?php echo esc_html($primary_contact_email); ?></a></div>
+                                        <?php endif; ?>
+                                        <?php if ($primary_contact_phone !== '') : ?>
+                                            <div class="cmn-am-lead-contact-row"><a href="tel:<?php echo esc_attr(preg_replace('/[^0-9+]/', '', $primary_contact_phone)); ?>"><?php echo esc_html($primary_contact_phone); ?></a></div>
+                                        <?php endif; ?>
+                                        <div class="cmn-am-lead-rail-card-actions">
+                                            <?php if ($email_focus_url !== '') : ?><a class="cmn-am-lead-btn" href="<?php echo $email_focus_url; ?>" data-school-email-open data-school-email-school-id="<?php echo esc_attr((string) $school_id); ?>">Send email</a><?php endif; ?>
+                                            <?php if ($call_focus_url !== '') : ?><a class="cmn-am-lead-btn" href="<?php echo $call_focus_url; ?>">Log call</a><?php endif; ?>
+                                        </div>
+                                    </div>
+                                </section>
+                                <section class="cmn-am-lead-surface">
+                                    <div class="cmn-am-lead-surface-head">
+                                        <div>
+                                            <h3>Contact directory</h3>
+                                            <p>Saved school contacts already on the record.</p>
+                                        </div>
+                                    </div>
+                                    <?php if ($directory_rows) : ?>
+                                        <div class="cmn-am-lead-directory">
+                                            <?php foreach ($directory_rows as $directory_row) : ?>
+                                                <article class="cmn-am-lead-directory-card">
+                                                    <strong><?php echo esc_html((string) ($directory_row['name'] ?? 'Contact')); ?></strong>
+                                                    <p><?php echo esc_html(implode(' · ', array_filter([
+                                                        sanitize_text_field((string) ($directory_row['slot'] ?? '')),
+                                                        sanitize_text_field((string) ($directory_row['role'] ?? '')),
+                                                    ]))); ?></p>
+                                                    <div class="cmn-am-lead-directory-actions">
+                                                        <?php if (!empty($directory_row['email'])) : ?><a class="cmn-am-lead-btn" href="mailto:<?php echo esc_attr((string) $directory_row['email']); ?>"><?php echo esc_html((string) $directory_row['email']); ?></a><?php endif; ?>
+                                                        <?php if (!empty($directory_row['phone'])) : ?><a class="cmn-am-lead-btn" href="tel:<?php echo esc_attr(preg_replace('/[^0-9+]/', '', (string) $directory_row['phone'])); ?>"><?php echo esc_html((string) $directory_row['phone']); ?></a><?php endif; ?>
+                                                    </div>
+                                                </article>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else : ?>
+                                        <div class="cmn-am-lead-empty">No extra school contacts have been saved yet.</div>
+                                    <?php endif; ?>
+                                </section>
+                                <section class="cmn-am-lead-surface">
+                                    <div class="cmn-am-lead-surface-head">
+                                        <div>
+                                            <h3>Issue escalation</h3>
+                                            <p>Support context stays visible without turning this workspace into an admin dump.</p>
+                                        </div>
+                                    </div>
+                                    <?php if ($issue_rows) : ?>
+                                        <div class="cmn-am-lead-issue-list">
+                                            <?php foreach ($issue_rows as $issue_row) : ?>
+                                                <article class="cmn-am-lead-issue-row">
+                                                    <strong><?php echo esc_html((string) ($issue_row['label'] ?? 'Support issue')); ?></strong>
+                                                    <p><?php echo esc_html((string) ($issue_row['detail'] ?? '')); ?></p>
+                                                    <?php if (!empty($issue_row['booking_context_note']) || !empty($issue_row['booking_detail'])) : ?>
+                                                        <p><?php echo esc_html(implode(' · ', array_filter([
+                                                            sanitize_text_field((string) ($issue_row['booking_context_note'] ?? '')),
+                                                            sanitize_text_field((string) ($issue_row['booking_detail'] ?? '')),
+                                                        ]))); ?></p>
+                                                    <?php endif; ?>
+                                                    <div class="cmn-am-lead-issue-actions">
+                                                        <?php if (!empty($issue_row['url'])) : ?><a class="cmn-am-lead-btn" href="<?php echo esc_url((string) $issue_row['url']); ?>">Open issue</a><?php endif; ?>
+                                                        <?php if (!empty($issue_row['booking_url'])) : ?><a class="cmn-am-lead-btn" href="<?php echo esc_url((string) $issue_row['booking_url']); ?>"><?php echo esc_html((string) ($issue_row['booking_cta_label'] ?? 'Open school bookings')); ?></a><?php endif; ?>
+                                                    </div>
+                                                </article>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else : ?>
+                                        <div class="cmn-am-lead-empty">No school-linked issues are currently visible for this lead.</div>
+                                    <?php endif; ?>
+                                </section>
+                            </div>
+                        <?php elseif ($is_bookings_tab) : ?>
+                            <section class="cmn-am-lead-surface"><?php echo $this->render_school_profile_booking_widget_html($booking_widget); ?></section>
+                            <section class="cmn-am-lead-surface"><?php echo $this->render_school_profile_candidate_interaction_widget_html($candidate_widget); ?></section>
+                            <section class="cmn-am-lead-surface"><?php echo $this->render_school_profile_bookings_tab_html($bookings_workspace); ?></section>
+                        <?php elseif ($is_files_tab) : ?>
+                            <section class="cmn-am-lead-surface"><?php echo $this->render_school_profile_document_status_html($document_status_panel); ?></section>
+                        <?php elseif ($is_settings_tab) : ?>
+                            <section class="cmn-am-lead-account-grid">
+                                <section class="cmn-am-lead-surface">
+                                    <div class="cmn-am-lead-surface-head">
+                                        <div>
+                                            <h3>Reference details</h3>
+                                            <p>Useful record context that should sit behind the day-to-day lead workflow.</p>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-am-lead-detail-grid">
+                                        <?php foreach ($detail_rows as $detail_row) : ?>
+                                            <div class="cmn-am-lead-detail-row">
+                                                <span><?php echo esc_html((string) ($detail_row['label'] ?? 'Detail')); ?></span>
+                                                <strong><?php echo esc_html((string) ($detail_row['value'] ?? '—')); ?></strong>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </section>
+                                <section class="cmn-am-lead-surface">
+                                    <div class="cmn-am-lead-surface-head">
+                                        <div>
+                                            <h3>Light context</h3>
+                                            <p>Recent interaction and login context for this lead.</p>
+                                        </div>
+                                    </div>
+                                    <?php if ($light_context_rows) : ?>
+                                        <div class="cmn-am-lead-context-list">
+                                            <?php foreach ($light_context_rows as $context_row) : ?>
+                                                <article class="cmn-am-lead-context-card">
+                                                    <span class="cmn-am-lead-stat-label"><?php echo esc_html((string) ($context_row['label'] ?? '')); ?></span>
+                                                    <strong><?php echo esc_html((string) ($context_row['value'] ?? '—')); ?></strong>
+                                                    <?php if (!empty($context_row['detail'])) : ?>
+                                                        <p><?php echo esc_html((string) $context_row['detail']); ?></p>
+                                                    <?php endif; ?>
+                                                </article>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else : ?>
+                                        <div class="cmn-am-lead-empty">No additional lead context is visible yet.</div>
+                                    <?php endif; ?>
+                                </section>
+                            </section>
+                        <?php endif; ?>
+                    </main>
+
+                    <aside class="cmn-am-lead-rail">
+                        <section class="cmn-am-lead-risk-card">
+                            <div class="cmn-am-lead-risk-head">
+                                <div>
+                                    <?php echo wp_kses_post($render_chip($account_risk_label !== '' ? $account_risk_label : $relationship_health_label, $account_risk_label !== '' && strcasecmp($account_risk_label, 'clear') !== 0 ? 'danger' : ($relationship_health_label === 'Healthy' ? 'success' : 'warning'))); ?>
+                                    <p class="cmn-am-lead-risk-title"><?php echo esc_html($requested_booking_count); ?> bookings risk noted</p>
+                                    <p class="cmn-am-lead-risk-copy"><?php echo esc_html($account_risk_detail !== '' ? $account_risk_detail : $relationship_health_detail); ?></p>
+                                </div>
+                            </div>
+                            <div class="cmn-am-lead-risk-metric">
+                                <div>
+                                    <strong><?php echo esc_html($candidate_count !== '' ? $candidate_count : '0'); ?></strong>
+                                    <span>Candidates</span>
+                                </div>
+                                <div>
+                                    <strong><?php echo esc_html(number_format_i18n($open_issue_count)); ?></strong>
+                                    <span>Issues</span>
+                                </div>
+                                <div>
+                                    <strong><?php echo esc_html(number_format_i18n($note_count)); ?></strong>
+                                    <span>Notes</span>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="cmn-am-lead-surface cmn-am-lead-rail-card">
+                            <h3>Follow-Up Task</h3>
+                            <p><?php echo esc_html($next_action_label !== '' ? $next_action_label : 'No open follow-up task exists for this account yet.'); ?></p>
+                            <?php if ($next_action_detail !== '') : ?><p class="cmn-am-lead-inline-help"><?php echo esc_html($next_action_detail); ?></p><?php endif; ?>
+                            <div class="cmn-am-lead-rail-card-actions">
+                                <?php if ($task_editor_url !== '') : ?><a class="cmn-am-lead-btn cmn-am-lead-btn--primary" href="<?php echo $task_editor_url; ?>"><?php echo esc_html($task_editor_label); ?></a><?php endif; ?>
+                            </div>
+                        </section>
+
+                        <section class="cmn-am-lead-surface cmn-am-lead-rail-card">
+                            <h3>Related Contacts</h3>
+                            <div class="cmn-am-lead-contact-card">
+                                <div class="cmn-am-lead-contact-row">
+                                    <strong><?php echo esc_html($primary_contact_name); ?></strong>
+                                    <?php if ($primary_contact_role !== '') : ?><span><?php echo esc_html($primary_contact_role); ?></span><?php endif; ?>
+                                </div>
+                                <?php if ($primary_contact_phone !== '') : ?><div class="cmn-am-lead-contact-row"><a href="tel:<?php echo esc_attr(preg_replace('/[^0-9+]/', '', $primary_contact_phone)); ?>"><?php echo esc_html($primary_contact_phone); ?></a></div><?php endif; ?>
+                                <?php if ($primary_contact_email !== '') : ?><div class="cmn-am-lead-contact-row"><a href="mailto:<?php echo esc_attr($primary_contact_email); ?>"><?php echo esc_html($primary_contact_email); ?></a></div><?php endif; ?>
+                            </div>
+                        </section>
+
+                        <section class="cmn-am-lead-surface cmn-am-lead-rail-card">
+                            <h3>Resources</h3>
+                            <?php if ($resource_links) : ?>
+                                <div class="cmn-am-lead-resource-list"><?php echo implode('', array_map('strval', $resource_links)); ?></div>
+                            <?php else : ?>
+                                <div class="cmn-am-lead-empty">No supporting resources are linked for this lead yet.</div>
+                            <?php endif; ?>
+                        </section>
+
+                        <section class="cmn-am-lead-surface cmn-am-lead-rail-card" id="cmn-school-lead-notes" data-school-lead-notes-panel="1" data-school-id="<?php echo esc_attr((string) $school_code); ?>" data-school-pid="<?php echo esc_attr((string) $school_id); ?>">
+                            <h3>Notes</h3>
+                            <?php if ($school_lead_notes_preview) : ?>
+                                <div class="cmn-am-lead-notes-list" data-school-lead-notes-list>
+                                    <?php foreach ($school_lead_notes_preview as $lead_note_row) : ?>
+                                        <?php
+                                        $lead_note_created_at = sanitize_text_field((string) ($lead_note_row['created_at'] ?? ''));
+                                        $lead_note_created_ts = $lead_note_created_at !== '' ? strtotime($lead_note_created_at) : 0;
+                                        $lead_note_author = sanitize_text_field((string) ($lead_note_row['author_name'] ?? 'System'));
+                                        $lead_note_display = $this->get_school_lead_note_display_parts($lead_note_row, $school_lead_note_type_labels);
+                                        ?>
+                                        <article class="cmn-am-lead-note"
+                                                 data-school-lead-note-id="<?php echo esc_attr(sanitize_key((string) ($lead_note_row['id'] ?? ''))); ?>"
+                                                 data-school-lead-note-type="<?php echo esc_attr((string) $this->normalize_school_lead_note_type((string) ($lead_note_row['type'] ?? 'general'))); ?>"
+                                                 data-school-lead-note-body="<?php echo esc_attr((string) ($lead_note_row['body'] ?? '')); ?>">
+                                            <div class="cmn-am-lead-note-head">
+                                                <div>
+                                                    <strong class="cmn-school-lead-note-title"><?php echo esc_html((string) ($lead_note_display['title'] ?? 'Note')); ?></strong>
+                                                    <span><?php echo esc_html($lead_note_author); ?><?php echo $lead_note_created_ts > 0 ? ' · ' . esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)) : ''; ?></span>
+                                                </div>
+                                                <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-edit-note>Edit</button>
+                                            </div>
+                                            <?php if (!empty($lead_note_display['context'])) : ?>
+                                                <div class="cmn-am-lead-note-context"><?php echo esc_html((string) $lead_note_display['context']); ?></div>
+                                            <?php endif; ?>
+                                        </article>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else : ?>
+                                <div class="cmn-am-lead-empty" data-school-lead-notes-list><span data-school-lead-notes-empty>No relationship notes captured yet.</span></div>
+                            <?php endif; ?>
+                            <div class="cmn-am-lead-rail-card-actions">
+                                <button class="cmn-am-lead-btn cmn-am-lead-btn--primary" type="button" data-school-lead-open-note>Add note</button>
+                                <?php if ($note_focus_url !== '') : ?><a class="cmn-am-lead-btn" href="<?php echo $note_focus_url; ?>">Open activity</a><?php endif; ?>
+                            </div>
+                        </section>
+                    </aside>
+                </div>
+
+                <div class="cmn-am-lead-modals">
+                    <div class="cmn-modal" data-school-lead-edit-modal hidden>
+                        <div class="cmn-modal-content cmn-school-lead-modal-card" role="dialog" aria-modal="true" aria-label="Edit school lead details">
+                            <div class="cmn-modal-header">
+                                <h3>Edit details</h3>
+                                <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-close-edit>Close</button>
+                            </div>
+                            <form class="cmn-form cmn-school-lead-form" data-school-lead-edit-form>
+                                <label>School name
+                                    <input type="text" name="school_name" value="<?php echo esc_attr((string) ($school_lead_field_values['school_name'] ?? '')); ?>">
+                                </label>
+                                <label>Postcode
+                                    <input type="text" name="postcode" value="<?php echo esc_attr((string) ($school_lead_field_values['postcode'] ?? '')); ?>">
+                                </label>
+                                <label>Address line 1
+                                    <input type="text" name="address_line1" value="<?php echo esc_attr((string) ($school_lead_field_values['address_line1'] ?? '')); ?>">
+                                </label>
+                                <label>Address line 2
+                                    <input type="text" name="address_line2" value="<?php echo esc_attr((string) ($school_lead_field_values['address_line2'] ?? '')); ?>">
+                                </label>
+                                <label>Town / City
+                                    <input type="text" name="town_city" value="<?php echo esc_attr((string) ($school_lead_field_values['town_city'] ?? '')); ?>">
+                                </label>
+                                <label>County
+                                    <input type="text" name="county" value="<?php echo esc_attr((string) ($school_lead_field_values['county'] ?? '')); ?>">
+                                </label>
+                                <label>Phone
+                                    <input type="text" name="phone" value="<?php echo esc_attr((string) ($school_lead_field_values['phone'] ?? '')); ?>">
+                                </label>
+                                <label>Email
+                                    <input type="email" name="email" value="<?php echo esc_attr((string) ($school_lead_field_values['email'] ?? '')); ?>">
+                                </label>
+                                <div class="cmn-school-lead-modal-actions">
+                                    <button class="cmn-ghost" type="button" data-school-lead-close-edit>Cancel</button>
+                                    <button class="cmn-primary" type="submit">Save details</button>
+                                </div>
+                                <p class="cmn-muted" data-school-lead-edit-feedback aria-live="polite"></p>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="cmn-modal" data-school-lead-note-modal hidden>
+                        <div class="cmn-modal-content cmn-school-lead-modal-card" role="dialog" aria-modal="true" aria-label="Add school lead note">
+                            <div class="cmn-modal-header">
+                                <h3 data-school-lead-note-modal-title>Add note</h3>
+                                <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-close-note>Close</button>
+                            </div>
+                            <form class="cmn-form cmn-school-lead-form" data-school-lead-note-form>
+                                <input type="hidden" name="note_id" value="">
+                                <label>Type
+                                    <select name="note_type">
+                                        <option value="general">Note</option>
+                                        <option value="task">Task</option>
+                                        <option value="call">Call</option>
+                                        <option value="email">Email</option>
+                                        <option value="meeting">Meeting</option>
+                                    </select>
+                                </label>
+                                <label>Note
+                                    <textarea name="note_body" rows="4" required placeholder="Add your note"></textarea>
+                                </label>
+                                <div class="cmn-school-lead-modal-actions">
+                                    <button class="cmn-ghost" type="button" data-school-lead-close-note>Cancel</button>
+                                    <button class="cmn-primary" type="submit" data-school-lead-note-submit>Save note</button>
+                                </div>
+                                <p class="cmn-muted" data-school-lead-note-feedback aria-live="polite"></p>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="cmn-modal" data-school-lead-stage-modal hidden>
+                        <div class="cmn-modal-content cmn-school-lead-modal-card" role="dialog" aria-modal="true" aria-label="Move school lead stage">
+                            <div class="cmn-modal-header">
+                                <h3>Move stage</h3>
+                                <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-close-stage>Close</button>
+                            </div>
+                            <form class="cmn-form cmn-school-lead-form" data-school-lead-stage-form>
+                                <label>Lead stage
+                                    <select name="pipeline_stage">
+                                        <?php foreach ($school_lead_stage_options as $stage_key => $stage_label) : ?>
+                                            <option value="<?php echo esc_attr((string) $stage_key); ?>"<?php echo (string) ($school_lead_field_values['pipeline_stage'] ?? '') === (string) $stage_key ? ' selected' : ''; ?>>
+                                                <?php echo esc_html((string) $stage_label); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <div class="cmn-school-lead-modal-actions">
+                                    <button class="cmn-ghost" type="button" data-school-lead-close-stage>Cancel</button>
+                                    <button class="cmn-primary" type="submit">Save stage</button>
+                                </div>
+                                <p class="cmn-muted" data-school-lead-stage-feedback aria-live="polite"></p>
+                            </form>
+                        </div>
+                    </div>
+
+                    <?php echo $this->render_school_profile_email_composer_modal_html($email_composer); ?>
+                </div>
+            </div>
+        </section>
+        <?php
+        return (string) ob_get_clean();
+    }
+
     private function render_frontend_school_profile($school_id) {
         $school = get_post($school_id);
         error_log('[CMN_SCHOOL_VIEW] profile_start school_id=' . (int) $school_id);
@@ -65658,6 +67162,58 @@ global $wpdb;
                 ],
             ]);
             $school_profile_timeline_nonce = wp_create_nonce('cmn_school_profile_timeline');
+
+            if ($is_restricted_am_workspace && $is_school_lead_record) {
+                $meta_rows = [
+                    'phone' => sanitize_text_field((string) $meta('cmn_phone')),
+                    'email' => sanitize_email((string) $meta('cmn_email')),
+                    'website' => sanitize_text_field((string) $meta('cmn_website')),
+                ];
+
+                return $this->render_account_manager_lead_school_profile_workspace_html([
+                    'school_id' => $school_id,
+                    'school_name' => sanitize_text_field((string) $school->post_title),
+                    'school_code' => sanitize_text_field((string) $school_code),
+                    'school_location_label' => sanitize_text_field((string) $school_location_label),
+                    'active_profile_tab' => $active_profile_tab,
+                    'profile_stage_value' => sanitize_text_field((string) $profile_stage_value),
+                    'stage_payload' => $this->get_account_manager_sales_stage_payload($status_raw, $school_lead_stage_key, $is_school_lead_record),
+                    'primary_contact_summary' => $primary_contact_summary,
+                    'manager_summary' => $manager_summary,
+                    'last_touch_summary' => $last_touch_summary,
+                    'login_summary' => $school_last_login_summary,
+                    'relationship_overview' => $relationship_overview,
+                    'contact_block' => $contact_block,
+                    'task_follow_up_system' => $task_follow_up_system,
+                    'booking_widget' => $booking_widget,
+                    'bookings_workspace' => $bookings_workspace,
+                    'candidate_widget' => $candidate_interaction_widget,
+                    'document_status_panel' => $document_status_panel,
+                    'school_light_context' => $school_light_context,
+                    'school_issue_snapshot' => $school_issue_snapshot,
+                    'school_lead_notes' => $school_lead_notes,
+                    'school_lead_note_type_labels' => $school_lead_note_type_labels,
+                    'school_lead_stage_options' => $school_lead_stage_options,
+                    'school_lead_field_values' => $school_lead_field_values,
+                    'school_lead_actions_nonce' => $school_lead_actions_nonce,
+                    'email_composer' => $email_composer,
+                    'school_profile_timeline_nonce' => $school_profile_timeline_nonce,
+                    'activity_quick_counts' => $activity_quick_counts,
+                    'profile_issues' => $profile_issues,
+                    'support_focus_url' => $support_focus_url,
+                    'overview_tab_url' => $overview_tab_url,
+                    'lead_list_url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
+                    'home_url' => add_query_arg(['view' => 'home'], $portal_url),
+                    'build_tab_url' => $build_tab_url,
+                    'call_focus_url' => $call_focus_url,
+                    'email_focus_url' => $email_focus_url,
+                    'note_focus_url' => $note_focus_url,
+                    'status_display_label' => $status_display_label,
+                    'request_status_label' => $request_status_label,
+                    'booking_counts' => $booking_counts,
+                    'meta_rows' => $meta_rows,
+                ]);
+            }
 
             error_log('[CMN_SCHOOL_VIEW] ' . wp_json_encode([
                 'stage' => 'panels_start',
