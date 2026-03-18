@@ -22259,29 +22259,81 @@ global $wpdb;
 
         $account_manager_workspace_metrics = [];
         $account_manager_workspace_links = [];
+        $account_manager_workspace_copy = '';
+        $account_manager_workspace_status = 'Loading live counts...';
+        $account_manager_nav_context = [];
         $account_manager_nav_badges = [];
         $account_manager_task_panel_payload = [];
+        $is_account_manager_home_dashboard = false;
         if ($is_account_manager_workspace) {
+            $account_manager_nav_context = (array) $this->get_account_manager_nav_context_snapshot($user_id);
+            $is_account_manager_home_dashboard = ($active === 'dashboard' || $current_view === '' || $current_view === 'dashboard' || $current_view === 'home');
             $account_manager_nav_badges = $this->get_account_manager_nav_badge_counts($user_id);
             $account_manager_task_panel_payload = $this->get_account_manager_task_panel_payload($user_id, 12, $this->get_current_url());
-            $account_manager_workspace_metrics = [
-                [
-                    'key' => 'clients',
-                    'label' => 'Clients',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
-                ],
-                [
-                    'key' => 'leads',
-                    'label' => 'Leads',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
-                ],
-                [
-                    'key' => 'candidates',
-                    'label' => 'Candidates',
-                    'url' => add_query_arg(['view' => 'candidates'], $portal_url),
-                ],
-            ];
-            $account_manager_workspace_links = [];
+            if ($is_account_manager_home_dashboard) {
+                $account_manager_workspace_metrics = [
+                    [
+                        'key' => 'accounts',
+                        'label' => 'My Accounts',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
+                    ],
+                    [
+                        'key' => 'candidates',
+                        'label' => 'My Candidates',
+                        'url' => add_query_arg(['view' => 'candidates'], $portal_url),
+                    ],
+                    [
+                        'key' => 'bookings',
+                        'label' => 'My Bookings',
+                        'url' => add_query_arg(['view' => 'bookings'], $portal_url),
+                    ],
+                    [
+                        'key' => 'issues',
+                        'label' => 'My Issues',
+                        'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
+                    ],
+                ];
+                $account_manager_workspace_links = [
+                    [
+                        'label' => 'Leads',
+                        'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                    ],
+                    [
+                        'label' => 'Clients',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
+                    ],
+                    [
+                        'label' => 'Compliance',
+                        'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
+                    ],
+                    [
+                        'label' => 'Invoices',
+                        'url' => add_query_arg(['view' => 'invoicing'], $portal_url),
+                    ],
+                ];
+                $account_manager_workspace_copy = 'Manage accounts, candidates, bookings and issues - all in one place.';
+                $updated_label = sanitize_text_field((string) ($account_manager_nav_context['updated_label'] ?? ''));
+                $account_manager_workspace_status = $updated_label !== '' ? ('Updated ' . $updated_label) : 'Updated just now';
+            } else {
+                $account_manager_workspace_metrics = [
+                    [
+                        'key' => 'clients',
+                        'label' => 'Clients',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
+                    ],
+                    [
+                        'key' => 'leads',
+                        'label' => 'Leads',
+                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
+                    ],
+                    [
+                        'key' => 'candidates',
+                        'label' => 'Candidates',
+                        'url' => add_query_arg(['view' => 'candidates'], $portal_url),
+                    ],
+                ];
+                $account_manager_workspace_links = [];
+            }
         }
 
         $render_staff_nav_icon = static function ($icon_key) {
@@ -22401,20 +22453,31 @@ global $wpdb;
                             <?php endif; ?>
                         </div>
                         <?php if ($is_account_manager_workspace) : ?>
-                            <section class="cmn-am-nav-workspace is-loading" data-am-nav-context aria-live="polite" aria-busy="true">
+                            <section class="cmn-am-nav-workspace<?php echo $is_account_manager_home_dashboard ? ' cmn-am-nav-workspace--home' : ''; ?><?php echo $account_manager_nav_context ? '' : ' is-loading'; ?>" data-am-nav-context aria-live="polite" aria-busy="<?php echo $account_manager_nav_context ? 'false' : 'true'; ?>">
                                 <div class="cmn-am-nav-workspace-head">
-                                    <span class="cmn-am-nav-eyebrow">Account Manager CRM</span>
-                                    <h3>Portfolio</h3>
+                                    <span class="cmn-am-nav-eyebrow"><?php echo esc_html($is_account_manager_home_dashboard ? 'Account Manager' : 'Account Manager CRM'); ?></span>
+                                    <h3><?php echo esc_html($is_account_manager_home_dashboard ? 'Portfolio CRM' : 'Portfolio'); ?></h3>
+                                    <?php if ($account_manager_workspace_copy !== '') : ?>
+                                        <p class="cmn-am-nav-workspace-copy"><?php echo esc_html($account_manager_workspace_copy); ?></p>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="cmn-am-nav-workspace-metrics">
                                     <?php foreach ($account_manager_workspace_metrics as $metric) : ?>
+                                        <?php $metric_value = isset($account_manager_nav_context[(string) ($metric['key'] ?? '')]) ? number_format_i18n((int) $account_manager_nav_context[(string) ($metric['key'] ?? '')]) : '--'; ?>
                                         <a class="cmn-am-nav-metric" href="<?php echo esc_url((string) $metric['url']); ?>">
-                                            <strong data-am-nav-metric-value="<?php echo esc_attr((string) $metric['key']); ?>">--</strong>
+                                            <strong data-am-nav-metric-value="<?php echo esc_attr((string) $metric['key']); ?>"><?php echo esc_html($metric_value); ?></strong>
                                             <span><?php echo esc_html((string) $metric['label']); ?></span>
                                         </a>
                                     <?php endforeach; ?>
                                 </div>
-                                <p class="cmn-am-nav-workspace-status" data-am-nav-context-status>Loading live counts...</p>
+                                <?php if ($account_manager_workspace_links) : ?>
+                                    <div class="cmn-am-nav-workspace-pills">
+                                        <?php foreach ($account_manager_workspace_links as $workspace_link) : ?>
+                                            <a class="cmn-am-nav-workspace-pill" href="<?php echo esc_url((string) ($workspace_link['url'] ?? $portal_url)); ?>"><?php echo esc_html((string) ($workspace_link['label'] ?? 'Open')); ?></a>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                                <p class="cmn-am-nav-workspace-status" data-am-nav-context-status><?php echo esc_html($account_manager_workspace_status); ?></p>
                             </section>
                         <?php endif; ?>
                         <?php if ($show_nav_edit_controls) : ?>
@@ -41523,6 +41586,7 @@ global $wpdb;
             'upcoming_rows' => array_slice($upcoming_rows, 0, 8),
             'future_rows' => array_slice($future_rows, 0, 8),
             'needs_attention_rows' => array_slice($needs_attention_rows, 0, 10),
+            'priority_rows' => array_slice($account_rows, 0, 12),
             'counts' => [
                 'accounts' => (int) ($account_counts['accounts'] ?? 0),
                 'overdue_follow_up' => (int) ($account_counts['overdue_follow_up'] ?? 0),
@@ -41546,316 +41610,818 @@ global $wpdb;
         if (!$payload) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Dashboard unavailable</h3><p>This home view is only available for portfolio-scoped account managers.</p></div></section>';
         }
-
-        $needs_attention_rows = array_values(array_filter((array) ($payload['needs_attention_rows'] ?? []), 'is_array'));
-        $recent_activity_snapshot = (array) $this->get_account_manager_recent_activity_snapshot($user_id, 4);
-        $recent_activity_rows = array_values(array_filter((array) ($recent_activity_snapshot['rows'] ?? []), 'is_array'));
-        $booking_snapshot = (array) $this->get_account_manager_booking_scope_snapshot($user_id, 4);
-        $booking_rows = array_values(array_filter((array) ($booking_snapshot['rows'] ?? []), 'is_array'));
-        $nav_context = (array) $this->get_account_manager_nav_context_snapshot($user_id);
+        $kpis = is_array($payload['kpis'] ?? null) ? $payload['kpis'] : [];
         $urls = is_array($payload['urls'] ?? null) ? $payload['urls'] : [];
-        $render_summary_tile = static function ($value, $label, $url) {
+        $due_now_rows = array_values(array_filter((array) ($payload['due_now_rows'] ?? []), 'is_array'));
+        $upcoming_rows = array_values(array_filter((array) ($payload['upcoming_rows'] ?? []), 'is_array'));
+        $needs_attention_rows = array_values(array_filter((array) ($payload['needs_attention_rows'] ?? []), 'is_array'));
+        $priority_rows = array_values(array_filter((array) ($payload['priority_rows'] ?? []), 'is_array'));
+        $focus_row = $needs_attention_rows[0] ?? $priority_rows[0] ?? [];
+        $focus_overview_url = (string) ($focus_row['overview_url'] ?? $focus_row['view_url'] ?? ($urls['accounts'] ?? '#'));
+        $focus_name = sanitize_text_field((string) ($focus_row['title'] ?? $focus_row['label'] ?? 'your next account'));
+        $quick_actions = [
+            [
+                'label' => 'Log Call',
+                'icon' => 'phone',
+                'url' => (string) ($focus_row['log_call_url'] ?? $focus_overview_url),
+            ],
+            [
+                'label' => 'Send Email',
+                'icon' => 'email',
+                'url' => (string) ($focus_row['email_url'] ?? add_query_arg(['cmn_school_focus_action' => 'email'], $focus_overview_url)),
+            ],
+            [
+                'label' => 'Add Task',
+                'icon' => 'task',
+                'url' => (string) ($focus_row['task_editor_url'] ?? ($urls['tasks'] ?? $focus_overview_url)),
+            ],
+            [
+                'label' => 'Add Note',
+                'icon' => 'note',
+                'url' => (string) (add_query_arg(['cmn_school_focus_action' => 'note'], $focus_overview_url)),
+            ],
+        ];
+
+        $render_icon = static function ($icon_key) {
+            $icon_key = sanitize_key((string) $icon_key);
+            $paths = [
+                'phone' => '<path d="M22 16.9v3a2 2 0 0 1-2.2 2A19.8 19.8 0 0 1 11.2 19a19.4 19.4 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.1 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7l.5 3a2 2 0 0 1-.6 1.8l-1.3 1.3a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 1.8-.6l3 .5A2 2 0 0 1 22 16.9z"></path>',
+                'email' => '<rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3 8l9 6 9-6"></path>',
+                'task' => '<rect x="5" y="4" width="14" height="16" rx="3"></rect><path d="M9 4.5h6"></path><path d="M9 10h6"></path><path d="M9 14h4"></path>',
+                'note' => '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path><path d="M8 13h8"></path><path d="M8 17h5"></path>',
+                'calls' => '<path d="M22 16.9v3a2 2 0 0 1-2.2 2A19.8 19.8 0 0 1 11.2 19a19.4 19.4 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.1 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7l.5 3a2 2 0 0 1-.6 1.8l-1.3 1.3a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 1.8-.6l3 .5A2 2 0 0 1 22 16.9z"></path>',
+                'emails' => '<rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3 8l9 6 9-6"></path>',
+                'tasks_completed' => '<rect x="4" y="3" width="16" height="18" rx="3"></rect><path d="M8 7h8"></path><path d="m9 13 2 2 4-4"></path>',
+                'upcoming' => '<rect x="3" y="4" width="18" height="18" rx="3"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path>',
+                'attention' => '<path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path>',
+            ];
+            return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . ($paths[$icon_key] ?? $paths['task']) . '</svg>';
+        };
+        $get_chip_class = function ($tone_key) {
+            $tone_key = sanitize_key((string) $tone_key);
+            if (in_array($tone_key, ['urgent', 'critical', 'declined'], true)) {
+                return 'is-critical';
+            }
+            if (in_array($tone_key, ['warning', 'medium', 'pending'], true)) {
+                return 'is-warning';
+            }
+            return 'is-info';
+        };
+        $render_kpi_card = static function ($label, $value, $icon_markup, $tone_class = '') {
             ob_start();
             ?>
-            <a class="cmn-am-overview-tile" href="<?php echo esc_url((string) $url); ?>">
-                <strong><?php echo esc_html(number_format_i18n((int) $value)); ?></strong>
-                <span><?php echo esc_html((string) $label); ?></span>
-            </a>
+            <article class="cmn-am-home-kpi-card <?php echo esc_attr($tone_class); ?>">
+                <span class="cmn-am-home-kpi-icon" aria-hidden="true"><?php echo $icon_markup; ?></span>
+                <div class="cmn-am-home-kpi-copy">
+                    <span class="cmn-am-home-kpi-label"><?php echo esc_html($label); ?></span>
+                    <strong class="cmn-am-home-kpi-value"><?php echo esc_html(number_format_i18n((int) $value)); ?></strong>
+                </div>
+            </article>
             <?php
             return (string) ob_get_clean();
         };
-        $render_school_overview_row = function (array $row, array $config = []) use ($urls) {
-            $open_url = esc_url((string) ($row['overview_url'] ?? $row['view_url'] ?? $urls['accounts'] ?? '#'));
-            $title = sanitize_text_field((string) ($row['title'] ?? $row['label'] ?? 'School'));
+        $render_empty_card = static function ($icon_markup, $title, $detail = '') {
+            ob_start();
+            ?>
+            <div class="cmn-am-home-empty-card">
+                <span class="cmn-am-home-empty-icon" aria-hidden="true"><?php echo $icon_markup; ?></span>
+                <div class="cmn-am-home-empty-copy">
+                    <strong><?php echo esc_html($title); ?></strong>
+                    <?php if ($detail !== '') : ?>
+                        <span><?php echo esc_html($detail); ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php
+            return (string) ob_get_clean();
+        };
+        $render_task_card = function (array $row, $compact = false) use ($get_chip_class) {
+            $school_name = sanitize_text_field((string) ($row['school_name'] ?? $row['eyebrow'] ?? 'School relationship'));
+            $summary = sanitize_text_field((string) ($row['label'] ?? 'Open follow-up'));
+            $detail = sanitize_text_field((string) ($row['detail'] ?? ''));
+            $due_label = sanitize_text_field((string) ($row['value'] ?? 'Open'));
+            $tone_class = $get_chip_class((string) ($row['tone'] ?? 'info'));
+            $open_url = esc_url((string) ($row['overview_url'] ?? $row['url'] ?? '#'));
+            $editor_url = esc_url((string) ($row['edit_url'] ?? $row['url'] ?? '#'));
+            $editor_label = sanitize_text_field((string) ($row['editor_label'] ?? 'Edit next action'));
+
+            ob_start();
+            ?>
+            <article class="cmn-am-home-task-card<?php echo $compact ? ' is-compact' : ''; ?>">
+                <div class="cmn-am-home-task-card-head">
+                    <div class="cmn-am-home-task-card-title-group">
+                        <span class="cmn-am-home-task-card-school"><?php echo esc_html($school_name); ?></span>
+                        <strong class="cmn-am-home-task-card-summary"><?php echo esc_html($summary); ?></strong>
+                    </div>
+                    <span class="cmn-status-chip <?php echo esc_attr($tone_class); ?>"><?php echo esc_html($due_label); ?></span>
+                </div>
+                <?php if ($detail !== '') : ?>
+                    <p class="cmn-am-home-task-card-detail"><?php echo esc_html($detail); ?></p>
+                <?php endif; ?>
+                <div class="cmn-am-home-task-card-actions">
+                    <a class="cmn-am-home-btn cmn-am-home-btn--ghost" href="<?php echo $open_url; ?>">Open</a>
+                    <a class="cmn-am-home-btn cmn-am-home-btn--primary" href="<?php echo $editor_url; ?>"><?php echo esc_html($editor_label); ?></a>
+                </div>
+            </article>
+            <?php
+            return (string) ob_get_clean();
+        };
+        $render_attention_card = function (array $row) {
+            $title = sanitize_text_field((string) ($row['title'] ?? $row['label'] ?? 'School account'));
             $status_value = sanitize_key((string) ($row['status_value'] ?? ''));
             $pipeline_value = sanitize_key((string) ($row['pipeline_value'] ?? ''));
             $stage_label = $this->get_account_manager_sales_stage_label($status_value, $pipeline_value, $status_value === 'lead');
-            $summary = sanitize_text_field((string) ($config['summary'] ?? ($row['next_action_label'] ?? $row['status_label'] ?? 'Open account')));
-            $meta = sanitize_text_field((string) ($config['meta'] ?? ($row['last_activity_detail'] ?? $row['follow_up_state_detail'] ?? '')));
-            $badge_label = sanitize_text_field((string) ($config['badge_label'] ?? ''));
-            $badge_class = sanitize_html_class((string) ($config['badge_class'] ?? 'is-info'));
+            $attention_reason = sanitize_text_field((string) ($row['attention_reason'] ?? 'Needs attention'));
+            $chip_class = $attention_reason === 'At risk' ? 'is-critical' : 'is-warning';
+            $summary = sanitize_text_field((string) ($row['next_action_label'] ?? 'No next action logged'));
+            $detail_lines = array_values(array_filter([
+                sanitize_text_field((string) ($row['account_risk_detail'] ?? '')),
+                sanitize_text_field((string) ($row['follow_up_state_detail'] ?? '')),
+                sanitize_text_field((string) ($row['last_activity_detail'] ?? '')),
+            ]));
+            $detail_lines = array_slice($detail_lines, 0, 2);
+            $open_url = esc_url((string) ($row['overview_url'] ?? $row['view_url'] ?? '#'));
+            $task_url = esc_url((string) ($row['task_editor_url'] ?? $open_url));
+            $task_label = sanitize_text_field((string) ($row['task_editor_label'] ?? 'Set next action'));
 
             ob_start();
             ?>
-            <article class="cmn-am-overview-list-item" data-row-href="<?php echo $open_url; ?>" tabindex="0">
-                <div class="cmn-am-overview-list-item-head">
-                    <div class="cmn-am-overview-list-item-title-wrap">
-                        <strong class="cmn-am-overview-list-item-title"><a href="<?php echo $open_url; ?>"><?php echo esc_html($title); ?></a></strong>
+            <article class="cmn-am-home-attention-card">
+                <div class="cmn-am-home-attention-card-head">
+                    <div class="cmn-am-home-attention-card-title-group">
+                        <strong><?php echo esc_html($title); ?></strong>
                         <?php if ($stage_label !== '') : ?>
-                            <span class="cmn-am-overview-list-item-stage"><?php echo esc_html($stage_label); ?></span>
+                            <span><?php echo esc_html($stage_label); ?></span>
                         <?php endif; ?>
                     </div>
-                    <?php if ($badge_label !== '') : ?>
-                        <span class="cmn-status-chip <?php echo esc_attr($badge_class); ?>"><?php echo esc_html($badge_label); ?></span>
-                    <?php endif; ?>
+                    <span class="cmn-status-chip <?php echo esc_attr($chip_class); ?>"><?php echo esc_html($attention_reason); ?></span>
                 </div>
-                <?php if ($summary !== '') : ?>
-                    <div class="cmn-am-overview-list-item-summary"><?php echo esc_html($summary); ?></div>
+                <p class="cmn-am-home-attention-summary"><?php echo esc_html($summary); ?></p>
+                <?php if ($detail_lines) : ?>
+                    <ul class="cmn-am-home-attention-list">
+                        <?php foreach ($detail_lines as $detail_line) : ?>
+                            <li><?php echo esc_html($detail_line); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
                 <?php endif; ?>
-                <?php if ($meta !== '') : ?>
-                    <div class="cmn-am-overview-list-item-meta"><?php echo esc_html($meta); ?></div>
-                <?php endif; ?>
+                <div class="cmn-am-home-task-card-actions">
+                    <a class="cmn-am-home-btn cmn-am-home-btn--ghost" href="<?php echo $open_url; ?>">Open account</a>
+                    <a class="cmn-am-home-btn cmn-am-home-btn--text" href="<?php echo $task_url; ?>"><?php echo esc_html($task_label); ?></a>
+                </div>
             </article>
             <?php
             return (string) ob_get_clean();
         };
-        $render_booking_overview_row = static function (array $row, $fallback_url = '#') {
-            $open_url = esc_url((string) ($row['url'] ?? $fallback_url));
-            $title = sanitize_text_field((string) ($row['school_name'] ?? $row['eyebrow'] ?? 'Booking'));
-            $summary = sanitize_text_field((string) ($row['candidate_name'] ?? $row['status_label'] ?? 'Booking context'));
-            $meta = sanitize_text_field((string) ($row['date_label'] ?? $row['detail'] ?? ''));
-            $badge_label = sanitize_text_field((string) ($row['status_label'] ?? 'Booking'));
-            $badge_class = sanitize_html_class((string) ($row['status_chip_class'] ?? 'is-info'));
-
+        $render_quick_action = function (array $action) use ($render_icon) {
+            $label = sanitize_text_field((string) ($action['label'] ?? 'Open'));
+            $icon_key = sanitize_key((string) ($action['icon'] ?? 'task'));
+            $url = esc_url((string) ($action['url'] ?? '#'));
             ob_start();
             ?>
-            <article class="cmn-am-overview-list-item" data-row-href="<?php echo $open_url; ?>" tabindex="0">
-                <div class="cmn-am-overview-list-item-head">
-                    <div class="cmn-am-overview-list-item-title-wrap">
-                        <strong class="cmn-am-overview-list-item-title"><a href="<?php echo $open_url; ?>"><?php echo esc_html($title); ?></a></strong>
-                    </div>
-                    <span class="cmn-status-chip <?php echo esc_attr($badge_class); ?>"><?php echo esc_html($badge_label); ?></span>
-                </div>
-                <?php if ($summary !== '') : ?>
-                    <div class="cmn-am-overview-list-item-summary"><?php echo esc_html($summary); ?></div>
-                <?php endif; ?>
-                <?php if ($meta !== '') : ?>
-                    <div class="cmn-am-overview-list-item-meta"><?php echo esc_html($meta); ?></div>
-                <?php endif; ?>
-            </article>
+            <a class="cmn-am-home-quick-action" href="<?php echo $url; ?>">
+                <span class="cmn-am-home-quick-action-icon" aria-hidden="true"><?php echo $render_icon($icon_key); ?></span>
+                <span class="cmn-am-home-quick-action-label"><?php echo esc_html($label); ?></span>
+            </a>
             <?php
             return (string) ob_get_clean();
         };
 
         ob_start();
         ?>
-        <div class="cmn-am-dashboard-container cmn-am-dashboard-container--minimal">
+        <div class="cmn-am-dashboard-container cmn-am-home-dashboard--reference">
             <style>
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal {
-                    width: min(1180px, 100%);
-                    margin: 0 auto;
-                    padding: 18px;
-                    border-radius: 28px;
-                    border: 1px solid rgba(216, 224, 236, 0.78);
-                    background: linear-gradient(180deg, rgba(248, 250, 255, 0.99) 0%, rgba(243, 246, 252, 0.99) 100%);
-                    box-shadow: 0 22px 54px rgba(0, 0, 0, 0.22);
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) {
+                    grid-template-columns: 248px minmax(0, 1fr);
+                    gap: 24px;
+                    padding: 24px;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid {
-                    display: grid !important;
-                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) > .cmn-staff-nav {
+                    padding: 18px 14px 16px;
+                    border-radius: 24px;
+                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 247, 247, 0.95) 100%);
+                    border: 1px solid rgba(72, 72, 72, 0.12);
+                    box-shadow: 0 18px 42px rgba(24, 24, 24, 0.08);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-staff-nav-header {
                     gap: 14px;
-                    margin-bottom: 18px;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile {
-                    display: flex !important;
-                    flex-direction: column;
-                    gap: 8px;
-                    min-height: 112px;
-                    justify-content: flex-end;
-                    padding: 18px;
-                    border-radius: 16px;
-                    border: 1px solid rgba(217, 225, 238, 0.98);
-                    background: #ffffff !important;
-                    color: #0f172a !important;
-                    text-decoration: none !important;
-                    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-                    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home {
+                    margin: 4px 4px 0;
+                    padding: 18px 16px 14px;
+                    border-radius: 22px;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 10px 26px rgba(24, 24, 24, 0.05);
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile:hover,
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile:focus-visible {
-                    transform: translateY(-2px);
-                    border-color: rgba(53, 114, 255, 0.34);
-                    box-shadow: 0 14px 28px rgba(53, 114, 255, 0.12);
-                }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile strong {
-                    display: block;
-                    font-size: clamp(34px, 4vw, 42px);
-                    line-height: 1;
-                    color: #0f172a !important;
-                    font-weight: 800;
-                }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid > .cmn-am-overview-tile span {
-                    display: block;
-                    color: #475569 !important;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home .cmn-am-nav-eyebrow {
+                    padding: 0;
+                    min-height: auto;
                     font-size: 12px;
                     font-weight: 700;
-                    letter-spacing: 0.02em;
+                    color: #677189;
+                    letter-spacing: 0;
+                    text-transform: none;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-panels {
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace--home h3 {
+                    margin: 0;
+                    font-family: "Space Grotesk", "League Spartan", "Inter", sans-serif;
+                    font-size: 32px;
+                    font-weight: 700;
+                    line-height: 1;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-copy {
+                    margin: 8px 0 0;
+                    color: #4f5768;
+                    font-size: 14px;
+                    font-weight: 600;
+                    line-height: 1.55;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-pills {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    margin-top: 10px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-pill {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 34px;
+                    padding: 0 14px;
+                    border-radius: 999px;
+                    border: 1px solid rgba(94, 132, 255, 0.32);
+                    background: #ffffff;
+                    color: #2c5dff;
+                    font-size: 12px;
+                    font-weight: 700;
+                    text-decoration: none;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-pill:hover,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-pill:focus-visible {
+                    border-color: rgba(47, 99, 255, 0.5);
+                    background: #edf4ff;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace-metrics {
+                    gap: 10px;
+                    margin-top: 16px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-metric {
+                    min-height: 74px;
+                    padding: 12px;
+                    border-radius: 16px;
+                    background: #ffffff;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    box-shadow: 0 8px 20px rgba(24, 24, 24, 0.04);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-metric strong {
+                    font-size: 30px;
+                    font-weight: 800;
+                    color: #181818 !important;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-metric span {
+                    font-size: 12px;
+                    color: #4f5768 !important;
+                    font-weight: 700;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-workspace-status {
+                    margin-top: 12px;
+                    font-size: 12px;
+                    font-weight: 700;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-am-nav-list {
+                    gap: 8px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-school-nav-link.cmn-staff-nav-link {
+                    min-height: 44px;
+                    padding: 10px 14px;
+                    border-radius: 14px;
+                    font-size: 15px;
+                    color: #344054;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) .cmn-school-nav-link.cmn-staff-nav-link.is-active {
+                    background: #d8f0ff;
+                    color: #181818;
+                    box-shadow: inset 0 0 0 1px rgba(94, 132, 255, 0.18);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-dashboard--reference {
+                    width: min(1320px, 100%);
+                    margin: 0 auto;
+                    padding: 0;
+                    font-family: "Manrope", "Inter", sans-serif;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-shell {
+                    display: grid;
+                    gap: 22px;
+                    padding: 18px;
+                    border-radius: 28px;
+                    border: 1px solid rgba(72, 72, 72, 0.1);
+                    background: linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+                    box-shadow: 0 20px 44px rgba(24, 24, 24, 0.08);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 16px;
+                    padding: 4px 2px 0;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-header h1 {
+                    margin: 0;
+                    font-family: "Space Grotesk", "League Spartan", "Inter", sans-serif;
+                    font-size: clamp(30px, 3.4vw, 38px);
+                    line-height: 1.08;
+                    font-weight: 700;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-subtle-link {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    color: #2c5dff;
+                    font-size: 13px;
+                    font-weight: 700;
+                    text-decoration: none;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-kpi-row {
                     display: grid;
                     grid-template-columns: repeat(3, minmax(0, 1fr));
                     gap: 16px;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-panel {
-                    display: grid;
-                    gap: 14px;
-                    align-content: start;
-                    padding: 16px;
-                    border-radius: 20px;
-                    border: 1px solid rgba(217, 225, 238, 0.98);
-                    background: rgba(255, 255, 255, 0.94);
-                    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-                    backdrop-filter: blur(10px);
-                    -webkit-backdrop-filter: blur(10px);
-                }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-panel-head h3 {
-                    margin: 0;
-                    color: #0f172a;
-                    font-size: 17px;
-                    font-weight: 800;
-                }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list {
-                    display: grid;
-                    gap: 10px;
-                }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item,
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-empty {
-                    display: grid;
-                    gap: 6px;
-                    padding: 14px;
-                    border-radius: 16px;
-                    border: 1px solid rgba(220, 227, 239, 0.98);
-                    background: #ffffff;
-                    color: #0f172a;
-                    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
-                }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-head {
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-kpi-card {
                     display: flex;
-                    align-items: flex-start;
-                    justify-content: space-between;
-                    gap: 10px;
+                    align-items: center;
+                    gap: 16px;
+                    min-height: 92px;
+                    padding: 18px 20px;
+                    border-radius: 18px;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    background: #ffffff;
+                    box-shadow: 0 12px 28px rgba(24, 24, 24, 0.04);
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-title-wrap {
-                    min-width: 0;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-kpi-icon {
+                    width: 48px;
+                    height: 48px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 14px;
+                    background: #edf4ff;
+                    color: #2f63ff;
+                    flex: 0 0 48px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-kpi-copy {
                     display: grid;
                     gap: 4px;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-title,
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-title a {
-                    color: #0f172a !important;
-                    font-size: 17px;
-                    line-height: 1.25;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-kpi-label {
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: #4f5768;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-kpi-value {
+                    font-size: 18px;
+                    line-height: 1.1;
+                    font-weight: 800;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-panel {
+                    display: grid;
+                    gap: 18px;
+                    padding: 20px;
+                    border-radius: 22px;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    background: #f0f0f0;
+                    box-shadow: 0 14px 28px rgba(24, 24, 24, 0.04);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-panel-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 16px;
+                    flex-wrap: wrap;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-panel-headline {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 12px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-panel-headline h2,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-panel-headline h3 {
+                    margin: 0;
+                    font-family: "Space Grotesk", "League Spartan", "Inter", sans-serif;
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-panel-icon {
+                    width: 28px;
+                    height: 28px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 10px;
+                    background: #ffffff;
+                    color: #2f63ff;
+                    box-shadow: inset 0 0 0 1px rgba(72, 72, 72, 0.08);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-panel-headline-badge {
+                    min-width: 24px;
+                    height: 24px;
+                    padding: 0 8px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 999px;
+                    background: #ef4444;
+                    color: #ffffff;
+                    font-size: 12px;
+                    font-weight: 800;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-stack {
+                    display: grid;
+                    gap: 14px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card {
+                    display: grid;
+                    gap: 12px;
+                    padding: 18px 20px;
+                    border-radius: 18px;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    background: #ffffff;
+                    box-shadow: 0 10px 24px rgba(24, 24, 24, 0.04);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card.is-compact {
+                    min-height: 0;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 14px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card-title-group {
+                    display: grid;
+                    gap: 4px;
+                    min-width: 0;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card-school {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: #5f6b7d;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card-summary {
+                    font-size: 18px;
+                    line-height: 1.32;
+                    font-weight: 800;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card-detail {
+                    margin: 0;
+                    color: #4f5768;
+                    font-size: 14px;
+                    font-weight: 600;
+                    line-height: 1.55;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card-actions {
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-end;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                    margin-top: auto;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 42px;
+                    padding: 0 16px;
+                    border-radius: 12px;
+                    font-size: 14px;
                     font-weight: 800;
                     text-decoration: none;
+                    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background-color 140ms ease;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-stage,
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-meta,
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-empty {
-                    color: #64748b;
-                    font-size: 12px;
-                    line-height: 1.5;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-btn:hover,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-btn:focus-visible {
+                    transform: translateY(-1px);
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-list-item-summary {
-                    color: #334155;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-btn--ghost {
+                    border: 1px solid rgba(72, 72, 72, 0.12);
+                    background: #ffffff;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-btn--primary {
+                    border: 1px solid #2f63ff;
+                    background: #2f63ff;
+                    color: #ffffff;
+                    box-shadow: 0 12px 24px rgba(47, 99, 255, 0.22);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-btn--text {
+                    padding: 0;
+                    min-height: 0;
+                    border: 0;
+                    background: transparent;
+                    color: #2f63ff;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-lower-grid {
+                    display: grid;
+                    grid-template-columns: minmax(280px, 1fr) minmax(0, 1.65fr);
+                    gap: 18px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-side-stack {
+                    display: grid;
+                    gap: 18px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-empty-card {
+                    min-height: 136px;
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                    padding: 18px;
+                    border-radius: 18px;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    background: #ffffff;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-empty-icon {
+                    width: 46px;
+                    height: 46px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 14px;
+                    background: #f4f7fb;
+                    color: #728198;
+                    flex: 0 0 46px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-empty-copy {
+                    display: grid;
+                    gap: 4px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-empty-copy strong {
+                    font-size: 18px;
+                    font-weight: 800;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-empty-copy span {
                     font-size: 14px;
+                    font-weight: 600;
+                    color: #5f6b7d;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 14px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card {
+                    min-height: 232px;
+                    display: grid;
+                    gap: 14px;
+                    align-content: start;
+                    padding: 18px;
+                    border-radius: 18px;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    background: #ffffff;
+                    box-shadow: 0 10px 24px rgba(24, 24, 24, 0.04);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 12px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card-title-group {
+                    display: grid;
+                    gap: 4px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card-title-group strong {
+                    font-size: 17px;
+                    line-height: 1.3;
+                    font-weight: 800;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-card-title-group span {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: #697486;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-summary {
+                    margin: 0;
+                    color: #243040;
+                    font-size: 15px;
+                    font-weight: 800;
+                    line-height: 1.45;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-list {
+                    margin: 0;
+                    padding: 0 0 0 16px;
+                    display: grid;
+                    gap: 8px;
+                    color: #5f6b7d;
+                    font-size: 13px;
                     font-weight: 600;
                     line-height: 1.5;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal .cmn-status-chip {
-                    min-height: 26px;
-                    padding: 0 10px;
-                    border-radius: 999px;
-                    border: 1px solid rgba(217, 225, 238, 0.98);
-                    background: #f8fafc;
-                    color: #475569;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-actions {
+                    display: grid;
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    gap: 10px;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-action {
+                    min-height: 96px;
+                    display: grid;
+                    align-content: center;
+                    justify-items: center;
+                    gap: 10px;
+                    padding: 14px;
+                    border-radius: 16px;
+                    border: 1px solid rgba(72, 72, 72, 0.08);
+                    background: #ffffff;
+                    color: #181818;
+                    text-align: center;
+                    text-decoration: none;
+                    box-shadow: 0 8px 18px rgba(24, 24, 24, 0.03);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-action:hover,
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-action:focus-visible {
+                    background: #f7fbff;
+                    border-color: rgba(47, 99, 255, 0.22);
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-action-icon {
+                    width: 42px;
+                    height: 42px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 14px;
+                    background: #edf4ff;
+                    color: #2f63ff;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-action-label {
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: #181818;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-caption {
+                    margin: -6px 0 0;
+                    color: #5f6b7d;
+                    font-size: 13px;
                     font-weight: 700;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal .cmn-status-chip.is-warning {
-                    border-color: rgba(251, 191, 36, 0.55);
-                    background: #fffbeb;
-                    color: #b45309;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-shell .cmn-status-chip {
+                    min-height: 28px;
+                    padding: 0 12px;
+                    border-radius: 999px;
+                    border: 1px solid rgba(72, 72, 72, 0.1);
+                    background: #f7f7f7;
+                    color: #484848;
+                    font-size: 12px;
+                    font-weight: 800;
                 }
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal .cmn-status-chip.is-declined,
-                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal .cmn-status-chip.is-critical {
-                    border-color: rgba(248, 113, 113, 0.4);
-                    background: #fff1f2;
-                    color: #be123c;
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-shell .cmn-status-chip.is-critical {
+                    border-color: rgba(239, 68, 68, 0.18);
+                    background: #fff2f2;
+                    color: #d14141;
                 }
-                @media (max-width: 1100px) {
-                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid,
-                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-panels {
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-shell .cmn-status-chip.is-warning {
+                    border-color: rgba(255, 190, 92, 0.24);
+                    background: #fff7e9;
+                    color: #d28b16;
+                }
+                body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-shell .cmn-status-chip.is-info {
+                    border-color: rgba(176, 196, 255, 0.26);
+                    background: #edf4ff;
+                    color: #2f63ff;
+                }
+                @media (max-width: 1180px) {
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-lower-grid {
+                        grid-template-columns: 1fr;
+                    }
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-grid {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-quick-actions {
                         grid-template-columns: repeat(2, minmax(0, 1fr));
                     }
                 }
-                @media (max-width: 860px) {
-                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-dashboard-container--minimal {
-                        padding: 14px;
-                        border-radius: 22px;
+                @media (max-width: 960px) {
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-dashboard--reference) {
+                        grid-template-columns: 1fr;
                     }
-                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-grid,
-                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-overview-panels {
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-kpi-row,
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-attention-grid {
                         grid-template-columns: 1fr;
                     }
                 }
+                @media (max-width: 720px) {
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-shell {
+                        padding: 14px;
+                        border-radius: 20px;
+                    }
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-task-card-actions {
+                        justify-content: stretch;
+                    }
+                    body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-btn {
+                        width: 100%;
+                    }
+                }
             </style>
-            <section class="cmn-am-overview-grid" aria-label="Portfolio overview">
-                <?php
-                echo $render_summary_tile((int) ($nav_context['clients'] ?? 0), 'Clients', add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $this->get_portal_base_url()));
-                echo $render_summary_tile((int) ($nav_context['leads'] ?? 0), 'Leads', add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $this->get_portal_base_url()));
-                echo $render_summary_tile((int) ($nav_context['candidates'] ?? 0), 'Candidates', add_query_arg(['view' => 'candidates'], $this->get_portal_base_url()));
-                echo $render_summary_tile((int) ($nav_context['bookings'] ?? 0), 'Bookings', add_query_arg(['view' => 'bookings'], $this->get_portal_base_url()));
-                ?>
-            </section>
+            <div class="cmn-am-home-shell">
+                <header class="cmn-am-home-header">
+                    <h1>Your week at a glance</h1>
+                </header>
 
-            <div class="cmn-am-overview-panels">
-                <section class="cmn-am-overview-panel">
-                    <div class="cmn-am-overview-panel-head">
-                        <h3>Recent Activity</h3>
+                <section class="cmn-am-home-kpi-row" aria-label="Weekly performance">
+                    <?php
+                    echo $render_kpi_card('Calls this week', (int) ($kpis['calls'] ?? 0), $render_icon('calls'));
+                    echo $render_kpi_card('Emails this week', (int) ($kpis['emails'] ?? 0), $render_icon('emails'));
+                    echo $render_kpi_card('Tasks completed', (int) ($kpis['tasks_completed'] ?? 0), $render_icon('tasks_completed'));
+                    ?>
+                </section>
+
+                <section class="cmn-am-home-panel">
+                    <div class="cmn-am-home-panel-head">
+                        <div class="cmn-am-home-panel-headline">
+                            <span class="cmn-am-home-panel-icon" aria-hidden="true"><?php echo $render_icon('task'); ?></span>
+                            <h2>Tasks Due Now</h2>
+                            <?php if ($due_now_rows) : ?>
+                                <span class="cmn-am-home-panel-headline-badge"><?php echo esc_html(number_format_i18n(count($due_now_rows))); ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <a class="cmn-am-home-subtle-link" href="<?php echo esc_url((string) ($urls['tasks'] ?? $urls['accounts'] ?? '#')); ?>">View all tasks <span aria-hidden="true">&rarr;</span></a>
                     </div>
-                    <?php if ($recent_activity_rows) : ?>
-                        <div class="cmn-am-overview-list">
-                            <?php foreach ($recent_activity_rows as $activity_row) : ?>
-                                <?php
-                                echo $render_school_overview_row($activity_row, [
-                                    'summary' => (string) ($activity_row['next_action_label'] ?? $activity_row['status_label'] ?? 'Open account'),
-                                    'meta' => (string) ($activity_row['last_activity_detail'] ?? ''),
-                                ]);
-                                ?>
+                    <?php if ($due_now_rows) : ?>
+                        <div class="cmn-am-home-task-stack">
+                            <?php foreach (array_slice($due_now_rows, 0, 3) as $task_row) : ?>
+                                <?php echo $render_task_card($task_row, false); ?>
                             <?php endforeach; ?>
                         </div>
                     <?php else : ?>
-                        <div class="cmn-am-overview-empty">No recent activity</div>
+                        <?php echo $render_empty_card($render_icon('task'), 'No tasks due now', 'You are clear for the rest of today.'); ?>
                     <?php endif; ?>
                 </section>
 
-                <section class="cmn-am-overview-panel">
-                    <div class="cmn-am-overview-panel-head">
-                        <h3>Latest Bookings</h3>
-                    </div>
-                    <?php if ($booking_rows) : ?>
-                        <div class="cmn-am-overview-list">
-                            <?php foreach ($booking_rows as $booking_row) : ?>
-                                <?php echo $render_booking_overview_row($booking_row, (string) ($urls['bookings'] ?? '#')); ?>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else : ?>
-                        <div class="cmn-am-overview-empty">No recent bookings</div>
-                    <?php endif; ?>
-                </section>
+                <div class="cmn-am-home-lower-grid">
+                    <div class="cmn-am-home-side-stack">
+                        <section class="cmn-am-home-panel">
+                            <div class="cmn-am-home-panel-head">
+                                <div class="cmn-am-home-panel-headline">
+                                    <span class="cmn-am-home-panel-icon" aria-hidden="true"><?php echo $render_icon('upcoming'); ?></span>
+                                    <h3>Upcoming Tasks</h3>
+                                </div>
+                            </div>
+                            <?php if ($upcoming_rows) : ?>
+                                <div class="cmn-am-home-task-stack">
+                                    <?php foreach (array_slice($upcoming_rows, 0, 2) as $upcoming_row) : ?>
+                                        <?php echo $render_task_card($upcoming_row, true); ?>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else : ?>
+                                <?php echo $render_empty_card($render_icon('upcoming'), 'No upcoming tasks', 'You’re all clear for the next few days.'); ?>
+                            <?php endif; ?>
+                        </section>
 
-                <section class="cmn-am-overview-panel">
-                    <div class="cmn-am-overview-panel-head">
-                        <h3>Needs Attention</h3>
+                        <section class="cmn-am-home-panel">
+                            <div class="cmn-am-home-panel-head">
+                                <div class="cmn-am-home-panel-headline">
+                                    <span class="cmn-am-home-panel-icon" aria-hidden="true"><?php echo $render_icon('note'); ?></span>
+                                    <h3>Quick Actions</h3>
+                                </div>
+                            </div>
+                            <?php if ($focus_name !== '') : ?>
+                                <p class="cmn-am-home-quick-caption">Focused on <?php echo esc_html($focus_name); ?>.</p>
+                            <?php endif; ?>
+                            <div class="cmn-am-home-quick-actions">
+                                <?php foreach ($quick_actions as $quick_action) : ?>
+                                    <?php echo $render_quick_action($quick_action); ?>
+                                <?php endforeach; ?>
+                            </div>
+                        </section>
                     </div>
-                    <?php if ($needs_attention_rows) : ?>
-                        <div class="cmn-am-overview-list">
-                            <?php foreach (array_slice($needs_attention_rows, 0, 4) as $attention_row) : ?>
-                                <?php
-                                $attention_reason = sanitize_text_field((string) ($attention_row['attention_reason'] ?? 'Needs attention'));
-                                $attention_chip_class = $attention_reason === 'At risk' ? 'is-declined' : 'is-warning';
-                                echo $render_school_overview_row($attention_row, [
-                                    'summary' => (string) ($attention_row['next_action_label'] ?? 'No next action logged'),
-                                    'meta' => (string) ($attention_row['account_risk_detail'] ?? $attention_row['follow_up_state_detail'] ?? ''),
-                                    'badge_label' => $attention_reason,
-                                    'badge_class' => $attention_chip_class,
-                                ]);
-                                ?>
-                            <?php endforeach; ?>
+
+                    <section class="cmn-am-home-panel">
+                        <div class="cmn-am-home-panel-head">
+                            <div class="cmn-am-home-panel-headline">
+                                <span class="cmn-am-home-panel-icon" aria-hidden="true"><?php echo $render_icon('attention'); ?></span>
+                                <h3>Needs Attention</h3>
+                            </div>
+                            <a class="cmn-am-home-subtle-link" href="<?php echo esc_url((string) ($urls['needs_attention'] ?? $urls['accounts'] ?? '#')); ?>">View all accounts <span aria-hidden="true">&rarr;</span></a>
                         </div>
-                    <?php else : ?>
-                        <div class="cmn-am-overview-empty">No accounts need attention</div>
-                    <?php endif; ?>
-                </section>
+                        <?php if ($needs_attention_rows) : ?>
+                            <div class="cmn-am-home-attention-grid">
+                                <?php foreach (array_slice($needs_attention_rows, 0, 3) as $attention_row) : ?>
+                                    <?php echo $render_attention_card($attention_row); ?>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else : ?>
+                            <?php echo $render_empty_card($render_icon('attention'), 'No accounts need attention', 'Everything in your portfolio is currently up to date.'); ?>
+                        <?php endif; ?>
+                    </section>
+                </div>
             </div>
         </div>
         <?php
