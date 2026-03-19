@@ -22258,7 +22258,6 @@ global $wpdb;
             $stored_nav_state_json = '{}';
         }
 
-        $account_manager_nav_quick_links = [];
         $account_manager_workspace_status = 'Loading live counts...';
         $account_manager_nav_context = [];
         $account_manager_nav_badges = [];
@@ -22267,65 +22266,6 @@ global $wpdb;
             $account_manager_nav_context = (array) $this->get_account_manager_nav_context_snapshot($user_id);
             $account_manager_nav_badges = $this->get_account_manager_nav_badge_counts($user_id);
             $account_manager_task_panel_payload = $this->get_account_manager_task_panel_payload($user_id, 12, $this->get_current_url());
-            $current_status_filter = sanitize_key((string) ($_GET['cmn_status'] ?? 'all'));
-            $current_stage_filter = sanitize_key((string) ($_GET['cmn_stage'] ?? ''));
-            $current_support_filter = sanitize_key((string) ($_GET['support_filter'] ?? 'open'));
-            $account_manager_nav_quick_links = [
-                [
-                    'label' => 'My Accounts',
-                    'icon' => 'schools',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'schools' && $current_stage_filter !== 'follow_up' && $current_status_filter === 'all'),
-                ],
-                [
-                    'label' => 'Pipeline',
-                    'icon' => 'pipeline',
-                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'leads' || ($current_view === 'schools' && $current_status_filter === 'lead')),
-                ],
-                [
-                    'label' => 'Activity',
-                    'icon' => 'logs',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_stage' => 'follow_up', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'schools' && $current_stage_filter === 'follow_up'),
-                ],
-                [
-                    'label' => 'My Clients',
-                    'icon' => 'clients',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'client'),
-                ],
-                [
-                    'label' => 'My Candidates',
-                    'icon' => 'candidates',
-                    'url' => add_query_arg(['view' => 'candidates'], $portal_url),
-                    'is_active' => ($current_view === 'candidates'),
-                ],
-                [
-                    'label' => 'Compliance',
-                    'icon' => 'compliance',
-                    'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
-                    'is_active' => ($current_view === 'compliance-review'),
-                ],
-                [
-                    'label' => 'My Bookings',
-                    'icon' => 'bookings',
-                    'url' => add_query_arg(['view' => 'bookings'], $portal_url),
-                    'is_active' => ($current_view === 'bookings'),
-                ],
-                [
-                    'label' => 'My Issues',
-                    'icon' => 'support',
-                    'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
-                    'is_active' => ($current_view === 'support' && ($current_support_filter === '' || $current_support_filter === 'open')),
-                ],
-                [
-                    'label' => 'Invoices',
-                    'icon' => 'invoicing',
-                    'url' => add_query_arg(['view' => 'invoicing'], $portal_url),
-                    'is_active' => ($current_view === 'invoicing'),
-                ],
-            ];
             $updated_label = sanitize_text_field((string) ($account_manager_nav_context['updated_label'] ?? ''));
             $account_manager_workspace_status = $updated_label !== '' ? ('Updated ' . $updated_label) : 'Updated just now';
         }
@@ -22480,19 +22420,6 @@ global $wpdb;
                                         <span class="cmn-nav-badge" data-nav-badge-key="task_follow_up"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges['task_follow_up'])); ?></span>
                                     <?php endif; ?>
                                 </button>
-                                <?php if ($account_manager_nav_quick_links) : ?>
-                                    <section class="cmn-am-nav-quick-links" aria-label="Account manager quick links">
-                                        <p class="cmn-am-nav-quick-links-title">Quick Links</p>
-                                        <div class="cmn-am-nav-quick-links-list">
-                                            <?php foreach ($account_manager_nav_quick_links as $quick_link) : ?>
-                                                <a class="cmn-school-nav-link cmn-staff-nav-link cmn-am-nav-quick-link<?php echo !empty($quick_link['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($quick_link['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr((string) ($quick_link['label'] ?? 'Quick Link')); ?>">
-                                                    <?php echo $render_staff_nav_icon((string) ($quick_link['icon'] ?? 'dashboard')); ?>
-                                                    <span class="cmn-school-nav-label"><?php echo esc_html((string) ($quick_link['label'] ?? 'Open')); ?></span>
-                                                </a>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </section>
-                                <?php endif; ?>
                                 <div class="<?php echo $account_manager_nav_context ? '' : 'is-loading '; ?>cmn-am-nav-context-anchor" data-am-nav-context hidden aria-live="polite" aria-busy="<?php echo $account_manager_nav_context ? 'false' : 'true'; ?>">
                                     <p class="cmn-am-nav-workspace-status" data-am-nav-context-status hidden><?php echo esc_html($account_manager_workspace_status); ?></p>
                                 </div>

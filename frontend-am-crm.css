@@ -3823,29 +3823,3 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-pipeline-card .cmn-school
     min-height: 0;
   }
 }
-
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-quick-links {
-  display: grid;
-  gap: 8px;
-  margin: 0 0 10px;
-  padding: 0 0 12px;
-  border-bottom: 1px solid rgba(123, 132, 173, 0.12);
-}
-
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-quick-links-title {
-  margin: 0;
-  color: #7d8494;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-quick-links-list {
-  display: grid;
-  gap: 6px;
-}
-
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-quick-link {
-  margin: 0;
-}
