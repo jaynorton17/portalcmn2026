@@ -22278,6 +22278,18 @@ global $wpdb;
                     'is_active' => ($current_view === 'schools' && $current_stage_filter !== 'follow_up' && $current_status_filter === 'all'),
                 ],
                 [
+                    'label' => 'Pipeline',
+                    'icon' => 'pipeline',
+                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'leads' || ($current_view === 'schools' && $current_status_filter === 'lead')),
+                ],
+                [
+                    'label' => 'Activity',
+                    'icon' => 'logs',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_stage' => 'follow_up', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'schools' && $current_stage_filter === 'follow_up'),
+                ],
+                [
                     'label' => 'My Clients',
                     'icon' => 'clients',
                     'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
@@ -22290,6 +22302,12 @@ global $wpdb;
                     'is_active' => ($current_view === 'candidates'),
                 ],
                 [
+                    'label' => 'Compliance',
+                    'icon' => 'compliance',
+                    'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
+                    'is_active' => ($current_view === 'compliance-review'),
+                ],
+                [
                     'label' => 'My Bookings',
                     'icon' => 'bookings',
                     'url' => add_query_arg(['view' => 'bookings'], $portal_url),
@@ -22300,18 +22318,6 @@ global $wpdb;
                     'icon' => 'support',
                     'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
                     'is_active' => ($current_view === 'support' && ($current_support_filter === '' || $current_support_filter === 'open')),
-                ],
-                [
-                    'label' => 'Leads',
-                    'icon' => 'leads',
-                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'leads' || ($current_view === 'schools' && $current_status_filter === 'lead')),
-                ],
-                [
-                    'label' => 'Compliance',
-                    'icon' => 'compliance',
-                    'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
-                    'is_active' => ($current_view === 'compliance-review'),
                 ],
                 [
                     'label' => 'Invoices',
@@ -22440,24 +22446,6 @@ global $wpdb;
                                 </button>
                             <?php endif; ?>
                         </div>
-                        <?php if ($is_account_manager_workspace) : ?>
-                            <?php if ($account_manager_nav_quick_links) : ?>
-                                <section class="cmn-am-nav-quick-links" aria-label="Account manager quick links">
-                                    <p class="cmn-am-nav-quick-links-title">Quick Links</p>
-                                    <div class="cmn-am-nav-quick-links-list">
-                                        <?php foreach ($account_manager_nav_quick_links as $quick_link) : ?>
-                                            <a class="cmn-school-nav-link cmn-staff-nav-link cmn-am-nav-quick-link<?php echo !empty($quick_link['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($quick_link['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr((string) ($quick_link['label'] ?? 'Quick Link')); ?>">
-                                                <?php echo $render_staff_nav_icon((string) ($quick_link['icon'] ?? 'dashboard')); ?>
-                                                <span class="cmn-school-nav-label"><?php echo esc_html((string) ($quick_link['label'] ?? 'Open')); ?></span>
-                                            </a>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </section>
-                            <?php endif; ?>
-                            <div class="<?php echo $account_manager_nav_context ? '' : 'is-loading '; ?>cmn-am-nav-context-anchor" data-am-nav-context hidden aria-live="polite" aria-busy="<?php echo $account_manager_nav_context ? 'false' : 'true'; ?>">
-                                <p class="cmn-am-nav-workspace-status" data-am-nav-context-status hidden><?php echo esc_html($account_manager_workspace_status); ?></p>
-                            </div>
-                        <?php endif; ?>
                         <?php if ($show_nav_edit_controls) : ?>
                             <div class="cmn-staff-nav-edit-panel cmn-edit-control" data-staff-nav-edit-panel hidden>
                                 <div class="cmn-staff-nav-edit-panel-row">
@@ -22480,13 +22468,6 @@ global $wpdb;
                     </div>
                     <nav class="cmn-school-nav-links cmn-staff-nav-links">
                         <?php if ($is_account_manager_workspace) : ?>
-                            <?php
-                            $am_my_accounts_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url);
-                            $am_pipeline_url = add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url);
-                            $am_activity_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_stage' => 'follow_up', 'cmn_bucket' => false], $portal_url);
-                            $am_pipeline_active = ($current_view === 'leads' || ($current_view === 'schools' && sanitize_key((string) ($_GET['cmn_status'] ?? '')) === 'lead'));
-                            $am_activity_active = ($current_view === 'schools' && sanitize_key((string) ($_GET['cmn_stage'] ?? '')) === 'follow_up');
-                            ?>
                             <div class="cmn-am-nav-list">
                                 <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="Home">
                                     <?php echo $render_staff_nav_icon('dashboard'); ?>
@@ -22499,18 +22480,22 @@ global $wpdb;
                                         <span class="cmn-nav-badge" data-nav-badge-key="task_follow_up"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges['task_follow_up'])); ?></span>
                                     <?php endif; ?>
                                 </button>
-                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo ($current_view === 'schools' && !$am_activity_active && sanitize_key((string) ($_GET['cmn_status'] ?? 'all')) === 'all') ? ' is-active' : ''; ?>" href="<?php echo esc_url($am_my_accounts_url); ?>" data-tooltip="My Accounts">
-                                    <?php echo $render_staff_nav_icon('schools'); ?>
-                                    <span class="cmn-school-nav-label">My Accounts</span>
-                                </a>
-                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $am_pipeline_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($am_pipeline_url); ?>" data-tooltip="Pipeline">
-                                    <?php echo $render_staff_nav_icon('pipeline'); ?>
-                                    <span class="cmn-school-nav-label">Pipeline</span>
-                                </a>
-                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $am_activity_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($am_activity_url); ?>" data-tooltip="Activity">
-                                    <?php echo $render_staff_nav_icon('logs'); ?>
-                                    <span class="cmn-school-nav-label">Activity</span>
-                                </a>
+                                <?php if ($account_manager_nav_quick_links) : ?>
+                                    <section class="cmn-am-nav-quick-links" aria-label="Account manager quick links">
+                                        <p class="cmn-am-nav-quick-links-title">Quick Links</p>
+                                        <div class="cmn-am-nav-quick-links-list">
+                                            <?php foreach ($account_manager_nav_quick_links as $quick_link) : ?>
+                                                <a class="cmn-school-nav-link cmn-staff-nav-link cmn-am-nav-quick-link<?php echo !empty($quick_link['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($quick_link['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr((string) ($quick_link['label'] ?? 'Quick Link')); ?>">
+                                                    <?php echo $render_staff_nav_icon((string) ($quick_link['icon'] ?? 'dashboard')); ?>
+                                                    <span class="cmn-school-nav-label"><?php echo esc_html((string) ($quick_link['label'] ?? 'Open')); ?></span>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </section>
+                                <?php endif; ?>
+                                <div class="<?php echo $account_manager_nav_context ? '' : 'is-loading '; ?>cmn-am-nav-context-anchor" data-am-nav-context hidden aria-live="polite" aria-busy="<?php echo $account_manager_nav_context ? 'false' : 'true'; ?>">
+                                    <p class="cmn-am-nav-workspace-status" data-am-nav-context-status hidden><?php echo esc_html($account_manager_workspace_status); ?></p>
+                                </div>
                             </div>
                         <?php else : ?>
                             <a class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--dashboard-root<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="<?php echo esc_attr($is_account_manager_workspace ? 'Home' : 'Dashboard'); ?>">
