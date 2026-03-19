@@ -22258,83 +22258,70 @@ global $wpdb;
             $stored_nav_state_json = '{}';
         }
 
-        $account_manager_workspace_metrics = [];
-        $account_manager_workspace_links = [];
-        $account_manager_workspace_copy = '';
+        $account_manager_nav_quick_links = [];
         $account_manager_workspace_status = 'Loading live counts...';
         $account_manager_nav_context = [];
         $account_manager_nav_badges = [];
         $account_manager_task_panel_payload = [];
-        $is_account_manager_home_dashboard = false;
         if ($is_account_manager_workspace) {
             $account_manager_nav_context = (array) $this->get_account_manager_nav_context_snapshot($user_id);
-            $is_account_manager_home_dashboard = ($active === 'dashboard' || $current_view === '' || $current_view === 'dashboard' || $current_view === 'home');
             $account_manager_nav_badges = $this->get_account_manager_nav_badge_counts($user_id);
             $account_manager_task_panel_payload = $this->get_account_manager_task_panel_payload($user_id, 12, $this->get_current_url());
-            if ($is_account_manager_home_dashboard) {
-                $account_manager_workspace_metrics = [
-                    [
-                        'key' => 'accounts',
-                        'label' => 'My Accounts',
-                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
-                    ],
-                    [
-                        'key' => 'candidates',
-                        'label' => 'My Candidates',
-                        'url' => add_query_arg(['view' => 'candidates'], $portal_url),
-                    ],
-                    [
-                        'key' => 'bookings',
-                        'label' => 'My Bookings',
-                        'url' => add_query_arg(['view' => 'bookings'], $portal_url),
-                    ],
-                    [
-                        'key' => 'issues',
-                        'label' => 'My Issues',
-                        'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
-                    ],
-                ];
-                $account_manager_workspace_links = [
-                    [
-                        'label' => 'Leads',
-                        'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
-                    ],
-                    [
-                        'label' => 'Clients',
-                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
-                    ],
-                    [
-                        'label' => 'Compliance',
-                        'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
-                    ],
-                    [
-                        'label' => 'Invoices',
-                        'url' => add_query_arg(['view' => 'invoicing'], $portal_url),
-                    ],
-                ];
-                $account_manager_workspace_copy = 'Manage accounts, candidates, bookings and issues - all in one place.';
-                $updated_label = sanitize_text_field((string) ($account_manager_nav_context['updated_label'] ?? ''));
-                $account_manager_workspace_status = $updated_label !== '' ? ('Updated ' . $updated_label) : 'Updated just now';
-            } else {
-                $account_manager_workspace_metrics = [
-                    [
-                        'key' => 'clients',
-                        'label' => 'Clients',
-                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
-                    ],
-                    [
-                        'key' => 'leads',
-                        'label' => 'Leads',
-                        'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
-                    ],
-                    [
-                        'key' => 'candidates',
-                        'label' => 'Candidates',
-                        'url' => add_query_arg(['view' => 'candidates'], $portal_url),
-                    ],
-                ];
-                $account_manager_workspace_links = [];
-            }
+            $current_status_filter = sanitize_key((string) ($_GET['cmn_status'] ?? 'all'));
+            $current_stage_filter = sanitize_key((string) ($_GET['cmn_stage'] ?? ''));
+            $current_support_filter = sanitize_key((string) ($_GET['support_filter'] ?? 'open'));
+            $account_manager_nav_quick_links = [
+                [
+                    'label' => 'My Accounts',
+                    'icon' => 'schools',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'schools' && $current_stage_filter !== 'follow_up' && $current_status_filter === 'all'),
+                ],
+                [
+                    'label' => 'My Clients',
+                    'icon' => 'clients',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'client'),
+                ],
+                [
+                    'label' => 'My Candidates',
+                    'icon' => 'candidates',
+                    'url' => add_query_arg(['view' => 'candidates'], $portal_url),
+                    'is_active' => ($current_view === 'candidates'),
+                ],
+                [
+                    'label' => 'My Bookings',
+                    'icon' => 'bookings',
+                    'url' => add_query_arg(['view' => 'bookings'], $portal_url),
+                    'is_active' => ($current_view === 'bookings'),
+                ],
+                [
+                    'label' => 'My Issues',
+                    'icon' => 'support',
+                    'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
+                    'is_active' => ($current_view === 'support' && ($current_support_filter === '' || $current_support_filter === 'open')),
+                ],
+                [
+                    'label' => 'Leads',
+                    'icon' => 'leads',
+                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'leads' || ($current_view === 'schools' && $current_status_filter === 'lead')),
+                ],
+                [
+                    'label' => 'Compliance',
+                    'icon' => 'compliance',
+                    'url' => add_query_arg(['view' => 'compliance-review'], $portal_url),
+                    'is_active' => ($current_view === 'compliance-review'),
+                ],
+                [
+                    'label' => 'Invoices',
+                    'icon' => 'invoicing',
+                    'url' => add_query_arg(['view' => 'invoicing'], $portal_url),
+                    'is_active' => ($current_view === 'invoicing'),
+                ],
+            ];
+            $updated_label = sanitize_text_field((string) ($account_manager_nav_context['updated_label'] ?? ''));
+            $account_manager_workspace_status = $updated_label !== '' ? ('Updated ' . $updated_label) : 'Updated just now';
         }
 
         $render_staff_nav_icon = static function ($icon_key) {
@@ -22454,32 +22441,22 @@ global $wpdb;
                             <?php endif; ?>
                         </div>
                         <?php if ($is_account_manager_workspace) : ?>
-                            <section class="cmn-am-nav-workspace<?php echo $is_account_manager_home_dashboard ? ' cmn-am-nav-workspace--home' : ''; ?><?php echo $account_manager_nav_context ? '' : ' is-loading'; ?>" data-am-nav-context aria-live="polite" aria-busy="<?php echo $account_manager_nav_context ? 'false' : 'true'; ?>">
-                                <div class="cmn-am-nav-workspace-head">
-                                    <span class="cmn-am-nav-eyebrow"><?php echo esc_html($is_account_manager_home_dashboard ? 'Account Manager' : 'Account Manager CRM'); ?></span>
-                                    <h3><?php echo esc_html($is_account_manager_home_dashboard ? 'Portfolio CRM' : 'Portfolio'); ?></h3>
-                                    <?php if ($account_manager_workspace_copy !== '') : ?>
-                                        <p class="cmn-am-nav-workspace-copy"><?php echo esc_html($account_manager_workspace_copy); ?></p>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="cmn-am-nav-workspace-metrics">
-                                    <?php foreach ($account_manager_workspace_metrics as $metric) : ?>
-                                        <?php $metric_value = isset($account_manager_nav_context[(string) ($metric['key'] ?? '')]) ? number_format_i18n((int) $account_manager_nav_context[(string) ($metric['key'] ?? '')]) : '--'; ?>
-                                        <a class="cmn-am-nav-metric" href="<?php echo esc_url((string) $metric['url']); ?>">
-                                            <strong data-am-nav-metric-value="<?php echo esc_attr((string) $metric['key']); ?>"><?php echo esc_html($metric_value); ?></strong>
-                                            <span><?php echo esc_html((string) $metric['label']); ?></span>
-                                        </a>
-                                    <?php endforeach; ?>
-                                </div>
-                                <?php if ($account_manager_workspace_links) : ?>
-                                    <div class="cmn-am-nav-workspace-pills">
-                                        <?php foreach ($account_manager_workspace_links as $workspace_link) : ?>
-                                            <a class="cmn-am-nav-workspace-pill" href="<?php echo esc_url((string) ($workspace_link['url'] ?? $portal_url)); ?>"><?php echo esc_html((string) ($workspace_link['label'] ?? 'Open')); ?></a>
+                            <?php if ($account_manager_nav_quick_links) : ?>
+                                <section class="cmn-am-nav-quick-links" aria-label="Account manager quick links">
+                                    <p class="cmn-am-nav-quick-links-title">Quick Links</p>
+                                    <div class="cmn-am-nav-quick-links-list">
+                                        <?php foreach ($account_manager_nav_quick_links as $quick_link) : ?>
+                                            <a class="cmn-school-nav-link cmn-staff-nav-link cmn-am-nav-quick-link<?php echo !empty($quick_link['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($quick_link['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr((string) ($quick_link['label'] ?? 'Quick Link')); ?>">
+                                                <?php echo $render_staff_nav_icon((string) ($quick_link['icon'] ?? 'dashboard')); ?>
+                                                <span class="cmn-school-nav-label"><?php echo esc_html((string) ($quick_link['label'] ?? 'Open')); ?></span>
+                                            </a>
                                         <?php endforeach; ?>
                                     </div>
-                                <?php endif; ?>
-                                <p class="cmn-am-nav-workspace-status" data-am-nav-context-status><?php echo esc_html($account_manager_workspace_status); ?></p>
-                            </section>
+                                </section>
+                            <?php endif; ?>
+                            <div class="<?php echo $account_manager_nav_context ? '' : 'is-loading '; ?>cmn-am-nav-context-anchor" data-am-nav-context hidden aria-live="polite" aria-busy="<?php echo $account_manager_nav_context ? 'false' : 'true'; ?>">
+                                <p class="cmn-am-nav-workspace-status" data-am-nav-context-status hidden><?php echo esc_html($account_manager_workspace_status); ?></p>
+                            </div>
                         <?php endif; ?>
                         <?php if ($show_nav_edit_controls) : ?>
                             <div class="cmn-staff-nav-edit-panel cmn-edit-control" data-staff-nav-edit-panel hidden>
