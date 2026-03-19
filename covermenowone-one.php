@@ -42217,21 +42217,29 @@ global $wpdb;
                     'label' => 'Calls',
                     'value' => max(0, (int) (($dashboard_payload['kpis']['calls'] ?? 0))),
                     'icon_key' => 'phone',
+                    'tone' => 'blue',
+                    'detail' => 'Calls logged this week',
                 ],
                 [
                     'label' => 'Emails',
                     'value' => max(0, (int) (($dashboard_payload['kpis']['emails'] ?? 0))),
                     'icon_key' => 'mail',
+                    'tone' => 'green',
+                    'detail' => 'Direct emails sent this week',
                 ],
                 [
                     'label' => 'Demos',
                     'value' => max(0, (int) $demo_count),
                     'icon_key' => 'calendar',
+                    'tone' => 'lilac',
+                    'detail' => 'Demos or meetings booked',
                 ],
                 [
                     'label' => 'Leads Reached',
                     'value' => max(0, (int) $lead_progress_percent) . '%',
                     'icon_key' => 'target',
+                    'tone' => 'deep-blue',
+                    'detail' => number_format_i18n($goal_current) . '/' . number_format_i18n($goal_total) . ' reached',
                 ],
             ],
             'goal_current' => max(0, (int) $lead_progress_current),
@@ -42332,6 +42340,29 @@ global $wpdb;
                         </a>
                     <?php endforeach; ?>
                 </section>
+
+                <?php if ($week_stats) : ?>
+                    <section class="cmn-am-reference-week-strip" aria-label="Activity this week">
+                        <div class="cmn-am-reference-week-strip-head">
+                            <h2>Activity This Week</h2>
+                            <p>Keep your momentum visible across the week.</p>
+                        </div>
+                        <div class="cmn-am-reference-metric-row cmn-am-reference-metric-row--week">
+                            <?php foreach ($week_stats as $week_stat) : ?>
+                                <article class="cmn-am-reference-metric-card cmn-am-reference-metric-card--week is-<?php echo esc_attr((string) ($week_stat['tone'] ?? 'blue')); ?>">
+                                    <span class="cmn-am-reference-metric-icon"><?php echo $render_icon((string) ($week_stat['icon_key'] ?? 'task')); ?></span>
+                                    <div class="cmn-am-reference-metric-copy">
+                                        <span><?php echo esc_html((string) ($week_stat['label'] ?? 'Metric')); ?></span>
+                                        <strong><?php echo esc_html((string) ($week_stat['value'] ?? '0')); ?></strong>
+                                        <?php if (!empty($week_stat['detail'])) : ?>
+                                            <small><?php echo esc_html((string) $week_stat['detail']); ?></small>
+                                        <?php endif; ?>
+                                    </div>
+                                </article>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+                <?php endif; ?>
 
                 <div class="cmn-am-reference-layout">
                     <main class="cmn-am-reference-main">
@@ -42440,30 +42471,6 @@ global $wpdb;
                                     <p>Recent calls, notes, and stage changes will surface here.</p>
                                 </div>
                             <?php endif; ?>
-                        </section>
-
-                        <section class="cmn-am-reference-card cmn-am-reference-card--week">
-                            <div class="cmn-am-reference-card-head">
-                                <h2>Activity This Week</h2>
-                            </div>
-                            <div class="cmn-am-reference-week-grid">
-                                <?php foreach ($week_stats as $week_stat) : ?>
-                                    <article class="cmn-am-reference-week-stat">
-                                        <strong><?php echo esc_html((string) ($week_stat['value'] ?? '0')); ?></strong>
-                                        <span><?php echo esc_html((string) ($week_stat['label'] ?? 'Metric')); ?></span>
-                                        <i><?php echo $render_icon((string) ($week_stat['icon_key'] ?? 'task')); ?></i>
-                                    </article>
-                                <?php endforeach; ?>
-                            </div>
-                            <div class="cmn-am-reference-goal">
-                                <div class="cmn-am-reference-goal-copy">
-                                    <strong><?php echo esc_html($goal_label); ?></strong>
-                                    <span><?php echo esc_html(number_format_i18n($goal_current) . '/' . number_format_i18n($goal_total) . ' reached'); ?></span>
-                                </div>
-                                <div class="cmn-am-reference-goal-track" aria-hidden="true">
-                                    <span class="cmn-am-reference-goal-bar" style="width: <?php echo esc_attr((string) $goal_percent); ?>%;"></span>
-                                </div>
-                            </div>
                         </section>
                     </aside>
                 </div>

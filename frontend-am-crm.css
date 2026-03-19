@@ -2771,6 +2771,33 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row {
   gap: 14px;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-strip {
+  display: grid;
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-strip-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-strip-head h2 {
+  margin: 0;
+  color: var(--cmn-am-ref-heading);
+  font-family: "Space Grotesk", "Manrope", sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-strip-head p {
+  margin: 0;
+  color: #617196;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card {
   position: relative;
   display: flex;
@@ -2792,6 +2819,19 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card:foc
   transform: translateY(-1px);
   box-shadow: 0 20px 38px rgba(49, 61, 102, 0.11);
   border-color: rgba(92, 110, 177, 0.22);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card--week {
+  min-height: 102px;
+  align-items: flex-start;
+  cursor: default;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card--week:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card--week:focus-visible {
+  transform: none;
+  box-shadow: var(--cmn-am-ref-shadow);
+  border-color: rgba(133, 143, 190, 0.14);
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-lilac::before,
@@ -2871,6 +2911,13 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-copy str
   font-size: 20px;
   font-weight: 800;
   line-height: 1.1;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-copy small {
+  color: #6b7a9b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-arrow {
