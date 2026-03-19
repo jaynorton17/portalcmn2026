@@ -109422,6 +109422,15 @@ global $wpdb;
             return $payload;
         }
 
+        if ($school_postcode !== '' && $candidate_postcode !== '' && $school_postcode === $candidate_postcode) {
+            $payload['label'] = $this->format_distance_miles_label(0.0);
+            $payload['distance_miles'] = 0.0;
+            $payload['distance_method'] = 'same_postcode';
+            $payload['reason'] = 'computed';
+            $this->log_live_match_distance_perf($payload);
+            return $payload;
+        }
+
         $school_coords = $this->ensure_school_geo_coordinates($school_id);
         $payload['school_coords'] = $school_coords;
         if (!$this->is_valid_geo_coordinates($school_coords)) {
