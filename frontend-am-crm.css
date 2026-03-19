@@ -1757,17 +1757,10 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-work-queue-card.is-ac
   border-color: rgba(53, 114, 255, 0.22) !important;
 }
 
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--metric.is-primary,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--metric.is-hot,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-high,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-hot,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-medium,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--alert.is-clear,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--activity.is-urgent,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--system.is-red,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--system.is-amber,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--system.is-green {
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget {
+  --cmn-am-dashboard-accent: #4a8ef0;
+  position: relative;
+  overflow: hidden;
   background: #ffffff !important;
   background-image: none !important;
   border: 1px solid rgba(230, 234, 243, 0.98) !important;
@@ -1775,14 +1768,55 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget--system.is-
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05) !important;
 }
 
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget:hover,
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-widget:focus-visible {
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  border-radius: 20px 0 0 20px;
+  background: var(--cmn-am-dashboard-accent);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:nth-child(8n + 1) {
+  --cmn-am-dashboard-accent: #4a8ef0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:nth-child(8n + 2) {
+  --cmn-am-dashboard-accent: #33a46f;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:nth-child(8n + 3) {
+  --cmn-am-dashboard-accent: #f0ad4e;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:nth-child(8n + 4) {
+  --cmn-am-dashboard-accent: #ef6f6c;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:nth-child(8n + 5) {
+  --cmn-am-dashboard-accent: #a9a9d9;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:nth-child(8n + 6) {
+  --cmn-am-dashboard-accent: #27b7b0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:nth-child(8n + 7) {
+  --cmn-am-dashboard-accent: #d97bb8;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:nth-child(8n + 8) {
+  --cmn-am-dashboard-accent: #3668d1;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget:focus-visible {
   border-color: rgba(53, 114, 255, 0.2) !important;
   background: #ffffff !important;
   box-shadow: 0 14px 28px rgba(53, 114, 255, 0.08) !important;
 }
 
-body.cmn-portal-page .cmn-portal-light--am-crm :is(
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget :is(
   .cmn-dashboard-widget-label,
   .cmn-dashboard-widget-value,
   .cmn-dashboard-widget-cta
@@ -1790,11 +1824,16 @@ body.cmn-portal-page .cmn-portal-light--am-crm :is(
   color: #141b2d !important;
 }
 
-body.cmn-portal-page .cmn-portal-light--am-crm :is(
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget :is(
   .cmn-dashboard-widget-eyebrow,
   .cmn-dashboard-widget-detail
 ) {
   color: #8b93a5 !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-dashboard-section[data-role="stats"] [data-dashboard-section-body] > .cmn-dashboard-widget .cmn-dashboard-widget-cta {
+  background: rgba(20, 27, 45, 0.04) !important;
+  color: #205cff !important;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-home-detail-page) {
