@@ -41579,9 +41579,11 @@ global $wpdb;
             $row['attention_reason'] = $attention_reason;
             $needs_attention_rows[] = $row;
         }
+        $focus_row = $needs_attention_rows[0] ?? $account_rows[0] ?? [];
 
         return [
             'kpis' => $this->get_account_manager_weekly_kpi_snapshot($user_id),
+            'task_items' => array_slice($task_items, 0, 12),
             'due_now_rows' => array_slice($due_now_rows, 0, 8),
             'upcoming_rows' => array_slice($upcoming_rows, 0, 8),
             'future_rows' => array_slice($future_rows, 0, 8),
@@ -41605,6 +41607,513 @@ global $wpdb;
             'focus_school_identifier' => sanitize_text_field((string) ($focus_row['school_identifier'] ?? '')),
             'focus_row' => $focus_row,
         ];
+    }
+
+    private function build_account_manager_home_reference_dashboard_payload($user_id = 0, array $dashboard_payload = []) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return [];
+        }
+
+        $dashboard_payload = is_array($dashboard_payload) ? $dashboard_payload : [];
+        if (!$dashboard_payload) {
+            $dashboard_payload = (array) $this->get_account_manager_home_dashboard_payload($user_id);
+        }
+        if (!$dashboard_payload) {
+            return [];
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $user = get_user_by('id', $user_id);
+        $display_name = $user instanceof WP_User ? trim((string) $user->display_name) : '';
+        if ($display_name === '') {
+            $display_name = 'there';
+        }
+        $welcome_name = sanitize_text_field((string) preg_replace('/\s+.*/', '', $display_name));
+        if ($welcome_name === '') {
+            $welcome_name = $display_name;
+        }
+
+        $account_snapshot = (array) $this->get_account_manager_portfolio_account_snapshot($user_id, 60);
+        $account_counts = is_array($account_snapshot['counts'] ?? null) ? $account_snapshot['counts'] : [];
+        $account_rows = array_values(array_filter((array) ($account_snapshot['rows'] ?? []), 'is_array'));
+        $candidate_snapshot = (array) $this->get_account_manager_candidate_scope_snapshot($user_id, 6);
+        $candidate_counts = is_array($candidate_snapshot['counts'] ?? null) ? $candidate_snapshot['counts'] : [];
+        $recent_activity_snapshot = (array) $this->get_account_manager_recent_activity_snapshot($user_id, 6);
+        $recent_activity_rows = array_values(array_filter((array) ($recent_activity_snapshot['rows'] ?? []), 'is_array'));
+        $task_rows = array_values(array_filter((array) ($dashboard_payload['task_items'] ?? []), 'is_array'));
+        if (!$task_rows) {
+            $task_rows = array_merge(
+                array_values(array_filter((array) ($dashboard_payload['due_now_rows'] ?? []), 'is_array')),
+                array_values(array_filter((array) ($dashboard_payload['upcoming_rows'] ?? []), 'is_array')),
+                array_values(array_filter((array) ($dashboard_payload['future_rows'] ?? []), 'is_array'))
+            );
+        }
+
+        $stage_counts = [
+            'new_lead' => 0,
+            'spoken_to_cover_manager' => 0,
+            'meeting_booked' => 0,
+            'closed_won' => 0,
+            'closed_lost' => 0,
+        ];
+        foreach ($account_rows as $account_row) {
+            $status_value = sanitize_key((string) ($account_row['status_value'] ?? ''));
+            $stage_value = $this->normalize_school_lead_stage((string) ($account_row['pipeline_value'] ?? $account_row['stage_value'] ?? ''));
+            if ($status_value === 'client' || $stage_value === 'closed_won') {
+                $stage_counts['closed_won']++;
+                continue;
+            }
+            if (in_array($stage_value, ['closed_lost', 'not_interested'], true)) {
+                $stage_counts['closed_lost']++;
+                continue;
+            }
+            if ($stage_value === 'meeting_booked') {
+                $stage_counts['meeting_booked']++;
+                continue;
+            }
+            if ($stage_value === 'spoken_to_cover_manager') {
+                $stage_counts['spoken_to_cover_manager']++;
+                continue;
+            }
+            $stage_counts['new_lead']++;
+        }
+
+        $pipeline_total = array_sum($stage_counts);
+        $lead_progress_total = $stage_counts['new_lead'] + $stage_counts['spoken_to_cover_manager'] + $stage_counts['meeting_booked'] + $stage_counts['closed_won'];
+        $lead_progress_current = $stage_counts['spoken_to_cover_manager'] + $stage_counts['meeting_booked'] + $stage_counts['closed_won'];
+        if ($lead_progress_total < 1) {
+            $lead_progress_total = max(0, (int) ($account_counts['leads'] ?? 0));
+            $lead_progress_current = max(0, $lead_progress_total - $stage_counts['new_lead']);
+        }
+        $lead_progress_percent = $lead_progress_total > 0
+            ? min(100, max(0, (int) round(($lead_progress_current / $lead_progress_total) * 100)))
+            : 0;
+
+        $demo_count = 0;
+        foreach ($task_rows as $task_row) {
+            $task_label = strtolower((string) ($task_row['label'] ?? ''));
+            if ($task_label !== '' && strpos($task_label, 'demo') !== false) {
+                $demo_count++;
+            }
+        }
+        if ($demo_count < 1) {
+            $demo_count = max(0, (int) $stage_counts['meeting_booked']);
+        }
+
+        $task_status_class = static function ($status_value) {
+            $status_value = strtolower(trim((string) $status_value));
+            if ($status_value === 'overdue' || $status_value === 'at risk') {
+                return 'is-danger';
+            }
+            if ($status_value === 'due today' || $status_value === 'this week' || $status_value === 'pending') {
+                return 'is-warning';
+            }
+            if ($status_value === 'closed won' || $status_value === 'done' || $status_value === 'completed') {
+                return 'is-success';
+            }
+            return 'is-info';
+        };
+        $resolve_task_icon = static function ($task_label, $task_detail = '') {
+            $haystack = strtolower(trim($task_label . ' ' . $task_detail));
+            if (strpos($haystack, 'call') !== false || strpos($haystack, 'phone') !== false) {
+                return 'phone';
+            }
+            if (strpos($haystack, 'email') !== false || strpos($haystack, 'mail') !== false) {
+                return 'mail';
+            }
+            if (strpos($haystack, 'demo') !== false || strpos($haystack, 'meeting') !== false) {
+                return 'calendar';
+            }
+            if (strpos($haystack, 'contract') !== false || strpos($haystack, 'proposal') !== false) {
+                return 'file';
+            }
+            if (strpos($haystack, 'follow') !== false || strpos($haystack, 'risk') !== false) {
+                return 'alert';
+            }
+            if (strpos($haystack, 'signed') !== false || strpos($haystack, 'closed won') !== false) {
+                return 'check';
+            }
+            return 'task';
+        };
+
+        $prepared_task_rows = [];
+        foreach (array_slice($task_rows, 0, 5) as $task_row) {
+            $task_label = sanitize_text_field((string) ($task_row['label'] ?? 'Follow up'));
+            $task_school = sanitize_text_field((string) ($task_row['school_name'] ?? $task_row['eyebrow'] ?? 'Portfolio school'));
+            $task_status = sanitize_text_field((string) ($task_row['value'] ?? 'Open'));
+            $task_detail_raw = sanitize_text_field((string) ($task_row['detail'] ?? ''));
+            $task_detail_parts = array_values(array_filter(array_map('trim', explode('·', $task_detail_raw))));
+            $task_meta = sanitize_text_field((string) ($task_detail_parts[0] ?? ''));
+            $task_context = implode(' · ', array_slice($task_detail_parts, 1));
+            $task_secondary = implode(' · ', array_filter([
+                $task_school !== '' ? $task_school : '',
+                $task_context !== '' ? $task_context : '',
+            ]));
+            $prepared_task_rows[] = [
+                'title' => $task_label !== '' ? $task_label : 'Follow up',
+                'secondary' => $task_secondary,
+                'meta' => $task_meta !== '' ? $task_meta : 'Next in queue',
+                'status' => $task_status !== '' ? $task_status : 'Open',
+                'status_class' => $task_status_class($task_status),
+                'icon_key' => $resolve_task_icon($task_label, $task_detail_raw),
+                'url' => esc_url_raw((string) ($task_row['edit_url'] ?? $task_row['url'] ?? ($dashboard_payload['urls']['tasks'] ?? '#'))),
+            ];
+        }
+
+        $prepared_recent_rows = [];
+        foreach (array_slice($recent_activity_rows, 0, 5) as $activity_row) {
+            $activity_title = sanitize_text_field((string) ($activity_row['title'] ?? 'Portfolio account'));
+            $activity_source = sanitize_text_field((string) ($activity_row['last_activity_source'] ?? 'CRM update'));
+            $activity_label = sanitize_text_field((string) ($activity_row['last_activity_label'] ?? ''));
+            $activity_detail = sanitize_text_field((string) ($activity_row['last_activity_detail'] ?? ''));
+            $activity_status = $this->get_account_manager_attention_reason($activity_row);
+            if ($activity_status === '') {
+                $activity_status = sanitize_text_field((string) ($activity_row['stage_display_label'] ?? $activity_row['status_label'] ?? 'Active'));
+            }
+            $activity_meta = implode(' · ', array_filter([$activity_label, $activity_detail]));
+            $prepared_recent_rows[] = [
+                'title' => $activity_title,
+                'eyebrow' => $activity_source !== '' ? $activity_source : 'CRM update',
+                'meta' => $activity_meta !== '' ? $activity_meta : sanitize_text_field((string) ($activity_row['next_action_label'] ?? 'Review relationship')),
+                'status' => $activity_status,
+                'status_class' => $task_status_class($activity_status),
+                'icon_key' => $resolve_task_icon($activity_source, $activity_meta),
+                'url' => esc_url_raw((string) ($activity_row['overview_url'] ?? $activity_row['activity_url'] ?? $activity_row['view_url'] ?? ($dashboard_payload['urls']['accounts'] ?? '#'))),
+            ];
+        }
+
+        $focus_row = is_array($dashboard_payload['focus_row'] ?? null) ? $dashboard_payload['focus_row'] : [];
+        $urls = is_array($dashboard_payload['urls'] ?? null) ? $dashboard_payload['urls'] : [];
+        $primary_task_url = esc_url_raw((string) ($prepared_task_rows[0]['url'] ?? ($urls['tasks'] ?? '#')));
+        $add_task_url = esc_url_raw((string) ($focus_row['task_editor_url'] ?? $primary_task_url));
+        if ($add_task_url === '') {
+            $add_task_url = esc_url_raw((string) ($urls['tasks'] ?? '#'));
+        }
+
+        return [
+            'welcome_name' => $welcome_name !== '' ? $welcome_name : $display_name,
+            'display_name' => $display_name,
+            'avatar_url' => get_avatar_url($user_id, ['size' => 64]),
+            'logo_url' => plugin_dir_url(__FILE__) . 'portal-logo.png',
+            'notification_count' => min(99, max(0, (int) (($account_counts['overdue_follow_up'] ?? 0) + ($account_counts['at_risk'] ?? 0)))),
+            'top_metrics' => [
+                [
+                    'label' => 'Clients',
+                    'value' => max(0, (int) ($account_counts['clients'] ?? 0)),
+                    'icon_key' => 'building',
+                    'tone' => 'lilac',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
+                ],
+                [
+                    'label' => 'Leads',
+                    'value' => max(0, (int) ($account_counts['leads'] ?? 0)),
+                    'icon_key' => 'people',
+                    'tone' => 'green',
+                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                ],
+                [
+                    'label' => 'Candidates',
+                    'value' => max(0, (int) ($candidate_counts['total'] ?? 0)),
+                    'icon_key' => 'candidates',
+                    'tone' => 'blue',
+                    'url' => add_query_arg(['view' => 'candidates'], $portal_url),
+                ],
+                [
+                    'label' => 'Pipeline',
+                    'value' => max(0, (int) $pipeline_total),
+                    'icon_key' => 'pipeline',
+                    'tone' => 'deep-blue',
+                    'url' => esc_url_raw((string) ($urls['accounts'] ?? '#')),
+                    'show_arrow' => true,
+                ],
+            ],
+            'pipeline_stages' => [
+                [
+                    'label' => 'Reached Out',
+                    'short_label' => 'Reached Out',
+                    'value' => max(0, (int) $stage_counts['new_lead']),
+                    'tone' => 'indigo',
+                ],
+                [
+                    'label' => 'Response Received',
+                    'short_label' => 'Response Received',
+                    'value' => max(0, (int) $stage_counts['spoken_to_cover_manager']),
+                    'tone' => 'green',
+                ],
+                [
+                    'label' => 'Demo Booked',
+                    'short_label' => 'Demo Booked',
+                    'value' => max(0, (int) $stage_counts['meeting_booked']),
+                    'tone' => 'cyan',
+                ],
+                [
+                    'label' => 'Closed Won',
+                    'short_label' => 'Closed Won',
+                    'value' => max(0, (int) $stage_counts['closed_won']),
+                    'tone' => 'navy',
+                ],
+                [
+                    'label' => 'Closed Lost',
+                    'short_label' => 'Closed Lost',
+                    'value' => max(0, (int) $stage_counts['closed_lost']),
+                    'tone' => 'rose',
+                ],
+            ],
+            'pipeline_total' => max(0, (int) $pipeline_total),
+            'task_rows' => $prepared_task_rows,
+            'recent_rows' => $prepared_recent_rows,
+            'week_stats' => [
+                [
+                    'label' => 'Calls',
+                    'value' => max(0, (int) (($dashboard_payload['kpis']['calls'] ?? 0))),
+                    'icon_key' => 'phone',
+                ],
+                [
+                    'label' => 'Emails',
+                    'value' => max(0, (int) (($dashboard_payload['kpis']['emails'] ?? 0))),
+                    'icon_key' => 'mail',
+                ],
+                [
+                    'label' => 'Demos',
+                    'value' => max(0, (int) $demo_count),
+                    'icon_key' => 'calendar',
+                ],
+                [
+                    'label' => 'Leads Reached',
+                    'value' => max(0, (int) $lead_progress_percent) . '%',
+                    'icon_key' => 'target',
+                ],
+            ],
+            'goal_current' => max(0, (int) $lead_progress_current),
+            'goal_total' => max(0, (int) $lead_progress_total),
+            'goal_percent' => max(0, (int) $lead_progress_percent),
+            'goal_label' => 'Goal: Reach 90% of leads',
+            'tasks_url' => esc_url_raw((string) ($urls['tasks'] ?? '#')),
+            'accounts_url' => esc_url_raw((string) ($urls['accounts'] ?? '#')),
+            'add_task_url' => $add_task_url,
+        ];
+    }
+
+    private function render_account_manager_home_reference_dashboard_html(array $payload = []) {
+        $top_metrics = array_values(array_filter((array) ($payload['top_metrics'] ?? []), 'is_array'));
+        $pipeline_stages = array_values(array_filter((array) ($payload['pipeline_stages'] ?? []), 'is_array'));
+        $task_rows = array_values(array_filter((array) ($payload['task_rows'] ?? []), 'is_array'));
+        $recent_rows = array_values(array_filter((array) ($payload['recent_rows'] ?? []), 'is_array'));
+        $week_stats = array_values(array_filter((array) ($payload['week_stats'] ?? []), 'is_array'));
+        $welcome_name = sanitize_text_field((string) ($payload['welcome_name'] ?? 'there'));
+        $display_name = sanitize_text_field((string) ($payload['display_name'] ?? ''));
+        $avatar_url = esc_url((string) ($payload['avatar_url'] ?? ''));
+        $logo_url = esc_url((string) ($payload['logo_url'] ?? ''));
+        $notification_count = max(0, (int) ($payload['notification_count'] ?? 0));
+        $pipeline_total = max(0, (int) ($payload['pipeline_total'] ?? 0));
+        $goal_current = max(0, (int) ($payload['goal_current'] ?? 0));
+        $goal_total = max(0, (int) ($payload['goal_total'] ?? 0));
+        $goal_percent = max(0, min(100, (int) ($payload['goal_percent'] ?? 0)));
+        $goal_label = sanitize_text_field((string) ($payload['goal_label'] ?? 'Goal progress'));
+        $tasks_url = esc_url((string) ($payload['tasks_url'] ?? '#'));
+        $add_task_url = esc_url((string) ($payload['add_task_url'] ?? $tasks_url));
+
+        $render_icon = static function ($icon_key) {
+            $icon_key = sanitize_key((string) $icon_key);
+            $paths = [
+                'building' => '<path d="M4 21h16"></path><path d="M7 21V7.5a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 17 7.5V21"></path><path d="M10 10h1"></path><path d="M13 10h1"></path><path d="M10 13h1"></path><path d="M13 13h1"></path><path d="M12 21v-4"></path>',
+                'people' => '<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="10" cy="7" r="3"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>',
+                'candidates' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>',
+                'pipeline' => '<path d="M3 4h18l-7 8v5l-4 3v-8z"></path>',
+                'phone' => '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72l.51 3a2 2 0 0 1-.45 1.68L8 9.91a16 16 0 0 0 6.09 6.09l1.51-1.17a2 2 0 0 1 1.68-.45l3 .51A2 2 0 0 1 22 16.92z"></path>',
+                'mail' => '<rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 7 9 6 9-6"></path>',
+                'calendar' => '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path>',
+                'file' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path>',
+                'check' => '<circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path>',
+                'alert' => '<path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>',
+                'task' => '<rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M8 8h8"></path><path d="M8 12h8"></path><path d="M8 16h5"></path>',
+                'target' => '<circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1.5"></circle>',
+                'bell' => '<path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"></path><path d="M10 17a2 2 0 0 0 4 0"></path>',
+                'chevron' => '<path d="m9 18 6-6-6-6"></path>',
+            ];
+
+            return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . ($paths[$icon_key] ?? $paths['task']) . '</svg>';
+        };
+
+        ob_start();
+        ?>
+        <div class="cmn-am-reference-dashboard">
+            <div class="cmn-am-reference-frame">
+                <header class="cmn-am-reference-topbar">
+                    <div class="cmn-am-reference-brand">
+                        <?php if ($logo_url !== '') : ?>
+                            <img src="<?php echo $logo_url; ?>" alt="CoverMeNow ONE" class="cmn-am-reference-brand-mark" />
+                        <?php endif; ?>
+                        <div class="cmn-am-reference-brand-copy">
+                            <span>CoverMeNow ONE</span>
+                            <strong>Account Manager Dashboard</strong>
+                        </div>
+                    </div>
+                    <div class="cmn-am-reference-userbar">
+                        <span class="cmn-am-reference-userbar-welcome">Welcome, <?php echo esc_html($welcome_name); ?></span>
+                        <span class="cmn-am-reference-bell" aria-label="<?php echo esc_attr($notification_count > 0 ? ($notification_count . ' notifications') : 'Notifications'); ?>">
+                            <span class="cmn-am-reference-bell-icon"><?php echo $render_icon('bell'); ?></span>
+                            <?php if ($notification_count > 0) : ?>
+                                <span class="cmn-am-reference-bell-badge"><?php echo esc_html(number_format_i18n($notification_count)); ?></span>
+                            <?php endif; ?>
+                        </span>
+                        <?php if ($avatar_url !== '') : ?>
+                            <img src="<?php echo $avatar_url; ?>" alt="<?php echo esc_attr($display_name !== '' ? $display_name : $welcome_name); ?>" class="cmn-am-reference-avatar" />
+                        <?php else : ?>
+                            <span class="cmn-am-reference-avatar cmn-am-reference-avatar--fallback"><?php echo esc_html(strtoupper(substr($welcome_name, 0, 1))); ?></span>
+                        <?php endif; ?>
+                    </div>
+                </header>
+
+                <section class="cmn-am-reference-metric-row" aria-label="Portfolio summary">
+                    <?php foreach ($top_metrics as $metric) : ?>
+                        <a class="cmn-am-reference-metric-card is-<?php echo esc_attr((string) ($metric['tone'] ?? 'blue')); ?>"
+                           href="<?php echo esc_url((string) ($metric['url'] ?? '#')); ?>">
+                            <span class="cmn-am-reference-metric-icon"><?php echo $render_icon((string) ($metric['icon_key'] ?? 'task')); ?></span>
+                            <div class="cmn-am-reference-metric-copy">
+                                <span><?php echo esc_html((string) ($metric['label'] ?? 'Metric')); ?></span>
+                                <strong><?php echo esc_html(number_format_i18n((int) ($metric['value'] ?? 0))); ?></strong>
+                            </div>
+                            <?php if (!empty($metric['show_arrow'])) : ?>
+                                <span class="cmn-am-reference-metric-arrow"><?php echo $render_icon('chevron'); ?></span>
+                            <?php endif; ?>
+                        </a>
+                    <?php endforeach; ?>
+                </section>
+
+                <div class="cmn-am-reference-layout">
+                    <main class="cmn-am-reference-main">
+                        <section class="cmn-am-reference-card cmn-am-reference-card--pipeline">
+                            <div class="cmn-am-reference-card-head">
+                                <h2>Pipeline Overview</h2>
+                            </div>
+                            <div class="cmn-am-reference-pipeline">
+                                <?php foreach ($pipeline_stages as $pipeline_stage) : ?>
+                                    <div class="cmn-am-reference-pipeline-stage is-<?php echo esc_attr((string) ($pipeline_stage['tone'] ?? 'indigo')); ?>">
+                                        <span><?php echo esc_html((string) ($pipeline_stage['label'] ?? 'Stage')); ?></span>
+                                        <strong><?php echo esc_html(number_format_i18n((int) ($pipeline_stage['value'] ?? 0))); ?></strong>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="cmn-am-reference-pipeline-stats" aria-hidden="true">
+                                <?php foreach ($pipeline_stages as $pipeline_stage) : ?>
+                                    <div class="cmn-am-reference-pipeline-stat is-<?php echo esc_attr((string) ($pipeline_stage['tone'] ?? 'indigo')); ?>">
+                                        <span class="cmn-am-reference-pipeline-stat-line"></span>
+                                        <strong><?php echo esc_html(number_format_i18n((int) ($pipeline_stage['value'] ?? 0))); ?></strong>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="cmn-am-reference-pipeline-total">
+                                <strong>Total Opportunities: <?php echo esc_html(number_format_i18n($pipeline_total)); ?></strong>
+                            </div>
+                        </section>
+
+                        <section class="cmn-am-reference-card cmn-am-reference-card--tasks">
+                            <div class="cmn-am-reference-card-head">
+                                <h2>Tasks &amp; Reminders</h2>
+                                <a href="<?php echo $tasks_url; ?>">View All</a>
+                            </div>
+                            <?php if ($task_rows) : ?>
+                                <div class="cmn-am-reference-task-list">
+                                    <?php foreach ($task_rows as $task_row) : ?>
+                                        <a class="cmn-am-reference-task-row" href="<?php echo esc_url((string) ($task_row['url'] ?? '#')); ?>">
+                                            <span class="cmn-am-reference-task-icon <?php echo esc_attr((string) ($task_row['status_class'] ?? 'is-info')); ?>">
+                                                <?php echo $render_icon((string) ($task_row['icon_key'] ?? 'task')); ?>
+                                            </span>
+                                            <div class="cmn-am-reference-task-copy">
+                                                <strong><?php echo esc_html((string) ($task_row['title'] ?? 'Follow up')); ?></strong>
+                                                <?php if (!empty($task_row['secondary'])) : ?>
+                                                    <p><?php echo esc_html((string) $task_row['secondary']); ?></p>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="cmn-am-reference-task-meta">
+                                                <span class="cmn-am-reference-task-time"><?php echo esc_html((string) ($task_row['meta'] ?? 'Next in queue')); ?></span>
+                                                <span class="cmn-am-reference-status-pill <?php echo esc_attr((string) ($task_row['status_class'] ?? 'is-info')); ?>">
+                                                    <?php echo esc_html((string) ($task_row['status'] ?? 'Open')); ?>
+                                                </span>
+                                            </div>
+                                        </a>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else : ?>
+                                <div class="cmn-am-reference-empty">
+                                    <strong>No tasks or reminders are active.</strong>
+                                    <p>Your current school follow-up queue is clear.</p>
+                                </div>
+                            <?php endif; ?>
+                        </section>
+                    </main>
+
+                    <aside class="cmn-am-reference-rail">
+                        <section class="cmn-am-reference-card cmn-am-reference-card--activity">
+                            <div class="cmn-am-reference-card-head">
+                                <h2>Recent Activity</h2>
+                                <a href="<?php echo $add_task_url; ?>">Add Task</a>
+                            </div>
+                            <?php if ($recent_rows) : ?>
+                                <div class="cmn-am-reference-activity-list">
+                                    <?php foreach ($recent_rows as $recent_row) : ?>
+                                        <a class="cmn-am-reference-activity-row" href="<?php echo esc_url((string) ($recent_row['url'] ?? '#')); ?>">
+                                            <span class="cmn-am-reference-activity-icon <?php echo esc_attr((string) ($recent_row['status_class'] ?? 'is-info')); ?>">
+                                                <?php echo $render_icon((string) ($recent_row['icon_key'] ?? 'task')); ?>
+                                            </span>
+                                            <div class="cmn-am-reference-activity-copy">
+                                                <strong><?php echo esc_html((string) ($recent_row['title'] ?? 'Portfolio account')); ?></strong>
+                                                <p>
+                                                    <?php echo esc_html((string) ($recent_row['eyebrow'] ?? 'CRM update')); ?>
+                                                    <?php if (!empty($recent_row['meta'])) : ?>
+                                                        <span><?php echo esc_html((string) $recent_row['meta']); ?></span>
+                                                    <?php endif; ?>
+                                                </p>
+                                            </div>
+                                            <div class="cmn-am-reference-activity-meta">
+                                                <span class="cmn-am-reference-status-pill <?php echo esc_attr((string) ($recent_row['status_class'] ?? 'is-info')); ?>">
+                                                    <?php echo esc_html((string) ($recent_row['status'] ?? 'Active')); ?>
+                                                </span>
+                                                <span class="cmn-am-reference-activity-arrow"><?php echo $render_icon('chevron'); ?></span>
+                                            </div>
+                                        </a>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else : ?>
+                                <div class="cmn-am-reference-empty">
+                                    <strong>No recent relationship movement yet.</strong>
+                                    <p>Recent calls, notes, and stage changes will surface here.</p>
+                                </div>
+                            <?php endif; ?>
+                        </section>
+
+                        <section class="cmn-am-reference-card cmn-am-reference-card--week">
+                            <div class="cmn-am-reference-card-head">
+                                <h2>Activity This Week</h2>
+                            </div>
+                            <div class="cmn-am-reference-week-grid">
+                                <?php foreach ($week_stats as $week_stat) : ?>
+                                    <article class="cmn-am-reference-week-stat">
+                                        <strong><?php echo esc_html((string) ($week_stat['value'] ?? '0')); ?></strong>
+                                        <span><?php echo esc_html((string) ($week_stat['label'] ?? 'Metric')); ?></span>
+                                        <i><?php echo $render_icon((string) ($week_stat['icon_key'] ?? 'task')); ?></i>
+                                    </article>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="cmn-am-reference-goal">
+                                <div class="cmn-am-reference-goal-copy">
+                                    <strong><?php echo esc_html($goal_label); ?></strong>
+                                    <span><?php echo esc_html(number_format_i18n($goal_current) . '/' . number_format_i18n($goal_total) . ' reached'); ?></span>
+                                </div>
+                                <div class="cmn-am-reference-goal-track" aria-hidden="true">
+                                    <span class="cmn-am-reference-goal-bar" style="width: <?php echo esc_attr((string) $goal_percent); ?>%;"></span>
+                                </div>
+                            </div>
+                        </section>
+                    </aside>
+                </div>
+            </div>
+        </div>
+        <?php
+
+        return (string) ob_get_clean();
     }
 
     private function build_account_manager_home_detail_payload($user_id = 0, array $dashboard_payload = []) {
@@ -42821,12 +43330,12 @@ global $wpdb;
         if (!$dashboard_payload) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Dashboard unavailable</h3><p>This home view is only available for portfolio-scoped account managers.</p></div></section>';
         }
-        $detail_payload = (array) $this->build_account_manager_home_detail_payload($user_id, $dashboard_payload);
-        if (!$detail_payload) {
-            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Account unavailable</h3><p>We could not resolve an account record for this AM home view.</p></div></section>';
+        $reference_dashboard_payload = (array) $this->build_account_manager_home_reference_dashboard_payload($user_id, $dashboard_payload);
+        if (!$reference_dashboard_payload) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Dashboard unavailable</h3><p>We could not build the account manager dashboard view.</p></div></section>';
         }
 
-        return $this->render_account_manager_home_detail_html($detail_payload);
+        return $this->render_account_manager_home_reference_dashboard_html($reference_dashboard_payload);
     }
 
     public function render_staff_dashboard_shortcode() {

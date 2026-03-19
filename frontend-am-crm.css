@@ -2605,3 +2605,751 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-home-detail-page .cmn-sch
     grid-template-columns: 1fr;
   }
 }
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) {
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 24px;
+  padding: 24px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) > .cmn-staff-nav {
+  padding: 18px 14px 16px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 246, 255, 0.94) 100%);
+  border: 1px solid rgba(123, 132, 173, 0.12);
+  box-shadow: 0 18px 40px rgba(39, 51, 89, 0.08);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) .cmn-am-nav-workspace--home {
+  margin: 4px 4px 0;
+  padding: 14px 14px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(123, 132, 173, 0.1);
+  background: linear-gradient(180deg, rgba(249, 250, 255, 0.98) 0%, rgba(255, 255, 255, 0.96) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 12px 28px rgba(39, 51, 89, 0.05);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-dashboard {
+  --cmn-am-ref-bg: #f7f7fc;
+  --cmn-am-ref-surface: rgba(255, 255, 255, 0.96);
+  --cmn-am-ref-heading: #26345c;
+  --cmn-am-ref-body: #516084;
+  --cmn-am-ref-border: rgba(133, 143, 190, 0.16);
+  --cmn-am-ref-shadow: 0 16px 34px rgba(49, 61, 102, 0.08);
+  --cmn-am-ref-blue: #3368cf;
+  --cmn-am-ref-green: #2f9866;
+  --cmn-am-ref-cyan: #3687d8;
+  --cmn-am-ref-navy: #3c57a2;
+  --cmn-am-ref-rose: #a44762;
+  width: min(1320px, 100%);
+  margin: 0 auto;
+  font-family: "Manrope", "Inter", sans-serif;
+  color: var(--cmn-am-ref-heading);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-frame {
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at top right, rgba(192, 216, 240, 0.55), transparent 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 246, 255, 0.98) 100%);
+  border: 1px solid rgba(133, 143, 190, 0.14);
+  box-shadow: 0 24px 54px rgba(49, 61, 102, 0.1);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 2px 2px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-brand-mark {
+  width: 174px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-brand-copy {
+  display: grid;
+  gap: 2px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-brand-copy span {
+  color: #7380a3;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-brand-copy strong {
+  color: var(--cmn-am-ref-heading);
+  font-family: "Space Grotesk", "Manrope", sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-userbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-userbar-welcome {
+  color: var(--cmn-am-ref-heading);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-bell {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid var(--cmn-am-ref-border);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--cmn-am-ref-heading);
+  box-shadow: 0 8px 16px rgba(49, 61, 102, 0.06);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-bell-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-bell-badge {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e55368;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 6px 12px rgba(229, 83, 104, 0.28);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  object-fit: cover;
+  border: 3px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 12px 24px rgba(49, 61, 102, 0.12);
+  background: linear-gradient(135deg, rgba(76, 103, 182, 0.85), rgba(99, 156, 212, 0.85));
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 108px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 143, 190, 0.14);
+  background: var(--cmn-am-ref-surface);
+  box-shadow: var(--cmn-am-ref-shadow);
+  text-decoration: none;
+  overflow: hidden;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 38px rgba(49, 61, 102, 0.11);
+  border-color: rgba(92, 110, 177, 0.22);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-lilac::before,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-green::before,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-blue::before,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-deep-blue::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  border-radius: 18px 0 0 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-lilac::before {
+  background: #a9a9d9;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-green::before {
+  background: #33a46f;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-blue::before {
+  background: #4a8ef0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-deep-blue::before {
+  background: #3668d1;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-icon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  flex: 0 0 48px;
+  background: linear-gradient(180deg, rgba(242, 244, 255, 0.98), rgba(233, 236, 255, 0.94));
+  color: #6d7daa;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-green .cmn-am-reference-metric-icon {
+  color: #2f9866;
+  background: linear-gradient(180deg, rgba(231, 248, 239, 0.98), rgba(220, 244, 231, 0.96));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-blue .cmn-am-reference-metric-icon,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-deep-blue .cmn-am-reference-metric-icon {
+  color: #3368cf;
+  background: linear-gradient(180deg, rgba(230, 240, 255, 0.98), rgba(216, 231, 255, 0.96));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-icon svg,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-arrow svg,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-icon svg,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-icon svg,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-stat i svg,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-arrow svg {
+  width: 18px;
+  height: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-copy span {
+  color: var(--cmn-am-ref-heading);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-copy strong {
+  color: #253253;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-arrow {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #55668f;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.78fr);
+  gap: 16px;
+  align-items: start;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-main,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-rail {
+  display: grid;
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  background: var(--cmn-am-ref-surface);
+  border: 1px solid var(--cmn-am-ref-border);
+  box-shadow: var(--cmn-am-ref-shadow);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(133, 143, 190, 0.1);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-card-head h2 {
+  margin: 0;
+  color: var(--cmn-am-ref-heading);
+  font-family: "Space Grotesk", "Manrope", sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-card-head a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(133, 143, 190, 0.14);
+  background: rgba(250, 251, 255, 0.94);
+  color: var(--cmn-am-ref-heading);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  padding: 12px 0 0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage {
+  position: relative;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 22px 0 18px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 0 100%, 10px 50%);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage:first-child {
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 0 100%);
+  border-radius: 10px 0 0 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage:last-child {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 10px 50%);
+  border-radius: 0 10px 10px 0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage strong {
+  font-size: 19px;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage.is-indigo {
+  background: linear-gradient(180deg, #4677d6, #355eb4);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage.is-green {
+  background: linear-gradient(180deg, #388d68, #276f53);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage.is-cyan {
+  background: linear-gradient(180deg, #3f97d4, #2c79b4);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage.is-navy {
+  background: linear-gradient(180deg, #4d67af, #39508c);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage.is-rose {
+  background: linear-gradient(180deg, #af5871, #90435a);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  padding: 4px 14px 0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stat {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stat-line {
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  opacity: 0.9;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stat strong {
+  color: var(--cmn-am-ref-heading);
+  font-size: 19px;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stat.is-indigo .cmn-am-reference-pipeline-stat-line {
+  background: #4677d6;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stat.is-green .cmn-am-reference-pipeline-stat-line {
+  background: #388d68;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stat.is-cyan .cmn-am-reference-pipeline-stat-line {
+  background: #3f97d4;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stat.is-navy .cmn-am-reference-pipeline-stat-line {
+  background: #4d67af;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stat.is-rose .cmn-am-reference-pipeline-stat-line {
+  background: #af5871;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-total {
+  justify-self: center;
+  margin-top: -2px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: #f7f8fd;
+  border: 1px solid rgba(133, 143, 190, 0.14);
+  color: var(--cmn-am-ref-heading);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-list,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-row,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 4px 12px 0;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(133, 143, 190, 0.1);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-row:last-child,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-icon,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex: 0 0 28px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-copy,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-copy strong,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-copy strong {
+  color: var(--cmn-am-ref-heading);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-copy p,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-copy p {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+  color: var(--cmn-am-ref-body);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-copy p span,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-copy p span {
+  color: #6f7ea2;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-meta,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-meta {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-time {
+  color: #5e6d93;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-arrow {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6d7daa;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-status-pill.is-danger,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-icon.is-danger,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-icon.is-danger {
+  color: #c9485f;
+  background: rgba(253, 236, 240, 0.98);
+  border-color: rgba(201, 72, 95, 0.14);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-status-pill.is-warning,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-icon.is-warning,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-icon.is-warning {
+  color: #b27a14;
+  background: rgba(255, 246, 226, 0.98);
+  border-color: rgba(178, 122, 20, 0.14);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-status-pill.is-success,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-icon.is-success,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-icon.is-success {
+  color: #2b9460;
+  background: rgba(233, 248, 240, 0.98);
+  border-color: rgba(43, 148, 96, 0.14);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-status-pill.is-info,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-icon.is-info,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-icon.is-info {
+  color: #4470c8;
+  background: rgba(233, 240, 255, 0.98);
+  border-color: rgba(68, 112, 200, 0.14);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-stat {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 14px 12px 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(250, 251, 255, 0.98), rgba(244, 247, 255, 0.94));
+  border: 1px solid rgba(133, 143, 190, 0.12);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-stat strong {
+  color: var(--cmn-am-ref-heading);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-stat span {
+  color: var(--cmn-am-ref-body);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-stat i {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #7e8cad;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-goal {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-goal-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--cmn-am-ref-heading);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-goal-copy span {
+  color: #425074;
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-goal-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(137, 149, 196, 0.14);
+  overflow: hidden;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-goal-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #67b46b 0%, #3ea466 100%);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-empty {
+  padding: 18px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(251, 252, 255, 0.96), rgba(246, 248, 255, 0.92));
+  border: 1px dashed rgba(133, 143, 190, 0.18);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-empty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--cmn-am-ref-heading);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-empty p {
+  margin: 0;
+  color: var(--cmn-am-ref-body);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 1220px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-topbar,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-card-head,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-goal-copy {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stats {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage:first-child,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-pipeline-stage:last-child {
+    clip-path: none;
+    border-radius: 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-frame {
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-brand {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-brand-mark {
+    width: 150px;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-week-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-row,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-task-meta,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-activity-meta {
+    grid-column: 2;
+    justify-items: flex-start;
+  }
+}
