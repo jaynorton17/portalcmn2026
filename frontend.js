@@ -1520,6 +1520,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
     var staffNavEditModeKey = 'cmn_sidebar_edit_mode';
     var staffShell = staffNav.closest('.cmn-staff-shell');
+    var isAmPipelineOverlayNav = !!(staffShell && staffShell.querySelector('.cmn-am-pipeline-page'));
+    var shouldPersistStaffNavCompactState = !isAmPipelineOverlayNav;
     var amNavContext = staffNav.querySelector('[data-am-nav-context]');
     var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
     var staffNavEditToggleBtn = staffNav.querySelector('[data-staff-nav-edit-toggle]');
@@ -1781,7 +1783,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       setStaffNavPeekState(false);
       setStaffNavCompactState(false);
-      writeStaffNavCompactState(false);
+      if (shouldPersistStaffNavCompactState) {
+        writeStaffNavCompactState(false);
+      }
     };
     var persistStaffNavState = function (state) {
       writeStaffNavState(state);
@@ -2023,15 +2027,31 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     setStaffNavCompactState(readStaffNavCompactState());
     enforceStaffNavMobileState();
+    if (isAmPipelineOverlayNav && !isStaffNavMobileViewport()) {
+      setStaffNavPeekState(false);
+      setStaffNavCompactState(true);
+    }
     window.addEventListener('resize', function () {
       enforceStaffNavMobileState();
+      if (isAmPipelineOverlayNav && !isStaffNavMobileViewport()) {
+        setStaffNavPeekState(false);
+        setStaffNavCompactState(true);
+      }
     });
     if (staffNavMinimizeBtn) {
       staffNavMinimizeBtn.addEventListener('click', function () {
         if (isStaffNavMobileViewport()) {
           setStaffNavPeekState(false);
           setStaffNavCompactState(false);
-          writeStaffNavCompactState(false);
+          if (shouldPersistStaffNavCompactState) {
+            writeStaffNavCompactState(false);
+          }
+          return;
+        }
+        if (isAmPipelineOverlayNav) {
+          var willPeekOpen = !staffNavPeekOpen;
+          setStaffNavCompactState(true);
+          setStaffNavPeekState(willPeekOpen);
           return;
         }
         var willCompact = !staffNav.classList.contains('is-collapsed');
@@ -2039,7 +2059,9 @@ document.addEventListener('DOMContentLoaded', function () {
           setStaffNavPeekState(false);
         }
         setStaffNavCompactState(willCompact);
-        writeStaffNavCompactState(willCompact);
+        if (shouldPersistStaffNavCompactState) {
+          writeStaffNavCompactState(willCompact);
+        }
       });
     }
     staffNav.querySelectorAll('.cmn-school-nav-link').forEach(function (linkEl) {

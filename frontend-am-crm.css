@@ -3355,8 +3355,42 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-empty p {
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page) {
+  position: relative;
+  overflow: visible;
   grid-template-columns: 92px minmax(0, 1fr);
   gap: 24px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page).is-nav-collapsed,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page).is-nav-collapsed.is-nav-peek-open {
+  grid-template-columns: 92px minmax(0, 1fr);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page) > .cmn-staff-nav {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  z-index: 20;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page).is-nav-collapsed > .cmn-staff-nav {
+  width: 92px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page).is-nav-collapsed.is-nav-peek-open > .cmn-staff-nav {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  width: 248px;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  z-index: 80;
+  box-shadow: 0 24px 52px rgba(20, 30, 52, 0.2) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page) > .cmn-staff-main--am-crm {
+  position: relative;
+  z-index: 1;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-pipeline-page {
@@ -3691,6 +3725,18 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-pipeline-card .cmn-school
 @media (max-width: 1100px) {
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page) {
     grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page).is-nav-collapsed,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page).is-nav-collapsed.is-nav-peek-open {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-pipeline-page).is-nav-collapsed.is-nav-peek-open > .cmn-staff-nav {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: min(320px, calc(100% - 24px));
   }
 
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-pipeline-hero {
