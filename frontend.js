@@ -4238,6 +4238,51 @@ document.addEventListener('DOMContentLoaded', function () {
         scheduleDraftSave();
       });
 
+      var copyDraftToClipboard = function (draftText) {
+        var value = String(draftText || '').trim();
+        if (!value) {
+          return Promise.resolve(false);
+        }
+
+        var fallbackCopy = function () {
+          if (!document.body || (document.hasFocus && !document.hasFocus())) {
+            return false;
+          }
+          var helper = document.createElement('textarea');
+          helper.value = value;
+          helper.setAttribute('readonly', 'readonly');
+          helper.setAttribute('aria-hidden', 'true');
+          helper.style.position = 'fixed';
+          helper.style.top = '-9999px';
+          helper.style.left = '-9999px';
+          helper.style.opacity = '0';
+          document.body.appendChild(helper);
+          helper.focus();
+          helper.select();
+          if (typeof helper.setSelectionRange === 'function') {
+            helper.setSelectionRange(0, value.length);
+          }
+          var copied = false;
+          try {
+            copied = !!document.execCommand('copy');
+          } catch (error) {
+            copied = false;
+          }
+          document.body.removeChild(helper);
+          return copied;
+        };
+
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function' && (!document.hasFocus || document.hasFocus())) {
+          return navigator.clipboard.writeText(value).then(function () {
+            return true;
+          }).catch(function () {
+            return fallbackCopy();
+          });
+        }
+
+        return Promise.resolve(fallbackCopy());
+      };
+
       if (copyBtn) {
         copyBtn.addEventListener('click', function () {
           var selectedOption = getSelectedRecipientOption();
@@ -4259,19 +4304,19 @@ document.addEventListener('DOMContentLoaded', function () {
             queueFeedbackClear();
             return;
           }
-          if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            navigator.clipboard.writeText(draftText).then(function () {
+          copyDraftToClipboard(draftText).then(function (copied) {
+            if (copied) {
               saveDraftState();
               setFeedback('Draft copied.');
               queueFeedbackClear();
-            }).catch(function () {
-              setFeedback('Unable to copy the draft.');
-              queueFeedbackClear();
-            });
-            return;
-          }
-          setFeedback('Clipboard copy is not available in this browser.');
-          queueFeedbackClear();
+              return;
+            }
+            setFeedback('Click back into the page and try copying again.');
+            queueFeedbackClear();
+          }).catch(function () {
+            setFeedback('Unable to copy the draft.');
+            queueFeedbackClear();
+          });
         });
       }
 
