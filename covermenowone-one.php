@@ -893,6 +893,7 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_school_add_note', [$this, 'handle_school_add_note_ajax']);
         add_action('wp_ajax_cmn_get_school_lead_activity_preview', [$this, 'handle_get_school_lead_activity_preview']);
         add_action('wp_ajax_cmn_get_school_profile_timeline', [$this, 'handle_get_school_profile_timeline']);
+        add_action('admin_post_cmn_add_school_to_pipeline', [$this, 'handle_add_school_to_account_manager_pipeline']);
         add_action('wp_ajax_cmn_notifications_mark_selected_read', [$this, 'handle_notifications_mark_selected_read']);
         add_action('wp_ajax_cmn_notifications_delete_selected', [$this, 'handle_notifications_delete_selected']);
         add_action('wp_ajax_cmn_notifications_poll', [$this, 'handle_notifications_poll']);
@@ -37541,6 +37542,284 @@ global $wpdb;
         ];
     }
 
+    private function get_account_manager_live_pipeline_stage_config() {
+        return [
+            'new_lead' => [
+                'label' => 'Reached Out',
+                'short_label' => 'Reached Out',
+                'badge_label' => 'Reached out',
+                'tone' => 'indigo',
+                'next_action' => 'Wait for a response or log the next touchpoint',
+            ],
+            'spoken_to_cover_manager' => [
+                'label' => 'Response Received',
+                'short_label' => 'Response Received',
+                'badge_label' => 'Response received',
+                'tone' => 'green',
+                'next_action' => 'Log the response and line up the next conversation',
+            ],
+            'meeting_booked' => [
+                'label' => 'Demo Booked',
+                'short_label' => 'Demo Booked',
+                'badge_label' => 'Demo booked',
+                'tone' => 'cyan',
+                'next_action' => 'Prepare the demo and confirm attendance',
+            ],
+            'closed_won' => [
+                'label' => 'Close Won',
+                'short_label' => 'Close Won',
+                'badge_label' => 'Close won',
+                'tone' => 'navy',
+                'next_action' => 'Hand over into live client work',
+            ],
+            'closed_lost' => [
+                'label' => 'Close Lost',
+                'short_label' => 'Close Lost',
+                'badge_label' => 'Close lost',
+                'tone' => 'rose',
+                'next_action' => 'Capture the reason and close cleanly',
+            ],
+        ];
+    }
+
+    private function is_truthy_portal_flag($raw_value) {
+        if (is_bool($raw_value)) {
+            return $raw_value;
+        }
+        $value = strtolower(trim((string) $raw_value));
+        return in_array($value, ['1', 'true', 'yes', 'on', 'checked'], true);
+    }
+
+    private function school_has_account_manager_decision_maker_signal($school_id) {
+        $school_id = (int) $school_id;
+        if ($school_id < 1) {
+            return false;
+        }
+
+        $candidate_meta_keys = [
+            'cmn_have_spoken_to_decision_maker',
+            'cmn_spoken_to_decision_maker',
+            'have_spoken_to_decision_maker',
+            'spoken_to_decision_maker',
+        ];
+        foreach ($candidate_meta_keys as $meta_key) {
+            if ($this->is_truthy_portal_flag(get_post_meta($school_id, $meta_key, true))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function get_account_manager_pipeline_email_signal_map($user_id = 0, array $school_ids = []) {
+        global $wpdb;
+
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        $school_ids = array_values(array_unique(array_filter(array_map('intval', $school_ids))));
+        if ($user_id < 1 || !$school_ids) {
+            return [];
+        }
+
+        $table = $this->get_activity_table();
+        if ($table === '') {
+            return [];
+        }
+        $table_exists = (string) $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            return [];
+        }
+
+        $entity_ref_map = [];
+        foreach ($school_ids as $school_id) {
+            $school_domain = strtolower(trim((string) get_post_meta($school_id, 'cmn_school_email_domain', true)));
+            foreach ($this->get_school_activity_entity_refs($school_domain, $school_id) as $entity_ref) {
+                $entity_ref = sanitize_text_field((string) $entity_ref);
+                if ($entity_ref === '') {
+                    continue;
+                }
+                if (!isset($entity_ref_map[$entity_ref])) {
+                    $entity_ref_map[$entity_ref] = [];
+                }
+                $entity_ref_map[$entity_ref][] = $school_id;
+            }
+        }
+
+        if (!$entity_ref_map) {
+            return [];
+        }
+
+        $entity_refs = array_keys($entity_ref_map);
+        $placeholders = implode(',', array_fill(0, count($entity_refs), '%s'));
+        $query = $wpdb->prepare(
+            "SELECT DISTINCT entity_ref
+             FROM {$table}
+             WHERE entity_type = 'school'
+               AND activity_type = 'email'
+               AND (created_by = %d OR assigned_to_user_id = %d)
+               AND entity_ref IN ({$placeholders})",
+            array_merge([$user_id, $user_id], $entity_refs)
+        );
+        $rows = $query ? (array) $wpdb->get_col($query) : [];
+
+        $school_map = [];
+        foreach ($rows as $entity_ref) {
+            $entity_ref = sanitize_text_field((string) $entity_ref);
+            foreach ((array) ($entity_ref_map[$entity_ref] ?? []) as $school_id) {
+                $school_map[(int) $school_id] = true;
+            }
+        }
+
+        return $school_map;
+    }
+
+    private function resolve_account_manager_live_pipeline_stage($school_id, $user_id = 0, array $context = []) {
+        $school_id = (int) $school_id;
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($school_id < 1 || $user_id < 1) {
+            return '';
+        }
+
+        $pipeline_active = $this->is_truthy_portal_flag(get_post_meta($school_id, 'cmn_am_pipeline_active', true));
+        $decision_signal = !empty($context['decision_signal']);
+        $email_signal = !empty($context['email_signal']);
+        if (!$pipeline_active && !$decision_signal && !$email_signal) {
+            return '';
+        }
+
+        $status_value = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+        $stage_value = $this->normalize_school_lead_stage((string) get_post_meta($school_id, 'cmn_pipeline_stage', true));
+        if ($stage_value === 'not_interested') {
+            $stage_value = 'closed_lost';
+        }
+        if (!in_array($stage_value, ['new_lead', 'spoken_to_cover_manager', 'meeting_booked', 'closed_won', 'closed_lost'], true)) {
+            $stage_value = 'new_lead';
+        }
+
+        if ($status_value === 'client' && $stage_value !== 'closed_lost') {
+            return 'closed_won';
+        }
+
+        return $stage_value !== '' ? $stage_value : 'new_lead';
+    }
+
+    private function build_account_manager_live_pipeline_snapshot($user_id = 0, array $options = []) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return [];
+        }
+
+        $limit_per_stage = max(0, (int) ($options['limit_per_stage'] ?? 0));
+        $portal_url = $this->get_portal_base_url();
+        $stage_config = $this->get_account_manager_live_pipeline_stage_config();
+        $cards_by_stage = [];
+        $stage_counts = [];
+        foreach ($stage_config as $stage_key => $_stage_meta) {
+            $cards_by_stage[$stage_key] = [];
+            $stage_counts[$stage_key] = 0;
+        }
+
+        $manageable_school_ids = array_values(array_unique(array_map('intval', $this->get_manageable_school_ids_for_user($user_id))));
+        if (!$manageable_school_ids) {
+            return [
+                'stage_config' => $stage_config,
+                'cards_by_stage' => $cards_by_stage,
+                'stage_counts' => $stage_counts,
+                'pipeline_total' => 0,
+                'addable_options' => [],
+                'pipeline_url' => add_query_arg(['view' => 'leads'], $portal_url),
+            ];
+        }
+
+        $interaction_summaries = $this->get_school_last_interaction_summaries($manageable_school_ids);
+        $email_signal_map = $this->get_account_manager_pipeline_email_signal_map($user_id, $manageable_school_ids);
+        $addable_options = [];
+
+        foreach ($manageable_school_ids as $school_id) {
+            if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+                continue;
+            }
+
+            $card = $this->build_school_lead_board_card_data($school_id, [], $portal_url, ['view' => 'leads'], $interaction_summaries);
+            if (!$card) {
+                continue;
+            }
+
+            $status_value = sanitize_key((string) get_post_meta($school_id, 'cmn_status', true));
+            $decision_signal = $this->school_has_account_manager_decision_maker_signal($school_id);
+            $email_signal = !empty($email_signal_map[$school_id]);
+            $stage_key = $this->resolve_account_manager_live_pipeline_stage($school_id, $user_id, [
+                'decision_signal' => $decision_signal,
+                'email_signal' => $email_signal,
+            ]);
+
+            if ($stage_key === '') {
+                if ($status_value !== 'client') {
+                    $option_location = sanitize_text_field((string) ($card['location'] ?? ''));
+                    $option_identifier = sanitize_text_field((string) ($card['school_identifier'] ?? ''));
+                    $option_meta = array_filter([$option_location, $option_identifier !== '' ? ('ID ' . $option_identifier) : '']);
+                    $addable_options[] = [
+                        'school_post_id' => $school_id,
+                        'title' => sanitize_text_field((string) ($card['title'] ?? get_the_title($school_id))),
+                        'meta' => implode(' · ', $option_meta),
+                    ];
+                }
+                continue;
+            }
+
+            $stage_meta = (array) ($stage_config[$stage_key] ?? []);
+            $stage_counts[$stage_key]++;
+
+            $title = sanitize_text_field((string) ($card['title'] ?? get_the_title($school_id)));
+            $location = sanitize_text_field((string) ($card['location'] ?? ''));
+            $contact_name = sanitize_text_field((string) ($card['contact_name'] ?? ''));
+            $last_activity_label = sanitize_text_field((string) ($card['last_activity_label'] ?? ''));
+            $last_activity_detail = sanitize_text_field((string) ($card['last_activity_detail'] ?? ''));
+            $subtitle = '';
+            if ($contact_name !== '' && $location !== '') {
+                $subtitle = $contact_name . ' · ' . $location;
+            } elseif ($location !== '') {
+                $subtitle = $location;
+            } elseif ($contact_name !== '') {
+                $subtitle = $contact_name;
+            }
+            $meta_line = implode(' · ', array_filter([$last_activity_label, $last_activity_detail]));
+            if ($meta_line === '' && !empty($card['school_identifier'])) {
+                $meta_line = 'ID ' . sanitize_text_field((string) $card['school_identifier']);
+            }
+
+            $cards_by_stage[$stage_key][] = [
+                'school_post_id' => $school_id,
+                'school_identifier' => sanitize_text_field((string) ($card['school_identifier'] ?? ($school_id > 0 ? $school_id : ''))),
+                'title' => $title,
+                'subtitle' => $subtitle,
+                'meta' => $meta_line,
+                'badge_label' => sanitize_text_field((string) ($stage_meta['badge_label'] ?? 'In pipeline')),
+                'view_url' => esc_url_raw((string) ($card['overview_url'] ?? $card['view_url'] ?? $portal_url)),
+                'activity_url' => esc_url_raw((string) ($card['activity_url'] ?? $card['view_url'] ?? $portal_url)),
+                'stage_key' => $stage_key,
+            ];
+        }
+
+        if ($limit_per_stage > 0) {
+            foreach (array_keys($cards_by_stage) as $stage_key) {
+                $cards_by_stage[$stage_key] = array_slice((array) $cards_by_stage[$stage_key], 0, $limit_per_stage);
+            }
+        }
+
+        usort($addable_options, static function ($left, $right) {
+            return strcasecmp((string) ($left['title'] ?? ''), (string) ($right['title'] ?? ''));
+        });
+
+        return [
+            'stage_config' => $stage_config,
+            'cards_by_stage' => $cards_by_stage,
+            'stage_counts' => $stage_counts,
+            'pipeline_total' => array_sum($stage_counts),
+            'addable_options' => $addable_options,
+            'pipeline_url' => add_query_arg(['view' => 'leads'], $portal_url),
+        ];
+    }
+
     private function get_school_lead_notes($school_post_id, $limit = 10) {
         $school_post_id = (int) $school_post_id;
         $limit = max(1, min(200, (int) $limit));
@@ -37812,6 +38091,9 @@ global $wpdb;
             } else {
                 update_post_meta($school_post_id, $meta_key, $incoming_value);
             }
+            if ($field_key === 'pipeline_stage' && $this->is_restricted_account_manager($actor_user_id)) {
+                update_post_meta($school_post_id, 'cmn_am_pipeline_active', '1');
+            }
             $changed_fields[] = $field_key;
             $before_values[$field_key] = $current_value;
             $after_values[$field_key] = $incoming_value;
@@ -37983,6 +38265,90 @@ global $wpdb;
             'note' => $note_response,
             'notes_count' => count($existing_notes),
         ]);
+    }
+
+    public function handle_add_school_to_account_manager_pipeline() {
+        $portal_url = $this->get_portal_base_url();
+        $redirect_url = add_query_arg(['view' => 'leads'], $portal_url);
+        $redirect_target = isset($_POST['cmn_redirect'])
+            ? esc_url_raw((string) wp_unslash((string) $_POST['cmn_redirect']))
+            : '';
+        if ($redirect_target !== '') {
+            $redirect_url = $redirect_target;
+        }
+        $redirect_with_notice = function ($message, $tone = 'info', $open_panel = false) use ($redirect_url) {
+            $next_url = add_query_arg([
+                'cmn_pipeline_notice' => rawurlencode($message),
+                'cmn_pipeline_tone' => sanitize_key((string) $tone),
+                'cmn_pipeline_panel' => $open_panel ? 'add_school' : false,
+            ], $redirect_url);
+            wp_safe_redirect($next_url);
+            exit;
+        };
+
+        if (!is_user_logged_in()) {
+            $redirect_with_notice('You need to be logged in to update the pipeline.', 'error', true);
+        }
+
+        $actor_user_id = (int) get_current_user_id();
+        if (!$this->is_restricted_account_manager($actor_user_id)) {
+            $redirect_with_notice('Only account managers can add schools to this pipeline.', 'error', true);
+        }
+
+        $nonce = sanitize_text_field((string) ($_POST['cmn_add_school_to_pipeline_nonce'] ?? ''));
+        if ($nonce === '' || !wp_verify_nonce($nonce, 'cmn_add_school_to_pipeline')) {
+            $redirect_with_notice('That add-school request was not recognised. Please try again.', 'error', true);
+        }
+
+        $school_post_id = max(0, (int) ($_POST['cmn_school_post_id'] ?? 0));
+        if ($school_post_id < 1 || get_post_type($school_post_id) !== 'cmn_school') {
+            $redirect_with_notice('Select a valid school from your portfolio first.', 'error', true);
+        }
+        if (!$this->user_can_access_school($school_post_id, $actor_user_id)) {
+            $redirect_with_notice('You do not have access to add that school to your pipeline.', 'error', true);
+        }
+
+        $status_value = sanitize_key((string) get_post_meta($school_post_id, 'cmn_status', true));
+        if ($status_value === 'client') {
+            $redirect_with_notice('That school is already a client, so it cannot be added to the sales pipeline.', 'error', true);
+        }
+
+        $current_stage = $this->normalize_school_lead_stage((string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true));
+        if (in_array($current_stage, ['closed_won', 'closed_lost', 'not_interested'], true)) {
+            $current_stage = 'new_lead';
+        }
+        update_post_meta($school_post_id, 'cmn_am_pipeline_active', '1');
+        update_post_meta($school_post_id, 'cmn_pipeline_stage', $current_stage !== '' ? $current_stage : 'new_lead');
+        if ($status_value === '' || $status_value === 'needs_attention') {
+            update_post_meta($school_post_id, 'cmn_status', 'lead');
+        }
+
+        $school_title = sanitize_text_field((string) get_the_title($school_post_id));
+        $school_domain = sanitize_text_field((string) get_post_meta($school_post_id, 'cmn_school_email_domain', true));
+        if ($school_domain !== '') {
+            $this->insert_activity_row([
+                'entity_type' => 'school',
+                'entity_ref' => $school_domain,
+                'activity_type' => 'note',
+                'subject' => 'Added to AM pipeline',
+                'notes' => 'School added to the live account manager pipeline.',
+                'created_by' => $actor_user_id,
+                'assigned_to_user_id' => $actor_user_id,
+                'assigned_to_school_domain' => $school_domain,
+            ]);
+        }
+
+        $this->add_audit_log('school_added_to_am_pipeline', 'school', (string) $school_post_id, [
+            'pipeline_active' => true,
+            'pipeline_stage' => (string) get_post_meta($school_post_id, 'cmn_pipeline_stage', true),
+            'school_status' => sanitize_key((string) get_post_meta($school_post_id, 'cmn_status', true)),
+        ], $actor_user_id);
+
+        $redirect_with_notice(
+            ($school_title !== '' ? $school_title : 'School') . ' was added to your live pipeline.',
+            'success',
+            false
+        );
     }
 
     public function handle_save_staff_nav_state() {
@@ -41642,6 +42008,9 @@ global $wpdb;
         $recent_activity_snapshot = (array) $this->get_account_manager_recent_activity_snapshot($user_id, 6);
         $recent_activity_rows = array_values(array_filter((array) ($recent_activity_snapshot['rows'] ?? []), 'is_array'));
         $task_rows = array_values(array_filter((array) ($dashboard_payload['task_items'] ?? []), 'is_array'));
+        $pipeline_snapshot = (array) $this->build_account_manager_live_pipeline_snapshot($user_id, ['limit_per_stage' => 0]);
+        $pipeline_stage_counts = is_array($pipeline_snapshot['stage_counts'] ?? null) ? $pipeline_snapshot['stage_counts'] : [];
+        $pipeline_stage_config = $this->get_account_manager_live_pipeline_stage_config();
         if (!$task_rows) {
             $task_rows = array_merge(
                 array_values(array_filter((array) ($dashboard_payload['due_now_rows'] ?? []), 'is_array')),
@@ -41651,39 +42020,18 @@ global $wpdb;
         }
 
         $stage_counts = [
-            'new_lead' => 0,
-            'spoken_to_cover_manager' => 0,
-            'meeting_booked' => 0,
-            'closed_won' => 0,
-            'closed_lost' => 0,
+            'new_lead' => max(0, (int) ($pipeline_stage_counts['new_lead'] ?? 0)),
+            'spoken_to_cover_manager' => max(0, (int) ($pipeline_stage_counts['spoken_to_cover_manager'] ?? 0)),
+            'meeting_booked' => max(0, (int) ($pipeline_stage_counts['meeting_booked'] ?? 0)),
+            'closed_won' => max(0, (int) ($pipeline_stage_counts['closed_won'] ?? 0)),
+            'closed_lost' => max(0, (int) ($pipeline_stage_counts['closed_lost'] ?? 0)),
         ];
-        foreach ($account_rows as $account_row) {
-            $status_value = sanitize_key((string) ($account_row['status_value'] ?? ''));
-            $stage_value = $this->normalize_school_lead_stage((string) ($account_row['pipeline_value'] ?? $account_row['stage_value'] ?? ''));
-            if ($status_value === 'client' || $stage_value === 'closed_won') {
-                $stage_counts['closed_won']++;
-                continue;
-            }
-            if (in_array($stage_value, ['closed_lost', 'not_interested'], true)) {
-                $stage_counts['closed_lost']++;
-                continue;
-            }
-            if ($stage_value === 'meeting_booked') {
-                $stage_counts['meeting_booked']++;
-                continue;
-            }
-            if ($stage_value === 'spoken_to_cover_manager') {
-                $stage_counts['spoken_to_cover_manager']++;
-                continue;
-            }
-            $stage_counts['new_lead']++;
-        }
 
-        $pipeline_total = array_sum($stage_counts);
+        $pipeline_total = max(0, (int) ($pipeline_snapshot['pipeline_total'] ?? array_sum($stage_counts)));
         $lead_progress_total = $stage_counts['new_lead'] + $stage_counts['spoken_to_cover_manager'] + $stage_counts['meeting_booked'] + $stage_counts['closed_won'];
         $lead_progress_current = $stage_counts['spoken_to_cover_manager'] + $stage_counts['meeting_booked'] + $stage_counts['closed_won'];
         if ($lead_progress_total < 1) {
-            $lead_progress_total = max(0, (int) ($account_counts['leads'] ?? 0));
+            $lead_progress_total = $pipeline_total;
             $lead_progress_current = max(0, $lead_progress_total - $stage_counts['new_lead']);
         }
         $lead_progress_percent = $lead_progress_total > 0
@@ -41785,6 +42133,7 @@ global $wpdb;
 
         $focus_row = is_array($dashboard_payload['focus_row'] ?? null) ? $dashboard_payload['focus_row'] : [];
         $urls = is_array($dashboard_payload['urls'] ?? null) ? $dashboard_payload['urls'] : [];
+        $pipeline_url = esc_url_raw((string) ($pipeline_snapshot['pipeline_url'] ?? add_query_arg(['view' => 'leads'], $portal_url)));
         $primary_task_url = esc_url_raw((string) ($prepared_task_rows[0]['url'] ?? ($urls['tasks'] ?? '#')));
         $add_task_url = esc_url_raw((string) ($focus_row['task_editor_url'] ?? $primary_task_url));
         if ($add_task_url === '') {
@@ -41824,40 +42173,40 @@ global $wpdb;
                     'value' => max(0, (int) $pipeline_total),
                     'icon_key' => 'pipeline',
                     'tone' => 'deep-blue',
-                    'url' => esc_url_raw((string) ($urls['accounts'] ?? '#')),
+                    'url' => $pipeline_url,
                     'show_arrow' => true,
                 ],
             ],
             'pipeline_stages' => [
                 [
-                    'label' => 'Reached Out',
-                    'short_label' => 'Reached Out',
+                    'label' => sanitize_text_field((string) ($pipeline_stage_config['new_lead']['label'] ?? 'Reached Out')),
+                    'short_label' => sanitize_text_field((string) ($pipeline_stage_config['new_lead']['short_label'] ?? 'Reached Out')),
                     'value' => max(0, (int) $stage_counts['new_lead']),
-                    'tone' => 'indigo',
+                    'tone' => sanitize_key((string) ($pipeline_stage_config['new_lead']['tone'] ?? 'indigo')),
                 ],
                 [
-                    'label' => 'Response Received',
-                    'short_label' => 'Response Received',
+                    'label' => sanitize_text_field((string) ($pipeline_stage_config['spoken_to_cover_manager']['label'] ?? 'Response Received')),
+                    'short_label' => sanitize_text_field((string) ($pipeline_stage_config['spoken_to_cover_manager']['short_label'] ?? 'Response Received')),
                     'value' => max(0, (int) $stage_counts['spoken_to_cover_manager']),
-                    'tone' => 'green',
+                    'tone' => sanitize_key((string) ($pipeline_stage_config['spoken_to_cover_manager']['tone'] ?? 'green')),
                 ],
                 [
-                    'label' => 'Demo Booked',
-                    'short_label' => 'Demo Booked',
+                    'label' => sanitize_text_field((string) ($pipeline_stage_config['meeting_booked']['label'] ?? 'Demo Booked')),
+                    'short_label' => sanitize_text_field((string) ($pipeline_stage_config['meeting_booked']['short_label'] ?? 'Demo Booked')),
                     'value' => max(0, (int) $stage_counts['meeting_booked']),
-                    'tone' => 'cyan',
+                    'tone' => sanitize_key((string) ($pipeline_stage_config['meeting_booked']['tone'] ?? 'cyan')),
                 ],
                 [
-                    'label' => 'Closed Won',
-                    'short_label' => 'Closed Won',
+                    'label' => sanitize_text_field((string) ($pipeline_stage_config['closed_won']['label'] ?? 'Close Won')),
+                    'short_label' => sanitize_text_field((string) ($pipeline_stage_config['closed_won']['short_label'] ?? 'Close Won')),
                     'value' => max(0, (int) $stage_counts['closed_won']),
-                    'tone' => 'navy',
+                    'tone' => sanitize_key((string) ($pipeline_stage_config['closed_won']['tone'] ?? 'navy')),
                 ],
                 [
-                    'label' => 'Closed Lost',
-                    'short_label' => 'Closed Lost',
+                    'label' => sanitize_text_field((string) ($pipeline_stage_config['closed_lost']['label'] ?? 'Close Lost')),
+                    'short_label' => sanitize_text_field((string) ($pipeline_stage_config['closed_lost']['short_label'] ?? 'Close Lost')),
                     'value' => max(0, (int) $stage_counts['closed_lost']),
-                    'tone' => 'rose',
+                    'tone' => sanitize_key((string) ($pipeline_stage_config['closed_lost']['tone'] ?? 'rose')),
                 ],
             ],
             'pipeline_total' => max(0, (int) $pipeline_total),
@@ -41891,6 +42240,7 @@ global $wpdb;
             'goal_label' => 'Goal: Reach 90% of leads',
             'tasks_url' => esc_url_raw((string) ($urls['tasks'] ?? '#')),
             'accounts_url' => esc_url_raw((string) ($urls['accounts'] ?? '#')),
+            'pipeline_url' => $pipeline_url,
             'add_task_url' => $add_task_url,
         ];
     }
@@ -41913,6 +42263,7 @@ global $wpdb;
         $goal_label = sanitize_text_field((string) ($payload['goal_label'] ?? 'Goal progress'));
         $tasks_url = esc_url((string) ($payload['tasks_url'] ?? '#'));
         $add_task_url = esc_url((string) ($payload['add_task_url'] ?? $tasks_url));
+        $pipeline_url = esc_url((string) ($payload['pipeline_url'] ?? '#'));
 
         $render_icon = static function ($icon_key) {
             $icon_key = sanitize_key((string) $icon_key);
@@ -41987,6 +42338,7 @@ global $wpdb;
                         <section class="cmn-am-reference-card cmn-am-reference-card--pipeline">
                             <div class="cmn-am-reference-card-head">
                                 <h2>Pipeline Overview</h2>
+                                <a href="<?php echo $pipeline_url; ?>">Open pipeline</a>
                             </div>
                             <div class="cmn-am-reference-pipeline">
                                 <?php foreach ($pipeline_stages as $pipeline_stage) : ?>
@@ -42007,6 +42359,12 @@ global $wpdb;
                             <div class="cmn-am-reference-pipeline-total">
                                 <strong>Total Opportunities: <?php echo esc_html(number_format_i18n($pipeline_total)); ?></strong>
                             </div>
+                            <?php if ($pipeline_total < 1) : ?>
+                                <div class="cmn-am-reference-empty">
+                                    <strong>No schools are in the live pipeline yet.</strong>
+                                    <p>Schools only appear here after a real account-manager outreach signal or when you add them to the pipeline.</p>
+                                </div>
+                            <?php endif; ?>
                         </section>
 
                         <section class="cmn-am-reference-card cmn-am-reference-card--tasks">
@@ -42108,6 +42466,149 @@ global $wpdb;
                             </div>
                         </section>
                     </aside>
+                </div>
+            </div>
+        </div>
+        <?php
+
+        return (string) ob_get_clean();
+    }
+
+    private function render_account_manager_pipeline_page_html($user_id = 0) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return '';
+        }
+
+        $snapshot = (array) $this->build_account_manager_live_pipeline_snapshot($user_id, ['limit_per_stage' => 0]);
+        $stage_config = is_array($snapshot['stage_config'] ?? null) ? $snapshot['stage_config'] : $this->get_account_manager_live_pipeline_stage_config();
+        $cards_by_stage = is_array($snapshot['cards_by_stage'] ?? null) ? $snapshot['cards_by_stage'] : [];
+        $stage_counts = is_array($snapshot['stage_counts'] ?? null) ? $snapshot['stage_counts'] : [];
+        $pipeline_total = max(0, (int) ($snapshot['pipeline_total'] ?? 0));
+        $addable_options = array_values(array_filter((array) ($snapshot['addable_options'] ?? []), 'is_array'));
+        $pipeline_url = esc_url((string) ($snapshot['pipeline_url'] ?? add_query_arg(['view' => 'leads'], $this->get_portal_base_url())));
+        $notice = sanitize_text_field((string) wp_unslash((string) ($_GET['cmn_pipeline_notice'] ?? '')));
+        $notice_tone = sanitize_key((string) ($_GET['cmn_pipeline_tone'] ?? 'info'));
+        if (!in_array($notice_tone, ['success', 'error', 'info'], true)) {
+            $notice_tone = 'info';
+        }
+        $add_panel_open = sanitize_key((string) ($_GET['cmn_pipeline_panel'] ?? '')) === 'add_school';
+
+        ob_start();
+        ?>
+        <div class="cmn-am-pipeline-page">
+            <section class="cmn-am-pipeline-hero">
+                <div class="cmn-am-pipeline-hero-copy">
+                    <p class="cmn-am-pipeline-breadcrumb">Dashboard / Sales Pipeline</p>
+                    <h1>Sales Pipeline</h1>
+                </div>
+                <details class="cmn-am-pipeline-add"<?php echo $add_panel_open ? ' open' : ''; ?>>
+                    <summary class="cmn-am-pipeline-add-trigger">+ Add School</summary>
+                    <div class="cmn-am-pipeline-add-panel">
+                        <p>Select an existing school from your database and place it into the live pipeline. This does not create a new school record.</p>
+                        <?php if ($addable_options) : ?>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-am-pipeline-add-form">
+                                <?php wp_nonce_field('cmn_add_school_to_pipeline', 'cmn_add_school_to_pipeline_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_add_school_to_pipeline">
+                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr($pipeline_url); ?>">
+                                <label>
+                                    <span>School</span>
+                                    <select name="cmn_school_post_id" required>
+                                        <option value="">Select a school</option>
+                                        <?php foreach ($addable_options as $option) : ?>
+                                            <option value="<?php echo esc_attr((string) ($option['school_post_id'] ?? 0)); ?>">
+                                                <?php
+                                                $option_title = sanitize_text_field((string) ($option['title'] ?? 'School'));
+                                                $option_meta = sanitize_text_field((string) ($option['meta'] ?? ''));
+                                                echo esc_html($option_meta !== '' ? ($option_title . ' - ' . $option_meta) : $option_title);
+                                                ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <button class="cmn-primary" type="submit">Add school</button>
+                            </form>
+                        <?php else : ?>
+                            <div class="cmn-am-pipeline-inline-empty">
+                                <strong>No schools are currently available to add.</strong>
+                                <p>Anything already in the live pipeline is excluded from this picker.</p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </details>
+            </section>
+
+            <?php if ($notice !== '') : ?>
+                <div class="cmn-am-pipeline-notice is-<?php echo esc_attr($notice_tone); ?>">
+                    <?php echo esc_html($notice); ?>
+                </div>
+            <?php endif; ?>
+
+            <div class="cmn-am-pipeline-workspace" data-school-leads-workspace data-default-view="board">
+                <p class="cmn-am-pipeline-status" data-school-leads-board-status>
+                    <?php
+                    if ($pipeline_total > 0) {
+                        echo esc_html(number_format_i18n($pipeline_total) . ' live pipeline ' . ($pipeline_total === 1 ? 'school' : 'schools') . '. Drag a card across the board to update stage.');
+                    } else {
+                        echo esc_html('No schools are in the live pipeline yet. Schools only appear here after a real AM outreach signal or when you add them explicitly.');
+                    }
+                    ?>
+                </p>
+                <div class="cmn-am-pipeline-board cmn-school-leads-board"
+                     data-school-leads-board
+                     data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                     data-school-lead-nonce="<?php echo esc_attr(wp_create_nonce('cmn_school_lead_actions')); ?>">
+                    <?php foreach ($stage_config as $stage_key => $stage_meta) : ?>
+                        <?php
+                        $stage_label = sanitize_text_field((string) ($stage_meta['label'] ?? $stage_key));
+                        $stage_next_action = sanitize_text_field((string) ($stage_meta['next_action'] ?? 'Review stage'));
+                        $stage_tone = sanitize_key((string) ($stage_meta['tone'] ?? 'indigo'));
+                        $stage_cards = array_values(array_filter((array) ($cards_by_stage[$stage_key] ?? []), 'is_array'));
+                        ?>
+                        <section class="cmn-am-pipeline-lane"
+                                 data-school-lead-stage-column="<?php echo esc_attr($stage_key); ?>"
+                                 data-stage-label="<?php echo esc_attr($stage_label); ?>"
+                                 data-stage-next="<?php echo esc_attr($stage_next_action); ?>">
+                            <div class="cmn-am-pipeline-lane-head is-<?php echo esc_attr($stage_tone); ?>">
+                                <strong><?php echo esc_html($stage_label); ?></strong>
+                                <span data-school-lead-stage-count><?php echo esc_html(number_format_i18n((int) ($stage_counts[$stage_key] ?? count($stage_cards)))); ?></span>
+                            </div>
+                            <div class="cmn-am-pipeline-lane-body" data-school-lead-stage-dropzone>
+                                <div class="cmn-am-pipeline-empty"<?php echo $stage_cards ? ' hidden' : ''; ?> data-school-leads-empty-state>No schools in this stage.</div>
+                                <?php foreach ($stage_cards as $card) : ?>
+                                    <?php
+                                    $school_post_id = max(0, (int) ($card['school_post_id'] ?? 0));
+                                    $school_identifier = sanitize_text_field((string) ($card['school_identifier'] ?? ($school_post_id > 0 ? $school_post_id : '')));
+                                    $card_title = sanitize_text_field((string) ($card['title'] ?? 'School'));
+                                    $card_subtitle = sanitize_text_field((string) ($card['subtitle'] ?? ''));
+                                    $card_meta = sanitize_text_field((string) ($card['meta'] ?? ''));
+                                    $card_badge = sanitize_text_field((string) ($card['badge_label'] ?? 'In pipeline'));
+                                    $card_url = esc_url((string) ($card['view_url'] ?? $pipeline_url));
+                                    ?>
+                                    <article class="cmn-am-pipeline-card cmn-school-lead-card"
+                                             draggable="true"
+                                             data-school-lead-card
+                                             data-school-id="<?php echo esc_attr($school_identifier); ?>"
+                                             data-school-pid="<?php echo esc_attr((string) $school_post_id); ?>"
+                                             data-stage="<?php echo esc_attr($stage_key); ?>">
+                                        <div class="cmn-am-pipeline-card-head">
+                                            <h3><a href="<?php echo $card_url; ?>"><?php echo esc_html($card_title); ?></a></h3>
+                                        </div>
+                                        <?php if ($card_subtitle !== '') : ?>
+                                            <p class="cmn-am-pipeline-card-subtitle"><?php echo esc_html($card_subtitle); ?></p>
+                                        <?php endif; ?>
+                                        <div class="cmn-am-pipeline-card-footer">
+                                            <span class="cmn-am-pipeline-card-badge"><?php echo esc_html($card_badge); ?></span>
+                                            <?php if ($card_meta !== '') : ?>
+                                                <span class="cmn-am-pipeline-card-meta"><?php echo esc_html($card_meta); ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="cmn-school-lead-card-feedback cmn-muted" data-school-lead-card-feedback></div>
+                                    </article>
+                                <?php endforeach; ?>
+                            </div>
+                        </section>
+                    <?php endforeach; ?>
                 </div>
             </div>
         </div>
@@ -44968,6 +45469,9 @@ global $wpdb;
         }
         if ($status === 'all') {
             $status = 'all';
+        }
+        if ($is_restricted_am_workspace && ($view === 'leads' || ($view === 'schools' && $status === 'lead'))) {
+            return $this->render_staff_shell('schools_leads', $this->render_account_manager_pipeline_page_html($current_user_id));
         }
         $import_message = isset($_GET['cmn_imported']) ? sanitize_text_field($_GET['cmn_imported']) : '';
         $import_note = isset($_GET['cmn_import_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_import_msg'])) : '';
