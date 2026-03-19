@@ -1520,8 +1520,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
     var staffNavEditModeKey = 'cmn_sidebar_edit_mode';
     var staffShell = staffNav.closest('.cmn-staff-shell');
+    var isAccountManagerNav = staffNav.classList.contains('is-account-manager-nav');
     var isAmPipelineOverlayNav = !!(staffShell && staffShell.querySelector('.cmn-am-pipeline-page'));
-    var shouldPersistStaffNavCompactState = !isAmPipelineOverlayNav;
+    var usePeekOpenStaffNav = isAmPipelineOverlayNav || isAccountManagerNav;
+    var shouldPersistStaffNavCompactState = !usePeekOpenStaffNav;
     var amNavContext = staffNav.querySelector('[data-am-nav-context]');
     var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
     var staffNavEditToggleBtn = staffNav.querySelector('[data-staff-nav-edit-toggle]');
@@ -1774,7 +1776,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       if (staffNavMinimizeBtn) {
         staffNavMinimizeBtn.setAttribute('aria-pressed', isCompact ? 'true' : 'false');
-        staffNavMinimizeBtn.setAttribute('data-tooltip', isCompact ? 'Expand sidebar' : 'Minimise sidebar');
+        staffNavMinimizeBtn.setAttribute('data-tooltip', isCompact
+          ? (isAccountManagerNav ? 'Open menu' : 'Expand sidebar')
+          : (isAccountManagerNav ? 'Hide menu' : 'Minimise sidebar'));
       }
     };
     var enforceStaffNavMobileState = function () {
@@ -2027,13 +2031,13 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     setStaffNavCompactState(readStaffNavCompactState());
     enforceStaffNavMobileState();
-    if (isAmPipelineOverlayNav && !isStaffNavMobileViewport()) {
+    if (usePeekOpenStaffNav && !isStaffNavMobileViewport()) {
       setStaffNavPeekState(false);
       setStaffNavCompactState(true);
     }
     window.addEventListener('resize', function () {
       enforceStaffNavMobileState();
-      if (isAmPipelineOverlayNav && !isStaffNavMobileViewport()) {
+      if (usePeekOpenStaffNav && !isStaffNavMobileViewport()) {
         setStaffNavPeekState(false);
         setStaffNavCompactState(true);
       }
@@ -2048,7 +2052,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           return;
         }
-        if (isAmPipelineOverlayNav) {
+        if (usePeekOpenStaffNav) {
           var willPeekOpen = !staffNavPeekOpen;
           setStaffNavCompactState(true);
           setStaffNavPeekState(willPeekOpen);

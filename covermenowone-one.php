@@ -22258,14 +22258,38 @@ global $wpdb;
             $stored_nav_state_json = '{}';
         }
 
+        $account_manager_toolbar_links = [];
         $account_manager_workspace_status = 'Loading live counts...';
         $account_manager_nav_context = [];
         $account_manager_nav_badges = [];
         $account_manager_task_panel_payload = [];
         if ($is_account_manager_workspace) {
+            $current_status_filter = sanitize_key((string) ($_GET['cmn_status'] ?? 'all'));
             $account_manager_nav_context = (array) $this->get_account_manager_nav_context_snapshot($user_id);
             $account_manager_nav_badges = $this->get_account_manager_nav_badge_counts($user_id);
             $account_manager_task_panel_payload = $this->get_account_manager_task_panel_payload($user_id, 12, $this->get_current_url());
+            $account_manager_toolbar_links = [
+                [
+                    'label' => 'Clients',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'client'),
+                ],
+                [
+                    'label' => 'Leads',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'lead'),
+                ],
+                [
+                    'label' => 'Candidates',
+                    'url' => add_query_arg(['view' => 'candidates', 'cmn_status' => false, 'cmn_doc_review' => false], $portal_url),
+                    'is_active' => ($current_view === 'candidates'),
+                ],
+                [
+                    'label' => 'Pipeline',
+                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'leads'),
+                ],
+            ];
             $updated_label = sanitize_text_field((string) ($account_manager_nav_context['updated_label'] ?? ''));
             $account_manager_workspace_status = $updated_label !== '' ? ('Updated ' . $updated_label) : 'Updated just now';
         }
@@ -22274,6 +22298,7 @@ global $wpdb;
             $icon_key = sanitize_key((string) $icon_key);
             $icons = [
                 'panel' => '<rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path>',
+                'menu' => '<path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path>',
                 'edit' => '<path d="M12 20h9"></path><path d="m16.5 3.5 4 4L8 20l-5 1 1-5z"></path>',
                 'dashboard' => '<rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect>',
                 'clients' => '<rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 5v14"></path><path d="M12 9h5"></path><path d="M12 13h5"></path>',
@@ -22354,6 +22379,15 @@ global $wpdb;
             <div class="cmn-portal-topbar<?php echo $is_account_manager_workspace ? ' cmn-portal-topbar--am-crm' : ''; ?>">
                 <div class="cmn-topbar-left">
                     <a class="cmn-topbar-brand-link" href="<?php echo esc_url($dashboard_url); ?>"><?php echo $this->render_portal_branding(); ?></a>
+                    <?php if ($is_account_manager_workspace && $account_manager_toolbar_links) : ?>
+                        <nav class="cmn-am-topbar-links" aria-label="Account manager quick links">
+                            <?php foreach ($account_manager_toolbar_links as $toolbar_link) : ?>
+                                <a class="cmn-am-topbar-link<?php echo !empty($toolbar_link['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($toolbar_link['url'] ?? $portal_url)); ?>">
+                                    <?php echo esc_html((string) ($toolbar_link['label'] ?? 'Open')); ?>
+                                </a>
+                            <?php endforeach; ?>
+                        </nav>
+                    <?php endif; ?>
                 </div>
                 <div class="cmn-topbar-right">
                     <?php if ($is_account_manager_workspace) : ?>
@@ -22376,9 +22410,9 @@ global $wpdb;
                 <aside class="cmn-school-nav cmn-staff-nav<?php echo $is_account_manager_workspace ? ' is-account-manager-nav' : ''; ?>" data-staff-nav data-user-id="<?php echo esc_attr((string) $user_id); ?>" data-nav-editable="<?php echo $show_nav_edit_controls ? '1' : '0'; ?>" data-nav-state="<?php echo esc_attr($stored_nav_state_json); ?>" data-nav-order="<?php echo esc_attr($stored_nav_order_json); ?>" data-nav-order-default="<?php echo esc_attr($default_nav_order_json); ?>">
                     <div class="cmn-staff-nav-header">
                         <div class="cmn-staff-nav-header-row">
-                            <button type="button" class="cmn-staff-nav-minimize" data-staff-nav-minimize aria-pressed="false" data-tooltip="Minimise sidebar">
-                                <?php echo $render_staff_nav_icon('panel'); ?>
-                                <span class="cmn-school-nav-label">Minimise</span>
+                            <button type="button" class="cmn-staff-nav-minimize" data-staff-nav-minimize aria-pressed="false" data-tooltip="<?php echo esc_attr($is_account_manager_workspace ? 'Open menu' : 'Minimise sidebar'); ?>">
+                                <?php echo $render_staff_nav_icon($is_account_manager_workspace ? 'menu' : 'panel'); ?>
+                                <span class="cmn-school-nav-label"><?php echo esc_html($is_account_manager_workspace ? 'Menu' : 'Minimise'); ?></span>
                             </button>
                             <?php if ($show_nav_edit_controls) : ?>
                                 <button type="button" class="cmn-staff-nav-edit-toggle" data-staff-nav-edit-toggle aria-pressed="false" aria-label="Toggle edit options" data-tooltip="Toggle edit options">
