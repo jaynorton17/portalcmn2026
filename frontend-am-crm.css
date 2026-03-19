@@ -2863,17 +2863,17 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card:foc
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card--week {
   min-height: 102px;
   align-items: flex-start;
-  border-color: rgba(121, 165, 147, 0.2);
-  background: linear-gradient(180deg, rgba(239, 248, 243, 0.98) 0%, rgba(232, 244, 238, 0.95) 100%);
-  box-shadow: 0 16px 30px rgba(48, 86, 72, 0.08);
+  border-color: rgba(133, 143, 190, 0.14);
+  background: var(--cmn-am-ref-surface);
+  box-shadow: var(--cmn-am-ref-shadow);
   cursor: default;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card--week:hover,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card--week:focus-visible {
   transform: none;
-  box-shadow: 0 16px 30px rgba(48, 86, 72, 0.08);
-  border-color: rgba(121, 165, 147, 0.2);
+  box-shadow: var(--cmn-am-ref-shadow);
+  border-color: rgba(133, 143, 190, 0.14);
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-lilac::before,
@@ -2927,8 +2927,44 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.is-
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-card.cmn-am-reference-metric-card--week .cmn-am-reference-metric-icon {
-  color: #2e7f64;
-  background: linear-gradient(180deg, rgba(219, 239, 229, 0.98), rgba(206, 232, 221, 0.96));
+  color: #6d7daa;
+  background: linear-gradient(180deg, rgba(242, 244, 255, 0.98), rgba(233, 236, 255, 0.94));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row--week .cmn-am-reference-metric-card--week:nth-child(1)::before {
+  background: #f0ad4e;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row--week .cmn-am-reference-metric-card--week:nth-child(2)::before {
+  background: #ef6f6c;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row--week .cmn-am-reference-metric-card--week:nth-child(3)::before {
+  background: #27b7b0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row--week .cmn-am-reference-metric-card--week:nth-child(4)::before {
+  background: #d97bb8;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row--week .cmn-am-reference-metric-card--week:nth-child(1) .cmn-am-reference-metric-icon {
+  color: #b87411;
+  background: linear-gradient(180deg, rgba(255, 244, 221, 0.98), rgba(255, 235, 196, 0.96));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row--week .cmn-am-reference-metric-card--week:nth-child(2) .cmn-am-reference-metric-icon {
+  color: #ce4f4c;
+  background: linear-gradient(180deg, rgba(255, 233, 231, 0.98), rgba(255, 218, 215, 0.96));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row--week .cmn-am-reference-metric-card--week:nth-child(3) .cmn-am-reference-metric-icon {
+  color: #1f918b;
+  background: linear-gradient(180deg, rgba(225, 249, 247, 0.98), rgba(206, 241, 238, 0.96));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-row--week .cmn-am-reference-metric-card--week:nth-child(4) .cmn-am-reference-metric-icon {
+  color: #bb5ea0;
+  background: linear-gradient(180deg, rgba(252, 232, 245, 0.98), rgba(245, 214, 234, 0.96));
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-reference-metric-icon svg,
