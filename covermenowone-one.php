@@ -22259,6 +22259,7 @@ global $wpdb;
         }
 
         $account_manager_toolbar_links = [];
+        $account_manager_sidebar_shortcuts = [];
         $account_manager_workspace_status = 'Loading live counts...';
         $account_manager_nav_context = [];
         $account_manager_nav_badges = [];
@@ -22276,8 +22277,8 @@ global $wpdb;
                 ],
                 [
                     'label' => 'Leads',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'lead'),
+                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'leads' || ($current_view === 'schools' && $current_status_filter === 'lead')),
                 ],
                 [
                     'label' => 'Candidates',
@@ -22288,6 +22289,26 @@ global $wpdb;
                     'label' => 'Pipeline',
                     'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
                     'is_active' => ($current_view === 'leads'),
+                ],
+            ];
+            $account_manager_sidebar_shortcuts = [
+                [
+                    'label' => 'Clients',
+                    'icon_key' => 'clients',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'client'),
+                ],
+                [
+                    'label' => 'Leads',
+                    'icon_key' => 'leads',
+                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'leads' || ($current_view === 'schools' && $current_status_filter === 'lead')),
+                ],
+                [
+                    'label' => 'Candidates',
+                    'icon_key' => 'candidates',
+                    'url' => add_query_arg(['view' => 'candidates', 'cmn_status' => false, 'cmn_doc_review' => false], $portal_url),
+                    'is_active' => ($current_view === 'candidates'),
                 ],
             ];
             $updated_label = sanitize_text_field((string) ($account_manager_nav_context['updated_label'] ?? ''));
@@ -22454,6 +22475,12 @@ global $wpdb;
                                         <span class="cmn-nav-badge" data-nav-badge-key="task_follow_up"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges['task_follow_up'])); ?></span>
                                     <?php endif; ?>
                                 </button>
+                                <?php foreach ($account_manager_sidebar_shortcuts as $shortcut_link) : ?>
+                                    <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo !empty($shortcut_link['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($shortcut_link['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr((string) ($shortcut_link['label'] ?? 'Open')); ?>">
+                                        <?php echo $render_staff_nav_icon((string) ($shortcut_link['icon_key'] ?? 'schools')); ?>
+                                        <span class="cmn-school-nav-label"><?php echo esc_html((string) ($shortcut_link['label'] ?? 'Open')); ?></span>
+                                    </a>
+                                <?php endforeach; ?>
                                 <div class="<?php echo $account_manager_nav_context ? '' : 'is-loading '; ?>cmn-am-nav-context-anchor" data-am-nav-context hidden aria-live="polite" aria-busy="<?php echo $account_manager_nav_context ? 'false' : 'true'; ?>">
                                     <p class="cmn-am-nav-workspace-status" data-am-nav-context-status hidden><?php echo esc_html($account_manager_workspace_status); ?></p>
                                 </div>
