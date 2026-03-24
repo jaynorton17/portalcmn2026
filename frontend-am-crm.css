@@ -4842,3 +4842,437 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-filters > :is(button, a) {
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-feedback:empty {
   display: none;
 }
+
+/* Fill white-layout gaps for the remaining AM-only workspace screens. */
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-panel-card, .cmn-dashboard-card) {
+  border: 1px solid var(--cmn-am-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.94) 100%);
+  box-shadow: var(--cmn-am-shadow);
+  color: var(--cmn-am-text);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-panel-card, .cmn-dashboard-card) :is(h2, h3, h4) {
+  color: var(--cmn-am-text);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-panel-card, .cmn-dashboard-card, .cmn-request-panel, .cmn-support-reply) .cmn-form-grid,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-settings-grid,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-system-health-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-portal-grid {
+  align-items: start;
+  gap: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-actions-grid,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-form-actions,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-settings-actions,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-actions,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-list-actions,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-centre-subnav-links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-actions > :is(input[type="text"], input[type="email"], input[type="number"], input[type="search"], select) {
+  flex: 1 1 220px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-system-health-summary-grid > div,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-settings-helper,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-test-results,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-preview,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-table-wrap,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-tag-picker,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-request-convert,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-request-note,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__item {
+  border-radius: 18px;
+  border: 1px solid var(--cmn-am-border);
+  background: var(--cmn-am-surface-soft);
+  color: var(--cmn-am-text);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-system-health-summary-grid > div {
+  min-height: 108px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 16px 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-system-health-summary-grid > div > span {
+  color: var(--cmn-am-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-system-health-summary-grid > div > strong {
+  color: var(--cmn-am-text);
+  font-size: clamp(1.5rem, 2.2vw, 2rem);
+  line-height: 1;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-primary, .cmn-ghost, .cmn-button-link) {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-btn-mini {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-primary {
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-primary:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-primary:focus-visible,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-ghost:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-ghost:focus-visible,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-button-link:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-button-link:focus-visible {
+  transform: translateY(-1px);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-ghost,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-button-link {
+  border: 1px solid var(--cmn-am-border);
+  background: rgba(255, 255, 255, 0.92);
+  color: #1e293b;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-ghost.is-active,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-button-link.is-active {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+  color: #1d4ed8;
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.1);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-table-scroll,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-modal-content {
+  border: 1px solid var(--cmn-am-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.96) 100%);
+  box-shadow: var(--cmn-am-shadow);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-table, .cmn-approval-table, .cmn-request-table) {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid var(--cmn-am-border);
+  border-radius: 20px;
+  background: var(--cmn-am-surface);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-table, .cmn-approval-table, .cmn-request-table) thead th {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--cmn-am-border);
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  color: var(--cmn-am-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-table, .cmn-approval-table, .cmn-request-table) tbody td {
+  padding: 16px;
+  border-top: 1px solid rgba(226, 232, 240, 0.78);
+  color: var(--cmn-am-text);
+  vertical-align: top;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-table, .cmn-approval-table, .cmn-request-table) tbody tr:first-child td {
+  border-top: 0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-table, .cmn-approval-table, .cmn-request-table) tbody tr:hover td {
+  background: rgba(248, 250, 252, 0.9);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-inline-check,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-request-convert,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-request-note {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  color: #334155;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-request-convert small,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-request-note small,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-settings-helper .cmn-muted {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new {
+  margin-bottom: 16px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  border: 1px solid var(--cmn-am-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.94) 100%);
+  box-shadow: var(--cmn-am-shadow);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__header,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__list,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__highlights {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__item {
+  padding: 14px 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__version {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.98);
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__highlights {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-whats-new__highlights li::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  margin-right: 10px;
+  border-radius: 999px;
+  background: #2563eb;
+  vertical-align: middle;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-root {
+  display: grid;
+  gap: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border-radius: 22px;
+  border: 1px solid var(--cmn-am-border);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-marketing-actions {
+  margin-top: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-marketing-preview, .cmn-marketing-table-wrap, .cmn-marketing-tag-picker) {
+  padding: 14px 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-centre-subnav {
+  padding: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-main {
+  display: grid;
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-sidebar {
+  position: sticky;
+  top: 24px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-editor,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-preview,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-test-console,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-test-results {
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--cmn-am-border);
+  background: var(--cmn-am-surface-soft);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-test-results {
+  min-height: 56px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-editor :is(.wp-editor-wrap, .wp-editor-container, .mce-tinymce) {
+  border-color: var(--cmn-am-border-strong);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-tag-insert {
+  min-height: 34px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm [data-template-preview-html],
+body.cmn-portal-page .cmn-portal-light--am-crm [data-template-preview-text] {
+  margin-top: 10px;
+  border-radius: 16px;
+  border: 1px solid var(--cmn-am-border);
+  background: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm [data-template-preview-html] {
+  padding: 14px 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm [data-template-preview-text] {
+  padding: 14px 16px;
+  white-space: pre-wrap;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-lounge-card {
+  display: grid;
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-lounge-messages {
+  min-height: 320px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid var(--cmn-am-border);
+  background: var(--cmn-am-surface-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-lounge-reply {
+  display: grid;
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-request-form {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid var(--cmn-am-border);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-register-success, .cmn-register-warning, .cmn-register-error) {
+  border-radius: 16px;
+  border: 1px solid var(--cmn-am-border);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-register-success {
+  border-color: rgba(34, 197, 94, 0.22);
+  background: rgba(240, 253, 244, 0.96);
+  color: #166534;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-register-warning {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: rgba(255, 251, 235, 0.97);
+  color: #9a3412;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-register-error {
+  border-color: rgba(239, 68, 68, 0.22);
+  background: rgba(254, 242, 242, 0.97);
+  color: #b91c1c;
+}
+
+@media (max-width: 1100px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-email-template-sidebar {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-form-actions, .cmn-settings-actions, .cmn-marketing-actions, .cmn-email-centre-subnav-links) {
+    align-items: stretch;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-primary, .cmn-ghost, .cmn-button-link) {
+    width: 100%;
+  }
+}
