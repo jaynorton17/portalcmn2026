@@ -23017,6 +23017,21 @@ body.cmn-portal-page .cmn-portal-light--am-crm {
   --cmn-am-danger-soft: #feecec;
   --cmn-am-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
   --cmn-am-shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.06);
+  --cmn-panel: #ffffff;
+  --cmn-panel-strong: #ffffff;
+  --cmn-border: #d8e1ee;
+  --cmn-text: #142033;
+  --cmn-text-primary: #142033;
+  --cmn-muted: #607089;
+  --cmn-unified-surface: #ffffff;
+  --cmn-unified-surface-alt: #f8fbff;
+  --cmn-unified-border: rgba(216, 225, 238, 0.96);
+  --cmn-unified-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  --cmn-glass-panel-bg: rgba(255, 255, 255, 0.98);
+  --cmn-glass-panel-border: rgba(216, 225, 238, 0.96);
+  --cmn-glass-panel-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  --cmn-glass-text: #142033;
+  --cmn-glass-muted: #607089;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm,
@@ -23190,6 +23205,145 @@ body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-dashboard-hero, .cmn-crm
   background: var(--cmn-am-surface) !important;
   background-image: none !important;
   border: 1px solid var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-dashboard-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-candidates-crm-shell,
+  .cmn-support-tile,
+  .cmn-support-ticket,
+  .cmn-marketing-tabs,
+  .cmn-marketing-preview,
+  .cmn-marketing-table-wrap,
+  .cmn-marketing-tag-picker,
+  .cmn-email-centre-subnav,
+  .cmn-email-template-main,
+  .cmn-email-template-sidebar,
+  .cmn-email-template-editor,
+  .cmn-email-template-preview,
+  .cmn-email-test-console,
+  .cmn-email-test-results
+) {
+  color: var(--cmn-am-text) !important;
+  background: var(--cmn-am-surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-dashboard-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-candidates-crm-shell,
+  .cmn-support-tile,
+  .cmn-support-ticket,
+  .cmn-marketing-tabs,
+  .cmn-marketing-preview,
+  .cmn-marketing-table-wrap,
+  .cmn-marketing-tag-picker,
+  .cmn-email-centre-subnav,
+  .cmn-email-template-main,
+  .cmn-email-template-sidebar,
+  .cmn-email-template-editor,
+  .cmn-email-template-preview,
+  .cmn-email-test-console,
+  .cmn-email-test-results
+) :is(h2, h3, h4, h5, strong) {
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-dashboard-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-candidates-crm-shell,
+  .cmn-support-tile,
+  .cmn-support-ticket,
+  .cmn-marketing-tabs,
+  .cmn-marketing-preview,
+  .cmn-marketing-table-wrap,
+  .cmn-marketing-tag-picker,
+  .cmn-email-centre-subnav,
+  .cmn-email-template-main,
+  .cmn-email-template-sidebar,
+  .cmn-email-template-editor,
+  .cmn-email-template-preview,
+  .cmn-email-test-console,
+  .cmn-email-test-results
+) :is(.cmn-muted, small, p, label, span, li) {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-support-tile.is-active, .cmn-support-ticket.is-selected, .cmn-marketing-tabs .cmn-ghost.is-active) {
+  background: var(--cmn-am-primary-soft) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+  color: var(--cmn-am-primary) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-dashboard-card,
+  .cmn-panel-card,
+  .cmn-support-thread,
+  .cmn-support-sidebar,
+  .cmn-candidates-crm-shell,
+  .cmn-email-centre-subnav,
+  .cmn-email-template-main,
+  .cmn-email-template-sidebar,
+  .cmn-email-template-editor,
+  .cmn-email-template-preview,
+  .cmn-email-test-console,
+  .cmn-email-test-results
+):not(.cmn-availability-hero) {
+  background: var(--cmn-am-surface) !important;
+  background-color: var(--cmn-am-surface) !important;
+  background-image: none !important;
+  border-color: var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-support-tile, .cmn-support-ticket, .cmn-marketing-tabs):not(.cmn-am-surface-guard) {
+  background: var(--cmn-am-surface) !important;
+  background-color: var(--cmn-am-surface) !important;
+  background-image: none !important;
+  border-color: var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-tile,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-tile:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-support-tile:focus-visible {
+  background: var(--cmn-am-surface) !important;
+  background-color: var(--cmn-am-surface) !important;
+  background-image: none !important;
+  border-color: var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-support-tile, .cmn-support-ticket):not(.cmn-availability-hero):not(.cmn-live-card):not(.cmn-live-matches) {
+  background: var(--cmn-am-surface) !important;
+  background-color: var(--cmn-am-surface) !important;
+  background-image: none !important;
+  border-color: var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-support-tile, .cmn-support-ticket):not(.cmn-availability-hero):not(.cmn-live-card):not(.cmn-live-matches)::before,
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-support-tile, .cmn-support-ticket):not(.cmn-availability-hero):not(.cmn-live-card):not(.cmn-live-matches)::after {
+  opacity: 0 !important;
+  background: none !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(.cmn-marketing-preview, .cmn-marketing-table-wrap, .cmn-marketing-tag-picker):not(.cmn-am-surface-guard) {
+  background: var(--cmn-am-surface) !important;
+  background-color: var(--cmn-am-surface) !important;
+  background-image: none !important;
+  border-color: var(--cmn-am-border) !important;
   box-shadow: var(--cmn-am-shadow-soft) !important;
 }
 
