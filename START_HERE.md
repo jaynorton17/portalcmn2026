@@ -54,6 +54,7 @@ Always:
 - list the files touched
 - explain why the scope is safe
 - call out any shared file edits explicitly
+- push completed changes to the git repo and deploy them
 
 Never:
 - make silent cross-system changes

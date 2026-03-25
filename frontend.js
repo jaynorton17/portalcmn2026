@@ -13616,6 +13616,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var profileSaveInFlight = false;
     var profileEditSnapshot = '';
     var profilePhotoRoot = document.querySelector('[data-profile-photo-root]');
+    var profileSaveAction = String(candidateProfileRoot.getAttribute("data-profile-save-action") || "cmn_candidate_update_profile");
+    var profilePhotoUploadAction = String(candidateProfileRoot.getAttribute("data-profile-photo-upload-action") || "cmn_candidate_profile_photo_upload");
+    var profilePhotoRemoveAction = String(candidateProfileRoot.getAttribute("data-profile-photo-remove-action") || "cmn_candidate_profile_photo_remove");
+    var profileTargetCandidateId = String(candidateProfileRoot.getAttribute("data-profile-candidate-id") || "");
 
     var setProfileMessage = function (text) {
       var msg = document.querySelector('[data-doc-message]');
@@ -13674,8 +13678,11 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           var fd = new FormData();
-          fd.append('action', 'cmn_candidate_profile_photo_upload');
+          fd.append("action", profilePhotoUploadAction);
           fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+          if (profileTargetCandidateId) {
+            fd.append("candidate_id", profileTargetCandidateId);
+          }
           fd.append('profile_photo', profilePhotoInput.files[0]);
           setProfilePhotoBusy(true);
           setProfilePhotoMessage('Uploading photo...', false);
@@ -13709,8 +13716,11 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           var fd = new FormData();
-          fd.append('action', 'cmn_candidate_profile_photo_remove');
+          fd.append("action", profilePhotoRemoveAction);
           fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+          if (profileTargetCandidateId) {
+            fd.append("candidate_id", profileTargetCandidateId);
+          }
           setProfilePhotoBusy(true);
           setProfilePhotoMessage('Removing photo...', false);
           fetch(window.cmnPortal.ajaxUrl, {
@@ -14022,8 +14032,11 @@ document.addEventListener('DOMContentLoaded', function () {
       refreshProfileGlobalActions('Saving...', false);
 
       var fd = new FormData();
-      fd.append('action', 'cmn_candidate_update_profile');
+      fd.append("action", profileSaveAction);
       fd.append('nonce', window.cmnPortal.candidateProfileNonce);
+      if (profileTargetCandidateId) {
+        fd.append("candidate_id", profileTargetCandidateId);
+      }
 
       var getFieldInput = function (field) {
         return document.querySelector('[data-profile-form] [name="' + field + '"]');

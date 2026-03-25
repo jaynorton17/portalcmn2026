@@ -1100,6 +1100,9 @@ final class CMN_One_Plugin {
         add_action('wp_ajax_cmn_candidate_update_profile', [$this, 'handle_candidate_update_profile']);
         add_action('wp_ajax_cmn_candidate_profile_photo_upload', [$this, 'handle_candidate_profile_photo_upload']);
         add_action('wp_ajax_cmn_candidate_profile_photo_remove', [$this, 'handle_candidate_profile_photo_remove']);
+        add_action('wp_ajax_cmn_account_manager_update_candidate_profile', [$this, 'handle_account_manager_update_candidate_profile']);
+        add_action('wp_ajax_cmn_account_manager_candidate_profile_photo_upload', [$this, 'handle_account_manager_candidate_profile_photo_upload']);
+        add_action('wp_ajax_cmn_account_manager_candidate_profile_photo_remove', [$this, 'handle_account_manager_candidate_profile_photo_remove']);
         add_action('wp_ajax_cmn_candidate_contact_card_save', [$this, 'handle_candidate_contact_card_save']);
         add_action('wp_ajax_cmn_candidate_learning_opt_in', [$this, 'handle_candidate_learning_opt_in']);
         add_action('wp_ajax_cmn_candidate_learning_complete_course', [$this, 'handle_candidate_learning_complete_course']);
@@ -47361,6 +47364,119 @@ global $wpdb;
             <?php
         };
 
+        $profile_photo_state = $this->get_candidate_profile_photo_state($candidate_id, $candidate_user_id);
+        $profile_photo_url = (string) ($profile_photo_state["url"] ?? $this->get_default_profile_photo_url());
+        $has_profile_photo = !empty($profile_photo_state["has_photo"]);
+        $profile_photo_fallback = $this->get_default_profile_photo_url();
+        $profile_nationality = (string) get_post_meta($candidate_id, "cmn_nationality", true);
+        if ($profile_nationality === "" && $candidate_user_id > 0) {
+            $profile_nationality = (string) get_user_meta($candidate_user_id, "cmn_nationality", true);
+        }
+        $profile_location = (string) $location;
+        $profile_postcode = (string) $postcode;
+        $profile_house_number = (string) get_post_meta($candidate_id, "cmn_house_number", true);
+        $profile_address_line1 = (string) get_post_meta($candidate_id, "cmn_address_line1", true);
+        $profile_address_line2 = (string) get_post_meta($candidate_id, "cmn_address_line2", true);
+        $profile_address_line3 = (string) get_post_meta($candidate_id, "cmn_address_line3", true);
+        $profile_town = (string) get_post_meta($candidate_id, "cmn_town", true);
+        $profile_county = (string) get_post_meta($candidate_id, "cmn_county", true);
+        $profile_notes = (string) get_post_meta($candidate_id, "cmn_notes", true);
+        $travel_distance = (string) $travel_radius;
+        $role_label = $primary_role_label !== "" ? $primary_role_label : ($role_type !== "" ? $role_type : "Not set");
+        $driving_licence = strtolower((string) get_post_meta($candidate_id, "cmn_driving_licence", true));
+        $car_owner = strtolower((string) get_post_meta($candidate_id, "cmn_car_owner", true));
+        $no_dbs = (string) get_post_meta($candidate_id, "cmn_no_dbs", true);
+        $dbs_update_service = strtolower((string) get_post_meta($candidate_id, "cmn_dbs_update_service", true));
+        if ($dbs_update_service === "" && $candidate_user_id > 0) {
+            $dbs_update_service = strtolower((string) get_user_meta($candidate_user_id, "cmn_dbs_update_service", true));
+        }
+        $availability_days = array_values(array_filter(array_map("sanitize_text_field", (array) $availability_days)));
+        $yes_no_map = ["yes" => "Yes", "no" => "No"];
+        $driving_licence_label = $yes_no_map[$driving_licence] ?? "Not set";
+        $car_owner_label = $yes_no_map[$car_owner] ?? "Not set";
+        $dbs_update_label = $yes_no_map[$dbs_update_service] ?? "Not set";
+        $profile_address_parts = array_filter([
+            $profile_house_number,
+            $profile_address_line1,
+            $profile_address_line2,
+            $profile_address_line3,
+            $profile_town,
+            $profile_county,
+            $profile_postcode,
+        ]);
+        $profile_address_display = $profile_address_parts ? implode(", ", $profile_address_parts) : "Not set";
+        $doc_id = (array) ($docs["id"]["status"] ?? []);
+        $doc_dbs = (array) ($docs["dbs"]["status"] ?? []);
+        $doc_cv = (array) ($docs["cv"]["status"] ?? []);
+        $has_dbs_label = (
+            !empty($doc_dbs["uploaded"])
+            && (string) ($doc_dbs["review_status"] ?? "") === "approved"
+        ) ? "Yes" : ($no_dbs === "1" ? "No" : "Not set");
+        $candidate_detail_url = add_query_arg(["view" => "candidates", "candidate_id" => $candidate_id], $portal_url);
+        if ($is_restricted_am_workspace) {
+            return $this->render_account_manager_candidate_profile_hub([
+                "candidate_id" => $candidate_id,
+                "candidate_user_id" => $candidate_user_id,
+                "portal_url" => $portal_url,
+                "back_url" => $back_url,
+                "candidate_detail_url" => $candidate_detail_url,
+                "profile_name" => $profile_name,
+                "first_name" => $first_name,
+                "last_name" => $last_name,
+                "profile_email" => $profile_email,
+                "profile_phone" => $profile_phone,
+                "profile_nationality" => $profile_nationality,
+                "profile_location" => $profile_location,
+                "profile_postcode" => $profile_postcode,
+                "profile_house_number" => $profile_house_number,
+                "profile_address_line1" => $profile_address_line1,
+                "profile_address_line2" => $profile_address_line2,
+                "profile_address_line3" => $profile_address_line3,
+                "profile_town" => $profile_town,
+                "profile_county" => $profile_county,
+                "profile_notes" => $profile_notes,
+                "profile_photo_url" => $profile_photo_url,
+                "has_profile_photo" => $has_profile_photo,
+                "profile_photo_fallback" => $profile_photo_fallback,
+                "role_label" => $role_label,
+                "travel_distance" => $travel_distance,
+                "driving_licence" => $driving_licence,
+                "car_owner" => $car_owner,
+                "qts_status" => $qts_status,
+                "no_dbs" => $no_dbs,
+                "dbs_update_service" => $dbs_update_service,
+                "driving_licence_label" => $driving_licence_label,
+                "car_owner_label" => $car_owner_label,
+                "qts_status_label" => $qts_status_label,
+                "dbs_update_label" => $dbs_update_label,
+                "has_dbs_label" => $has_dbs_label,
+                "availability_days" => $availability_days,
+                "profile_address_display" => $profile_address_display,
+                "docs" => $docs,
+                "doc_id" => $doc_id,
+                "doc_dbs" => $doc_dbs,
+                "doc_cv" => $doc_cv,
+                "doc_summary" => $doc_summary,
+                "compliance_status_payload" => $compliance_status_payload,
+                "completion_percent" => $completion_percent,
+                "completion_missing_items" => $completion_missing_items,
+                "status_value" => $status_value,
+                "feedback_risk_tag" => $feedback_risk_tag,
+                "feedback_summary" => $feedback_summary,
+                "candidate_booking_context" => $candidate_booking_context,
+                "candidate_issue_snapshot" => $candidate_issue_snapshot,
+                "candidate_context_schools" => $candidate_context_schools,
+                "candidate_recent_booking_rows" => $candidate_recent_booking_rows,
+                "candidate_blockers" => $candidate_blockers,
+                "candidate_risk_signals" => $candidate_risk_signals,
+                "candidate_issue_note" => $candidate_issue_note,
+                "latest_internal_note" => $latest_internal_note,
+                "internal_notes" => $internal_notes,
+                "doc_review_message" => $doc_review_message,
+                "internal_note_message" => $internal_note_message,
+            ]);
+        }
+
         ob_start();
         ?>
         <header class="cmn-school-header">
@@ -48422,6 +48538,116 @@ global $wpdb;
             $candidate_risk_signals = array_values(array_unique(array_filter($candidate_risk_signals)));
         }
 
+        $profile_photo_state = $this->get_candidate_profile_photo_state($candidate_id, $candidate_user_id);
+        $profile_photo_url = (string) ($profile_photo_state["url"] ?? $this->get_default_profile_photo_url());
+        $has_profile_photo = !empty($profile_photo_state["has_photo"]);
+        $profile_photo_fallback = $this->get_default_profile_photo_url();
+        $profile_nationality = (string) get_post_meta($candidate_id, "cmn_nationality", true);
+        if ($profile_nationality === "" && $candidate_user_id > 0) {
+            $profile_nationality = (string) get_user_meta($candidate_user_id, "cmn_nationality", true);
+        }
+        $profile_location = (string) $location;
+        $profile_postcode = (string) $postcode;
+        $profile_house_number = (string) get_post_meta($candidate_id, "cmn_house_number", true);
+        $profile_address_line1 = (string) get_post_meta($candidate_id, "cmn_address_line1", true);
+        $profile_address_line2 = (string) get_post_meta($candidate_id, "cmn_address_line2", true);
+        $profile_address_line3 = (string) get_post_meta($candidate_id, "cmn_address_line3", true);
+        $profile_town = (string) get_post_meta($candidate_id, "cmn_town", true);
+        $profile_county = (string) get_post_meta($candidate_id, "cmn_county", true);
+        $profile_notes = (string) get_post_meta($candidate_id, "cmn_notes", true);
+        $travel_distance = (string) $travel_radius;
+        $role_label = $primary_role_label !== "" ? $primary_role_label : ($role_type !== "" ? $role_type : "Not set");
+        $driving_licence = strtolower((string) get_post_meta($candidate_id, "cmn_driving_licence", true));
+        $car_owner = strtolower((string) get_post_meta($candidate_id, "cmn_car_owner", true));
+        $no_dbs = (string) get_post_meta($candidate_id, "cmn_no_dbs", true);
+        $dbs_update_service = strtolower((string) get_post_meta($candidate_id, "cmn_dbs_update_service", true));
+        if ($dbs_update_service === "" && $candidate_user_id > 0) {
+            $dbs_update_service = strtolower((string) get_user_meta($candidate_user_id, "cmn_dbs_update_service", true));
+        }
+        $availability_days = array_values(array_filter(array_map("sanitize_text_field", (array) $availability_days)));
+        $yes_no_map = ["yes" => "Yes", "no" => "No"];
+        $driving_licence_label = $yes_no_map[$driving_licence] ?? "Not set";
+        $car_owner_label = $yes_no_map[$car_owner] ?? "Not set";
+        $dbs_update_label = $yes_no_map[$dbs_update_service] ?? "Not set";
+        $profile_address_parts = array_filter([
+            $profile_house_number,
+            $profile_address_line1,
+            $profile_address_line2,
+            $profile_address_line3,
+            $profile_town,
+            $profile_county,
+            $profile_postcode,
+        ]);
+        $profile_address_display = $profile_address_parts ? implode(", ", $profile_address_parts) : "Not set";
+        $doc_id = (array) ($docs["id"]["status"] ?? []);
+        $doc_dbs = (array) ($docs["dbs"]["status"] ?? []);
+        $doc_cv = (array) ($docs["cv"]["status"] ?? []);
+        $has_dbs_label = (!empty($doc_dbs["uploaded"]) && (string) ($doc_dbs["review_status"] ?? "") === "approved") ? "Yes" : ($no_dbs === "1" ? "No" : "Not set");
+        $candidate_detail_url = add_query_arg(["view" => "candidates", "candidate_id" => $candidate_id], $portal_url);
+        if ($is_restricted_am_workspace) {
+            return $this->render_account_manager_candidate_profile_hub([
+                "candidate_id" => $candidate_id,
+                "candidate_user_id" => $candidate_user_id,
+                "portal_url" => $portal_url,
+                "back_url" => $back_url,
+                "candidate_detail_url" => $candidate_detail_url,
+                "profile_name" => $profile_name,
+                "first_name" => $first_name,
+                "last_name" => $last_name,
+                "profile_email" => $profile_email,
+                "profile_phone" => $profile_phone,
+                "profile_nationality" => $profile_nationality,
+                "profile_location" => $profile_location,
+                "profile_postcode" => $profile_postcode,
+                "profile_house_number" => $profile_house_number,
+                "profile_address_line1" => $profile_address_line1,
+                "profile_address_line2" => $profile_address_line2,
+                "profile_address_line3" => $profile_address_line3,
+                "profile_town" => $profile_town,
+                "profile_county" => $profile_county,
+                "profile_notes" => $profile_notes,
+                "profile_photo_url" => $profile_photo_url,
+                "has_profile_photo" => $has_profile_photo,
+                "profile_photo_fallback" => $profile_photo_fallback,
+                "role_label" => $role_label,
+                "travel_distance" => $travel_distance,
+                "driving_licence" => $driving_licence,
+                "car_owner" => $car_owner,
+                "qts_status" => $qts_status,
+                "no_dbs" => $no_dbs,
+                "dbs_update_service" => $dbs_update_service,
+                "driving_licence_label" => $driving_licence_label,
+                "car_owner_label" => $car_owner_label,
+                "qts_status_label" => $qts_status_label,
+                "dbs_update_label" => $dbs_update_label,
+                "has_dbs_label" => $has_dbs_label,
+                "availability_days" => $availability_days,
+                "profile_address_display" => $profile_address_display,
+                "docs" => $docs,
+                "doc_id" => $doc_id,
+                "doc_dbs" => $doc_dbs,
+                "doc_cv" => $doc_cv,
+                "doc_summary" => $doc_summary,
+                "compliance_status_payload" => $compliance_status_payload,
+                "completion_percent" => $completion_percent,
+                "completion_missing_items" => $completion_missing_items,
+                "status_value" => $status_value,
+                "feedback_risk_tag" => $feedback_risk_tag,
+                "feedback_summary" => $feedback_summary,
+                "candidate_booking_context" => $candidate_booking_context,
+                "candidate_issue_snapshot" => $candidate_issue_snapshot,
+                "candidate_context_schools" => $candidate_context_schools,
+                "candidate_recent_booking_rows" => $candidate_recent_booking_rows,
+                "candidate_blockers" => $candidate_blockers,
+                "candidate_risk_signals" => $candidate_risk_signals,
+                "candidate_issue_note" => $candidate_issue_note,
+                "latest_internal_note" => $latest_internal_note,
+                "internal_notes" => $internal_notes,
+                "doc_review_message" => $doc_review_message,
+                "internal_note_message" => $internal_note_message,
+            ]);
+        }
+
         ob_start();
         ?>
         <header class="cmn-school-header">
@@ -48911,6 +49137,211 @@ global $wpdb;
                 </div>
             <?php endif; ?>
         </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    private function render_account_manager_candidate_profile_hub(array $payload) {
+        $candidate_id = (int) ($payload["candidate_id"] ?? 0);
+        $candidate_user_id = (int) ($payload["candidate_user_id"] ?? 0);
+        $portal_url = (string) ($payload["portal_url"] ?? $this->get_portal_base_url());
+        $back_url = (string) ($payload["back_url"] ?? $portal_url);
+        $candidate_detail_url = (string) ($payload["candidate_detail_url"] ?? add_query_arg(["view" => "candidates", "candidate_id" => $candidate_id], $portal_url));
+        $profile_name = sanitize_text_field((string) ($payload["profile_name"] ?? "Candidate"));
+        $first_name = sanitize_text_field((string) ($payload["first_name"] ?? ""));
+        $last_name = sanitize_text_field((string) ($payload["last_name"] ?? ""));
+        $profile_email = sanitize_email((string) ($payload["profile_email"] ?? ""));
+        $profile_phone = sanitize_text_field((string) ($payload["profile_phone"] ?? ""));
+        $profile_nationality = sanitize_text_field((string) ($payload["profile_nationality"] ?? ""));
+        $profile_location = sanitize_text_field((string) ($payload["profile_location"] ?? ""));
+        $profile_postcode = sanitize_text_field((string) ($payload["profile_postcode"] ?? ""));
+        $profile_house_number = sanitize_text_field((string) ($payload["profile_house_number"] ?? ""));
+        $profile_address_line1 = sanitize_text_field((string) ($payload["profile_address_line1"] ?? ""));
+        $profile_address_line2 = sanitize_text_field((string) ($payload["profile_address_line2"] ?? ""));
+        $profile_address_line3 = sanitize_text_field((string) ($payload["profile_address_line3"] ?? ""));
+        $profile_town = sanitize_text_field((string) ($payload["profile_town"] ?? ""));
+        $profile_county = sanitize_text_field((string) ($payload["profile_county"] ?? ""));
+        $profile_notes = sanitize_textarea_field((string) ($payload["profile_notes"] ?? ""));
+        $profile_photo_url = esc_url_raw((string) ($payload["profile_photo_url"] ?? $this->get_default_profile_photo_url()));
+        $profile_photo_fallback = esc_url_raw((string) ($payload["profile_photo_fallback"] ?? $this->get_default_profile_photo_url()));
+        $has_profile_photo = !empty($payload["has_profile_photo"]);
+        $role_label = sanitize_text_field((string) ($payload["role_label"] ?? ""));
+        $travel_distance = sanitize_text_field((string) ($payload["travel_distance"] ?? ""));
+        $driving_licence = sanitize_key((string) ($payload["driving_licence"] ?? ""));
+        $car_owner = sanitize_key((string) ($payload["car_owner"] ?? ""));
+        $qts_status = sanitize_key((string) ($payload["qts_status"] ?? ""));
+        $no_dbs = (string) ($payload["no_dbs"] ?? "0");
+        $dbs_update_service = sanitize_key((string) ($payload["dbs_update_service"] ?? ""));
+        $driving_licence_label = sanitize_text_field((string) ($payload["driving_licence_label"] ?? "Not set"));
+        $car_owner_label = sanitize_text_field((string) ($payload["car_owner_label"] ?? "Not set"));
+        $qts_status_label = sanitize_text_field((string) ($payload["qts_status_label"] ?? "Not set"));
+        $dbs_update_label = sanitize_text_field((string) ($payload["dbs_update_label"] ?? "Not set"));
+        $has_dbs_label = sanitize_text_field((string) ($payload["has_dbs_label"] ?? "Not set"));
+        $availability_days = array_values(array_filter(array_map("sanitize_text_field", (array) ($payload["availability_days"] ?? []))));
+        $profile_address_display = sanitize_text_field((string) ($payload["profile_address_display"] ?? ""));
+        $completion_percent = max(0, min(100, (int) ($payload["completion_percent"] ?? 0)));
+        $completion_missing_items = array_values(array_filter(array_map("sanitize_text_field", (array) ($payload["completion_missing_items"] ?? []))));
+        $doc_summary = (array) ($payload["doc_summary"] ?? []);
+        $docs = array_filter((array) ($payload["docs"] ?? []), "is_array");
+        $compliance_status_payload = (array) ($payload["compliance_status_payload"] ?? []);
+        $candidate_booking_context = (array) ($payload["candidate_booking_context"] ?? []);
+        $candidate_issue_snapshot = (array) ($payload["candidate_issue_snapshot"] ?? []);
+        $candidate_blockers = array_values(array_filter(array_map("sanitize_text_field", (array) ($payload["candidate_blockers"] ?? []))));
+        $candidate_risk_signals = array_values(array_filter(array_map("sanitize_text_field", (array) ($payload["candidate_risk_signals"] ?? []))));
+        $candidate_issue_note = sanitize_text_field((string) ($payload["candidate_issue_note"] ?? ""));
+        $internal_notes = array_values(array_filter((array) ($payload["internal_notes"] ?? []), "is_array"));
+        $doc_review_message = sanitize_text_field((string) ($payload["doc_review_message"] ?? ""));
+        $internal_note_message = sanitize_text_field((string) ($payload["internal_note_message"] ?? ""));
+        $profile_full_name = trim($first_name . " " . $last_name);
+        if ($profile_full_name === "") {
+            $profile_full_name = $profile_name !== "" ? $profile_name : "Candidate";
+        }
+        if ($role_label === "") {
+            $role_label = "Not set";
+        }
+        if ($profile_photo_url === "") {
+            $profile_photo_url = $this->get_default_profile_photo_url();
+        }
+        if ($profile_photo_fallback === "") {
+            $profile_photo_fallback = $this->get_default_profile_photo_url();
+        }
+        if ($profile_address_display === "") {
+            $profile_address_display = "Not set";
+        }
+        $travel_display = trim((string) $travel_distance);
+        if ($travel_display === "") {
+            $travel_display = "Not set";
+        } elseif (is_numeric($travel_display)) {
+            $travel_display = rtrim(rtrim(number_format((float) $travel_display, 1, ".", ""), "0"), ".") . " mile radius";
+            if ($profile_location !== "") {
+                $travel_display .= " around " . $profile_location;
+            }
+        }
+        $to_pill = static function ($label, $yes_text = "Yes", $no_text = "No", $unknown_text = "Not set") {
+            $normalized = strtolower(trim((string) $label));
+            if ($normalized === "yes") {
+                return ["class" => "is-yes", "text" => $yes_text];
+            }
+            if ($normalized === "no") {
+                return ["class" => "is-no", "text" => $no_text];
+            }
+            return ["class" => "is-unknown", "text" => $unknown_text];
+        };
+        $driving_pill = $to_pill($driving_licence_label);
+        $car_pill = $to_pill($car_owner_label);
+        $qts_pill = $to_pill($qts_status_label);
+        $dbs_pill = $to_pill($has_dbs_label, "Held", "Not Held", "Not set");
+        $dbs_update_pill = $to_pill($dbs_update_label);
+        $day_badges = [];
+        foreach ($availability_days as $day_name) {
+            $day_badges[] = substr((string) $day_name, 0, 3);
+        }
+        $day_badges = array_values(array_unique(array_filter($day_badges)));
+        $completion_verified = $completion_percent >= 100 && empty($completion_missing_items);
+        $completion_urls = [
+            "personal" => add_query_arg("cmn_profile_focus", "personal", $candidate_detail_url) . "#cmn-profile-personal",
+            "documents" => add_query_arg("cmn_profile_focus", "documents", $candidate_detail_url) . "#cmn-profile-documents",
+        ];
+        $context_note = sanitize_text_field((string) ($candidate_booking_context["context_note"] ?? "Portfolio context is inferred from in-scope schools and bookings."));
+        if ($context_note === "") {
+            $context_note = "Portfolio context is inferred from in-scope schools and bookings.";
+        }
+        $risk_level = sanitize_text_field((string) ($compliance_status_payload["risk_level"] ?? "Medium"));
+        $risk_badge_class = sanitize_html_class((string) ($compliance_status_payload["risk_badge_class"] ?? "is-pending"));
+        $doc_badge_class = sanitize_html_class((string) ($doc_summary["badge_class"] ?? "is-pending"));
+        $doc_badge_label = sanitize_text_field((string) ($doc_summary["badge_label"] ?? "Pending"));
+        $open_issue_count = max(0, (int) ($candidate_issue_snapshot["counts"]["open"] ?? 0));
+        $live_booking_count = max(0, (int) ($candidate_booking_context["counts"]["live"] ?? 0));
+        $needs_attention_count = max(0, (int) ($candidate_booking_context["counts"]["needs_attention"] ?? 0));
+        $can_edit_profile = $candidate_user_id > 0;
+        ob_start();
+        ?>
+        <section class="cmn-am-candidate-profile-shell">
+            <header class="cmn-candidate-header cmn-am-candidate-header">
+                <div>
+                    <h2>Candidate Profile</h2>
+                    <p>Account Manager candidate view using the same profile style, with private notes and edit access.</p>
+                </div>
+                <a class="cmn-ghost" href="<?php echo esc_url($back_url); ?>">Back to candidates</a>
+            </header>
+            <?php if ($doc_review_message !== "") : ?><div class="cmn-panel-card"><strong><?php echo esc_html($doc_review_message); ?></strong></div><?php endif; ?>
+            <?php if ($internal_note_message !== "") : ?><div class="cmn-panel-card"><strong><?php echo esc_html($internal_note_message); ?></strong></div><?php endif; ?>
+            <section class="cmn-candidate-main cmn-candidate-main--profile cmn-am-candidate-profile-main">
+                <div class="cmn-candidate-hub-toprow cmn-am-candidate-hub-toprow">
+                    <nav class="cmn-tabs cmn-candidate-profile-hub-tabs cmn-am-candidate-profile-tabs" aria-label="Candidate profile sections">
+                        <a class="cmn-tab is-active" href="#cmn-profile-personal">Personal Details</a>
+                        <a class="cmn-tab" href="#cmn-profile-documents">Documents</a>
+                        <a class="cmn-tab" href="#am-candidate-notes">AM Notes</a>
+                        <a class="cmn-tab" href="#am-candidate-relationship">Relationship</a>
+                    </nav>
+                    <div class="cmn-candidate-hub-status">
+                        <div class="cmn-profile-admin-status <?php echo esc_attr($completion_verified ? "is-verified" : "is-pending"); ?>" data-profile-admin-status>
+                            <span class="cmn-profile-admin-status-label">Status:</span>
+                            <strong class="cmn-profile-admin-status-value" data-profile-admin-status-text data-profile-completion-text><?php echo esc_html((string) $completion_percent); ?>% Complete</strong>
+                            <div class="cmn-profile-admin-status-tooltip" data-profile-admin-tooltip<?php echo $completion_verified ? " hidden" : ""; ?>>
+                                <p>To reach 100% complete:</p>
+                                <ul data-profile-admin-missing>
+                                    <?php foreach ($completion_missing_items as $missing_item) : ?><li><a href="<?php echo esc_url(stripos($missing_item, "upload") !== false ? $completion_urls["documents"] : $completion_urls["personal"]); ?>"><?php echo esc_html($missing_item); ?></a></li><?php endforeach; ?>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="cmn-profile-completion-help" data-profile-completion-help<?php echo $completion_verified ? " hidden" : ""; ?>>
+                            <p class="cmn-muted" data-profile-completion-helper-text>To reach 100% complete:</p>
+                            <ul data-profile-completion-missing>
+                                <?php foreach ($completion_missing_items as $missing_item) : ?><li><a href="<?php echo esc_url(stripos($missing_item, "upload") !== false ? $completion_urls["documents"] : $completion_urls["personal"]); ?>"><?php echo esc_html($missing_item); ?></a></li><?php endforeach; ?>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="cmn-profile-global-editbar" data-profile-global-actions hidden><span class="cmn-muted" data-profile-global-msg></span><div class="cmn-profile-global-editbar-actions"><button class="cmn-primary" type="button" data-profile-global-save disabled>Save changes</button><button class="cmn-ghost" type="button" data-profile-global-cancel>Cancel</button></div></div>
+                <p class="cmn-muted cmn-am-candidate-inline-message" data-doc-message></p>
+                <div class="cmn-profile-grid cmn-profile-grid--candidate-profile cmn-am-candidate-profile-grid" data-profile-root data-profile-save-action="cmn_account_manager_update_candidate_profile" data-profile-photo-upload-action="cmn_account_manager_candidate_profile_photo_upload" data-profile-photo-remove-action="cmn_account_manager_candidate_profile_photo_remove" data-profile-candidate-id="<?php echo esc_attr((string) $candidate_id); ?>">
+                    <section class="cmn-dashboard-card cmn-am-candidate-profile-card" id="cmn-profile-personal">
+                        <div data-profile-view="personal">
+                            <div class="cmn-profile-summary-strip" data-profile-summary-strip data-profile-personal-url="<?php echo esc_url($completion_urls["personal"]); ?>" data-profile-documents-url="<?php echo esc_url($completion_urls["documents"]); ?>" data-profile-finance-bank-url="<?php echo esc_url($completion_urls["personal"]); ?>" data-profile-finance-ack-url="<?php echo esc_url($completion_urls["personal"]); ?>">
+                                <div class="cmn-profile-summary-meta">
+                                    <div class="cmn-profile-summary-item"><span class="cmn-profile-summary-label">Name</span><strong class="cmn-profile-summary-value" data-profile-summary-name><?php echo esc_html($profile_full_name); ?></strong></div>
+                                    <div class="cmn-profile-summary-item"><span class="cmn-profile-summary-label">Role</span><strong class="cmn-profile-summary-value" data-profile-summary-role><?php echo esc_html($role_label); ?></strong></div>
+                                    <div class="cmn-profile-summary-item"><span class="cmn-profile-summary-label">Location</span><strong class="cmn-profile-summary-value" data-profile-summary-location><?php echo esc_html($profile_location !== "" ? $profile_location : "Not set"); ?></strong></div>
+                                    <div class="cmn-profile-summary-item"><span class="cmn-profile-summary-label">Compliance</span><strong class="cmn-profile-summary-value"><?php echo esc_html($doc_badge_label); ?></strong></div>
+                                </div>
+                                <?php if ($can_edit_profile) : ?><button class="cmn-primary" type="button" data-profile-global-edit>Edit profile</button><?php endif; ?>
+                            </div>
+                            <div class="cmn-am-candidate-detail-grid">
+                                <div class="cmn-profile-identity-photo" data-profile-photo-root data-fallback-url="<?php echo esc_attr($profile_photo_fallback); ?>">
+                                    <img class="cmn-profile-photo-preview" src="<?php echo esc_url($profile_photo_url); ?>" alt="<?php echo esc_attr($profile_full_name); ?> profile photo" data-profile-photo-preview>
+                                    <div class="cmn-profile-photo-meta"><div class="cmn-profile-photo-actions"><input type="file" class="cmn-hidden-input" data-profile-photo-input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"><button class="cmn-primary" type="button" data-profile-photo-upload-trigger<?php echo $can_edit_profile ? "" : " disabled"; ?>>Upload photo</button><button class="cmn-ghost" type="button" data-profile-photo-remove data-has-photo="<?php echo $has_profile_photo ? "1" : "0"; ?>"<?php echo ($can_edit_profile && $has_profile_photo) ? "" : " disabled"; ?>>Remove photo</button></div><p class="cmn-muted cmn-profile-photo-message" data-profile-photo-message></p></div>
+                                </div>
+                                <div class="cmn-profile-definition-grid">
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">First name</span><span class="cmn-profile-definition-value" data-profile-first-name><?php echo esc_html($first_name !== "" ? $first_name : "Not set"); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Last name</span><span class="cmn-profile-definition-value" data-profile-last-name><?php echo esc_html($last_name !== "" ? $last_name : "Not set"); ?></span></div>
+                                    <span data-profile-full-name hidden><?php echo esc_html($profile_full_name); ?></span>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Email</span><span class="cmn-profile-definition-value" data-profile-email><?php echo esc_html($profile_email !== "" ? $profile_email : "Not set"); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Phone</span><span class="cmn-profile-definition-value" data-profile-phone><?php echo esc_html($profile_phone !== "" ? $profile_phone : "Not set"); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Nationality</span><span class="cmn-profile-definition-value" data-profile-nationality><?php echo esc_html($profile_nationality !== "" ? $profile_nationality : "Not set"); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Role type</span><span class="cmn-profile-definition-value" data-profile-role><?php echo esc_html($role_label); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Travel radius</span><span class="cmn-profile-definition-value" data-profile-travel><?php echo esc_html($travel_display); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Location</span><span class="cmn-profile-definition-value" data-profile-location><?php echo esc_html($profile_location !== "" ? $profile_location : "Not set"); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Driving licence</span><span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($driving_pill["class"]); ?>" data-profile-driving><?php echo esc_html($driving_pill["text"]); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">Owns vehicle</span><span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($car_pill["class"]); ?>" data-profile-car><?php echo esc_html($car_pill["text"]); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">QTS</span><span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($qts_pill["class"]); ?>" data-profile-qts><?php echo esc_html($qts_pill["text"]); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">DBS</span><span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($dbs_pill["class"]); ?>" data-profile-has-dbs><?php echo esc_html($dbs_pill["text"]); ?></span></div>
+                                    <div class="cmn-profile-definition-row"><span class="cmn-profile-definition-label">DBS update service</span><span class="cmn-profile-definition-value cmn-profile-status-pill <?php echo esc_attr($dbs_update_pill["class"]); ?>" data-profile-dbs-update><?php echo esc_html($dbs_update_pill["text"]); ?></span></div>
+                                    <div class="cmn-profile-definition-row cmn-profile-definition-row--full"><span class="cmn-profile-definition-label">Availability</span><div class="cmn-profile-day-badges" data-profile-days><?php if ($day_badges) : foreach ($day_badges as $day_badge) : ?><span class="cmn-profile-day-badge"><?php echo esc_html($day_badge); ?></span><?php endforeach; else : ?><span class="cmn-profile-day-empty">Not set</span><?php endif; ?></div></div>
+                                    <div class="cmn-profile-definition-row cmn-profile-definition-row--full"><span class="cmn-profile-definition-label">Address</span><span class="cmn-profile-definition-value" data-profile-address><?php echo esc_html($profile_address_display); ?></span></div>
+                                    <div class="cmn-profile-definition-row cmn-profile-definition-row--full"><span class="cmn-profile-definition-label">Profile notes</span><span class="cmn-profile-definition-value" data-profile-notes><?php echo esc_html($profile_notes !== "" ? $profile_notes : "Not set"); ?></span></div>
+                                    <span data-profile-house-number hidden><?php echo esc_html($profile_house_number); ?></span><span data-profile-address-line1 hidden><?php echo esc_html($profile_address_line1); ?></span><span data-profile-address-line2 hidden><?php echo esc_html($profile_address_line2); ?></span><span data-profile-address-line3 hidden><?php echo esc_html($profile_address_line3); ?></span><span data-profile-town hidden><?php echo esc_html($profile_town); ?></span><span data-profile-county hidden><?php echo esc_html($profile_county); ?></span><span data-profile-postcode hidden><?php echo esc_html($profile_postcode); ?></span>
+                                </div>
+                            </div>
+                        </div>
+                        <form class="cmn-form cmn-inline-edit-form cmn-inline-edit-form--structured" data-profile-form="personal" hidden><input type="hidden" name="roles_other" value=""><div class="cmn-profile-form-grid"><label>First name<input type="text" name="first_name" value="<?php echo esc_attr($first_name); ?>" required></label><label>Last name<input type="text" name="last_name" value="<?php echo esc_attr($last_name); ?>" required></label><label>Email<input type="email" name="email" value="<?php echo esc_attr($profile_email); ?>" required></label><label>Phone<input type="text" name="phone" value="<?php echo esc_attr($profile_phone); ?>" required></label><label>Nationality<input type="text" name="nationality" value="<?php echo esc_attr($profile_nationality); ?>" required></label><label>Role type<input type="text" name="role_type" value="<?php echo esc_attr($role_label !== "Not set" ? $role_label : ""); ?>" required></label><label>Travel radius<input type="text" name="travel_radius" value="<?php echo esc_attr($travel_distance); ?>"></label><label>Location<input type="text" name="location" value="<?php echo esc_attr($profile_location); ?>"></label><label>QTS<select name="qts_status"><option value=""<?php selected($qts_status, ""); ?>>Select</option><option value="yes"<?php selected($qts_status, "yes"); ?>>Yes</option><option value="no"<?php selected($qts_status, "no"); ?>>No</option></select></label><label>Has DBS<select name="no_dbs"><option value="0"<?php selected($no_dbs, "0"); ?>>Yes</option><option value="1"<?php selected($no_dbs, "1"); ?>>No</option></select></label><label>Driving licence<select name="driving_licence"><option value=""<?php selected($driving_licence, ""); ?>>Select</option><option value="yes"<?php selected($driving_licence, "yes"); ?>>Yes</option><option value="no"<?php selected($driving_licence, "no"); ?>>No</option></select></label><label>Owns vehicle<select name="car_owner"><option value=""<?php selected($car_owner, ""); ?>>Select</option><option value="yes"<?php selected($car_owner, "yes"); ?>>Yes</option><option value="no"<?php selected($car_owner, "no"); ?>>No</option></select></label><label>DBS update service<select name="dbs_update_service"><option value=""<?php selected($dbs_update_service, ""); ?>>Select</option><option value="yes"<?php selected($dbs_update_service, "yes"); ?>>Yes</option><option value="no"<?php selected($dbs_update_service, "no"); ?>>No</option></select></label><label>House number<input type="text" name="house_number" value="<?php echo esc_attr($profile_house_number); ?>"></label><label>Address line 1<input type="text" name="address_line1" value="<?php echo esc_attr($profile_address_line1); ?>"></label><label>Address line 2<input type="text" name="address_line2" value="<?php echo esc_attr($profile_address_line2); ?>"></label><label>Address line 3<input type="text" name="address_line3" value="<?php echo esc_attr($profile_address_line3); ?>"></label><label>Town<input type="text" name="town" value="<?php echo esc_attr($profile_town); ?>"></label><label>County<input type="text" name="county" value="<?php echo esc_attr($profile_county); ?>"></label><label>Post code<input type="text" name="postcode" value="<?php echo esc_attr($profile_postcode); ?>"></label><label class="cmn-profile-form-field--full">Notes<textarea name="notes" rows="3"><?php echo esc_textarea($profile_notes); ?></textarea></label><fieldset class="cmn-form-group cmn-profile-form-field--full"><span class="cmn-form-label">Availability days</span><div class="cmn-inline-row"><?php foreach (["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] as $day_name) : ?><label class="cmn-inline-check"><input type="checkbox" name="availability_days[]" value="<?php echo esc_attr($day_name); ?>"<?php checked(in_array($day_name, $availability_days, true)); ?>><?php echo esc_html($day_name); ?></label><?php endforeach; ?></div></fieldset></div></form>
+                    </section>
+                    <section class="cmn-dashboard-card cmn-doc-upload-card" id="cmn-profile-documents"><div class="cmn-card-header"><h3>Documents</h3><span class="cmn-status-chip <?php echo esc_attr($doc_badge_class); ?>"><?php echo esc_html($doc_badge_label); ?></span></div><div class="cmn-profile-doc-status-list"><?php foreach ($docs as $doc) : $doc_status = (array) ($doc["status"] ?? []); $download_url = esc_url_raw((string) ($doc["download_url"] ?? "")); ?><div class="cmn-profile-doc-status-item"><span><?php echo esc_html((string) ($doc["label"] ?? "Document")); ?></span><span class="cmn-status-chip <?php echo esc_attr((string) ($doc_status["badge_class"] ?? "is-pending")); ?>"><?php echo esc_html((string) ($doc_status["status_label"] ?? "Pending")); ?></span><?php if ($download_url !== "") : ?><a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($download_url); ?>" target="_blank" rel="noopener noreferrer">Open</a><?php endif; ?></div><?php endforeach; ?></div></section>
+                    <section class="cmn-dashboard-card" id="am-candidate-relationship"><div class="cmn-card-header"><h3>Relationship</h3><span class="cmn-status-chip <?php echo esc_attr($risk_badge_class); ?>"><?php echo esc_html($risk_level); ?> risk</span></div><p class="cmn-muted"><?php echo esc_html($context_note); ?></p><ul class="cmn-status-list"><li><span>Live bookings</span><strong><?php echo esc_html(number_format_i18n($live_booking_count)); ?></strong></li><li><span>Need attention</span><strong><?php echo esc_html(number_format_i18n($needs_attention_count)); ?></strong></li><li><span>Open issues</span><strong><?php echo esc_html(number_format_i18n($open_issue_count)); ?></strong></li></ul><?php if ($candidate_blockers) : ?><div class="cmn-school-relationship-overview-signals"><?php foreach ($candidate_blockers as $blocker) : ?><span class="cmn-status-chip is-warning"><?php echo esc_html($blocker); ?></span><?php endforeach; ?></div><?php endif; ?><?php if ($candidate_risk_signals) : ?><div class="cmn-school-relationship-overview-signals"><?php foreach ($candidate_risk_signals as $signal) : ?><span class="cmn-status-chip is-warning"><?php echo esc_html($signal); ?></span><?php endforeach; ?></div><?php endif; ?><?php if ($candidate_issue_note !== "") : ?><p class="cmn-muted"><?php echo esc_html($candidate_issue_note); ?></p><?php endif; ?></section>
+                    <section class="cmn-dashboard-card cmn-dashboard-card-wide" id="am-candidate-notes"><div class="cmn-card-header"><h3>Account Manager Notes</h3><span class="cmn-muted">Private to internal team</span></div><form class="cmn-doc-review-form cmn-am-candidate-note-form" method="post" action="<?php echo esc_url(admin_url("admin-post.php")); ?>"><?php wp_nonce_field("cmn_add_candidate_internal_note", "cmn_add_candidate_internal_note_nonce"); ?><input type="hidden" name="action" value="cmn_add_candidate_internal_note"><input type="hidden" name="candidate_id" value="<?php echo esc_attr((string) $candidate_id); ?>"><textarea name="note" rows="4" placeholder="Add private note for the account manager and internal team..." required></textarea><div class="cmn-doc-review-actions"><button class="cmn-primary" type="submit">Add Note</button></div></form><div class="cmn-list cmn-am-candidate-note-list"><?php if (!$internal_notes) : ?><div class="cmn-empty">No internal notes yet.</div><?php else : foreach ($internal_notes as $note_item) : ?><div class="cmn-list-item"><strong><?php echo esc_html((string) ($note_item["author_name"] ?? "Staff")); ?></strong><span class="cmn-muted"><?php echo esc_html((string) ($note_item["created_at_label"] ?? "")); ?></span><div><?php echo esc_html((string) ($note_item["note"] ?? "")); ?></div></div><?php endforeach; endif; ?></div></section>
+                </div>
+            </section>
+        </section>
         <?php
         return ob_get_clean();
     }
@@ -122406,6 +122837,364 @@ p{margin:0;line-height:1.5}
             'certificate_label' => $certificate_label,
             'message' => 'Course completion saved.',
         ]);
+    }
+
+    private function resolve_account_manager_candidate_profile_request_context($candidate_id, $actor_user_id = 0) {
+        $candidate_id = (int) $candidate_id;
+        $actor_user_id = (int) ($actor_user_id ?: get_current_user_id());
+        if ($actor_user_id < 1 || !$this->is_restricted_account_manager($actor_user_id)) {
+            return new WP_Error("cmn_account_manager_candidate_profile_forbidden", "Unauthorized.", ["status" => 403]);
+        }
+        if ($candidate_id < 1 || get_post_type($candidate_id) !== "cmn_candidate") {
+            return new WP_Error("cmn_account_manager_candidate_profile_missing", "Candidate profile not found.", ["status" => 404]);
+        }
+        if (!$this->user_can_view_candidate($candidate_id, $actor_user_id)) {
+            return new WP_Error("cmn_account_manager_candidate_profile_forbidden", "Unauthorized.", ["status" => 403]);
+        }
+        $candidate_user_id = (int) $this->get_candidate_user_id($candidate_id);
+        if ($candidate_user_id < 1) {
+            return new WP_Error("cmn_account_manager_candidate_profile_missing", "Candidate profile not found.", ["status" => 404]);
+        }
+        return [
+            "candidate_id" => $candidate_id,
+            "candidate_user_id" => $candidate_user_id,
+        ];
+    }
+
+    private function process_candidate_profile_photo_upload_for_target($candidate_id, $user_id, array $file) {
+        $candidate_id = (int) $candidate_id;
+        $user_id = (int) $user_id;
+        if ($candidate_id < 1 || $user_id < 1) {
+            return new WP_Error("cmn_candidate_profile_missing", "Candidate profile not found.", ["status" => 404]);
+        }
+        if (!$file) {
+            return new WP_Error("cmn_candidate_profile_photo_missing", "Please choose a photo to upload.", ["status" => 400]);
+        }
+        $max_size = 5 * 1024 * 1024;
+        if (!empty($file["size"]) && (int) $file["size"] > $max_size) {
+            return new WP_Error("cmn_candidate_profile_photo_too_large", "Photo is too large. Maximum file size is 5MB.", ["status" => 400]);
+        }
+
+        require_once ABSPATH . "wp-admin/includes/file.php";
+        require_once ABSPATH . "wp-admin/includes/image.php";
+        $overrides = [
+            "test_form" => false,
+            "mimes" => [
+                "jpg|jpeg|jpe" => "image/jpeg",
+                "png" => "image/png",
+                "webp" => "image/webp",
+            ],
+        ];
+        $uploaded = wp_handle_upload($file, $overrides);
+        if (!empty($uploaded["error"])) {
+            return new WP_Error("cmn_candidate_profile_photo_upload_failed", sanitize_text_field((string) ($uploaded["error"] ?? "Unable to upload photo.")), ["status" => 400]);
+        }
+
+        $attachment_id = wp_insert_attachment([
+            "post_mime_type" => (string) ($uploaded["type"] ?? ""),
+            "post_title" => sanitize_file_name(pathinfo((string) ($file["name"] ?? "profile-photo"), PATHINFO_FILENAME)),
+            "post_status" => "inherit",
+            "guid" => (string) ($uploaded["url"] ?? ""),
+        ], (string) ($uploaded["file"] ?? ""), $candidate_id);
+        if (is_wp_error($attachment_id) || !$attachment_id) {
+            return new WP_Error("cmn_candidate_profile_photo_upload_failed", "Unable to save profile photo.", ["status" => 500]);
+        }
+
+        $meta = wp_generate_attachment_metadata($attachment_id, (string) ($uploaded["file"] ?? ""));
+        if (!is_wp_error($meta)) {
+            wp_update_attachment_metadata($attachment_id, $meta);
+        }
+
+        $photo_url = wp_get_attachment_image_url((int) $attachment_id, "medium");
+        if (!is_string($photo_url) || $photo_url === "") {
+            $photo_url = wp_get_attachment_url((int) $attachment_id);
+        }
+        if (!is_string($photo_url) || $photo_url === "") {
+            $photo_url = $this->get_default_profile_photo_url();
+        }
+        $photo_url = esc_url_raw($photo_url);
+
+        $url_meta_keys = ["cmn_profile_photo", "cmn_photo_url", "cmn_avatar_url", "profile_photo_url"];
+        foreach ($url_meta_keys as $meta_key) {
+            update_user_meta($user_id, $meta_key, $photo_url);
+            update_post_meta($candidate_id, $meta_key, $photo_url);
+        }
+        update_user_meta($user_id, "cmn_profile_photo_attachment_id", (int) $attachment_id);
+        update_post_meta($candidate_id, "cmn_profile_photo_attachment_id", (int) $attachment_id);
+        update_post_meta((int) $attachment_id, "cmn_owner_user_id", $user_id);
+        update_post_meta((int) $attachment_id, "cmn_candidate_id", $candidate_id);
+        update_post_meta((int) $attachment_id, "cmn_doc_type", "profile_photo");
+
+        return [
+            "photo_url" => add_query_arg("v", (string) time(), $photo_url),
+            "has_photo" => 1,
+            "message" => "Profile photo updated.",
+        ];
+    }
+
+    private function process_candidate_profile_photo_remove_for_target($candidate_id, $user_id) {
+        $candidate_id = (int) $candidate_id;
+        $user_id = (int) $user_id;
+        if ($candidate_id < 1 || $user_id < 1) {
+            return new WP_Error("cmn_candidate_profile_missing", "Candidate profile not found.", ["status" => 404]);
+        }
+
+        $url_meta_keys = ["cmn_profile_photo", "cmn_photo_url", "cmn_avatar_url", "profile_photo_url"];
+        foreach ($url_meta_keys as $meta_key) {
+            delete_user_meta($user_id, $meta_key);
+            delete_post_meta($candidate_id, $meta_key);
+        }
+        delete_user_meta($user_id, "cmn_profile_photo_attachment_id");
+        delete_post_meta($candidate_id, "cmn_profile_photo_attachment_id");
+
+        return [
+            "photo_url" => $this->get_default_profile_photo_url(),
+            "has_photo" => 0,
+            "message" => "Profile photo removed.",
+        ];
+    }
+
+    private function process_candidate_profile_update_for_target($candidate_id, $user_id) {
+        $candidate_id = (int) $candidate_id;
+        $user_id = (int) $user_id;
+        if ($candidate_id < 1 || $user_id < 1) {
+            return new WP_Error("cmn_candidate_profile_missing", "Candidate profile not found.", ["status" => 404]);
+        }
+        $existing_user = get_user_by("id", $user_id);
+        if (!$existing_user) {
+            return new WP_Error("cmn_candidate_profile_missing", "Candidate profile not found.", ["status" => 404]);
+        }
+
+        $field_contract = $this->get_candidate_profile_field_contract();
+        $payload = [];
+        foreach ($field_contract as $field_key => $field_config) {
+            $raw = $field_config["sanitize"] === "multi_choice"
+                ? ($_POST[$field_key] ?? [])
+                : ($_POST[$field_key] ?? "");
+            $payload[$field_key] = $this->sanitize_profile_contract_value($raw, $field_config);
+        }
+
+        $profile_email = (string) ($payload["email"] ?? "");
+        if ($profile_email === "" || !is_email($profile_email)) {
+            return new WP_Error("cmn_candidate_profile_invalid_email", "A valid email is required.", ["status" => 400]);
+        }
+        $legacy_roles = array_values(array_filter(array_map("sanitize_text_field", (array) ($payload["roles"] ?? []))));
+        $primary_role = sanitize_text_field((string) ($payload["role_type"] ?? ""));
+        if ($primary_role === "" && !empty($legacy_roles)) {
+            $primary_role = sanitize_text_field((string) $legacy_roles[0]);
+        }
+        $roles_other_value = sanitize_text_field((string) ($payload["roles_other"] ?? ""));
+        if (strtolower($primary_role) === "other") {
+            $primary_role = $roles_other_value;
+        }
+        $payload["role_type"] = $primary_role;
+        $payload["roles"] = $primary_role !== "" ? [$primary_role] : [];
+        if ((string) ($payload["no_dbs"] ?? "") !== "1") {
+            $payload["no_dbs"] = "0";
+        }
+
+        $first_name = (string) ($payload["first_name"] ?? "");
+        $last_name = (string) ($payload["last_name"] ?? "");
+        if ($first_name === "" || $last_name === "") {
+            return new WP_Error("cmn_candidate_profile_missing_name", "First name and last name are required.", ["status" => 400]);
+        }
+        if ((string) ($payload["nationality"] ?? "") === "") {
+            return new WP_Error("cmn_candidate_profile_missing_nationality", "Nationality is required.", ["status" => 400]);
+        }
+        if ((string) ($payload["role_type"] ?? "") === "") {
+            return new WP_Error("cmn_candidate_profile_missing_role", "Primary role is required.", ["status" => 400]);
+        }
+        if (strcasecmp((string) ($existing_user->user_email ?? ""), $profile_email) !== 0) {
+            $existing_email_user_id = (int) email_exists($profile_email);
+            if ($existing_email_user_id > 0 && $existing_email_user_id !== $user_id) {
+                return new WP_Error("cmn_candidate_profile_email_in_use", "Email is already in use by another account.", ["status" => 409]);
+            }
+            $email_result = wp_update_user([
+                "ID" => $user_id,
+                "user_email" => $profile_email,
+            ]);
+            if (is_wp_error($email_result)) {
+                return new WP_Error("cmn_candidate_profile_email_update_failed", $email_result->get_error_message(), ["status" => 400]);
+            }
+        }
+
+        foreach ($field_contract as $field_key => $field_config) {
+            $value = $payload[$field_key] ?? "";
+            $storage = (string) ($field_config["storage"] ?? "");
+            if ($storage === "user_meta") {
+                if (is_array($value)) {
+                    update_user_meta($user_id, (string) $field_config["key"], $value);
+                } elseif ($value !== "") {
+                    update_user_meta($user_id, (string) $field_config["key"], $value);
+                } else {
+                    delete_user_meta($user_id, (string) $field_config["key"]);
+                }
+                $sync_post_meta = (string) ($field_config["sync_post_meta"] ?? "");
+                if ($sync_post_meta !== "") {
+                    if ($value !== "") {
+                        update_post_meta($candidate_id, $sync_post_meta, $value);
+                    } else {
+                        delete_post_meta($candidate_id, $sync_post_meta);
+                    }
+                }
+                if (!empty($field_config["sync_post_roles"])) {
+                    if ($value !== "") {
+                        update_post_meta($candidate_id, "cmn_roles", [$value]);
+                    } else {
+                        delete_post_meta($candidate_id, "cmn_roles");
+                    }
+                }
+            } elseif ($storage === "post_meta") {
+                if (is_array($value)) {
+                    update_post_meta($candidate_id, (string) $field_config["key"], $value);
+                } elseif ($value !== "") {
+                    update_post_meta($candidate_id, (string) $field_config["key"], $value);
+                } else {
+                    delete_post_meta($candidate_id, (string) $field_config["key"]);
+                }
+            }
+        }
+        $this->normalize_candidate_role_to_single($candidate_id, (string) ($payload["role_type"] ?? ""), (int) $user_id, "candidate_role_normalized");
+
+        $full_name = trim($first_name . " " . $last_name);
+        $user_update_result = wp_update_user([
+            "ID" => $user_id,
+            "first_name" => $first_name,
+            "last_name" => $last_name,
+            "display_name" => $full_name !== "" ? $full_name : (string) ($existing_user->display_name ?? "Candidate"),
+        ]);
+        if (is_wp_error($user_update_result)) {
+            return new WP_Error("cmn_candidate_profile_update_failed", $user_update_result->get_error_message(), ["status" => 400]);
+        }
+
+        $availability_days = (array) ($payload["availability_days"] ?? []);
+        $availability_days_label = $availability_days ? implode(", ", $availability_days) : "Not set";
+        $yes_no_map = ["yes" => "Yes", "no" => "No"];
+        $driving_licence = (string) ($payload["driving_licence"] ?? "");
+        $car_owner = (string) ($payload["car_owner"] ?? "");
+        $qts_status = (string) ($payload["qts_status"] ?? "");
+        $dbs_update_service = (string) ($payload["dbs_update_service"] ?? "");
+        $no_dbs = (string) ($payload["no_dbs"] ?? "0");
+        $roles_other = (string) ($payload["roles_other"] ?? "");
+        $preferred_roles_label = (string) ($payload["role_type"] ?? "") !== "" ? (string) $payload["role_type"] : "Not set";
+        $address_display_parts = array_filter([
+            (string) ($payload["house_number"] ?? ""),
+            (string) ($payload["address_line1"] ?? ""),
+            (string) ($payload["address_line2"] ?? ""),
+            (string) ($payload["address_line3"] ?? ""),
+            (string) ($payload["town"] ?? ""),
+            (string) ($payload["county"] ?? ""),
+            (string) ($payload["postcode"] ?? ""),
+        ]);
+        $address_display = $address_display_parts ? implode(", ", $address_display_parts) : "Not set";
+
+        $completion = $this->update_candidate_profile_completion($candidate_id, $user_id);
+        $completion_state = $this->get_candidate_profile_completion_state($candidate_id, $user_id);
+        $doc_dbs_status = $this->get_candidate_doc_status($candidate_id, $user_id, "dbs");
+        $has_dbs_label = (
+            !empty($doc_dbs_status["uploaded"])
+            && (string) ($doc_dbs_status["review_status"] ?? "") === "approved"
+        ) ? "Yes" : ($no_dbs === "1" ? "No" : "Not set");
+        $this->maybe_notify_candidate_qts_required($candidate_id, $user_id);
+
+        return [
+            "profile" => [
+                "first_name" => $first_name,
+                "last_name" => $last_name,
+                "full_name" => $full_name,
+                "email" => $profile_email,
+                "phone" => (string) ($payload["phone"] ?? ""),
+                "nationality" => (string) ($payload["nationality"] ?? ""),
+                "role_type" => (string) ($payload["role_type"] ?? ""),
+                "roles" => (array) ($payload["roles"] ?? []),
+                "roles_label" => $preferred_roles_label,
+                "roles_other" => $roles_other,
+                "travel_radius" => (string) ($payload["travel_radius"] ?? ""),
+                "location" => (string) ($payload["location"] ?? ""),
+                "driving_licence" => $driving_licence,
+                "driving_licence_label" => $yes_no_map[$driving_licence] ?? "Not set",
+                "car_owner" => $car_owner,
+                "car_owner_label" => $yes_no_map[$car_owner] ?? "Not set",
+                "qts_status" => $qts_status,
+                "qts_status_label" => $yes_no_map[$qts_status] ?? "Not set",
+                "no_dbs" => $no_dbs,
+                "no_dbs_label" => $no_dbs === "1" ? "No" : "Yes",
+                "has_dbs_label" => $has_dbs_label,
+                "dbs_update_service" => $dbs_update_service,
+                "dbs_update_service_label" => $yes_no_map[$dbs_update_service] ?? "Not set",
+                "availability_days" => $availability_days,
+                "availability_days_label" => $availability_days_label,
+                "house_number" => (string) ($payload["house_number"] ?? ""),
+                "address_line1" => (string) ($payload["address_line1"] ?? ""),
+                "address_line2" => (string) ($payload["address_line2"] ?? ""),
+                "address_line3" => (string) ($payload["address_line3"] ?? ""),
+                "town" => (string) ($payload["town"] ?? ""),
+                "county" => (string) ($payload["county"] ?? ""),
+                "postcode" => (string) ($payload["postcode"] ?? ""),
+                "notes" => (string) ($payload["notes"] ?? ""),
+                "address_display" => $address_display,
+            ],
+            "completion" => $completion,
+            "completion_missing" => (array) ($completion_state["missing"] ?? []),
+            "message" => "Profile updated.",
+        ];
+    }
+
+    public function handle_account_manager_candidate_profile_photo_upload() {
+        if (!check_ajax_referer("cmn_candidate_profile", "nonce", false)) {
+            wp_send_json_error(["message" => "Invalid request."], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(["message" => "Unauthorized."], 403);
+        }
+        $context = $this->resolve_account_manager_candidate_profile_request_context((int) ($_POST["candidate_id"] ?? 0), (int) get_current_user_id());
+        if (is_wp_error($context)) {
+            wp_send_json_error(["message" => $context->get_error_message()], (int) ($context->get_error_data()["status"] ?? 403));
+        }
+        if (empty($_FILES["profile_photo"]) || !is_array($_FILES["profile_photo"])) {
+            wp_send_json_error(["message" => "Please choose a photo to upload."], 400);
+        }
+        $result = $this->process_candidate_profile_photo_upload_for_target((int) ($context["candidate_id"] ?? 0), (int) ($context["candidate_user_id"] ?? 0), $_FILES["profile_photo"]);
+        if (is_wp_error($result)) {
+            wp_send_json_error(["message" => $result->get_error_message()], (int) ($result->get_error_data()["status"] ?? 400));
+        }
+        wp_send_json_success($result);
+    }
+
+    public function handle_account_manager_candidate_profile_photo_remove() {
+        if (!check_ajax_referer("cmn_candidate_profile", "nonce", false)) {
+            wp_send_json_error(["message" => "Invalid request."], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(["message" => "Unauthorized."], 403);
+        }
+        $context = $this->resolve_account_manager_candidate_profile_request_context((int) ($_POST["candidate_id"] ?? 0), (int) get_current_user_id());
+        if (is_wp_error($context)) {
+            wp_send_json_error(["message" => $context->get_error_message()], (int) ($context->get_error_data()["status"] ?? 403));
+        }
+        $result = $this->process_candidate_profile_photo_remove_for_target((int) ($context["candidate_id"] ?? 0), (int) ($context["candidate_user_id"] ?? 0));
+        if (is_wp_error($result)) {
+            wp_send_json_error(["message" => $result->get_error_message()], (int) ($result->get_error_data()["status"] ?? 400));
+        }
+        wp_send_json_success($result);
+    }
+
+    public function handle_account_manager_update_candidate_profile() {
+        if (!check_ajax_referer("cmn_candidate_profile", "nonce", false)) {
+            wp_send_json_error(["message" => "Invalid request."], 403);
+        }
+        if (!is_user_logged_in()) {
+            wp_send_json_error(["message" => "Unauthorized."], 403);
+        }
+        $context = $this->resolve_account_manager_candidate_profile_request_context((int) ($_POST["candidate_id"] ?? 0), (int) get_current_user_id());
+        if (is_wp_error($context)) {
+            wp_send_json_error(["message" => $context->get_error_message()], (int) ($context->get_error_data()["status"] ?? 403));
+        }
+        $result = $this->process_candidate_profile_update_for_target((int) ($context["candidate_id"] ?? 0), (int) ($context["candidate_user_id"] ?? 0));
+        if (is_wp_error($result)) {
+            wp_send_json_error(["message" => $result->get_error_message()], (int) ($result->get_error_data()["status"] ?? 400));
+        }
+        wp_send_json_success($result);
     }
 
     public function handle_candidate_profile_photo_upload() {

@@ -5837,3 +5837,88 @@ body.cmn-portal-page .cmn-portal.cmn-portal-light.cmn-portal-light--am-crm .cmn-
   box-shadow: var(--cmn-am-shadow-soft) !important;
   color: #1d4ed8 !important;
 }
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-main {
+  border-radius: 22px;
+  padding: 24px !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-main .cmn-profile-global-editbar {
+  position: static;
+  top: auto;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-tabs {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-inline-message {
+  min-height: 20px;
+  margin: 0 0 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-grid {
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-card .cmn-profile-summary-strip {
+  align-items: start;
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-card .cmn-profile-summary-strip > .cmn-primary {
+  align-self: center;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-detail-grid {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-card .cmn-profile-definition-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-card .cmn-profile-definition-row--full {
+  grid-column: 1 / -1;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-card [data-profile-days] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-card .cmn-inline-edit-form--structured {
+  margin-top: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-main .cmn-profile-doc-status-item {
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-note-form textarea {
+  min-height: 120px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-note-list {
+  margin-top: 14px;
+}
+
+@media (max-width: 980px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-card .cmn-profile-definition-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

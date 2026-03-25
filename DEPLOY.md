@@ -2,12 +2,13 @@
 
 ## Canonical deploy command (from plugin repo root)
 
+Export `SFTP_PASS` from `.env.local` or your shell before running deploy commands. Do not commit the password.
+
 ```bash
 ./deploy_portal.sh \
   --host access-5018438942.webspace-host.com \
-  --user su19353 \
+  --user su357722 \
   --path /home/www/public/wp-content/plugins/covermenow-one \
-  --key ~/.ssh/id_ed25519 \
   --verify
 ```
 
@@ -16,9 +17,8 @@
 ```bash
 ./deploy_portal.sh \
   --host access-5018438942.webspace-host.com \
-  --user su19353 \
+  --user su357722 \
   --path /home/www/public/wp-content/plugins/covermenow-one \
-  --key ~/.ssh/id_ed25519 \
   --dry-run
 ```
 
@@ -28,18 +28,20 @@ Dry-run prints:
 - local/remote `frontend.js` SHA256
 - rsync diff list of files that would be copied
 
-## SSH key / identity file
+## Password-based auth
 
 ```bash
+set -a
+source .env.local
+set +a
 ./deploy_portal.sh \
   --host access-5018438942.webspace-host.com \
-  --user su19353 \
+  --user su357722 \
   --path /home/www/public/wp-content/plugins/covermenow-one \
-  --key ~/.ssh/id_ed25519 \
   --verify
 ```
 
-`--identity` is still accepted as a backward-compatible alias.
+Current shared deploy credentials use password auth via `SFTP_PASS`. `--key` and `--identity` remain available if key-based auth is reintroduced later.
 
 ## Env-based deploy (optional)
 
