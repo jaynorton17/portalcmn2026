@@ -491,10 +491,10 @@ body.cmn-portal-page .cmn-portal-light--am-crm #cmn-school-add-activity.is-focus
   box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18), 0 20px 42px rgba(15, 23, 42, 0.12);
 }
 
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-filter-bar {
-  position: sticky;
-  top: 84px;
-  z-index: 8;
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-toolbar--crm.cmn-filter-bar {
+  position: static;
+  top: auto;
+  z-index: auto;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-filter-bar .cmn-school-toolbar-shell {
