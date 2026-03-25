@@ -49256,7 +49256,7 @@ global $wpdb;
         $can_edit_profile = $candidate_user_id > 0;
         ob_start();
         ?>
-        <section class="cmn-am-candidate-profile-shell">
+        <section class="cmn-am-candidate-profile-shell" data-viewer-surface="account-manager">
             <header class="cmn-candidate-header cmn-am-candidate-header">
                 <div>
                     <h2>Candidate Profile</h2>
@@ -49266,7 +49266,7 @@ global $wpdb;
             </header>
             <?php if ($doc_review_message !== "") : ?><div class="cmn-panel-card"><strong><?php echo esc_html($doc_review_message); ?></strong></div><?php endif; ?>
             <?php if ($internal_note_message !== "") : ?><div class="cmn-panel-card"><strong><?php echo esc_html($internal_note_message); ?></strong></div><?php endif; ?>
-            <section class="cmn-candidate-main cmn-candidate-main--profile cmn-am-candidate-profile-main">
+            <section class="cmn-candidate-main cmn-candidate-main--profile cmn-am-candidate-profile-main" data-viewer-surface="account-manager">
                 <div class="cmn-candidate-hub-toprow cmn-am-candidate-hub-toprow">
                     <nav class="cmn-tabs cmn-candidate-profile-hub-tabs cmn-am-candidate-profile-tabs" aria-label="Candidate profile sections">
                         <a class="cmn-tab is-active" href="#cmn-profile-personal">Personal Details</a>

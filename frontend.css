@@ -23669,3 +23669,176 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-profile-grid--crm-hub
     padding: 8px;
   }
 }
+
+/* Account-manager-only candidate profile: keep the white CRM surface scoped to the AM viewer context. */
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] {
+  color: var(--cmn-am-text);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-am-candidate-profile-main {
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 24%),
+    radial-gradient(circle at 0% 22%, rgba(16, 185, 129, 0.05), transparent 20%),
+    var(--cmn-am-bg) !important;
+  color: var(--cmn-am-text) !important;
+  border-radius: 28px;
+  padding: 18px !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-am-candidate-header {
+  margin-bottom: 14px;
+  padding: 22px 24px;
+  border: 1px solid var(--cmn-am-border);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 34%),
+    radial-gradient(circle at 10% 0%, rgba(16, 185, 129, 0.06), transparent 28%),
+    #ffffff;
+  box-shadow: var(--cmn-am-shadow);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-am-candidate-header p {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-am-candidate-profile-tabs {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--cmn-am-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--cmn-am-shadow-soft);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-am-candidate-profile-tabs .cmn-tab {
+  border-color: transparent;
+  color: var(--cmn-am-muted);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-am-candidate-profile-tabs .cmn-tab.is-active {
+  background: var(--cmn-am-primary-soft);
+  border-color: rgba(37, 99, 235, 0.2);
+  color: var(--cmn-am-primary);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-progress,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-global-editbar,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-completion-help,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-dashboard-card,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-section,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-inline-edit-form--structured .cmn-profile-form-section,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-summary-strip,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-availability-panel,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-address-details,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-list-item {
+  background: var(--cmn-am-surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--cmn-am-border) !important;
+  color: var(--cmn-am-text) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-dashboard-card::before,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-dashboard-card::after,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-section::before,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-section::after {
+  content: none !important;
+  background: none !important;
+  opacity: 0 !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-progress-bar {
+  background: #dbe6f4;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-completion-help,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-completion-help.is-complete {
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] :is(
+  .cmn-card-header h3,
+  .cmn-profile-section-title,
+  .cmn-profile-definition-value,
+  .cmn-profile-admin-status-value,
+  .cmn-profile-address-details summary,
+  .cmn-profile-completion-help strong,
+  .cmn-dashboard-card strong,
+  .cmn-list-item strong
+) {
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] :is(
+  .cmn-muted,
+  .cmn-dashboard-card p,
+  .cmn-profile-definition-label,
+  .cmn-profile-admin-status-label,
+  .cmn-profile-completion-help li,
+  .cmn-profile-completion-help a,
+  .cmn-list-item > span
+) {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-completion-help a {
+  text-decoration-color: rgba(37, 99, 235, 0.32);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] :is(
+  [data-profile-global-msg].is-error,
+  [data-doc-message].is-error,
+  .cmn-profile-photo-message.is-error
+) {
+  color: var(--cmn-am-danger) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-admin-status {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: var(--cmn-am-border) !important;
+  color: var(--cmn-am-text) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-admin-status-tooltip {
+  background: #ffffff !important;
+  border: 1px solid var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] :is(
+  .cmn-profile-status-pill,
+  .cmn-profile-day-badge
+) {
+  background: var(--cmn-am-surface-muted) !important;
+  border-color: var(--cmn-am-border-strong) !important;
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-day-empty {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-doc-status-item {
+  border-bottom: 1px solid var(--cmn-am-border) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-profile-doc-status-item:last-child {
+  border-bottom: 0 !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-school-relationship-overview-signals {
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-am-candidate-profile-main {
+    padding: 14px !important;
+    border-radius: 22px;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[data-viewer-surface="account-manager"] .cmn-am-candidate-header {
+    padding: 18px;
+    border-radius: 20px;
+  }
+}
