@@ -19682,6 +19682,7 @@ global $wpdb;
         return [
             'all_schools' => 'My Accounts',
             'schools_leads' => 'Leads',
+            'pipeline_leads' => 'Pipeline',
             'schools_needs_attention' => 'Accounts Needing Attention',
             'schools_bulk_add' => 'Bulk Upload',
             'school_requests' => 'Onboarding',
@@ -22277,8 +22278,8 @@ global $wpdb;
                 ],
                 [
                     'label' => 'Leads',
-                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'leads' || ($current_view === 'schools' && $current_status_filter === 'lead')),
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'lead'),
                 ],
                 [
                     'label' => 'Candidates',
@@ -22301,8 +22302,14 @@ global $wpdb;
                 [
                     'label' => 'Leads',
                     'icon_key' => 'leads',
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
+                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'lead'),
+                ],
+                [
+                    'label' => 'Pipeline',
+                    'icon_key' => 'pipeline',
                     'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'leads' || ($current_view === 'schools' && $current_status_filter === 'lead')),
+                    'is_active' => ($current_view === 'leads'),
                 ],
                 [
                     'label' => 'Candidates',
@@ -42109,7 +42116,7 @@ global $wpdb;
                     'value' => max(0, (int) ($account_counts['leads'] ?? 0)),
                     'icon_key' => 'people',
                     'tone' => 'green',
-                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
+                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
                 ],
                 [
                     'label' => 'Candidates',
@@ -45427,8 +45434,8 @@ global $wpdb;
         if ($status === 'all') {
             $status = 'all';
         }
-        if ($is_restricted_am_workspace && ($view === 'leads' || ($view === 'schools' && $status === 'lead'))) {
-            return $this->render_staff_shell('schools_leads', $this->render_account_manager_pipeline_page_html($current_user_id));
+        if ($is_restricted_am_workspace && $view === 'leads') {
+            return $this->render_staff_shell('pipeline_leads', $this->render_account_manager_pipeline_page_html($current_user_id));
         }
         $import_message = isset($_GET['cmn_imported']) ? sanitize_text_field($_GET['cmn_imported']) : '';
         $import_note = isset($_GET['cmn_import_msg']) ? sanitize_text_field(wp_unslash($_GET['cmn_import_msg'])) : '';
@@ -46048,7 +46055,7 @@ global $wpdb;
         <?php endif; ?>
         <section class="cmn-panel-card cmn-crm-segment-bar cmn-school-portfolio-toggle-bar">
             <div class="cmn-segmented" role="tablist" aria-label="Portfolio view">
-                <a class="cmn-segment<?php echo $status === 'lead' ? ' is-active' : ''; ?>" href="<?php echo esc_url($pipeline_toggle_url); ?>">Pipeline</a>
+                <a class="cmn-segment<?php echo $status === 'lead' ? ' is-active' : ''; ?>" href="<?php echo esc_url($pipeline_toggle_url); ?>"><?php echo esc_html($is_restricted_am_workspace ? 'Leads' : 'Pipeline'); ?></a>
                 <a class="cmn-segment<?php echo $status === 'all' ? ' is-active' : ''; ?>" href="<?php echo esc_url($portfolio_toggle_url); ?>">Portfolio</a>
                 <a class="cmn-segment<?php echo $status === 'client' ? ' is-active' : ''; ?>" href="<?php echo esc_url($clients_toggle_url); ?>">Clients</a>
             </div>
