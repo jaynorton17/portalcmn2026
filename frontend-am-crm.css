@@ -6578,6 +6578,19 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-actions {
   flex-wrap: wrap;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-top {
+  display: grid;
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-primary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-copy,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-action-summary,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-summary > div,
@@ -6602,6 +6615,10 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-card h3 {
   font-size: 22px;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card h3 {
+  font-size: 19px;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card p,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-card p {
   margin: 0;
@@ -6609,7 +6626,65 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-card p {
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-status,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-statuses {
-  align-items: end;
+  align-items: flex-start;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-status {
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-schedule {
+  min-width: 180px;
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  text-align: right;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-schedule-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-schedule strong {
+  color: var(--cmn-am-text);
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-schedule small {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-copy {
+  gap: 6px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card .cmn-am-record-card-kicker {
+  color: #94a3b8;
+  letter-spacing: 0.08em;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-secondary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--cmn-am-muted);
+  font-size: 13px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-secondary-meta .is-candidate {
+  color: var(--cmn-am-text);
+  font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-secondary-meta .is-reference {
+  color: var(--cmn-am-muted);
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-lifecycle-pill,
@@ -6665,6 +6740,28 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-meta {
   gap: 10px;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-context-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card .cmn-am-record-card-field {
+  gap: 6px;
+  padding: 14px 15px;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.74);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card .cmn-am-record-card-field strong {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card .cmn-am-record-card-field small {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-meta span,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-summary > div {
   padding: 10px 12px;
@@ -6683,6 +6780,10 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-thread-links {
   gap: 10px;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-badges {
+  gap: 8px;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-badge {
   display: inline-flex;
   align-items: center;
@@ -6693,6 +6794,20 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-badge {
   color: var(--cmn-am-text) !important;
   font-size: 12px;
   font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card .cmn-am-booking-badge {
+  padding: 6px 10px;
+  background: rgba(248, 250, 252, 0.78);
+  color: var(--cmn-am-muted) !important;
+  font-size: 11px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-actions {
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 14px;
+  border-top: 1px solid rgba(226, 232, 240, 0.88);
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-badge.is-warning {
@@ -6959,6 +7074,17 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-workspace[data-v
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-status,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-statuses {
     align-items: flex-start;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-primary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-schedule {
+    min-width: 0;
+    justify-items: start;
+    text-align: left;
   }
 
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-composer-context,

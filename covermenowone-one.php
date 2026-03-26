@@ -23896,44 +23896,54 @@ global $wpdb;
                                 $open_issue_count = max(0, (int) ($issue_snapshot['open_count'] ?? 0));
                                 $booking_status_display = $this->get_account_manager_booking_status_display($row);
                                 $primary_booking_status = is_array($booking_status_display['primary'] ?? null) ? (array) $booking_status_display['primary'] : [];
-                                $secondary_booking_statuses = array_values(array_filter((array) ($booking_status_display['secondary'] ?? []), 'is_array'));
-                                $visible_booking_badges = $this->get_account_manager_visible_booking_badges($row, 2);
+                                $secondary_booking_statuses = array_slice(array_values(array_filter((array) ($booking_status_display['secondary'] ?? []), 'is_array')), 0, 1);
+                                $visible_booking_badges = $this->get_account_manager_visible_booking_badges($row, $secondary_booking_statuses ? 1 : 2);
+                                $card_heading = trim((string) ($row['school_name'] ?? ''));
+                                if ($card_heading === '') {
+                                    $card_heading = trim((string) ($row['reference_label'] ?? 'Booking'));
+                                }
+                                $card_reference_label = trim((string) ($row['reference_label'] ?? ''));
+                                $card_candidate_name = trim((string) ($row['candidate_name'] ?? ''));
                                 ?>
                                 <article class="cmn-am-record-card cmn-am-booking-card<?php echo $is_selected ? ' is-selected' : ''; ?>">
                                     <div class="cmn-am-record-card-top cmn-am-booking-card-top">
+                                        <div class="cmn-am-booking-card-primary">
+                                            <div class="cmn-am-record-card-chip-row cmn-am-booking-card-status">
+                                                <span class="cmn-status-chip <?php echo esc_attr((string) ($primary_booking_status['class'] ?? ($row['status_chip_class'] ?? 'is-pending'))); ?>"><?php echo esc_html((string) ($primary_booking_status['label'] ?? ($row['status_label'] ?? 'Unknown'))); ?></span>
+                                                <?php foreach ($secondary_booking_statuses as $secondary_status) : ?>
+                                                    <?php if (empty($secondary_status['label'])) { continue; } ?>
+                                                    <span class="<?php echo esc_attr((string) ($secondary_status['class'] ?? 'cmn-am-record-secondary-chip is-muted')); ?>"><?php echo esc_html((string) $secondary_status['label']); ?></span>
+                                                <?php endforeach; ?>
+                                            </div>
+                                            <div class="cmn-am-booking-card-schedule">
+                                                <span class="cmn-am-booking-card-schedule-label">Booking schedule</span>
+                                                <strong><?php echo esc_html((string) ($row['date_label'] ?? 'Date not set')); ?></strong>
+                                                <small><?php echo esc_html((string) ($row['time_label'] ?? 'Time not set')); ?></small>
+                                            </div>
+                                        </div>
                                         <div class="cmn-am-record-card-title-wrap cmn-am-booking-card-copy">
                                             <span class="cmn-am-record-card-kicker"><?php echo esc_html((string) ($row['reference_id_label'] ?? 'Booking')); ?></span>
-                                            <h3 class="cmn-am-record-card-title"><a href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>"><?php echo esc_html((string) ($row['reference_label'] ?? 'Booking')); ?></a></h3>
-                                            <div class="cmn-am-record-card-meta">
-                                                <span><?php echo esc_html((string) ($row['school_name'] ?? '')); ?></span>
-                                                <?php if (!empty($row['candidate_name'])) : ?>
-                                                    <span><?php echo esc_html((string) ($row['candidate_name'] ?? '')); ?></span>
+                                            <h3 class="cmn-am-record-card-title"><a href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>"><?php echo esc_html($card_heading !== '' ? $card_heading : 'Booking'); ?></a></h3>
+                                            <div class="cmn-am-booking-card-secondary-meta">
+                                                <?php if ($card_candidate_name !== '') : ?>
+                                                    <span class="is-candidate"><?php echo esc_html($card_candidate_name); ?></span>
+                                                <?php endif; ?>
+                                                <?php if ($card_reference_label !== '' && $card_reference_label !== $card_heading) : ?>
+                                                    <span class="is-reference"><?php echo esc_html($card_reference_label); ?></span>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
-                                        <div class="cmn-am-record-card-chip-row cmn-am-booking-card-status">
-                                            <span class="cmn-status-chip <?php echo esc_attr((string) ($primary_booking_status['class'] ?? ($row['status_chip_class'] ?? 'is-pending'))); ?>"><?php echo esc_html((string) ($primary_booking_status['label'] ?? ($row['status_label'] ?? 'Unknown'))); ?></span>
-                                            <?php foreach ($secondary_booking_statuses as $secondary_status) : ?>
-                                                <?php if (empty($secondary_status['label'])) { continue; } ?>
-                                                <span class="<?php echo esc_attr((string) ($secondary_status['class'] ?? 'cmn-am-record-secondary-chip is-muted')); ?>"><?php echo esc_html((string) $secondary_status['label']); ?></span>
-                                            <?php endforeach; ?>
-                                        </div>
                                     </div>
-                                    <div class="cmn-am-record-card-grid">
+                                    <div class="cmn-am-record-card-grid cmn-am-booking-card-context-grid">
                                         <div class="cmn-am-record-card-field">
-                                            <span>Schedule</span>
-                                            <strong><?php echo esc_html((string) ($row['date_label'] ?? 'Date not set')); ?></strong>
-                                            <small><?php echo esc_html((string) ($row['time_label'] ?? 'Time not set')); ?></small>
+                                            <span>Action needed</span>
+                                            <strong><?php echo esc_html((string) ($row['action_label'] ?? 'Monitoring')); ?></strong>
+                                            <small><?php echo esc_html((string) ($row['action_reason'] ?? '')); ?></small>
                                         </div>
                                         <div class="cmn-am-record-card-field">
                                             <span>Role / type</span>
                                             <strong><?php echo esc_html((string) ($row['role_label'] ?? 'Booking')); ?></strong>
                                             <small><?php echo esc_html(!empty($row['booking_type_label']) ? (string) $row['booking_type_label'] : 'Type not set'); ?></small>
-                                        </div>
-                                        <div class="cmn-am-record-card-field">
-                                            <span>Action</span>
-                                            <strong><?php echo esc_html((string) ($row['action_label'] ?? 'Monitoring')); ?></strong>
-                                            <small><?php echo esc_html((string) ($row['action_reason'] ?? '')); ?></small>
                                         </div>
                                         <div class="cmn-am-record-card-field">
                                             <span>Linked work</span>
