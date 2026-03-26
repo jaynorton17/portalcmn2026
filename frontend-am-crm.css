@@ -7641,6 +7641,92 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-main--am-crm {
   background: transparent !important;
 }
 
+body.cmn-portal-page:has(.cmn-portal-light--am-crm),
+body.cmn-portal-page .cmn-portal-light--am-crm {
+  --cmn-am-scrollbar-size: 13px;
+  --cmn-am-scrollbar-track: rgba(226, 232, 240, 0.96);
+  --cmn-am-scrollbar-track-soft: rgba(241, 245, 249, 0.98);
+  --cmn-am-scrollbar-thumb: rgba(148, 163, 184, 0.92);
+  --cmn-am-scrollbar-thumb-hover: rgba(100, 116, 139, 0.96);
+  --cmn-am-scrollbar-thumb-active: rgba(71, 85, 105, 0.98);
+  --cmn-am-scrollbar-thumb-border: rgba(255, 255, 255, 0.96);
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm),
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) .cmn-task-panel-drawer,
+body.cmn-portal-page .cmn-portal-light--am-crm,
+body.cmn-portal-page .cmn-portal-light--am-crm * {
+  scrollbar-width: auto;
+  scrollbar-color: var(--cmn-am-scrollbar-thumb) var(--cmn-am-scrollbar-track);
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm)::-webkit-scrollbar,
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) .cmn-task-panel-drawer::-webkit-scrollbar,
+body.cmn-portal-page .cmn-portal-light--am-crm::-webkit-scrollbar,
+body.cmn-portal-page .cmn-portal-light--am-crm *::-webkit-scrollbar {
+  width: var(--cmn-am-scrollbar-size);
+  height: var(--cmn-am-scrollbar-size);
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm)::-webkit-scrollbar-track,
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) .cmn-task-panel-drawer::-webkit-scrollbar-track,
+body.cmn-portal-page .cmn-portal-light--am-crm::-webkit-scrollbar-track,
+body.cmn-portal-page .cmn-portal-light--am-crm *::-webkit-scrollbar-track {
+  background: var(--cmn-am-scrollbar-track-soft);
+  border-radius: 999px;
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm)::-webkit-scrollbar-thumb,
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) .cmn-task-panel-drawer::-webkit-scrollbar-thumb,
+body.cmn-portal-page .cmn-portal-light--am-crm::-webkit-scrollbar-thumb,
+body.cmn-portal-page .cmn-portal-light--am-crm *::-webkit-scrollbar-thumb {
+  min-height: 48px;
+  border: 2px solid var(--cmn-am-scrollbar-thumb-border);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--cmn-am-scrollbar-thumb) 0%, rgba(120, 135, 156, 0.94) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm)::-webkit-scrollbar-thumb:hover,
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) .cmn-task-panel-drawer::-webkit-scrollbar-thumb:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm::-webkit-scrollbar-thumb:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm *::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--cmn-am-scrollbar-thumb-hover) 0%, rgba(83, 99, 122, 0.96) 100%);
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm)::-webkit-scrollbar-thumb:active,
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) .cmn-task-panel-drawer::-webkit-scrollbar-thumb:active,
+body.cmn-portal-page .cmn-portal-light--am-crm::-webkit-scrollbar-thumb:active,
+body.cmn-portal-page .cmn-portal-light--am-crm *::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, var(--cmn-am-scrollbar-thumb-active) 0%, rgba(51, 65, 85, 0.98) 100%);
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm)::-webkit-scrollbar-corner,
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) .cmn-task-panel-drawer::-webkit-scrollbar-corner,
+body.cmn-portal-page .cmn-portal-light--am-crm::-webkit-scrollbar-corner,
+body.cmn-portal-page .cmn-portal-light--am-crm *::-webkit-scrollbar-corner {
+  background: var(--cmn-am-scrollbar-track-soft);
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) :is(
+  .cmn-task-panel-drawer,
+  .cmn-staff-shell--am-crm.is-nav-collapsed.is-nav-peek-open > .cmn-staff-nav,
+  .cmn-support-list,
+  .cmn-support-messages,
+  .cmn-support-insights-list
+) {
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+body.cmn-portal-page:has(.cmn-portal-light--am-crm) :is(
+  .cmn-am-pipeline-board,
+  .cmn-am-candidate-profile-tabs,
+  .cmn-marketing-table-wrap
+) {
+  scrollbar-gutter: stable both-edges;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content {
   width: min(1420px, 100%);
   min-height: 100%;
