@@ -9209,6 +9209,20 @@ document.addEventListener('DOMContentLoaded', function () {
       var modalForm = modal ? modal.querySelector('[data-support-form]') : null;
       var modalMsg = modal ? modal.querySelector('[data-support-form-msg]') : null;
       var supportRole = root.getAttribute('data-support-role') || 'user';
+      var supportScope = String(root.getAttribute('data-support-scope') || '').toLowerCase();
+      var isAccountManagerSupportWorkspace = supportScope === 'account_manager';
+      var supportDefaultFilter = String(root.getAttribute('data-support-default-filter') || '').toLowerCase();
+      if (!supportDefaultFilter) {
+        supportDefaultFilter = mode === 'admin' ? 'active' : 'all';
+      }
+      var supportFallbackSubject = isAccountManagerSupportWorkspace ? 'Support issue' : 'Support ticket';
+      var supportLoadingSelectedText = isAccountManagerSupportWorkspace ? 'Loading selected issue...' : 'Loading selected ticket...';
+      var supportEmptyListText = isAccountManagerSupportWorkspace ? 'No issues found. Issues will appear here when created.' : 'No tickets in this filter.';
+      var supportSelectConversationText = isAccountManagerSupportWorkspace ? 'Select an issue to view the conversation.' : 'Select a ticket to view the conversation.';
+      var supportSelectMessagesText = isAccountManagerSupportWorkspace ? 'Select an issue to view messages.' : 'Select a ticket to view messages.';
+      var supportNotFoundText = isAccountManagerSupportWorkspace ? 'Issue not found.' : 'Ticket not found.';
+      var supportWorkspaceTitle = isAccountManagerSupportWorkspace ? 'Issues' : 'Support';
+      var supportUnableLoadListText = isAccountManagerSupportWorkspace ? 'Unable to load issues.' : 'Unable to load tickets.';
       var activeTicketId = null;
       var activeTicket = null;
       var activeTicketLastMessageId = 0;
@@ -9227,7 +9241,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (supportShouldPromptFeedback && !initialSupportFilter) {
         initialSupportFilter = 'needs_feedback';
       }
-      var filter = initialSupportFilter || (mode === 'admin' ? 'active' : 'all');
+      var filter = initialSupportFilter || supportDefaultFilter;
       var dashboard = root.querySelector('[data-support-dashboard]');
       var feedbackModal = root.parentElement.querySelector('[data-support-feedback-modal]') || root.querySelector('[data-support-feedback-modal]');
       var feedbackModalForm = feedbackModal ? feedbackModal.querySelector('[data-support-feedback-modal-form]') : null;
@@ -9253,12 +9267,21 @@ document.addEventListener('DOMContentLoaded', function () {
         return urlParams.get('cmn_debug') === '1';
       };
 
+      var writeSupportRouteState = null;
+
       var setDeepTicketParam = function (ticketId) {
         if (!ticketId) {
           return;
         }
+        if (typeof writeSupportRouteState === 'function') {
+          writeSupportRouteState(ticketId, filter);
+          return;
+        }
         var url = new URL(window.location.href);
         url.searchParams.set('ticket_id', String(ticketId));
+        if (filter) {
+          url.searchParams.set('support_filter', String(filter));
+        }
         if (url.searchParams.has('ticket')) {
           url.searchParams.delete('ticket');
         }
@@ -9579,10 +9602,10 @@ document.addEventListener('DOMContentLoaded', function () {
         var value = String(nextFilter || '').toLowerCase();
         if (mode === 'admin') {
           if (value === '' || value === 'open') {
-            return 'active';
+            return supportDefaultFilter;
           }
           if (['active', 'new', 'open', 'closed', 'new_open', 'all', 'needs_feedback'].indexOf(value) === -1) {
-            return 'active';
+            return supportDefaultFilter;
           }
           return value;
         }
@@ -9596,6 +9619,30 @@ document.addEventListener('DOMContentLoaded', function () {
           return mode === 'admin' ? 'active' : 'all';
         }
         return value;
+      };
+
+      writeSupportRouteState = function (ticketRefOrId, nextFilter) {
+        var url = new URL(window.location.href);
+        var normalizedFilter = normalizeSupportFilterForMode(typeof nextFilter === 'string' && nextFilter !== '' ? nextFilter : filter);
+        var normalizedTicketRef = String(ticketRefOrId || '').trim();
+        if (normalizedFilter) {
+          url.searchParams.set('support_filter', normalizedFilter);
+        } else {
+          url.searchParams.delete('support_filter');
+        }
+        if (normalizedTicketRef !== '') {
+          if (/^\d+$/.test(normalizedTicketRef)) {
+            url.searchParams.set('ticket_id', normalizedTicketRef);
+            url.searchParams.delete('ticket');
+          } else {
+            url.searchParams.set('ticket', normalizedTicketRef);
+            url.searchParams.delete('ticket_id');
+          }
+        } else {
+          url.searchParams.delete('ticket_id');
+          url.searchParams.delete('ticket');
+        }
+        window.history.replaceState({}, '', url.toString());
       };
 
       var syncFilterUiState = function () {
@@ -9644,7 +9691,7 @@ document.addEventListener('DOMContentLoaded', function () {
           var item = document.createElement('button');
           item.type = 'button';
           item.className = 'cmn-support-insight-row';
-          item.innerHTML = '<strong>' + (row.ticket_ref || ('#' + String(row.ticket_id || ''))) + '</strong><span>' + (row.subject || 'Support ticket') + '</span><em>Overall ' + (row.overall_satisfaction || 0) + '/5 - Resolved: ' + (String(row.issue_resolved || '0') === '1' ? 'Yes' : 'No') + ' - ' + formatAccountManagerDateTimeValue(row.created_at, row.created_at || '') + '</em>';
+          item.innerHTML = '<strong>' + (row.ticket_ref || ('#' + String(row.ticket_id || ''))) + '</strong><span>' + (row.subject || supportFallbackSubject) + '</span><em>Overall ' + (row.overall_satisfaction || 0) + '/5 - Resolved: ' + (String(row.issue_resolved || '0') === '1' ? 'Yes' : 'No') + ' - ' + formatAccountManagerDateTimeValue(row.created_at, row.created_at || '') + '</em>';
           item.addEventListener('click', function () {
             setInsightsModalOpen(false);
             if (row.ticket_id) {
@@ -9698,7 +9745,7 @@ document.addEventListener('DOMContentLoaded', function () {
           } else if (userNeedsFeedback) {
             userFeedbackBadge = '<span class="cmn-support-ticket-badge is-warning">Needs feedback</span>';
           }
-          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || 'Support ticket') + '</span><em>' + supportEsc(statusBits.join(' - ')) + '</em>' + userFeedbackBadge;
+          item.innerHTML = '<strong><span class="cmn-ticket-status-icon ' + visual.iconClass + '">' + visual.icon + '</span>' + supportEsc(ticket.ref || '') + '</strong><span class="cmn-ticket-subject">' + supportEsc(ticket.subject || supportFallbackSubject) + '</span><em>' + supportEsc(statusBits.join(' - ')) + '</em>' + userFeedbackBadge;
         }
         item.addEventListener('click', function () {
           root.querySelectorAll('.cmn-support-ticket').forEach(function (row) { row.classList.remove('is-selected'); });
@@ -9717,7 +9764,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         if (!tickets.length) {
-          listEl.innerHTML = hasPendingSelection ? '<div class="cmn-empty">Loading selected ticket...</div>' : '<div class="cmn-empty">No tickets in this filter.</div>';
+          listEl.innerHTML = hasPendingSelection ? '<div class="cmn-empty">' + supportLoadingSelectedText + '</div>' : '<div class="cmn-empty">' + supportEmptyListText + '</div>';
           return;
         }
         var ul = document.createElement('div');
@@ -9798,10 +9845,10 @@ document.addEventListener('DOMContentLoaded', function () {
         var bookingIsFirstClass = ticket ? !!parseInt(ticket.booking_context_is_first_class || '0', 10) : false;
         var bookingContextPrefix = bookingIsFirstClass ? 'Linked booking' : 'Booking context';
         if (titleEl) {
-          titleEl.textContent = ticket ? ticket.subject : 'Support';
+          titleEl.textContent = ticket ? ticket.subject : supportWorkspaceTitle;
         }
         if (refEl) {
-          refEl.textContent = ticket ? (ticket.ticket_ref || ticket.ref || '') : 'Select a ticket to view the conversation.';
+          refEl.textContent = ticket ? (ticket.ticket_ref || ticket.ref || '') : supportSelectConversationText;
         }
         if (!channelEl && refEl && refEl.parentNode) {
           channelEl = document.createElement('div');
@@ -10165,7 +10212,7 @@ document.addEventListener('DOMContentLoaded', function () {
             activeTicketMessages = [];
             activeTicketLastMessageId = 0;
             if (messagesEl) {
-              messagesEl.innerHTML = '<div class="cmn-empty">' + ((data && data.data && data.data.message) ? data.data.message : 'Ticket not found.') + '</div>';
+              messagesEl.innerHTML = '<div class="cmn-empty">' + ((data && data.data && data.data.message) ? data.data.message : supportNotFoundText) + '</div>';
             }
             return;
           }
@@ -10201,7 +10248,7 @@ document.addEventListener('DOMContentLoaded', function () {
               var fallbackTicket = {
                 id: activeTicketId,
                 ref: ticket.ticket_ref || ticket.ref || ('#' + String(activeTicketId)),
-                subject: ticket.subject || 'Support ticket',
+                subject: ticket.subject || supportFallbackSubject,
                 status: ticket.status || 'open',
                 updated_at: ticket.updated_at || '',
                 is_new_for_admin: ticket.is_new_for_admin || 0,
@@ -10234,7 +10281,7 @@ document.addEventListener('DOMContentLoaded', function () {
         supportFetch('cmn_support_list_tickets', payload).then(function (data) {
           if (!data || !data.success) {
             if (listEl) {
-              listEl.innerHTML = '<div class="cmn-empty">Unable to load tickets.</div>';
+              listEl.innerHTML = '<div class="cmn-empty">' + supportUnableLoadListText + '</div>';
             }
             return;
           }
@@ -10246,6 +10293,7 @@ document.addEventListener('DOMContentLoaded', function () {
           if (data.data && data.data.forced_filter) {
             filter = normalizeSupportFilterForMode(data.data.forced_filter);
           }
+          writeSupportRouteState(deepTicket, filter);
           syncFilterUiState();
           if (data.data && data.data.selected_ticket_id) {
             activeTicketId = parseInt(data.data.selected_ticket_id, 10) || activeTicketId;
@@ -10274,7 +10322,7 @@ document.addEventListener('DOMContentLoaded', function () {
             updateThreadHeader(null);
             renderPayrollContext(null, null, null);
             if (messagesEl) {
-              messagesEl.innerHTML = '<div class="cmn-empty">Select a ticket to view messages.</div>';
+              messagesEl.innerHTML = '<div class="cmn-empty">' + supportSelectMessagesText + '</div>';
             }
           }
         });
@@ -10283,6 +10331,7 @@ document.addEventListener('DOMContentLoaded', function () {
       root.querySelectorAll('[data-support-filter]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           filter = normalizeSupportFilterForMode(btn.getAttribute('data-support-filter') || '');
+          writeSupportRouteState('', filter);
           syncFilterUiState();
           loadTickets();
         });
@@ -10303,6 +10352,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
           }
           filter = normalizeSupportFilterForMode(tile);
+          writeSupportRouteState('', filter);
           syncFilterUiState();
           loadTickets();
         });
@@ -10615,6 +10665,10 @@ document.addEventListener('DOMContentLoaded', function () {
         startSupportLegacyPolling(0);
       }
 
+      filter = normalizeSupportFilterForMode(filter);
+      if (isAccountManagerSupportWorkspace || initialSupportFilter !== filter) {
+        writeSupportRouteState(getDeepTicketParam(), filter);
+      }
       syncFilterUiState();
       loadTickets();
 

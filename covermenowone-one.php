@@ -20152,6 +20152,27 @@ global $wpdb;
         return 'dashboard';
     }
 
+    private function get_account_manager_support_workspace_url($portal_url = '', array $overrides = []) {
+        $portal_url = $portal_url !== '' ? esc_url_raw((string) $portal_url) : esc_url_raw((string) $this->get_portal_base_url());
+        if ($portal_url === '') {
+            return '';
+        }
+
+        $query = array_merge([
+            'view' => 'support',
+            'support_filter' => 'active',
+            'ticket_id' => false,
+            'ticket' => false,
+            'support_feedback' => false,
+            'support_open' => false,
+            'support_prefill_category' => false,
+            'support_prefill_subject' => false,
+            'support_prefill_message' => false,
+        ], is_array($overrides) ? $overrides : []);
+
+        return esc_url_raw(add_query_arg($query, $portal_url));
+    }
+
     private function build_account_manager_shell_navigation($user_id, $portal_url, $active_nav_key = '', array $nav_badges = [], array $nav_context = []) {
         $user_id = (int) $user_id;
         $portal_url = esc_url_raw((string) $portal_url);
@@ -20230,11 +20251,7 @@ global $wpdb;
             'cmn_status' => false,
             'cmn_doc_review' => false,
         ], $portal_url);
-        $support_url = add_query_arg([
-            'view' => 'support',
-            'support_filter' => 'open',
-            'ticket_id' => false,
-        ], $portal_url);
+        $support_url = $this->get_account_manager_support_workspace_url($portal_url);
         $activity_url = add_query_arg([
             'view' => 'activity',
         ], $portal_url);
@@ -21491,7 +21508,7 @@ global $wpdb;
                 : 'No linked issues';
             $all_rows[$row_index]['issue_url'] = !empty($issue_snapshot['latest_ticket_url'])
                 ? esc_url_raw((string) $issue_snapshot['latest_ticket_url'])
-                : esc_url_raw(add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url));
+                : $this->get_account_manager_support_workspace_url($portal_url);
             $all_rows[$row_index]['focus_url'] = esc_url_raw($build_tasks_url([
                 'cmn_task_id' => (int) ($row['task_id'] ?? 0),
                 'cmn_task_compose' => false,
@@ -22392,7 +22409,7 @@ global $wpdb;
                                 <h3>Issue watch</h3>
                                 <p>Support threads still needing AM attention.</p>
                             </div>
-                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url)); ?>">Open issues</a>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($this->get_account_manager_support_workspace_url($portal_url)); ?>">Open issues</a>
                         </div>
                         <div class="cmn-am-activity-side-list">
                             <?php if ($issue_rows) : ?>
@@ -23403,7 +23420,7 @@ global $wpdb;
             $shared_chat_url = add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS], $portal_url) . '#cmn-request-chat';
             $school_chat_url = add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION], $portal_url) . '#cmn-request-chat';
             $candidate_chat_url = add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION], $portal_url) . '#cmn-request-chat';
-            $issue_workspace_url = add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url);
+            $issue_workspace_url = $this->get_account_manager_support_workspace_url($portal_url);
             $primary_issue_url = !empty($issue_snapshot['latest_ticket_url']) ? (string) $issue_snapshot['latest_ticket_url'] : $issue_workspace_url;
             $search_text = strtolower(trim(implode(' ', array_filter([$reference_label, $school_name, $candidate_name, $role_label, $booking_type_label, $location, $status_key, $notes_excerpt]))));
 
@@ -23671,7 +23688,7 @@ global $wpdb;
         $portal_url = $this->get_portal_base_url();
         $clients_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url);
         $pipeline_url = add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url);
-        $issues_url = add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url);
+        $issues_url = $this->get_account_manager_support_workspace_url($portal_url);
         $scope_label_map = ['all' => 'All', 'today' => 'Today', 'tomorrow' => 'Tomorrow', 'needs_attention' => 'Needs attention', 'unresolved' => 'Unresolved'];
         $scope_label = sanitize_text_field((string) ($scope_label_map[(string) ($filters['scope'] ?? 'all')] ?? 'All'));
         $composer_state = sanitize_key((string) ($filters['compose'] ?? ''));
@@ -45870,10 +45887,7 @@ global $wpdb;
             $activity_url = $this->get_school_profile_tab_url($school_id, 'activity');
         }
         $bookings_url = $this->get_school_profile_tab_url($school_id, 'bookings');
-        $issues_url = add_query_arg([
-            'view' => 'support',
-            'support_filter' => 'open',
-        ], $portal_url);
+        $issues_url = $this->get_account_manager_support_workspace_url($portal_url);
 
         $school_email = sanitize_email((string) get_post_meta($school_id, 'cmn_email', true));
         $school_domain = $this->get_email_domain($school_email);
@@ -46416,7 +46430,7 @@ global $wpdb;
                 'accounts' => add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
                 'needs_attention' => add_query_arg(['view' => 'schools', 'cmn_work_queue' => 'follow_up', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
                 'tasks' => add_query_arg(['view' => 'schools', 'cmn_work_queue' => 'follow_up', 'cmn_status' => 'all', 'cmn_bucket' => false], $portal_url),
-                'issues' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
+                'issues' => $this->get_account_manager_support_workspace_url($portal_url),
                 'bookings' => add_query_arg(['view' => 'bookings'], $portal_url),
             ],
             'focus_school_id' => max(0, (int) ($focus_row['school_post_id'] ?? 0)),
@@ -47189,10 +47203,7 @@ global $wpdb;
         $email_focus_url = $build_profile_url('contacts', ['cmn_school_focus_action' => 'email']);
         $call_focus_url = $build_profile_url('activity', ['cmn_school_focus_action' => 'activity_call'], '#cmn-school-add-activity');
         $note_focus_url = $build_profile_url('activity', ['cmn_school_focus_action' => 'activity_note'], '#cmn-school-add-activity');
-        $support_open_url = add_query_arg([
-            'view' => 'support',
-            'support_filter' => 'open',
-        ], $portal_url);
+        $support_open_url = $this->get_account_manager_support_workspace_url($portal_url);
 
         $meta = function ($key) use ($selected_school_id) {
             return get_post_meta($selected_school_id, $key, true);
@@ -48424,7 +48435,7 @@ global $wpdb;
                     [
                         'label' => 'My Issues',
                         'detail' => 'Open portfolio support',
-                        'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
+                        'url' => $this->get_account_manager_support_workspace_url($portal_url),
                     ],
                 ],
             ];
@@ -48524,7 +48535,7 @@ global $wpdb;
                     'load_mode' => 'eager',
                     'eyebrow' => 'Issues',
                     'action_label' => 'Open My Issues',
-                    'action_url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
+                    'action_url' => $this->get_account_manager_support_workspace_url($portal_url),
                     'status_placeholder' => 'Loading portfolio issues...',
                 ],
                 'recent_activity' => [
@@ -48903,7 +48914,7 @@ global $wpdb;
                         . number_format_i18n((int) ($issue_counts['closed'] ?? 0)) . ' closed · '
                         . number_format_i18n((int) ($issue_counts['needs_feedback'] ?? 0)) . ' need feedback',
                     'cta' => 'Open My Issues',
-                    'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
+                    'url' => $this->get_account_manager_support_workspace_url($portal_url),
                 ];
                 foreach (array_slice($issue_rows, 0, 3) as $issue_row) {
                     $rows[] = [
@@ -51909,10 +51920,7 @@ global $wpdb;
                         $recent_booking_detail = sanitize_text_field((string) ($row_card['recent_booking_detail'] ?? 'No recent booking movement in scope.'));
                         $open_issue_count = max(0, (int) ($row_card['open_issue_count'] ?? 0));
                         $issues_url = $open_issue_count > 0
-                            ? esc_url(add_query_arg([
-                                'view' => 'support',
-                                'support_filter' => 'open',
-                            ], $portal_url))
+                            ? esc_url($this->get_account_manager_support_workspace_url($portal_url))
                             : '';
                         $open_issue_label = $open_issue_count > 0 ? (number_format_i18n($open_issue_count) . ' open') : 'Clear';
                         $follow_up_state_label = sanitize_text_field((string) ($row_card['follow_up_state_label'] ?? 'No follow-up logged'));
@@ -53607,10 +53615,12 @@ global $wpdb;
         $candidate_recent_booking_rows = [];
         $candidate_blockers = [];
         $candidate_risk_signals = [];
-        $candidate_escalation_support_url = add_query_arg([
-            'view' => 'support',
-            'support_filter' => 'open',
-        ], $portal_url);
+        $candidate_escalation_support_url = $is_restricted_am_workspace
+            ? $this->get_account_manager_support_workspace_url($portal_url)
+            : add_query_arg([
+                'view' => 'support',
+                'support_filter' => 'open',
+            ], $portal_url);
         $candidate_escalation_booking_url = add_query_arg(['view' => 'bookings'], $portal_url);
         $candidate_primary_school_url = '';
         $latest_internal_note = is_array($internal_notes[0] ?? null) ? $internal_notes[0] : [];
@@ -68333,13 +68343,13 @@ global $wpdb;
                     [
                         'label' => 'Open issues',
                         'detail' => 'Current live issue queue',
-                        'url' => add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url),
+                        'url' => $this->get_account_manager_support_workspace_url($portal_url),
                         'class' => 'cmn-crm-workspace-hero-action',
                     ],
                     [
                         'label' => 'Needs feedback',
                         'detail' => 'Closed tickets awaiting feedback',
-                        'url' => add_query_arg(['view' => 'support', 'support_filter' => 'needs_feedback'], $portal_url),
+                        'url' => $this->get_account_manager_support_workspace_url($portal_url, ['support_filter' => 'needs_feedback']),
                         'class' => 'cmn-crm-workspace-hero-action',
                     ],
                 ],
@@ -68381,7 +68391,11 @@ global $wpdb;
                 <p>Manage support tickets and reply to users.</p>
             </header>
         <?php endif; ?>
-        <div class="cmn-support-hub-wrap" data-support-root data-support-mode="admin">
+        <div class="cmn-support-hub-wrap"
+             data-support-root
+             data-support-mode="admin"
+             data-support-scope="<?php echo esc_attr($is_restricted_am_workspace ? 'account_manager' : 'staff'); ?>"
+             data-support-default-filter="active">
             <div class="cmn-support-dashboard" data-support-dashboard>
                 <button class="cmn-support-tile is-active" type="button" data-support-tile="open">
                     <span><?php echo esc_html($is_restricted_am_workspace ? 'Open issues' : 'Open tickets'); ?></span>
@@ -68410,14 +68424,14 @@ global $wpdb;
                     <button class="cmn-ghost" type="button" data-support-filter="needs_feedback">Needs feedback</button>
                 </div>
                 <div class="cmn-support-list" data-support-list>
-                    <div class="cmn-muted">Loading tickets...</div>
+                    <div class="cmn-muted"><?php echo esc_html($is_restricted_am_workspace ? 'Loading issues...' : 'Loading tickets...'); ?></div>
                 </div>
             </div>
             <div class="cmn-support-thread" data-support-thread>
                 <div class="cmn-support-thread-header">
                     <div>
-                        <strong data-support-thread-title>Support</strong>
-                        <div class="cmn-muted" data-support-thread-ref>Select a ticket to view the conversation.</div>
+                        <strong data-support-thread-title><?php echo esc_html($is_restricted_am_workspace ? 'Issues' : 'Support'); ?></strong>
+                        <div class="cmn-muted" data-support-thread-ref><?php echo esc_html($is_restricted_am_workspace ? 'Select an issue to view the conversation.' : 'Select a ticket to view the conversation.'); ?></div>
                         <div class="cmn-status-chip is-pending" data-support-feedback-badge hidden>Feedback received</div>
                     </div>
                     <div class="cmn-support-thread-actions">
@@ -71426,7 +71440,7 @@ global $wpdb;
                     <p>Manage your personal workspace defaults, notifications, and cover settings without exposing broader staff or admin tooling.</p>
                 </div>
                 <div class="cmn-am-booking-thread-links">
-                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url)); ?>">Open Support / Issues</a>
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($this->get_account_manager_support_workspace_url($portal_url)); ?>">Open Support / Issues</a>
                     <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'tasks'], $portal_url)); ?>">Open My Tasks</a>
                 </div>
             </header>
@@ -71509,7 +71523,7 @@ global $wpdb;
                         <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'bookings'], $portal_url)); ?>">Open Bookings</a>
                         <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_work_queue' => 'follow_up'], $portal_url)); ?>">Open Follow-Up</a>
                         <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'activity'], $portal_url)); ?>">Open Activity</a>
-                        <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url)); ?>">Open Support / Issues</a>
+                        <a class="cmn-ghost" href="<?php echo esc_url($this->get_account_manager_support_workspace_url($portal_url)); ?>">Open Support / Issues</a>
                     </div>
                 </div>
             </div>
@@ -74021,10 +74035,7 @@ global $wpdb;
                 'cmn_school_tab' => 'settings',
                 'cmn_school_focus_action' => 'owner',
             ]), $portal_url) . '#cmn-school-owner-control';
-            $support_open_url = add_query_arg([
-                'view' => 'support',
-                'support_filter' => 'open',
-            ], $portal_url);
+            $support_open_url = $this->get_account_manager_support_workspace_url($portal_url);
             $school_issue_snapshot = $this->get_school_support_issue_snapshot($school_id, $current_user_id, 4);
             $support_focus_url = !empty($school_issue_snapshot['rows'][0]['url'])
                 ? esc_url_raw((string) $school_issue_snapshot['rows'][0]['url'])
