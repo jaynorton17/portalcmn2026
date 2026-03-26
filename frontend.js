@@ -1690,7 +1690,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var staffNavEditable = staffNav.getAttribute('data-nav-editable') !== '0';
     var staffNavStorageKey = 'cmn_staff_nav_state_v2_' + staffNavUserId;
     var isAccountManagerNav = staffNav.classList.contains('is-account-manager-nav');
-    var staffNavCompactKey = (isAccountManagerNav ? 'cmn_am_staff_nav_compact_v2_' : 'cmn_staff_nav_compact_v1_') + staffNavUserId;
+    var staffNavCompactKey = (isAccountManagerNav ? 'cmn_am_staff_nav_compact_v3_' : 'cmn_staff_nav_compact_v1_') + staffNavUserId;
     var staffNavScrollKey = (isAccountManagerNav ? 'cmn_am_staff_nav_scroll_v1_' : 'cmn_staff_nav_scroll_v1_') + staffNavUserId;
     var staffNavEditModeKey = 'cmn_sidebar_edit_mode';
     var staffShell = staffNav.closest('.cmn-staff-shell');
@@ -2841,6 +2841,78 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       window.location.hash = hash;
     };
+    var buildRecordWorkspaceScrollKey = function (workspace, url) {
+      if (!workspace || !window.URL) {
+        return '';
+      }
+      try {
+        var parsed = new window.URL(url || window.location.href, window.location.href);
+        ['booking_id', 'cmn_task_id', 'cmn_task_edit', 'cmn_task_source', 'cmn_task_compose', 'school_id', 'pid', 'candidate_id', 'ticket_id', 'ticket'].forEach(function (param) {
+          parsed.searchParams.delete(param);
+        });
+        var workspaceKey = '';
+        Array.prototype.slice.call(workspace.classList || []).some(function (className) {
+          if (className && className.indexOf('cmn-am-') === 0 && className.indexOf('-workspace') !== -1 && className !== 'cmn-am-records-workspace') {
+            workspaceKey = className;
+            return true;
+          }
+          return false;
+        });
+        if (!workspaceKey) {
+          workspaceKey = workspace.getAttribute('id') || 'cmn-am-records-workspace';
+        }
+        return 'cmn_am_record_scroll_v1:' + workspaceKey + ':' + parsed.pathname + '?' + parsed.searchParams.toString();
+      } catch (e) {
+        return '';
+      }
+    };
+    var persistRecordWorkspaceScrollState = function (workspace, url) {
+      var storageKey = buildRecordWorkspaceScrollKey(workspace, url);
+      if (!storageKey) {
+        return;
+      }
+      var mainPanel = workspace.querySelector('.cmn-am-records-main');
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify({
+          windowY: Math.max(0, window.scrollY || window.pageYOffset || 0),
+          main: mainPanel ? Math.max(0, mainPanel.scrollTop || 0) : 0
+        }));
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    };
+    var restoreRecordWorkspaceScrollState = function (workspace) {
+      var storageKey = buildRecordWorkspaceScrollKey(workspace, window.location.href);
+      if (!storageKey) {
+        return;
+      }
+      var savedState = null;
+      try {
+        savedState = JSON.parse(window.sessionStorage.getItem(storageKey) || 'null');
+      } catch (e) {
+        savedState = null;
+      }
+      if (!savedState || typeof savedState !== 'object') {
+        return;
+      }
+      var mainPanel = workspace.querySelector('.cmn-am-records-main');
+      var applyScrollState = function () {
+        if (mainPanel) {
+          mainPanel.scrollTop = Math.max(0, parseInt(savedState.main || 0, 10) || 0);
+        }
+        window.scrollTo(0, Math.max(0, parseInt(savedState.windowY || 0, 10) || 0));
+      };
+      applyScrollState();
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(applyScrollState);
+      }
+      window.setTimeout(applyScrollState, 80);
+      try {
+        window.sessionStorage.removeItem(storageKey);
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    };
 
     accountManagerRecordWorkspaces.forEach(function (workspace) {
       var detailShell = workspace.querySelector('.cmn-am-records-detail-shell');
@@ -2848,12 +2920,14 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!detailShell || !cards.length) {
         return;
       }
+      restoreRecordWorkspaceScrollState(workspace);
 
       var readCardSelection = function (card) {
         if (!card) {
           return { link: null, url: '', label: 'record' };
         }
         var selectionLink = card.querySelector('.cmn-am-record-card-title a[href], .cmn-am-record-card-actions a.cmn-primary[href]');
+        var explicitUrl = String(card.getAttribute('data-record-select-url') || '').trim();
         var titleEl = card.querySelector('.cmn-am-record-card-title');
         var label = titleEl ? String(titleEl.textContent || '').trim() : '';
         if (!label) {
@@ -2861,7 +2935,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         return {
           link: selectionLink,
-          url: selectionLink ? String(selectionLink.getAttribute('href') || '').trim() : '',
+          url: explicitUrl || (selectionLink ? String(selectionLink.getAttribute('href') || '').trim() : ''),
           label: label
         };
       };
@@ -2913,6 +2987,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (event) {
           event.preventDefault();
         }
+        persistRecordWorkspaceScrollState(workspace, selectionUrl);
         setSelectedCard(card);
         showDetailLoadingState(selection);
         window.location.assign(targetParts.href);
@@ -2930,10 +3005,26 @@ document.addEventListener('DOMContentLoaded', function () {
           var interactiveTarget = event.target && event.target.closest
             ? event.target.closest('a, button, input, select, textarea, label, summary, form, [role="button"], [role="link"]')
             : null;
-          if (interactiveTarget && interactiveTarget !== selection.link) {
+          var interactiveHrefMatchesSelection = !!(
+            interactiveTarget
+            && typeof interactiveTarget.getAttribute === 'function'
+            && selection.url
+            && String(interactiveTarget.getAttribute('href') || '').trim() === selection.url
+          );
+          if (interactiveTarget && interactiveTarget !== selection.link && !interactiveHrefMatchesSelection) {
             return;
           }
           navigateToSelection(card, selection, event);
+        });
+      });
+
+      workspace.querySelectorAll('form').forEach(function (formEl) {
+        var actionInput = formEl.querySelector('input[name="action"]');
+        if (!actionInput || String(actionInput.value || '') !== 'cmn_complete_activity') {
+          return;
+        }
+        formEl.addEventListener('submit', function () {
+          persistRecordWorkspaceScrollState(workspace, window.location.href);
         });
       });
     });
@@ -9656,7 +9747,7 @@ document.addEventListener('DOMContentLoaded', function () {
             tileBtn.classList.remove('is-active');
             return;
           }
-          var expected = mode === 'admin' && tileKey === 'open' ? 'active' : tileKey;
+          var expected = mode === 'admin' && tileKey === 'open' ? supportDefaultFilter : tileKey;
           tileBtn.classList.toggle('is-active', expected === activeFilter);
         });
       };

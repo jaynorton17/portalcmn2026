@@ -20160,7 +20160,7 @@ global $wpdb;
 
         $query = array_merge([
             'view' => 'support',
-            'support_filter' => 'active',
+            'support_filter' => 'open',
             'ticket_id' => false,
             'ticket' => false,
             'support_feedback' => false,
@@ -21514,6 +21514,10 @@ global $wpdb;
                 'cmn_task_compose' => false,
             ]) . '#cmn-am-task-detail');
             $all_rows[$row_index]['redirect_url'] = $all_rows[$row_index]['focus_url'];
+            $all_rows[$row_index]['complete_redirect_url'] = esc_url_raw($build_tasks_url([
+                'cmn_task_id' => false,
+                'cmn_task_compose' => false,
+            ]) . '#cmn-am-task-detail');
         }
 
         $payload['total_count'] = count($all_rows);
@@ -21691,6 +21695,10 @@ global $wpdb;
                 'cmn_task_compose' => false,
             ]) . '#cmn-am-task-detail');
             $selected['redirect_url'] = $selected['focus_url'];
+            $selected['complete_redirect_url'] = esc_url_raw($build_tasks_url([
+                'cmn_task_id' => false,
+                'cmn_task_compose' => false,
+            ]) . '#cmn-am-task-detail');
             $selected['compose_url'] = esc_url_raw($build_tasks_url([
                 'cmn_task_id' => $selected_task_id,
                 'cmn_task_compose' => '1',
@@ -21988,7 +21996,7 @@ global $wpdb;
                                                 <input type="hidden" name="action" value="cmn_complete_activity">
                                                 <input type="hidden" name="cmn_activity_id" value="<?php echo esc_attr((string) ($row['task_id'] ?? 0)); ?>">
                                                 <input type="hidden" name="cmn_activity_source" value="<?php echo esc_attr((string) ($row['task_source'] ?? 'activity')); ?>">
-                                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr((string) ($row['redirect_url'] ?? $clear_filters_url)); ?>">
+                                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr((string) ($row['complete_redirect_url'] ?? $row['redirect_url'] ?? $clear_filters_url)); ?>">
                                                 <button class="cmn-ghost cmn-btn-mini" type="submit">Mark done</button>
                                             </form>
                                         <?php endif; ?>
@@ -22082,7 +22090,7 @@ global $wpdb;
                                         <input type="hidden" name="action" value="cmn_complete_activity">
                                         <input type="hidden" name="cmn_activity_id" value="<?php echo esc_attr((string) ($selected_task['task_id'] ?? 0)); ?>">
                                         <input type="hidden" name="cmn_activity_source" value="<?php echo esc_attr((string) ($selected_task['task_source'] ?? 'activity')); ?>">
-                                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr((string) ($selected_task['redirect_url'] ?? $clear_filters_url)); ?>">
+                                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr((string) ($selected_task['complete_redirect_url'] ?? $selected_task['redirect_url'] ?? $clear_filters_url)); ?>">
                                         <button class="cmn-ghost cmn-btn-mini" type="submit">Mark done</button>
                                     </form>
                                 <?php endif; ?>
@@ -23929,7 +23937,8 @@ global $wpdb;
                                 $card_reference_label = trim((string) ($row['reference_label'] ?? ''));
                                 $card_candidate_name = trim((string) ($row['candidate_name'] ?? ''));
                                 ?>
-                                <article class="cmn-am-record-card cmn-am-booking-card<?php echo $is_selected ? ' is-selected' : ''; ?>">
+                                <article class="cmn-am-record-card cmn-am-booking-card<?php echo $is_selected ? ' is-selected' : ''; ?>"
+                                         data-record-select-url="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>">
                                     <div class="cmn-am-record-card-top cmn-am-booking-card-top">
                                         <div class="cmn-am-booking-card-primary">
                                             <div class="cmn-am-record-card-chip-row cmn-am-booking-card-status">
@@ -23984,7 +23993,7 @@ global $wpdb;
                                         </div>
                                     <?php endif; ?>
                                     <div class="cmn-am-record-card-actions cmn-am-booking-card-actions">
-                                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>"><?php echo $is_selected ? 'Detail open' : 'Open booking'; ?></a>
+                                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>"><?php echo $is_selected ? 'Detail open' : 'View detail'; ?></a>
                                         <?php if ($open_issue_count > 0) : ?>
                                             <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($row['primary_issue_url'] ?? $clear_filters_url)); ?>">View issue</a>
                                         <?php endif; ?>
@@ -68395,7 +68404,7 @@ global $wpdb;
              data-support-root
              data-support-mode="admin"
              data-support-scope="<?php echo esc_attr($is_restricted_am_workspace ? 'account_manager' : 'staff'); ?>"
-             data-support-default-filter="active">
+             data-support-default-filter="<?php echo esc_attr($is_restricted_am_workspace ? 'open' : 'active'); ?>">
             <div class="cmn-support-dashboard" data-support-dashboard>
                 <button class="cmn-support-tile is-active" type="button" data-support-tile="open">
                     <span><?php echo esc_html($is_restricted_am_workspace ? 'Open issues' : 'Open tickets'); ?></span>
@@ -68417,7 +68426,7 @@ global $wpdb;
             <div class="cmn-support-hub" data-support-shell>
             <div class="cmn-support-sidebar">
                 <div class="cmn-support-filters">
-                    <button class="cmn-ghost is-active" type="button" data-support-filter="active"><?php echo esc_html($is_restricted_am_workspace ? 'Open issues' : 'New + Open'); ?></button>
+                    <button class="cmn-ghost is-active" type="button" data-support-filter="<?php echo esc_attr($is_restricted_am_workspace ? 'open' : 'active'); ?>"><?php echo esc_html($is_restricted_am_workspace ? 'Open issues' : 'New + Open'); ?></button>
                     <button class="cmn-ghost" type="button" data-support-filter="new">New</button>
                     <button class="cmn-ghost" type="button" data-support-filter="open">Open</button>
                     <button class="cmn-ghost" type="button" data-support-filter="closed">Closed</button>
@@ -119564,7 +119573,7 @@ global $wpdb;
         $task_editor_intent = sanitize_key((string) ($_POST['cmn_task_editor_intent'] ?? 'update'));
         if ($task_editor_intent === 'complete') {
             $complete_redirect = $fallback_redirect !== ''
-                ? esc_url_raw((string) remove_query_arg(['cmn_task_msg', 'cmn_task_msg_tone'], $fallback_redirect))
+                ? esc_url_raw((string) remove_query_arg(['cmn_task_msg', 'cmn_task_msg_tone', 'cmn_task_edit', 'cmn_task_source', 'cmn_task_compose'], $fallback_redirect))
                 : '';
             if (!$this->complete_school_task_record($task_record)) {
                 $this->redirect_with_task_notice_or_fail($complete_redirect !== '' ? $complete_redirect : $fallback_redirect, 'Task could not be completed.', 'error', 500);
@@ -126569,15 +126578,35 @@ p{margin:0;line-height:1.5}
 
         if ($storage_source === 'activity') {
             $table = $this->get_activity_table();
-            $update = [
-                'subject' => $subject,
-                'notes' => $notes,
-                'due_date' => $due_date !== '' ? $due_date : null,
-                'duration_minutes' => $duration_minutes > 0 ? $duration_minutes : null,
-                'completed_at' => $completed_at !== '' ? $completed_at : null,
-                'updated_at' => current_time('mysql'),
-            ];
-            $formats = ['%s', '%s', '%s', '%d', '%s', '%s'];
+            $update = [];
+            $formats = [];
+            if ($this->activity_table_has_column('subject')) {
+                $update['subject'] = $subject;
+                $formats[] = '%s';
+            }
+            if ($this->activity_table_has_column('notes')) {
+                $update['notes'] = $notes;
+                $formats[] = '%s';
+            }
+            if ($this->activity_table_has_column('due_date')) {
+                $update['due_date'] = $due_date !== '' ? $due_date : null;
+                $formats[] = '%s';
+            }
+            if ($this->activity_table_has_column('duration_minutes')) {
+                $update['duration_minutes'] = $duration_minutes > 0 ? $duration_minutes : null;
+                $formats[] = '%d';
+            }
+            if ($this->activity_table_has_column('completed_at')) {
+                $update['completed_at'] = $completed_at !== '' ? $completed_at : null;
+                $formats[] = '%s';
+            }
+            if ($this->activity_table_has_column('updated_at')) {
+                $update['updated_at'] = current_time('mysql');
+                $formats[] = '%s';
+            }
+            if (!$update) {
+                return false;
+            }
             return false !== $wpdb->update($table, $update, ['id' => $activity_id], $formats, ['%d']);
         }
 
