@@ -535,7 +535,8 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-right span {
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-brand-link .cmn-topbar-accent,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-brand-title .cmn-topbar-accent {
-  color: #F04340 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-logout {
