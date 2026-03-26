@@ -20832,6 +20832,38 @@ global $wpdb;
         ];
     }
 
+    private function resolve_account_manager_visible_focus_id($requested_id, array $visible_rows = [], $row_id_key = 'id') {
+        $requested_id = max(0, (int) $requested_id);
+        $row_id_key = sanitize_key((string) $row_id_key);
+        if ($row_id_key === '') {
+            return 0;
+        }
+
+        $first_visible_id = 0;
+        $visible_lookup = [];
+        foreach ($visible_rows as $visible_row) {
+            if (!is_array($visible_row)) {
+                continue;
+            }
+
+            $row_id = max(0, (int) ($visible_row[$row_id_key] ?? 0));
+            if ($row_id < 1) {
+                continue;
+            }
+
+            if ($first_visible_id < 1) {
+                $first_visible_id = $row_id;
+            }
+            $visible_lookup[$row_id] = true;
+        }
+
+        if ($requested_id > 0 && isset($visible_lookup[$requested_id])) {
+            return $requested_id;
+        }
+
+        return $first_visible_id;
+    }
+
     private function build_account_manager_tasks_workspace_payload($user_id = 0) {
         global $wpdb;
 
@@ -21451,13 +21483,14 @@ global $wpdb;
         $payload['filter_chips'] = $filter_chips;
         $payload['filter_count'] = count($filter_chips);
 
-        $selected_task_id = max(0, (int) ($filters['selected_task_id'] ?? 0));
+        $selected_task_id = $this->resolve_account_manager_visible_focus_id(
+            (int) ($filters['selected_task_id'] ?? 0),
+            $filtered,
+            'task_id'
+        );
         $task_lookup = [];
         foreach ($filtered as $row) {
             $task_lookup[(int) ($row['task_id'] ?? 0)] = $row;
-        }
-        if ($selected_task_id < 1 || !isset($task_lookup[$selected_task_id])) {
-            $selected_task_id = !empty($filtered[0]['task_id']) ? (int) $filtered[0]['task_id'] : 0;
         }
         if ($selected_task_id > 0 && isset($task_lookup[$selected_task_id])) {
             $selected = $task_lookup[$selected_task_id];
@@ -23397,13 +23430,14 @@ global $wpdb;
         $payload['filter_chips'] = $filter_chips;
         $payload['filter_count'] = count($filter_chips);
 
-        $selected_booking_id = max(0, (int) ($filters['selected_booking_id'] ?? 0));
+        $selected_booking_id = $this->resolve_account_manager_visible_focus_id(
+            (int) ($filters['selected_booking_id'] ?? 0),
+            $filtered,
+            'booking_id'
+        );
         $lookup = [];
         foreach ($filtered as $row) {
             $lookup[(int) ($row['booking_id'] ?? 0)] = $row;
-        }
-        if ($selected_booking_id < 1 || !isset($lookup[$selected_booking_id])) {
-            $selected_booking_id = !empty($filtered[0]['booking_id']) ? (int) $filtered[0]['booking_id'] : 0;
         }
         if ($selected_booking_id > 0 && isset($lookup[$selected_booking_id])) {
             $selected = $lookup[$selected_booking_id];
@@ -50281,15 +50315,47 @@ global $wpdb;
                 $empty_copy = 'Try a different queue preset or clear the filters to surface more follow-up work.';
             }
 
-            $first_focus_row = is_array($visible_school_crm_rows[0] ?? null) ? $visible_school_crm_rows[0] : [];
-            if ($focus_school_id < 1 && !empty($first_focus_row['school_post_id']) && $shown_results_count === 1) {
-                $focus_school_id = max(0, (int) $first_focus_row['school_post_id']);
-            }
+            $focus_school_id = $this->resolve_account_manager_visible_focus_id(
+                $focus_school_id,
+                $visible_school_crm_rows,
+                'school_post_id'
+            );
 
             $focus_row_card = $focus_school_id > 0 ? (array) ($school_crm_rows[$focus_school_id] ?? []) : [];
             $focus_detail_payload = $focus_row_card
                 ? $this->build_account_manager_school_workspace_detail_payload($focus_school_id, $current_user_id, $focus_row_card)
                 : [];
+            if (!$focus_detail_payload && $visible_school_crm_rows) {
+                foreach ($visible_school_crm_rows as $visible_focus_row) {
+                    if (!is_array($visible_focus_row)) {
+                        continue;
+                    }
+
+                    $candidate_focus_school_id = max(0, (int) ($visible_focus_row['school_post_id'] ?? 0));
+                    if ($candidate_focus_school_id < 1) {
+                        continue;
+                    }
+
+                    $candidate_focus_row_card = (array) ($school_crm_rows[$candidate_focus_school_id] ?? []);
+                    if (!$candidate_focus_row_card) {
+                        continue;
+                    }
+
+                    $candidate_focus_detail_payload = $this->build_account_manager_school_workspace_detail_payload(
+                        $candidate_focus_school_id,
+                        $current_user_id,
+                        $candidate_focus_row_card
+                    );
+                    if (!$candidate_focus_detail_payload) {
+                        continue;
+                    }
+
+                    $focus_school_id = $candidate_focus_school_id;
+                    $focus_row_card = $candidate_focus_row_card;
+                    $focus_detail_payload = $candidate_focus_detail_payload;
+                    break;
+                }
+            }
 
             ob_start();
             ?>
@@ -50577,20 +50643,17 @@ global $wpdb;
                             <?php echo $this->render_account_manager_school_workspace_detail_panel($focus_detail_payload); ?>
                         <?php else : ?>
                             <?php
-                            $focus_suggestion_url = '';
-                            if (!empty($first_focus_row['school_post_id'])) {
-                                $focus_suggestion_url = add_query_arg(array_merge($current_page_query, [
-                                    'cmn_focus_school' => (int) $first_focus_row['school_post_id'],
-                                ]), $portal_url);
-                            }
+                            $has_visible_focus_candidates = $shown_results_count > 0;
                             ?>
                             <div class="cmn-am-records-detail-empty">
                                 <span class="cmn-am-records-eyebrow">Relationship Detail</span>
-                                <h3>Select an account</h3>
-                                <p>Choose a client or lead from the list to keep detail, follow-up signals, bookings, and issue context open without leaving the page.</p>
-                                <?php if ($focus_suggestion_url !== '') : ?>
-                                    <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($focus_suggestion_url); ?>">Open the first visible record</a>
-                                <?php endif; ?>
+                                <h3><?php echo esc_html($has_visible_focus_candidates ? 'No account detail is available for the current view' : $empty_title); ?></h3>
+                                <p><?php echo esc_html($has_visible_focus_candidates
+                                    ? 'The previously focused account is no longer valid in this queue, and none of the visible rows can currently load detail. Adjust filters or switch queue to reopen the panel with a valid relationship record.'
+                                    : $empty_copy); ?></p>
+                                <div class="cmn-am-booking-thread-links">
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($clear_filters_url); ?>">Clear filters</a>
+                                </div>
                             </div>
                         <?php endif; ?>
                     </aside>
