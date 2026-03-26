@@ -11716,7 +11716,7 @@ global $wpdb;
         if ($latest_user_name !== '') {
             $detail_parts[] = $latest_user_name;
         }
-        $detail_parts[] = date_i18n('M j, Y g:ia', $latest_login_ts);
+        $detail_parts[] = $this->maybe_format_account_manager_datetime($latest_login_ts);
 
         return [
             'label' => human_time_diff($latest_login_ts, current_time('timestamp')) . ' ago',
@@ -12341,7 +12341,7 @@ global $wpdb;
             }
             $summaries[$school_id] = [
                 'label' => human_time_diff($timestamp, current_time('timestamp')) . ' ago',
-                'detail' => $source_label . ' · ' . date_i18n('M j, Y g:ia', $timestamp),
+                'detail' => $source_label . ' · ' . $this->maybe_format_account_manager_datetime($timestamp),
                 'source_label' => $source_label,
                 'timestamp' => $timestamp,
             ];
@@ -12399,7 +12399,7 @@ global $wpdb;
         }
         return [
             'label' => human_time_diff($created_ts, current_time('timestamp')) . ' ago',
-            'detail' => date_i18n('M j, Y g:ia', $created_ts),
+            'detail' => $this->maybe_format_account_manager_datetime($created_ts),
         ];
     }
 
@@ -12529,7 +12529,7 @@ global $wpdb;
 
         return [
             'label' => human_time_diff($latest_timestamp, current_time('timestamp')) . ' ago',
-            'detail' => $latest_source . ' · ' . date_i18n('M j, Y g:ia', $latest_timestamp),
+            'detail' => $latest_source . ' · ' . $this->maybe_format_account_manager_datetime($latest_timestamp),
         ];
     }
 
@@ -12565,7 +12565,7 @@ global $wpdb;
                 $due_prefix = $next_task_due_ts < current_time('timestamp') ? 'Overdue since ' : 'Due ';
                 return [
                     'label' => $task_label,
-                    'detail' => $due_prefix . date_i18n('M j, Y', $next_task_due_ts),
+                    'detail' => $due_prefix . $this->maybe_format_account_manager_date($next_task_due_ts),
                 ];
             }
             return [
@@ -12694,7 +12694,7 @@ global $wpdb;
 
             $snapshot['open_count']++;
             if ($due_ts > 0) {
-                $date_label = date_i18n('M j, Y', $due_ts);
+                $date_label = $this->maybe_format_account_manager_date($due_ts);
                 if ($due_date_raw < $today_date) {
                     $snapshot['overdue_count']++;
                     $state_key = 'overdue';
@@ -12923,14 +12923,182 @@ global $wpdb;
         if ($due_date_raw === '') {
             return '';
         }
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $due_date_raw)) {
-            return new WP_Error('cmn_task_due_date_invalid', 'Enter a valid due date in YYYY-MM-DD format.');
-        }
-        $due_ts = strtotime($due_date_raw);
-        if ($due_ts === false || date('Y-m-d', $due_ts) !== $due_date_raw) {
+        $normalized_due_date = $this->normalize_portal_date_input_value($due_date_raw);
+        if ($normalized_due_date === '') {
             return new WP_Error('cmn_task_due_date_invalid', 'Enter a valid due date.');
         }
-        return $due_date_raw;
+        return $normalized_due_date;
+    }
+
+    private function is_account_manager_display_context($user_id = 0) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        return $user_id > 0 && $this->is_restricted_account_manager($user_id);
+    }
+
+    private function normalize_portal_date_input_value($raw_value) {
+        $raw_value = trim((string) $raw_value);
+        if ($raw_value === '') {
+            return '';
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw_value)) {
+            $timestamp = strtotime($raw_value);
+            if ($timestamp !== false && date('Y-m-d', $timestamp) === $raw_value) {
+                return $raw_value;
+            }
+        }
+
+        if (preg_match('/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/', $raw_value, $matches)) {
+            $day = (int) $matches[1];
+            $month = (int) $matches[2];
+            $year = (int) $matches[3];
+            if (checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+            return '';
+        }
+
+        return '';
+    }
+
+    private function get_portal_display_timestamp($raw_value) {
+        if (is_numeric($raw_value)) {
+            $timestamp = (int) $raw_value;
+            return $timestamp > 0 ? $timestamp : 0;
+        }
+
+        $raw_value = trim((string) $raw_value);
+        if ($raw_value === '') {
+            return 0;
+        }
+
+        $normalized_date = $this->normalize_portal_date_input_value($raw_value);
+        if ($normalized_date !== '') {
+            $timestamp = strtotime($normalized_date);
+            return $timestamp !== false ? (int) $timestamp : 0;
+        }
+
+        $timestamp = strtotime($raw_value);
+        return $timestamp !== false ? (int) $timestamp : 0;
+    }
+
+    private function format_account_manager_date($raw_value, $fallback = '') {
+        $timestamp = $this->get_portal_display_timestamp($raw_value);
+        if ($timestamp < 1) {
+            $fallback = $fallback !== '' ? $fallback : (string) $raw_value;
+            return sanitize_text_field((string) $fallback);
+        }
+
+        return wp_date('d/m/Y', $timestamp);
+    }
+
+    private function format_account_manager_datetime($raw_value, $fallback = '') {
+        $timestamp = $this->get_portal_display_timestamp($raw_value);
+        if ($timestamp < 1) {
+            $fallback = $fallback !== '' ? $fallback : (string) $raw_value;
+            return sanitize_text_field((string) $fallback);
+        }
+
+        return wp_date('d/m/Y g:ia', $timestamp);
+    }
+
+    private function maybe_format_account_manager_date($raw_value, $default_format = 'M j, Y', $fallback = '') {
+        $timestamp = $this->get_portal_display_timestamp($raw_value);
+        if ($timestamp < 1) {
+            $fallback = $fallback !== '' ? $fallback : (string) $raw_value;
+            return sanitize_text_field((string) $fallback);
+        }
+
+        if ($this->is_account_manager_display_context()) {
+            return $this->format_account_manager_date($timestamp, $fallback);
+        }
+
+        return date_i18n($default_format, $timestamp);
+    }
+
+    private function maybe_format_account_manager_datetime($raw_value, $default_format = 'M j, Y g:ia', $fallback = '') {
+        $timestamp = $this->get_portal_display_timestamp($raw_value);
+        if ($timestamp < 1) {
+            $fallback = $fallback !== '' ? $fallback : (string) $raw_value;
+            return sanitize_text_field((string) $fallback);
+        }
+
+        if ($this->is_account_manager_display_context()) {
+            return $this->format_account_manager_datetime($timestamp, $fallback);
+        }
+
+        return date_i18n($default_format, $timestamp);
+    }
+
+    private function format_account_manager_date_range($start_date, $end_date = '', $fallback = 'Date not set') {
+        $start_iso = $this->normalize_portal_date_input_value($start_date);
+        $end_iso = $this->normalize_portal_date_input_value($end_date);
+        if ($start_iso === '') {
+            return sanitize_text_field((string) $fallback);
+        }
+
+        $label = $this->format_account_manager_date($start_iso, $fallback);
+        if ($end_iso !== '' && $end_iso !== $start_iso) {
+            $label .= ' to ' . $this->format_account_manager_date($end_iso, $fallback);
+        }
+
+        return $label;
+    }
+
+    private function format_account_manager_date_input_value($raw_value) {
+        $normalized_date = $this->normalize_portal_date_input_value($raw_value);
+        if ($normalized_date === '') {
+            return sanitize_text_field((string) $raw_value);
+        }
+
+        return $this->format_account_manager_date($normalized_date);
+    }
+
+    private function render_account_manager_date_input($field_name, $raw_value = '', array $args = []) {
+        $field_name = trim((string) $field_name);
+        if ($field_name === '') {
+            return '';
+        }
+
+        $attributes = [
+            'type' => 'text',
+            'name' => $field_name,
+            'value' => $this->format_account_manager_date_input_value($raw_value),
+            'placeholder' => 'DD/MM/YYYY',
+            'inputmode' => 'numeric',
+            'autocomplete' => 'off',
+            'maxlength' => '10',
+            'pattern' => '\\d{2}/\\d{2}/\\d{4}',
+            'title' => 'Use DD/MM/YYYY',
+            'data-cmn-am-date-input' => '1',
+        ];
+
+        if (!empty($args['required'])) {
+            $attributes['required'] = 'required';
+        }
+        if (!empty($args['id'])) {
+            $attributes['id'] = sanitize_text_field((string) $args['id']);
+        }
+        if (!empty($args['class'])) {
+            $attributes['class'] = sanitize_text_field((string) $args['class']);
+        }
+        if (!empty($args['aria_label'])) {
+            $attributes['aria-label'] = sanitize_text_field((string) $args['aria_label']);
+        }
+
+        $html_attributes = [];
+        foreach ($attributes as $attribute_name => $attribute_value) {
+            if ($attribute_value === '' || $attribute_value === null) {
+                continue;
+            }
+            if ($attribute_value === 'required') {
+                $html_attributes[] = 'required';
+                continue;
+            }
+            $html_attributes[] = $attribute_name . '="' . esc_attr((string) $attribute_value) . '"';
+        }
+
+        return '<input ' . implode(' ', $html_attributes) . '>';
     }
 
     private function redirect_with_task_notice_or_fail($redirect_url, $message, $tone = 'error', $status_code = 400) {
@@ -13559,7 +13727,7 @@ global $wpdb;
                 'label' => 'Latest school reply',
                 'value' => $latest_school_reply,
                 'detail' => $latest_school_reply_at !== '' && strtotime($latest_school_reply_at)
-                    ? date_i18n('M j, Y g:ia', strtotime($latest_school_reply_at))
+                    ? $this->maybe_format_account_manager_datetime($latest_school_reply_at)
                     : '',
             ];
         } elseif ($request_note !== '') {
@@ -14105,7 +14273,7 @@ global $wpdb;
                 $latest_booking_date_raw = trim((string) get_post_meta($latest_booking_id, 'cmn_day_date', true));
             }
             if ($latest_booking_date_raw !== '' && strtotime($latest_booking_date_raw)) {
-                $latest_booking_date = date_i18n('M j, Y', strtotime($latest_booking_date_raw));
+                $latest_booking_date = $this->maybe_format_account_manager_date($latest_booking_date_raw);
             }
         }
 
@@ -14883,7 +15051,7 @@ global $wpdb;
             ? strtotime('-' . $days_before . ' days', $due_ts)
             : $due_ts;
         $reminder_date_raw = date('Y-m-d', $reminder_ts);
-        $reminder_date_label = date_i18n('M j, Y', $reminder_ts);
+        $reminder_date_label = $this->maybe_format_account_manager_date($reminder_ts);
         $days_until_reminder = $today_ts > 0 ? (int) floor(($reminder_ts - $today_ts) / DAY_IN_SECONDS) : 0;
 
         $status = 'later';
@@ -15018,7 +15186,7 @@ global $wpdb;
             $task_due_label = 'No due date';
             $task_tone = 'info';
             if ($task_due_ts > 0) {
-                $task_date_label = date_i18n('M j, Y', $task_due_ts);
+                $task_date_label = $this->maybe_format_account_manager_date($task_due_ts);
                 if ($today_ts && $task_due_ts < $today_ts) {
                     $overdue_count++;
                     $task_due_label = 'Overdue · ' . $task_date_label;
@@ -15111,7 +15279,7 @@ global $wpdb;
                 'title' => $activity_subject !== '' ? $activity_subject : 'Activity',
                 'detail' => $activity_notes !== '' ? wp_trim_words($activity_notes, 18, '...') : 'Recorded follow-up',
                 'created_label' => $activity_created_ts > 0
-                    ? date_i18n('M j, Y g:ia', $activity_created_ts)
+                    ? $this->maybe_format_account_manager_datetime($activity_created_ts)
                     : '',
             ];
             if (count($recent_rows) >= 4) {
@@ -15452,7 +15620,7 @@ global $wpdb;
                             <input type="text" name="cmn_activity_title" required placeholder="Follow up with school" value="<?php echo esc_attr($composer_title_value); ?>">
                         </label>
                         <label>Due date
-                            <input type="date" name="cmn_activity_date" value="<?php echo esc_attr($composer_due_date_value); ?>">
+                            <?php echo $this->render_account_manager_date_input('cmn_activity_date', $composer_due_date_value); ?>
                         </label>
                         <label class="cmn-school-task-inline-form-field--full">Task details
                             <textarea name="cmn_activity_content" rows="3" placeholder="Add the follow-up context, owner notes, or what needs to happen next"><?php echo esc_textarea($composer_content_value); ?></textarea>
@@ -16469,16 +16637,16 @@ global $wpdb;
         $processed_ref_mismatch = ($registration_ref !== '' && $processed_ref !== '' && $processed_ref !== $registration_ref);
 
         $requested_label = ($requested_at !== '' && strtotime($requested_at))
-            ? date_i18n('M j, Y g:ia', strtotime($requested_at))
+            ? $this->maybe_format_account_manager_datetime($requested_at)
             : '';
         $manual_started_label = ($manual_started_at !== '' && strtotime($manual_started_at))
-            ? date_i18n('M j, Y g:ia', strtotime($manual_started_at))
+            ? $this->maybe_format_account_manager_datetime($manual_started_at)
             : '';
         $processed_label = ($processed_at !== '' && strtotime($processed_at))
-            ? date_i18n('M j, Y g:ia', strtotime($processed_at))
+            ? $this->maybe_format_account_manager_datetime($processed_at)
             : '';
         $latest_reply_label = ($latest_school_reply_at !== '' && strtotime($latest_school_reply_at))
-            ? date_i18n('M j, Y g:ia', strtotime($latest_school_reply_at))
+            ? $this->maybe_format_account_manager_datetime($latest_school_reply_at)
             : '';
 
         $package_value = 'Not submitted';
@@ -17111,7 +17279,7 @@ global $wpdb;
         }
         $occurred_label = sanitize_text_field((string) ($event['occurred_label'] ?? ''));
         if ($occurred_label === '' && $occurred_ts > 0) {
-            $occurred_label = date_i18n('M j, Y g:ia', $occurred_ts);
+            $occurred_label = $this->maybe_format_account_manager_datetime($occurred_ts);
         }
 
         $body = sanitize_textarea_field((string) ($event['body'] ?? ''));
@@ -17221,7 +17389,7 @@ global $wpdb;
             $activity_completed = trim((string) ($activity_row['completed_at'] ?? '')) !== '';
             $activity_meta = [];
             if ($activity_due_ts) {
-                $activity_meta[] = 'Due ' . date_i18n('M j, Y', $activity_due_ts);
+                $activity_meta[] = 'Due ' . $this->maybe_format_account_manager_date($activity_due_ts);
             }
             if ($activity_duration > 0) {
                 $activity_meta[] = $activity_duration . ' min';
@@ -19004,7 +19172,7 @@ global $wpdb;
 
             $created_at = sanitize_text_field((string) ($row['created_at'] ?? ''));
             $created_label = ($created_at !== '' && strtotime($created_at))
-                ? date_i18n('M j, Y g:ia', strtotime($created_at))
+                ? $this->maybe_format_account_manager_datetime($created_at)
                 : '';
             $to_label = $to_stage !== '' ? $this->get_school_lead_stage_label($to_stage) : 'Stage cleared';
             $from_label = $from_stage !== '' ? $this->get_school_lead_stage_label($from_stage) : '';
@@ -19288,7 +19456,7 @@ global $wpdb;
                         <?php foreach ($tasks as $task) : ?>
                             <?php
                             $task_due = sanitize_text_field((string) ($task['due_date'] ?? ''));
-                            $task_due_label = ($task_due !== '' && strtotime($task_due)) ? date_i18n('M j, Y g:ia', strtotime($task_due)) : '';
+                            $task_due_label = ($task_due !== '' && strtotime($task_due)) ? $this->maybe_format_account_manager_datetime($task_due) : '';
                             ?>
                             <li>
                                 <div class="cmn-school-lead-preview-item-head">
@@ -19319,7 +19487,7 @@ global $wpdb;
                         <?php foreach ($activities as $activity) : ?>
                             <?php
                             $activity_created = sanitize_text_field((string) ($activity['created_at'] ?? ''));
-                            $activity_created_label = ($activity_created !== '' && strtotime($activity_created)) ? date_i18n('M j, Y g:ia', strtotime($activity_created)) : '';
+                            $activity_created_label = ($activity_created !== '' && strtotime($activity_created)) ? $this->maybe_format_account_manager_datetime($activity_created) : '';
                             $activity_type = sanitize_key((string) ($activity['type'] ?? 'note'));
                             ?>
                             <li>
@@ -19358,7 +19526,7 @@ global $wpdb;
                                     <div class="cmn-school-lead-note-context"><?php echo esc_html((string) $entry['note']); ?></div>
                                 <?php endif; ?>
                                 <?php if (!empty($entry['created_at']) && strtotime((string) $entry['created_at'])) : ?>
-                                    <div class="cmn-muted"><?php echo esc_html(date_i18n('M j, Y g:ia', strtotime((string) $entry['created_at']))); ?></div>
+                                    <div class="cmn-muted"><?php echo esc_html($this->maybe_format_account_manager_datetime((string) $entry['created_at'])); ?></div>
                                 <?php endif; ?>
                             </li>
                         <?php endforeach; ?>
@@ -19886,7 +20054,7 @@ global $wpdb;
             'bookings' => (int) (($bookings_snapshot['counts']['open'] ?? 0)),
             'issues' => (int) (($issues_snapshot['counts']['open'] ?? 0)),
             'updated_at' => current_time('timestamp'),
-            'updated_label' => date_i18n('M j, g:ia', current_time('timestamp')),
+            'updated_label' => $this->format_account_manager_datetime(current_time('timestamp')),
         ];
         set_transient($cache_key, $context, 90);
 
@@ -20504,7 +20672,7 @@ global $wpdb;
             $due_detail = 'Add a due date in the school task panel.';
             $task_tone = 'neutral';
             if ($due_ts > 0) {
-                $due_date_label = date_i18n('M j, Y', $due_ts);
+                $due_date_label = $this->format_account_manager_date($due_ts);
                 if ($today_ts > 0 && $due_ts < $today_ts) {
                     $due_value = 'Overdue';
                     $due_detail = 'Due ' . $due_date_label;
@@ -20776,7 +20944,7 @@ global $wpdb;
                             </select>
                         </label>
                         <label>Due date
-                            <input type="date" name="cmn_activity_date">
+                            <?php echo $this->render_account_manager_date_input('cmn_activity_date'); ?>
                         </label>
                         <label class="cmn-task-panel-composer-field--wide">Task title
                             <input type="text" name="cmn_activity_title" placeholder="e.g. Follow up after intro call" required>
@@ -21167,7 +21335,7 @@ global $wpdb;
             $due_display = 'No due date';
             $due_detail = 'Add a due date so this follow-up stays visible in the queue.';
             if ($due_date !== '' && strtotime($due_date)) {
-                $due_display = date_i18n('M j, Y', strtotime($due_date));
+                $due_display = $this->format_account_manager_date($due_date);
                 if ($due_date < $today_date) {
                     $status_key = 'overdue';
                     $status_label = 'Overdue';
@@ -21274,7 +21442,7 @@ global $wpdb;
                 'candidate_name' => $candidate_name,
                 'candidate_url' => esc_url_raw((string) $candidate_url),
                 'is_booking_linked' => $booking_id > 0,
-                'updated_label' => $updated_ts > 0 ? date_i18n('M j, g:ia', $updated_ts) : '',
+                'updated_label' => $updated_ts > 0 ? $this->format_account_manager_datetime($updated_ts) : '',
                 'updated_ts' => $updated_ts,
                 'status_rank' => (int) ($status_rank_map[$status_key] ?? 0),
                 'can_complete' => true,
@@ -21978,7 +22146,7 @@ global $wpdb;
                                         </select>
                                     </label>
                                     <label>Due date
-                                        <input type="date" name="cmn_activity_date">
+                                        <?php echo $this->render_account_manager_date_input('cmn_activity_date'); ?>
                                     </label>
                                     <label>Type
                                         <select name="cmn_follow_up_type">
@@ -22318,7 +22486,7 @@ global $wpdb;
             }
             $updated_at_raw = trim((string) get_post_field('post_modified', $booking_id));
             $updated_ts = $updated_at_raw !== '' ? (int) strtotime($updated_at_raw) : 0;
-            $updated_label = $updated_ts > 0 ? date_i18n('M j, g:ia', $updated_ts) : '';
+            $updated_label = $updated_ts > 0 ? $this->format_account_manager_datetime($updated_ts) : '';
             $row_url = $school_id > 0
                 ? $this->get_school_profile_tab_url($school_id, 'bookings')
                 : add_query_arg(['view' => 'bookings'], $portal_url);
@@ -22461,7 +22629,7 @@ global $wpdb;
             'user_id' => $user_id,
             'scope' => $scope,
             'status' => sanitize_key((string) ($source['cmn_status'] ?? '')),
-            'date' => $this->normalize_invoice_date((string) ($source['cmn_booking_date'] ?? '')),
+            'date' => $this->normalize_portal_date_input_value((string) ($source['cmn_booking_date'] ?? '')),
             'school_id' => max(0, (int) ($source['cmn_booking_school'] ?? 0)),
             'candidate_id' => max(0, (int) ($source['cmn_booking_candidate'] ?? 0)),
             'query' => sanitize_text_field((string) wp_unslash($source['cmn_booking_q'] ?? '')),
@@ -22554,7 +22722,7 @@ global $wpdb;
                     'subject' => $ticket_label,
                     'status_key' => $status_key,
                     'status_label' => $status_key === 'new' ? 'New' : ($status_key === 'closed' ? 'Closed' : 'Open'),
-                    'updated_label' => !empty($row['updated_at']) ? date_i18n('M j, g:ia', strtotime((string) $row['updated_at'])) : '',
+                    'updated_label' => !empty($row['updated_at']) ? $this->format_account_manager_datetime((string) $row['updated_at']) : '',
                     'url' => $ticket_url,
                 ];
             }
@@ -22619,7 +22787,7 @@ global $wpdb;
             }
             $signal_label = $event_type === 'no_show' ? 'No-show flagged' : 'Appeal opened';
             if (!empty($row['occurred_at'])) {
-                $signal_label .= ' ' . date_i18n('M j, g:ia', strtotime((string) $row['occurred_at']));
+                $signal_label .= ' ' . $this->format_account_manager_datetime((string) $row['occurred_at']);
             }
             if ($event_type === 'no_show') {
                 $map[$booking_id]['no_show'] = true;
@@ -22686,10 +22854,10 @@ global $wpdb;
             $entry[$status_key]++;
             if (count($entry['rows']) < 4) {
                 $entry['rows'][] = [
-                    'date_label' => !empty($row['booking_day_date']) ? date_i18n('M j, Y', strtotime((string) $row['booking_day_date'])) : 'Booking day',
+                    'date_label' => !empty($row['booking_day_date']) ? $this->format_account_manager_date((string) $row['booking_day_date']) : 'Booking day',
                     'status_key' => $status_key,
                     'status_label' => ucwords(str_replace('_', ' ', $status_key)),
-                    'updated_label' => !empty($row['updated_at']) ? date_i18n('M j, g:ia', strtotime((string) $row['updated_at'])) : '',
+                    'updated_label' => !empty($row['updated_at']) ? $this->format_account_manager_datetime((string) $row['updated_at']) : '',
                 ];
             }
             unset($entry);
@@ -22753,7 +22921,7 @@ global $wpdb;
                 'title' => ucwords(str_replace('_', ' ', $action)),
                 'detail' => implode(' · ', $detail_parts),
                 'actor_name' => $actor_name,
-                'created_label' => !empty($row['created_at']) ? date_i18n('M j, g:ia', strtotime((string) $row['created_at'])) : '',
+                'created_label' => !empty($row['created_at']) ? $this->format_account_manager_datetime((string) $row['created_at']) : '',
             ];
         }
 
@@ -22779,7 +22947,7 @@ global $wpdb;
             $formatted[] = [
                 'sender_label' => ucwords(str_replace('_', ' ', sanitize_key((string) ($message_row['sender_role_type'] ?? self::PARTICIPANT_ROLE_SYSTEM)))),
                 'message' => sanitize_textarea_field((string) ($message_row['message'] ?? '')),
-                'created_label' => !empty($message_row['created_at']) ? date_i18n('M j, g:ia', strtotime((string) $message_row['created_at'])) : '',
+                'created_label' => !empty($message_row['created_at']) ? $this->format_account_manager_datetime((string) $message_row['created_at']) : '',
             ];
         }
 
@@ -22877,7 +23045,7 @@ global $wpdb;
                 $status_chip_class = 'is-muted';
             }
 
-            $due_label = $due_date !== '' && strtotime($due_date) ? date_i18n('M j, Y', strtotime($due_date)) : 'No due date';
+            $due_label = $due_date !== '' && strtotime($due_date) ? $this->format_account_manager_date($due_date) : 'No due date';
             $formatted[] = [
                 'activity_id' => $activity_id,
                 'label' => sanitize_text_field((string) ($row['subject'] ?? 'Follow-up task')),
@@ -22891,7 +23059,7 @@ global $wpdb;
                 'follow_up_type' => $this->normalize_follow_up_type((string) ($row['follow_up_type'] ?? 'internal')),
                 'follow_up_type_label' => $this->get_follow_up_type_label((string) ($row['follow_up_type'] ?? 'internal')),
                 'updated_label' => $completed_at !== '' && strtotime($completed_at)
-                    ? ('Completed ' . date_i18n('M j, g:ia', strtotime($completed_at)))
+                    ? ('Completed ' . $this->format_account_manager_datetime($completed_at))
                     : ($due_date !== '' ? ('Due ' . $due_label) : 'Open task'),
                 'edit_url' => $edit_url,
                 'activity_url' => $school_activity_url,
@@ -23092,10 +23260,7 @@ global $wpdb;
             if ($end_date === '' || ($start_date !== '' && strcmp($end_date, $start_date) < 0)) {
                 $end_date = $start_date;
             }
-            $date_label = $start_date !== '' ? date_i18n('M j, Y', strtotime($start_date)) : 'Date not set';
-            if ($end_date !== '' && $start_date !== '' && $end_date !== $start_date) {
-                $date_label .= ' to ' . date_i18n('M j, Y', strtotime($end_date));
-            }
+            $date_label = $this->format_account_manager_date_range($start_date, $end_date, 'Date not set');
 
             $start_time = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_start_time', true));
             $end_time = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_end_time', true));
@@ -23272,7 +23437,7 @@ global $wpdb;
                 'action_needed' => $action_needed,
                 'action_label' => $action_label,
                 'action_reason' => $action_reason,
-                'onboarding_label' => !empty($onboarding_state['provided']) ? ('Provided' . (!empty($onboarding_state['provided_at']) ? (' ' . date_i18n('M j, g:ia', strtotime((string) $onboarding_state['provided_at']))) : '')) : 'Not yet provided',
+                'onboarding_label' => !empty($onboarding_state['provided']) ? ('Provided' . (!empty($onboarding_state['provided_at']) ? (' ' . $this->format_account_manager_datetime((string) $onboarding_state['provided_at'])) : '')) : 'Not yet provided',
                 'school_charge_rate' => round(max(0, (float) ($rate_row['school_charge_rate'] ?? get_post_meta($booking_id, 'cmn_school_charge_rate', true))), 2),
                 'candidate_pay_rate' => round(max(0, (float) ($rate_row['candidate_pay_rate'] ?? get_post_meta($booking_id, 'cmn_candidate_pay_rate', true))), 2),
                 'detail_anchor_url' => $detail_url . '#cmn-am-booking-detail',
@@ -23411,7 +23576,7 @@ global $wpdb;
         }
         if (!empty($filters['date']) && strtotime((string) $filters['date'])) {
             $filter_chips[] = [
-                'label' => 'Date: ' . date_i18n('M j, Y', strtotime((string) $filters['date'])),
+                'label' => 'Date: ' . $this->format_account_manager_date((string) $filters['date']),
                 'remove_url' => $build_bookings_url([
                     'cmn_booking_date' => false,
                     'booking_id' => false,
@@ -23659,7 +23824,7 @@ global $wpdb;
                             </select>
                         </label>
                         <label>Date
-                            <input type="date" name="cmn_booking_date" value="<?php echo esc_attr((string) ($filters['date'] ?? '')); ?>">
+                            <?php echo $this->render_account_manager_date_input('cmn_booking_date', (string) ($filters['date'] ?? '')); ?>
                         </label>
                         <label>School / Client
                             <select name="cmn_booking_school">
@@ -23957,7 +24122,7 @@ global $wpdb;
                                                     </label>
                                                     <label>
                                                         <span>Due date</span>
-                                                        <input type="date" name="cmn_follow_up_due_date" required>
+                                                        <?php echo $this->render_account_manager_date_input('cmn_follow_up_due_date', '', ['required' => true]); ?>
                                                     </label>
                                                     <label>
                                                         <span>Priority</span>
@@ -24285,7 +24450,7 @@ global $wpdb;
             $status_label = ucwords(str_replace('_', ' ', $status_key));
             $updated_at_raw = sanitize_text_field((string) ($row['updated_at'] ?? ''));
             $updated_ts = $updated_at_raw !== '' ? (int) strtotime($updated_at_raw) : 0;
-            $updated_label = $updated_ts > 0 ? date_i18n('M j, g:ia', $updated_ts) : '';
+            $updated_label = $updated_ts > 0 ? $this->format_account_manager_datetime($updated_ts) : '';
             $queue_key = sanitize_key((string) ($row['queue_key'] ?? ''));
             $related_school_ids = $this->get_support_ticket_related_school_ids($row);
             $school_names = [];
@@ -24921,7 +25086,7 @@ global $wpdb;
                 $detail_parts[] = $status_label;
             }
             if ($updated_ts) {
-                $detail_parts[] = 'Updated ' . date_i18n('M j, g:ia', $updated_ts);
+                $detail_parts[] = 'Updated ' . $this->format_account_manager_datetime($updated_ts);
             }
             $booking_context = $this->get_support_ticket_booking_context($ticket_row, $user_id, [
                 'allow_payroll_meta' => true,
@@ -25039,10 +25204,10 @@ global $wpdb;
             if ($date_raw === '') {
                 $date_raw = trim((string) get_post_meta($booking_id, 'cmn_day_date', true));
             }
-            $date_label = $date_raw !== '' && strtotime($date_raw) ? date_i18n('M j, Y', strtotime($date_raw)) : '';
+            $date_label = $date_raw !== '' && strtotime($date_raw) ? $this->format_account_manager_date($date_raw) : '';
             $updated_at_raw = trim((string) get_post_field('post_modified', $booking_id));
             $updated_ts = $updated_at_raw !== '' ? (int) strtotime($updated_at_raw) : 0;
-            $updated_label = $updated_ts > 0 ? date_i18n('M j, g:ia', $updated_ts) : '';
+            $updated_label = $updated_ts > 0 ? $this->format_account_manager_datetime($updated_ts) : '';
             $role_label = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_role', true));
             $school_url = $school_id > 0 ? $this->get_school_profile_tab_url($school_id, 'bookings') : '';
             $booking_chat_url = add_query_arg([
@@ -25230,7 +25395,7 @@ global $wpdb;
             $detail_parts = array_filter([
                 $context_label,
                 $requires_feedback ? 'Needs feedback' : $status_label,
-                $updated_ts ? ('Updated ' . date_i18n('M j, g:ia', $updated_ts)) : '',
+                $updated_ts ? ('Updated ' . $this->format_account_manager_datetime($updated_ts)) : '',
             ]);
             $snapshot['rows'][] = [
                 'ticket_id' => $ticket_id,
@@ -46077,7 +46242,7 @@ global $wpdb;
                             $task_notes = sanitize_text_field((string) ($task_row['notes'] ?? ''));
                             $task_due_raw = trim((string) ($task_row['due_date'] ?? ''));
                             $task_due_label = ($task_due_raw !== '' && strtotime($task_due_raw))
-                                ? date_i18n('M j, Y', strtotime($task_due_raw))
+                                ? $this->format_account_manager_date($task_due_raw)
                                 : '';
                             ?>
                             <article class="cmn-am-school-detail-list-item">
@@ -54323,7 +54488,7 @@ global $wpdb;
                 'author_id' => (int) ($row['author_id'] ?? 0),
                 'note' => sanitize_text_field((string) ($row['note'] ?? '')),
                 'created_at' => $created_at,
-                'created_at_label' => $created_ts ? date_i18n('M j, Y g:ia', $created_ts) : '',
+                'created_at_label' => $created_ts ? $this->maybe_format_account_manager_datetime($created_ts) : '',
             ];
         }
         return $normalized;
@@ -55345,7 +55510,7 @@ global $wpdb;
                     <tr>
                         <td><?php echo esc_html($school_name ?: 'School'); ?></td>
                         <td><?php echo esc_html($candidate_name); ?></td>
-                        <td><?php echo esc_html($requested_date ? date_i18n('M j, Y', strtotime($requested_date)) : ''); ?></td>
+                        <td><?php echo esc_html($requested_date ? $this->maybe_format_account_manager_date($requested_date) : ''); ?></td>
                         <td><?php echo esc_html($requested_at ? date_i18n('g:ia', strtotime($requested_at)) : ''); ?></td>
                         <td>
                             <span class="cmn-pill cmn-pill--<?php echo esc_attr($status); ?>"><?php echo esc_html($status_label); ?></span>
@@ -55506,7 +55671,7 @@ global $wpdb;
                 if (!empty($staff_onboarding_state['provided'])) {
                     $staff_onboarding_label = 'Onboarding details provided';
                     if (!empty($staff_onboarding_state['provided_at'])) {
-                        $staff_onboarding_label .= ' ' . date_i18n('M j, g:ia', strtotime((string) $staff_onboarding_state['provided_at']));
+                        $staff_onboarding_label .= ' ' . $this->maybe_format_account_manager_datetime((string) $staff_onboarding_state['provided_at'], 'M j, g:ia');
                     }
                     if (!empty($staff_onboarding_state['provided_by_name'])) {
                         $staff_onboarding_label .= ' by ' . (string) $staff_onboarding_state['provided_by_name'];
@@ -55569,7 +55734,7 @@ global $wpdb;
                         }
                         ?>
                         <div class="cmn-support-bubble cmn-booking-bubble <?php echo esc_attr($chat_class); ?>">
-                            <div class="cmn-support-meta"><?php echo esc_html(ucfirst(str_replace('_', ' ', $chat_msg['sender_role_type']))); ?> - <?php echo esc_html(date_i18n('M j, g:ia', strtotime($chat_msg['created_at']))); ?></div>
+                            <div class="cmn-support-meta"><?php echo esc_html(ucfirst(str_replace('_', ' ', $chat_msg['sender_role_type']))); ?> - <?php echo esc_html($this->maybe_format_account_manager_datetime((string) $chat_msg['created_at'], 'M j, g:ia')); ?></div>
                             <div class="cmn-support-text"><?php echo esc_html($chat_msg['message']); ?></div>
                             <?php $chat_attachments = $this->get_booking_message_attachments($chat_msg); ?>
                             <?php if ($chat_attachments) : ?>
@@ -68463,7 +68628,7 @@ global $wpdb;
                     $entry_time = $entry_time_raw !== '' ? strtotime($entry_time_raw) : false;
                     $entry_time_iso = $entry_time ? gmdate('c', $entry_time) : '';
                     $entry_time_label = $entry_time
-                        ? date_i18n('M j, Y', $entry_time)
+                        ? ($this->is_account_manager_display_context() ? $this->format_account_manager_date($entry_time) : date_i18n('M j, Y', $entry_time))
                         : '';
                     ?>
                     <li class="cmn-support-whats-new__item">
@@ -73343,7 +73508,7 @@ global $wpdb;
                                             <div class="cmn-am-lead-note-head">
                                                 <div>
                                                     <strong class="cmn-school-lead-note-title"><?php echo esc_html((string) ($lead_note_display['title'] ?? 'Note')); ?></strong>
-                                                    <span><?php echo esc_html($lead_note_author); ?><?php echo $lead_note_created_ts > 0 ? ' · ' . esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)) : ''; ?></span>
+                                                    <span><?php echo esc_html($lead_note_author); ?><?php echo $lead_note_created_ts > 0 ? ' · ' . esc_html($this->maybe_format_account_manager_datetime($lead_note_created_ts)) : ''; ?></span>
                                                 </div>
                                                 <button class="cmn-ghost cmn-btn-mini" type="button" data-school-lead-edit-note>Edit</button>
                                             </div>
@@ -74499,7 +74664,7 @@ global $wpdb;
                             <div class="cmn-muted">
                                 <span class="cmn-status-chip <?php echo esc_attr((string) ($timeline_item['status_class'] ?? 'is-muted')); ?>"><?php echo esc_html($timeline_actor); ?></span>
                                 <?php if ($timeline_time !== '') : ?>
-                                    <span><?php echo esc_html(date_i18n('M j, Y g:ia', strtotime($timeline_time))); ?></span>
+                                    <span><?php echo esc_html($this->maybe_format_account_manager_datetime($timeline_time)); ?></span>
                                 <?php endif; ?>
                             </div>
                         </li>
@@ -74717,7 +74882,7 @@ global $wpdb;
                     <p class="cmn-muted">Latest note: <?php echo esc_html($request_note); ?></p>
                 <?php endif; ?>
                 <?php if ($latest_school_reply !== '') : ?>
-                    <p class="cmn-muted">Latest school reply<?php echo $latest_school_reply_at !== '' ? (' (' . esc_html(date_i18n('M j, Y g:ia', strtotime($latest_school_reply_at))) . ')') : ''; ?>: <?php echo esc_html($latest_school_reply); ?></p>
+                    <p class="cmn-muted">Latest school reply<?php echo $latest_school_reply_at !== '' ? (' (' . esc_html($this->maybe_format_account_manager_datetime($latest_school_reply_at)) . ')') : ''; ?>: <?php echo esc_html($latest_school_reply); ?></p>
                 <?php endif; ?>
                 <?php error_log('[CMN_SCHOOL_VIEW] panel_end details school_id=' . (int) $school_id); ?>
             </div>
@@ -74985,7 +75150,7 @@ global $wpdb;
 	                                        <span class="cmn-muted">
 	                                            <?php echo esc_html($lead_note_author); ?>
 	                                            <?php if ($lead_note_created_ts) : ?>
-	                                                · <?php echo esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)); ?>
+	                                                · <?php echo esc_html($this->maybe_format_account_manager_datetime($lead_note_created_ts)); ?>
 	                                            <?php endif; ?>
 	                                        </span>
                                         </div>
@@ -75026,7 +75191,7 @@ global $wpdb;
 	                                        <span class="cmn-muted">
 	                                            <?php echo esc_html($lead_note_author); ?>
 	                                            <?php if ($lead_note_created_ts) : ?>
-	                                                · <?php echo esc_html(date_i18n('M j, Y g:ia', $lead_note_created_ts)); ?>
+	                                                · <?php echo esc_html($this->maybe_format_account_manager_datetime($lead_note_created_ts)); ?>
 	                                            <?php endif; ?>
 	                                        </span>
                                         </div>
@@ -75115,7 +75280,7 @@ global $wpdb;
                         <?php foreach ($open_tasks as $task) : ?>
                             <?php
                             $task_date = $task['due_date'] ?? '';
-                            $task_label = $task_date ? date_i18n('M j, Y', strtotime($task_date)) : 'No date';
+                            $task_label = $task_date ? $this->maybe_format_account_manager_date($task_date) : 'No date';
                             $is_overdue = $task_date && strtotime($task_date) < strtotime(date('Y-m-d'));
                             ?>
                             <div class="cmn-task-item<?php echo $is_overdue ? ' is-overdue' : ''; ?>">
@@ -75281,7 +75446,7 @@ global $wpdb;
             if ($date_raw === '') {
                 $date_raw = trim((string) get_post_meta($booking_id, 'cmn_day_date', true));
             }
-            $date_label = $date_raw !== '' && strtotime($date_raw) ? date_i18n('M j, Y', strtotime($date_raw)) : '';
+            $date_label = $date_raw !== '' && strtotime($date_raw) ? $this->maybe_format_account_manager_date($date_raw) : '';
             $created_at = (string) get_post_field('post_date', $booking_id);
             $updated_at = (string) get_post_field('post_modified', $booking_id);
             $event_at = $updated_at !== '' && $updated_at !== '0000-00-00 00:00:00'

@@ -237,6 +237,178 @@ document.addEventListener('DOMContentLoaded', function () {
   initCandidateSection4Carousel();
 
   var portal = document.querySelector('.cmn-portal-light');
+  var isAccountManagerWorkspace = !!document.querySelector('.cmn-portal-light--am-crm, [data-staff-workspace="account_manager"], [data-viewer-surface="account-manager"], [data-viewer-surface="account-manager-shell"]');
+  var accountManagerDateFormatter = null;
+  var accountManagerDateTimeFormatter = null;
+  if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+    accountManagerDateFormatter = new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+    accountManagerDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  }
+  var accountManagerPad = function (value) {
+    value = parseInt(value, 10) || 0;
+    return value < 10 ? ('0' + value) : String(value);
+  };
+  var createLocalDate = function (year, month, day, hour, minute, second) {
+    var dateObj = new Date(
+      parseInt(year, 10),
+      parseInt(month, 10) - 1,
+      parseInt(day, 10),
+      parseInt(hour || 0, 10) || 0,
+      parseInt(minute || 0, 10) || 0,
+      parseInt(second || 0, 10) || 0
+    );
+    if (
+      dateObj.getFullYear() !== parseInt(year, 10) ||
+      (dateObj.getMonth() + 1) !== parseInt(month, 10) ||
+      dateObj.getDate() !== parseInt(day, 10)
+    ) {
+      return null;
+    }
+    return dateObj;
+  };
+  var parseAccountManagerDateValue = function (value) {
+    var normalized = String(value || '').trim();
+    var match = null;
+    if (!normalized) {
+      return null;
+    }
+    match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      return createLocalDate(match[1], match[2], match[3]);
+    }
+    match = normalized.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+    if (match) {
+      return createLocalDate(match[3], match[2], match[1]);
+    }
+    return null;
+  };
+  var parseAccountManagerDateTimeValue = function (value) {
+    var normalized = String(value || '').trim();
+    var match = null;
+    var parsed = null;
+    if (!normalized) {
+      return null;
+    }
+    match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (match) {
+      return createLocalDate(match[1], match[2], match[3], match[4] || 0, match[5] || 0, match[6] || 0);
+    }
+    match = normalized.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?:\s*(am|pm))?)?$/i);
+    if (match) {
+      var hour = parseInt(match[4] || '0', 10) || 0;
+      var meridiem = String(match[6] || '').toLowerCase();
+      if (meridiem === 'pm' && hour < 12) {
+        hour += 12;
+      } else if (meridiem === 'am' && hour === 12) {
+        hour = 0;
+      }
+      return createLocalDate(match[3], match[2], match[1], hour, match[5] || 0, 0);
+    }
+    parsed = new Date(normalized);
+    if (Object.prototype.toString.call(parsed) === '[object Date]' && !isNaN(parsed.getTime())) {
+      return parsed;
+    }
+    return null;
+  };
+  var formatAccountManagerDateValue = function (value, fallback) {
+    var parsed = null;
+    if (!isAccountManagerWorkspace) {
+      return String(fallback !== undefined ? fallback : (value || ''));
+    }
+    parsed = parseAccountManagerDateValue(value);
+    if (!parsed) {
+      return String(fallback !== undefined ? fallback : (value || ''));
+    }
+    if (accountManagerDateFormatter) {
+      return accountManagerDateFormatter.format(parsed);
+    }
+    return accountManagerPad(parsed.getDate()) + '/' + accountManagerPad(parsed.getMonth() + 1) + '/' + parsed.getFullYear();
+  };
+  var formatAccountManagerDateTimeValue = function (value, fallback) {
+    var parsed = null;
+    if (!isAccountManagerWorkspace) {
+      return String(fallback !== undefined ? fallback : (value || ''));
+    }
+    parsed = parseAccountManagerDateTimeValue(value);
+    if (!parsed) {
+      return String(fallback !== undefined ? fallback : (value || ''));
+    }
+    if (accountManagerDateTimeFormatter) {
+      return accountManagerDateTimeFormatter.format(parsed).replace(',', '');
+    }
+    return accountManagerPad(parsed.getDate()) + '/' + accountManagerPad(parsed.getMonth() + 1) + '/' + parsed.getFullYear() + ' ' + parsed.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+  var bindAccountManagerDateInputs = function () {
+    var dateInputs = [];
+    if (!isAccountManagerWorkspace) {
+      return;
+    }
+    dateInputs = Array.prototype.slice.call(document.querySelectorAll('input[data-cmn-am-date-input]'));
+    if (!dateInputs.length) {
+      return;
+    }
+    var syncDateField = function (field, shouldValidate) {
+      var rawValue = String(field.value || '').trim();
+      var parsedValue = null;
+      field.setCustomValidity('');
+      if (!rawValue) {
+        return true;
+      }
+      parsedValue = parseAccountManagerDateValue(rawValue);
+      if (!parsedValue) {
+        if (shouldValidate) {
+          field.setCustomValidity('Use DD/MM/YYYY');
+          return false;
+        }
+        return true;
+      }
+      field.value = formatAccountManagerDateValue(rawValue, rawValue);
+      return true;
+    };
+
+    dateInputs.forEach(function (field) {
+      syncDateField(field, false);
+      field.addEventListener('input', function () {
+        field.setCustomValidity('');
+      });
+      field.addEventListener('blur', function () {
+        syncDateField(field, false);
+      });
+      if (field.form && !field.form.hasAttribute('data-cmn-am-date-bound')) {
+        field.form.setAttribute('data-cmn-am-date-bound', '1');
+        field.form.addEventListener('submit', function (event) {
+          var fields = Array.prototype.slice.call(field.form.querySelectorAll('input[data-cmn-am-date-input]'));
+          var firstInvalid = null;
+          fields.forEach(function (candidate) {
+            if (!syncDateField(candidate, true) && !firstInvalid) {
+              firstInvalid = candidate;
+            }
+          });
+          if (firstInvalid) {
+            event.preventDefault();
+            if (typeof firstInvalid.reportValidity === 'function') {
+              firstInvalid.reportValidity();
+            }
+          }
+        });
+      }
+    });
+  };
+  bindAccountManagerDateInputs();
   var themeButtons = document.querySelectorAll('[data-theme]');
   var cmnThemeClasses = ['cmn-theme-default', 'cmn-theme-contrast', 'cmn-theme-light', 'cmn-theme-teal'];
   var cmnApplyThemeClass = function (theme) {
@@ -4469,7 +4641,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var taskReminderClassList = ['is-warning', 'is-info', 'is-muted', 'is-pending'];
     var taskReminderDateFormatter = null;
     if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
-      taskReminderDateFormatter = new Intl.DateTimeFormat(undefined, {
+      taskReminderDateFormatter = new Intl.DateTimeFormat(isAccountManagerWorkspace ? 'en-GB' : undefined, {
         month: 'short',
         day: 'numeric',
         year: 'numeric'
@@ -9186,7 +9358,7 @@ document.addEventListener('DOMContentLoaded', function () {
           var item = document.createElement('button');
           item.type = 'button';
           item.className = 'cmn-support-insight-row';
-          item.innerHTML = '<strong>' + (row.ticket_ref || ('#' + String(row.ticket_id || ''))) + '</strong><span>' + (row.subject || 'Support ticket') + '</span><em>Overall ' + (row.overall_satisfaction || 0) + '/5 - Resolved: ' + (String(row.issue_resolved || '0') === '1' ? 'Yes' : 'No') + ' - ' + (row.created_at || '') + '</em>';
+          item.innerHTML = '<strong>' + (row.ticket_ref || ('#' + String(row.ticket_id || ''))) + '</strong><span>' + (row.subject || 'Support ticket') + '</span><em>Overall ' + (row.overall_satisfaction || 0) + '/5 - Resolved: ' + (String(row.issue_resolved || '0') === '1' ? 'Yes' : 'No') + ' - ' + formatAccountManagerDateTimeValue(row.created_at, row.created_at || '') + '</em>';
           item.addEventListener('click', function () {
             setInsightsModalOpen(false);
             if (row.ticket_id) {
@@ -9215,7 +9387,7 @@ document.addEventListener('DOMContentLoaded', function () {
           statusBits.push(contextLabel);
         }
         if (ticket.updated_at) {
-          statusBits.push(ticket.updated_at);
+          statusBits.push(formatAccountManagerDateTimeValue(ticket.updated_at, ticket.updated_at));
         }
         var channelBadge = '';
         if (mode === 'admin' && String(ticket.channel_key || '') === 'website_live_chat') {
@@ -9479,7 +9651,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!feedback && ticket && ticket.status === 'closed' && parseInt(ticket.feedback_request_active || '0', 10) === 1) {
               var waiting = document.createElement('div');
               waiting.className = 'cmn-muted';
-              waiting.textContent = 'Feedback requested. Waiting for response until ' + (ticket.feedback_request_expires_label || ticket.feedback_request_expires_at || 'the expiry window ends') + '.';
+              waiting.textContent = 'Feedback requested. Waiting for response until ' + formatAccountManagerDateTimeValue(ticket.feedback_request_expires_at || ticket.feedback_request_expires_label || '', ticket.feedback_request_expires_label || ticket.feedback_request_expires_at || 'the expiry window ends') + '.';
               feedbackRoot.appendChild(waiting);
             }
             return;
@@ -10353,7 +10525,7 @@ document.addEventListener('DOMContentLoaded', function () {
           bubble.className = 'cmn-support-bubble cmn-staff-lounge-bubble ' + bubbleClass;
           var meta = document.createElement('div');
           meta.className = 'cmn-support-meta';
-          meta.textContent = (row.sender_name || 'Staff') + ' - ' + (row.created_at || '');
+          meta.textContent = (row.sender_name || 'Staff') + ' - ' + formatAccountManagerDateTimeValue(row.created_at, row.created_at || '');
           var text = document.createElement('div');
           text.className = 'cmn-support-text';
           text.textContent = row.message || '';
@@ -11854,7 +12026,7 @@ document.addEventListener('DOMContentLoaded', function () {
           var meta = document.createElement('div');
           meta.className = 'cmn-support-meta';
           var label = msg.sender_name || senderRole.replace('_', ' ');
-          meta.textContent = label + ' - ' + (msg.created_at || '');
+          meta.textContent = label + ' - ' + formatAccountManagerDateTimeValue(msg.created_at, msg.created_at || '');
           var text = document.createElement('div');
           text.className = 'cmn-support-text';
           text.textContent = msg.message || '';
