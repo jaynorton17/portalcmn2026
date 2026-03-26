@@ -20,24 +20,22 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-main--am-crm {
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav {
-  padding: 8px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.76) !important;
+  padding: 12px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(219, 234, 254, 0.56), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.96) 100%) !important;
   border: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: none;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(14px);
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-header {
-  gap: 10px;
+  gap: 12px;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-links {
-  gap: 8px;
-}
-
-body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-list {
-  display: grid;
-  gap: 6px;
+  gap: 12px;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-group {
@@ -63,18 +61,137 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-link {
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-school-nav-link {
-  margin: 0 6px;
-  padding: 7px 10px;
+  margin: 0;
+  padding: 10px 12px;
   font-size: 12px;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar {
+  display: grid;
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-head {
+  display: grid;
+  gap: 8px;
+  padding: 6px 4px 2px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(219, 234, 254, 0.84);
+  border: 1px solid rgba(96, 165, 250, 0.26);
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-head-copy {
+  display: grid;
+  gap: 4px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-head-copy h2 {
+  margin: 0;
+  color: var(--cmn-am-text);
+  font-size: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-head-copy p {
+  margin: 0;
+  color: var(--cmn-am-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-section {
+  display: grid;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-section-title {
+  margin: 0;
+  padding: 0 4px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-list {
+  display: grid;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-height: 66px;
+  padding: 14px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(226, 232, 240, 0.82);
+  background: rgba(248, 250, 252, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  text-decoration: none;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link:focus-visible {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(59, 130, 246, 0.22);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.08);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link.is-active {
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.96) 0%, rgba(255, 255, 255, 0.98) 100%);
+  border-color: rgba(59, 130, 246, 0.26);
+  box-shadow: 0 16px 28px rgba(37, 99, 235, 0.12);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link .cmn-school-nav-icon {
+  margin-top: 2px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link-copy {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link-label {
+  color: var(--cmn-am-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link-detail {
+  color: var(--cmn-am-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link-count {
+  align-self: center;
+}
+
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace {
-  margin: 2px 8px 0;
-  padding: 12px;
+  margin: 0;
+  padding: 16px;
   border-radius: 16px;
   border: 1px solid rgba(226, 232, 240, 0.95);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: none;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.06);
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace-head {
@@ -5939,6 +6056,283 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-candidate-profile-shell[d
 /* AM topbar wordmark color lock */
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-brand-link .cmn-brand-title{color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;}body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-brand-link .cmn-brand-version{color:rgba(255,255,255,.72)!important;-webkit-text-fill-color:rgba(255,255,255,.72)!important;}body.cmn-portal-page .cmn-portal-light--am-crm .cmn-topbar-brand-link .cmn-brand-title .cmn-topbar-accent,body.cmn-portal-page .cmn-portal-light--am-crm .cmn-brand-title .cmn-topbar-accent{color:#F04340!important;-webkit-text-fill-color:#F04340!important;}
 
+/* Final AM shell override to keep the sidebar substantial and white-themed. */
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm {
+  grid-template-columns: 294px minmax(0, 1fr);
+  gap: 18px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at top left, rgba(219, 234, 254, 0.34), transparent 26%),
+    linear-gradient(180deg, rgba(241, 245, 249, 0.84) 0%, rgba(248, 250, 252, 0.94) 100%) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-main--am-crm {
+  padding: 2px 0 32px;
+  background: transparent !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav {
+  padding: 12px;
+  border-radius: 24px;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  background:
+    radial-gradient(circle at top right, rgba(219, 234, 254, 0.56), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.96) 100%) !important;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-nav-links {
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link {
+  color: var(--cmn-am-text) !important;
+  background: rgba(248, 250, 252, 0.76) !important;
+  border-color: rgba(226, 232, 240, 0.82) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link:hover,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link:focus-visible {
+  color: var(--cmn-am-text) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(59, 130, 246, 0.22) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link.is-active {
+  color: var(--cmn-am-text) !important;
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.96) 0%, rgba(255, 255, 255, 0.98) 100%) !important;
+  border-color: rgba(59, 130, 246, 0.26) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link-label {
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-link-detail,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-head-copy p,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-section-title {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-head-copy h2 {
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace {
+  margin: 0 !important;
+  padding: 16px !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 20px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Account manager tasks, activity, and settings workspaces */
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-workspace,
+  .cmn-am-activity-workspace,
+  .cmn-am-settings-workspace
+)[data-viewer-surface=account-manager] {
+  display: grid;
+  gap: 18px;
+  width: min(1360px, 100%);
+  margin: 0 auto;
+  color: var(--cmn-am-text);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-workspace,
+  .cmn-am-activity-workspace,
+  .cmn-am-settings-workspace
+)[data-viewer-surface=account-manager] .cmn-panel-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.96) 100%) !important;
+  border: 1px solid var(--cmn-am-border) !important;
+  box-shadow: var(--cmn-am-shadow-soft) !important;
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-header,
+  .cmn-am-activity-header,
+  .cmn-am-settings-header
+) {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+  padding: 28px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(191, 219, 254, 0.7), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.96) 100%) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-tasks-header {
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, .95fr);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-header,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-settings-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-header-copy,
+  .cmn-am-activity-header-copy,
+  .cmn-am-settings-header-copy
+) {
+  display: grid;
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-header h2,
+  .cmn-am-activity-header h2,
+  .cmn-am-settings-header h2,
+  .cmn-am-activity-panel h3,
+  .cmn-am-activity-row h3,
+  .cmn-am-settings-panel h3
+) {
+  margin: 0;
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-header p,
+  .cmn-am-activity-header p,
+  .cmn-am-settings-header p,
+  .cmn-am-activity-panel p,
+  .cmn-am-settings-panel p
+) {
+  margin: 0;
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-header-metrics,
+  .cmn-am-activity-header-metrics
+) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-metric,
+  .cmn-am-activity-metric
+) {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.88);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-metric strong,
+  .cmn-am-activity-metric strong
+) {
+  color: var(--cmn-am-text) !important;
+  font-size: 30px;
+  line-height: 1;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-metric span,
+  .cmn-am-activity-metric span
+) {
+  color: var(--cmn-am-muted) !important;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm :is(
+  .cmn-am-tasks-metric small,
+  .cmn-am-activity-metric small
+) {
+  color: var(--cmn-am-muted) !important;
+  line-height: 1.5;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-tasks-body,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-panel,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-settings-panel {
+  padding: 22px;
+  border-radius: 24px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-stream,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-side,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-list,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-side-list {
+  display: grid;
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-panel-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-row,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-side-item {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid rgba(226, 232, 240, 0.84);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-side-item {
+  text-decoration: none;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-row-top,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-row-copy,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-row-meta {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-row-copy {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-row-copy p,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-side-item span {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-side-item strong {
+  color: var(--cmn-am-text) !important;
+}
+
 /* Account manager bookings workspace */
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-workspace[data-viewer-surface=account-manager] {
   display: grid;
@@ -6548,5 +6942,52 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-workspace[data-v
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card h3,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-card h3 {
     font-size: 19px;
+  }
+}
+
+@media (max-width: 1180px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-tasks-header,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-header,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-settings-header,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-tasks-header-metrics,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-header-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-sidebar-head,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-nav-workspace {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm :is(
+    .cmn-am-tasks-header,
+    .cmn-am-activity-header,
+    .cmn-am-settings-header,
+    .cmn-am-tasks-body,
+    .cmn-am-activity-panel,
+    .cmn-am-settings-panel
+  ) {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-panel-head,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-row-top,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-activity-row-meta {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

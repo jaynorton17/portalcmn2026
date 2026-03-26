@@ -8164,6 +8164,8 @@ global $wpdb;
             'data-integrity',
             'data_integrity',
             'contacts',
+            'tasks',
+            'activity',
             'settings',
             'email-centre',
             'email_centre',
@@ -19930,6 +19932,222 @@ global $wpdb;
         return $counts;
     }
 
+    private function get_account_manager_shell_active_nav_key($active = '', array $context = []) {
+        $active = sanitize_key((string) $active);
+        $current_view = sanitize_key((string) ($context['view'] ?? ''));
+        $current_status = sanitize_key((string) ($context['status'] ?? ''));
+        $current_work_queue = sanitize_key((string) ($context['work_queue'] ?? ''));
+
+        if ($current_view === '' || in_array($current_view, ['home', 'dashboard'], true) || $active === 'dashboard') {
+            return 'dashboard';
+        }
+        if ($current_view === 'bookings' || in_array($active, ['bookings', 'active_bookings', 'bookings_completed'], true)) {
+            return 'bookings';
+        }
+        if ($current_view === 'tasks' || $active === 'tasks') {
+            return 'tasks';
+        }
+        if ($current_view === 'activity' || $active === 'activity') {
+            return 'activity';
+        }
+        if ($current_view === 'support' || strpos($active, 'support') === 0) {
+            return 'support';
+        }
+        if ($current_view === 'settings' || $active === 'settings') {
+            return 'settings';
+        }
+        if ($current_view === 'candidates' || in_array($active, ['candidates', 'candidate_management'], true)) {
+            return 'candidates';
+        }
+        if ($current_view === 'leads' || $active === 'pipeline_leads') {
+            return 'pipeline';
+        }
+        if (in_array($current_work_queue, ['follow_up', 'overdue_follow_up', 'no_follow_up', 'at_risk'], true)
+            || $current_status === 'needs_attention'
+            || $active === 'task_follow_up') {
+            return 'follow_up';
+        }
+        if ($current_view === 'clients' || $current_status === 'client' || $active === 'active_clients') {
+            return 'clients';
+        }
+        if ($current_status === 'lead' || $active === 'schools_leads') {
+            return 'leads';
+        }
+
+        return 'dashboard';
+    }
+
+    private function build_account_manager_shell_navigation($user_id, $portal_url, $active_nav_key = '', array $nav_badges = [], array $nav_context = []) {
+        $user_id = (int) $user_id;
+        $portal_url = esc_url_raw((string) $portal_url);
+        $active_nav_key = sanitize_key((string) $active_nav_key);
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id) || $portal_url === '') {
+            return [
+                'sections' => [],
+                'status' => [],
+            ];
+        }
+
+        $dashboard_url = add_query_arg([
+            'view' => 'home',
+            'cmn_tab' => false,
+        ], $portal_url);
+        $bookings_url = add_query_arg([
+            'view' => 'bookings',
+            'booking_id' => false,
+            'cmn_booking_scope' => false,
+            'cmn_booking_q' => false,
+            'cmn_booking_date' => false,
+            'cmn_booking_school' => false,
+            'cmn_booking_candidate' => false,
+            'cmn_status' => false,
+        ], $portal_url);
+        $tasks_url = add_query_arg([
+            'view' => 'tasks',
+            'cmn_task_notice' => false,
+            'cmn_task_status' => false,
+        ], $portal_url);
+        $follow_up_url = add_query_arg([
+            'view' => 'schools',
+            'cmn_status' => 'all',
+            'cmn_work_queue' => 'follow_up',
+            'cmn_bucket' => false,
+            'cmn_stage' => false,
+            'cmn_manager' => false,
+            'cmn_location' => false,
+            'cmn_lead_group' => false,
+            'cmn_last_activity' => false,
+            'q' => false,
+            'view_style' => false,
+            'sort' => false,
+            'order' => false,
+        ], $portal_url);
+        $clients_url = add_query_arg([
+            'view' => 'clients',
+            'cmn_bucket' => false,
+            'cmn_work_queue' => false,
+            'q' => false,
+            'view_style' => false,
+            'sort' => false,
+            'order' => false,
+        ], $portal_url);
+        $leads_url = add_query_arg([
+            'view' => 'schools',
+            'cmn_status' => 'lead',
+            'cmn_bucket' => false,
+            'cmn_work_queue' => false,
+            'cmn_stage' => false,
+            'cmn_manager' => false,
+            'cmn_location' => false,
+            'cmn_lead_group' => false,
+            'cmn_last_activity' => false,
+            'q' => false,
+            'view_style' => false,
+            'sort' => false,
+            'order' => false,
+        ], $portal_url);
+        $pipeline_url = add_query_arg([
+            'view' => 'leads',
+            'cmn_bucket' => false,
+        ], $portal_url);
+        $candidates_url = add_query_arg([
+            'view' => 'candidates',
+            'cmn_status' => false,
+            'cmn_doc_review' => false,
+        ], $portal_url);
+        $support_url = add_query_arg([
+            'view' => 'support',
+            'support_filter' => 'open',
+            'ticket_id' => false,
+        ], $portal_url);
+        $activity_url = add_query_arg([
+            'view' => 'activity',
+        ], $portal_url);
+        $settings_url = add_query_arg([
+            'view' => 'settings',
+        ], $portal_url);
+
+        $recent_activity_snapshot = (array) $this->get_account_manager_recent_activity_snapshot($user_id, 1);
+        $recent_activity_total = max(0, (int) (($recent_activity_snapshot['counts']['total'] ?? 0)));
+
+        $make_item = static function ($key, $label, $detail, $icon_key, $url, $count = 0) use ($active_nav_key) {
+            return [
+                'key' => sanitize_key((string) $key),
+                'label' => sanitize_text_field((string) $label),
+                'detail' => sanitize_text_field((string) $detail),
+                'icon_key' => sanitize_key((string) $icon_key),
+                'url' => esc_url_raw((string) $url),
+                'count' => max(0, (int) $count),
+                'is_active' => sanitize_key((string) $key) === $active_nav_key,
+            ];
+        };
+
+        $sections = [
+            [
+                'label' => 'Core Operations',
+                'items' => [
+                    $make_item('dashboard', 'Dashboard', 'Portfolio overview and priorities', 'dashboard', $dashboard_url),
+                    $make_item('bookings', 'Bookings', 'Live booking lifecycle and actions', 'active_bookings', $bookings_url, (int) ($nav_badges['bookings'] ?? 0)),
+                    $make_item('tasks', 'My Tasks', 'Assigned tasks and quick-create queue', 'operations', $tasks_url, (int) ($nav_badges['task_follow_up'] ?? 0)),
+                    $make_item('follow_up', 'Follow-Up', 'Accounts needing a next step', 'logs', $follow_up_url),
+                ],
+            ],
+            [
+                'label' => 'Relationship Management',
+                'items' => [
+                    $make_item('clients', 'Clients', 'Active school relationships', 'clients', $clients_url, (int) ($nav_badges['active_clients'] ?? 0)),
+                    $make_item('leads', 'Leads', 'Lead records in list view', 'leads', $leads_url, (int) ($nav_badges['schools_leads'] ?? 0)),
+                    $make_item('pipeline', 'Pipeline', 'Stage-based sales board', 'pipeline', $pipeline_url),
+                    $make_item('candidates', 'Candidates', 'Shared candidate pool in scope', 'candidates', $candidates_url, (int) ($nav_badges['candidates'] ?? 0)),
+                ],
+            ],
+            [
+                'label' => 'Support / Personal',
+                'items' => [
+                    $make_item('support', 'Support / Issues', 'Open portfolio issues and AM chats', 'support', $support_url, (int) ($nav_badges['support'] ?? 0)),
+                    $make_item('activity', 'Activity', 'Recent relationship movement', 'analytics', $activity_url, $recent_activity_total),
+                    $make_item('settings', 'Settings', 'Personal preferences and cover', 'settings', $settings_url),
+                ],
+            ],
+        ];
+
+        $status_metrics = [
+            [
+                'label' => 'Clients',
+                'value' => number_format_i18n((int) ($nav_context['clients'] ?? 0)),
+                'url' => $clients_url,
+            ],
+            [
+                'label' => 'Leads',
+                'value' => number_format_i18n((int) ($nav_context['leads'] ?? 0)),
+                'url' => $leads_url,
+            ],
+            [
+                'label' => 'Bookings',
+                'value' => number_format_i18n((int) ($nav_context['bookings'] ?? 0)),
+                'url' => $bookings_url,
+            ],
+            [
+                'label' => 'Issues',
+                'value' => number_format_i18n((int) ($nav_context['issues'] ?? 0)),
+                'url' => $support_url,
+            ],
+        ];
+
+        return [
+            'sections' => $sections,
+            'status' => [
+                'eyebrow' => 'Live portfolio',
+                'title' => 'AM workspace',
+                'updated_label' => sanitize_text_field((string) ($nav_context['updated_label'] ?? 'just now')),
+                'detail' => $recent_activity_total > 0
+                    ? (number_format_i18n($recent_activity_total) . ' account' . ($recent_activity_total === 1 ? '' : 's') . ' with visible recent activity')
+                    : 'Activity updates appear here as relationship movement is recorded.',
+                'metrics' => $status_metrics,
+            ],
+        ];
+    }
+
     private function get_school_profile_tab_url($school_id, $tab = 'overview', $anchor = '') {
         $school_id = (int) $school_id;
         if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
@@ -20576,6 +20794,299 @@ global $wpdb;
         </div>
         <?php
         return ob_get_clean();
+    }
+
+    private function render_account_manager_tasks_workspace($user_id = 0) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This task workspace is available to account managers only.</p></div></section>';
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $current_url = $this->get_current_url();
+        $payload = $this->get_account_manager_task_panel_payload($user_id, 18, $current_url);
+        $counts = is_array($payload['counts'] ?? null) ? $payload['counts'] : [];
+        $follow_up_url = add_query_arg([
+            'view' => 'schools',
+            'cmn_status' => 'all',
+            'cmn_work_queue' => 'follow_up',
+            'cmn_bucket' => false,
+        ], $portal_url);
+        $bookings_url = add_query_arg([
+            'view' => 'bookings',
+            'booking_id' => false,
+            'cmn_booking_scope' => false,
+            'cmn_status' => false,
+        ], $portal_url);
+
+        ob_start();
+        ?>
+        <section class="cmn-am-tasks-workspace" data-viewer-surface="account-manager">
+            <header class="cmn-panel-card cmn-am-tasks-header">
+                <div class="cmn-am-tasks-header-copy">
+                    <span class="cmn-am-bookings-eyebrow">Account Manager CRM</span>
+                    <h2>My Tasks</h2>
+                    <p>Work the assigned relationship tasks, complete overdue actions, and create the next follow-up without leaving the AM workspace.</p>
+                    <div class="cmn-am-booking-thread-links">
+                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($follow_up_url); ?>">Open Follow-Up queue</a>
+                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($bookings_url); ?>">Open Bookings</a>
+                    </div>
+                </div>
+                <div class="cmn-am-tasks-header-metrics" aria-label="Task queue metrics">
+                    <article class="cmn-am-tasks-metric">
+                        <span>Open tasks</span>
+                        <strong><?php echo esc_html(number_format_i18n((int) ($counts['open'] ?? 0))); ?></strong>
+                        <small>Assigned school tasks currently in scope.</small>
+                    </article>
+                    <article class="cmn-am-tasks-metric">
+                        <span>Due today</span>
+                        <strong><?php echo esc_html(number_format_i18n((int) ($counts['due_today'] ?? 0))); ?></strong>
+                        <small>Tasks that should be completed today.</small>
+                    </article>
+                    <article class="cmn-am-tasks-metric">
+                        <span>Overdue</span>
+                        <strong><?php echo esc_html(number_format_i18n((int) ($counts['overdue'] ?? 0))); ?></strong>
+                        <small>Existing backlog already past due.</small>
+                    </article>
+                </div>
+            </header>
+            <div class="cmn-panel-card cmn-am-tasks-body">
+                <?php echo $this->render_account_manager_task_panel_html($payload); ?>
+            </div>
+        </section>
+        <?php
+        $inner = ob_get_clean();
+
+        return $this->render_staff_shell('tasks', $inner);
+    }
+
+    private function render_account_manager_activity_workspace($user_id = 0) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This activity workspace is available to account managers only.</p></div></section>';
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $recent_activity_snapshot = (array) $this->get_account_manager_recent_activity_snapshot($user_id, 18);
+        $recent_rows = array_values(array_filter((array) ($recent_activity_snapshot['rows'] ?? []), 'is_array'));
+        $task_snapshot = (array) $this->get_staff_dashboard_school_task_snapshot($user_id, 6);
+        $task_rows = array_slice(array_values(array_filter((array) ($task_snapshot['task_items'] ?? []), 'is_array')), 0, 4);
+        $booking_snapshot = (array) $this->get_account_manager_booking_scope_snapshot($user_id, 6);
+        $booking_rows = array_slice(array_values(array_filter((array) ($booking_snapshot['rows'] ?? []), 'is_array')), 0, 4);
+        $issue_snapshot = (array) $this->get_account_manager_issue_scope_snapshot($user_id, 6);
+        $issue_rows = array_slice(array_values(array_filter((array) ($issue_snapshot['rows'] ?? []), 'is_array')), 0, 4);
+        $activity_total = max(0, (int) (($recent_activity_snapshot['counts']['total'] ?? count($recent_rows))));
+        $bookings_open = max(0, (int) (($booking_snapshot['counts']['open'] ?? 0)));
+        $issues_open = max(0, (int) (($issue_snapshot['counts']['open'] ?? 0)));
+
+        ob_start();
+        ?>
+        <section class="cmn-am-activity-workspace" data-viewer-surface="account-manager">
+            <header class="cmn-panel-card cmn-am-activity-header">
+                <div class="cmn-am-activity-header-copy">
+                    <span class="cmn-am-bookings-eyebrow">Account Manager CRM</span>
+                    <h2>Activity</h2>
+                    <p>See the newest relationship movement across your portfolio, with direct jump-off points into accounts, bookings, tasks, and issue handling.</p>
+                </div>
+                <div class="cmn-am-activity-header-metrics">
+                    <article class="cmn-am-activity-metric">
+                        <span>Recent activity</span>
+                        <strong><?php echo esc_html(number_format_i18n($activity_total)); ?></strong>
+                        <small>Accounts with visible recent movement.</small>
+                    </article>
+                    <article class="cmn-am-activity-metric">
+                        <span>Open bookings</span>
+                        <strong><?php echo esc_html(number_format_i18n($bookings_open)); ?></strong>
+                        <small>Live booking work already in scope.</small>
+                    </article>
+                    <article class="cmn-am-activity-metric">
+                        <span>Open issues</span>
+                        <strong><?php echo esc_html(number_format_i18n($issues_open)); ?></strong>
+                        <small>Issue threads still needing AM attention.</small>
+                    </article>
+                </div>
+            </header>
+
+            <div class="cmn-am-activity-layout">
+                <section class="cmn-am-activity-stream">
+                    <div class="cmn-panel-card cmn-am-activity-panel">
+                        <div class="cmn-am-activity-panel-head">
+                            <div>
+                                <h3>Recent relationship movement</h3>
+                                <p>Newest-first activity already visible inside the AM portfolio scope.</p>
+                            </div>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'sort' => 'last_interaction', 'order' => 'desc'], $portal_url)); ?>">Open all accounts</a>
+                        </div>
+                        <?php if ($recent_rows) : ?>
+                            <div class="cmn-am-activity-list">
+                                <?php foreach ($recent_rows as $activity_row) : ?>
+                                    <?php
+                                    $activity_title = sanitize_text_field((string) ($activity_row['title'] ?? 'Portfolio account'));
+                                    $activity_source = sanitize_text_field((string) ($activity_row['last_activity_source'] ?? 'CRM update'));
+                                    $activity_label = sanitize_text_field((string) ($activity_row['last_activity_label'] ?? 'Recent movement'));
+                                    $activity_detail = sanitize_text_field((string) ($activity_row['last_activity_detail'] ?? ''));
+                                    $activity_next_action = sanitize_text_field((string) ($activity_row['next_action_label'] ?? 'Review relationship'));
+                                    $activity_status = $this->get_account_manager_attention_reason($activity_row);
+                                    if ($activity_status === '') {
+                                        $activity_status = sanitize_text_field((string) ($activity_row['stage_display_label'] ?? $activity_row['status_label'] ?? 'Active'));
+                                    }
+                                    $status_payload = $this->get_account_manager_list_status_payload($activity_row);
+                                    $activity_status_class = sanitize_html_class((string) ($status_payload['class'] ?? 'is-info'));
+                                    $activity_url_raw = '';
+                                    foreach (['activity_url', 'overview_url', 'view_url'] as $activity_url_key) {
+                                        $candidate_url = trim((string) ($activity_row[$activity_url_key] ?? ''));
+                                        if ($candidate_url !== '') {
+                                            $activity_url_raw = $candidate_url;
+                                            break;
+                                        }
+                                    }
+                                    if ($activity_url_raw === '') {
+                                        $activity_url_raw = add_query_arg(['view' => 'schools', 'cmn_status' => 'all'], $portal_url);
+                                    }
+                                    $overview_url_raw = '';
+                                    foreach (['overview_url', 'view_url'] as $overview_url_key) {
+                                        $candidate_url = trim((string) ($activity_row[$overview_url_key] ?? ''));
+                                        if ($candidate_url !== '') {
+                                            $overview_url_raw = $candidate_url;
+                                            break;
+                                        }
+                                    }
+                                    if ($overview_url_raw === '') {
+                                        $overview_url_raw = $activity_url_raw;
+                                    }
+                                    $activity_url = esc_url($activity_url_raw);
+                                    $overview_url = esc_url($overview_url_raw);
+                                    $meta_parts = array_filter([$activity_label, $activity_detail]);
+                                    ?>
+                                    <article class="cmn-am-activity-row">
+                                        <div class="cmn-am-activity-row-top">
+                                            <div class="cmn-am-activity-row-copy">
+                                                <span class="cmn-am-booking-ref"><?php echo esc_html($activity_source); ?></span>
+                                                <h3><?php echo esc_html($activity_title); ?></h3>
+                                                <p><?php echo esc_html($activity_next_action); ?></p>
+                                            </div>
+                                            <span class="cmn-status-chip <?php echo esc_attr($activity_status_class); ?>"><?php echo esc_html($activity_status); ?></span>
+                                        </div>
+                                        <?php if ($meta_parts) : ?>
+                                            <div class="cmn-am-activity-row-meta">
+                                                <?php foreach ($meta_parts as $meta_part) : ?>
+                                                    <span class="cmn-am-bookings-inline-chip"><?php echo esc_html((string) $meta_part); ?></span>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <div class="cmn-am-booking-thread-links">
+                                            <a class="cmn-primary cmn-btn-mini" href="<?php echo $overview_url; ?>">Open account</a>
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo $activity_url; ?>">Open activity</a>
+                                        </div>
+                                    </article>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else : ?>
+                            <section class="cmn-am-bookings-empty">
+                                <h3>No recent activity in scope yet</h3>
+                                <p>Once notes, calls, emails, tasks, or booking movement are recorded against your accounts, the newest activity will appear here.</p>
+                            </section>
+                        <?php endif; ?>
+                    </div>
+                </section>
+
+                <aside class="cmn-am-activity-side">
+                    <section class="cmn-panel-card cmn-am-activity-panel">
+                        <div class="cmn-am-activity-panel-head">
+                            <div>
+                                <h3>Tasks due now</h3>
+                                <p>Open operational tasks already assigned to you.</p>
+                            </div>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'tasks'], $portal_url)); ?>">Open tasks</a>
+                        </div>
+                        <div class="cmn-am-activity-side-list">
+                            <?php if ($task_rows) : ?>
+                                <?php foreach ($task_rows as $task_row) : ?>
+                                    <?php
+                                    $task_row_url = trim((string) ($task_row['edit_url'] ?? ''));
+                                    if ($task_row_url === '') {
+                                        $task_row_url = trim((string) ($task_row['url'] ?? ''));
+                                    }
+                                    if ($task_row_url === '') {
+                                        $task_row_url = add_query_arg(['view' => 'tasks'], $portal_url);
+                                    }
+                                    ?>
+                                    <a class="cmn-am-activity-side-item" href="<?php echo esc_url($task_row_url); ?>">
+                                        <strong><?php echo esc_html((string) ($task_row['label'] ?? 'Task')); ?></strong>
+                                        <span><?php echo esc_html((string) ($task_row['school_name'] ?? $task_row['eyebrow'] ?? 'Portfolio school')); ?></span>
+                                        <span><?php echo esc_html((string) ($task_row['value'] ?? 'Open')); ?><?php echo !empty($task_row['detail']) ? ' · ' . esc_html((string) $task_row['detail']) : ''; ?></span>
+                                    </a>
+                                <?php endforeach; ?>
+                            <?php else : ?>
+                                <p class="cmn-muted">No open AM tasks are currently visible.</p>
+                            <?php endif; ?>
+                        </div>
+                    </section>
+
+                    <section class="cmn-panel-card cmn-am-activity-panel">
+                        <div class="cmn-am-activity-panel-head">
+                            <div>
+                                <h3>Booking watch</h3>
+                                <p>Recent booking movement already tied to your accounts.</p>
+                            </div>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'bookings'], $portal_url)); ?>">Open bookings</a>
+                        </div>
+                        <div class="cmn-am-activity-side-list">
+                            <?php if ($booking_rows) : ?>
+                                <?php foreach ($booking_rows as $booking_row) : ?>
+                                    <?php
+                                    $booking_row_url = trim((string) ($booking_row['url'] ?? ''));
+                                    if ($booking_row_url === '') {
+                                        $booking_row_url = add_query_arg(['view' => 'bookings'], $portal_url);
+                                    }
+                                    ?>
+                                    <a class="cmn-am-activity-side-item" href="<?php echo esc_url($booking_row_url); ?>">
+                                        <strong><?php echo esc_html((string) ($booking_row['label'] ?? 'Booking')); ?></strong>
+                                        <span><?php echo esc_html((string) ($booking_row['value'] ?? '')); ?></span>
+                                        <span><?php echo esc_html((string) ($booking_row['detail'] ?? '')); ?></span>
+                                    </a>
+                                <?php endforeach; ?>
+                            <?php else : ?>
+                                <p class="cmn-muted">No bookings are visible in this portfolio yet.</p>
+                            <?php endif; ?>
+                        </div>
+                    </section>
+
+                    <section class="cmn-panel-card cmn-am-activity-panel">
+                        <div class="cmn-am-activity-panel-head">
+                            <div>
+                                <h3>Issue watch</h3>
+                                <p>Support threads still needing AM attention.</p>
+                            </div>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url)); ?>">Open issues</a>
+                        </div>
+                        <div class="cmn-am-activity-side-list">
+                            <?php if ($issue_rows) : ?>
+                                <?php foreach ($issue_rows as $issue_row) : ?>
+                                    <?php
+                                    $issue_row_url = trim((string) ($issue_row['url'] ?? ''));
+                                    if ($issue_row_url === '') {
+                                        $issue_row_url = add_query_arg(['view' => 'support'], $portal_url);
+                                    }
+                                    ?>
+                                    <a class="cmn-am-activity-side-item" href="<?php echo esc_url($issue_row_url); ?>">
+                                        <strong><?php echo esc_html((string) ($issue_row['label'] ?? 'Issue')); ?></strong>
+                                        <span><?php echo esc_html((string) ($issue_row['value'] ?? '')); ?></span>
+                                        <span><?php echo esc_html((string) ($issue_row['detail'] ?? '')); ?></span>
+                                    </a>
+                                <?php endforeach; ?>
+                            <?php else : ?>
+                                <p class="cmn-muted">No portfolio issues are open right now.</p>
+                            <?php endif; ?>
+                        </div>
+                    </section>
+                </aside>
+            </div>
+        </section>
+        <?php
+        $inner = ob_get_clean();
+
+        return $this->render_staff_shell('activity', $inner);
     }
 
     private function get_account_manager_booking_scope_snapshot($user_id = 0, $limit = 6) {
@@ -23603,6 +24114,8 @@ global $wpdb;
         if ($current_email_centre_tab === '' || (!$can_access_email_delivery && in_array($current_email_centre_tab, ['senders', 'logs'], true))) {
             $current_email_centre_tab = 'templates';
         }
+        $current_status_filter = sanitize_key((string) ($_GET['cmn_status'] ?? ''));
+        $current_work_queue = sanitize_key((string) ($_GET['cmn_work_queue'] ?? ''));
 
         $dashboard_url = $is_account_manager_workspace
             ? add_query_arg(['view' => 'home', 'cmn_tab' => false], $portal_url)
@@ -23852,73 +24365,29 @@ global $wpdb;
             $stored_nav_state_json = '{}';
         }
 
-        $account_manager_toolbar_links = [];
-        $account_manager_sidebar_shortcuts = [];
-        $account_manager_workspace_status = 'Loading live counts...';
+        $account_manager_active_nav_key = $this->get_account_manager_shell_active_nav_key($active, [
+            'view' => $current_view,
+            'status' => $current_status_filter,
+            'work_queue' => $current_work_queue,
+        ]);
+        $account_manager_sidebar_sections = [];
+        $account_manager_sidebar_status = [];
         $account_manager_nav_context = [];
         $account_manager_nav_badges = [];
         $account_manager_task_panel_payload = [];
         if ($is_account_manager_workspace) {
-            $current_status_filter = sanitize_key((string) ($_GET['cmn_status'] ?? 'all'));
             $account_manager_nav_context = (array) $this->get_account_manager_nav_context_snapshot($user_id);
             $account_manager_nav_badges = $this->get_account_manager_nav_badge_counts($user_id);
             $account_manager_task_panel_payload = $this->get_account_manager_task_panel_payload($user_id, 12, $this->get_current_url());
-            $account_manager_toolbar_links = [
-                [
-                    'label' => 'Clients',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'client'),
-                ],
-                [
-                    'label' => 'Leads',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'lead'),
-                ],
-                [
-                    'label' => 'Candidates',
-                    'url' => add_query_arg(['view' => 'candidates', 'cmn_status' => false, 'cmn_doc_review' => false], $portal_url),
-                    'is_active' => ($current_view === 'candidates'),
-                ],
-                [
-                    'label' => 'Pipeline',
-                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'leads'),
-                ],
-            ];
-            $account_manager_sidebar_shortcuts = [
-                [
-                    'label' => 'Clients',
-                    'icon_key' => 'clients',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'client'),
-                ],
-                [
-                    'label' => 'Leads',
-                    'icon_key' => 'leads',
-                    'url' => add_query_arg(['view' => 'schools', 'cmn_status' => 'lead', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'schools' && $current_status_filter === 'lead'),
-                ],
-                [
-                    'label' => 'Pipeline',
-                    'icon_key' => 'pipeline',
-                    'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
-                    'is_active' => ($current_view === 'leads'),
-                ],
-                [
-                    'label' => 'Bookings',
-                    'icon_key' => 'active_bookings',
-                    'url' => add_query_arg(['view' => 'bookings', 'booking_id' => false, 'cmn_booking_scope' => false, 'cmn_booking_q' => false, 'cmn_booking_date' => false, 'cmn_booking_school' => false, 'cmn_booking_candidate' => false, 'cmn_status' => false], $portal_url),
-                    'is_active' => ($current_view === 'bookings'),
-                ],
-                [
-                    'label' => 'Candidates',
-                    'icon_key' => 'candidates',
-                    'url' => add_query_arg(['view' => 'candidates', 'cmn_status' => false, 'cmn_doc_review' => false], $portal_url),
-                    'is_active' => ($current_view === 'candidates'),
-                ],
-            ];
-            $updated_label = sanitize_text_field((string) ($account_manager_nav_context['updated_label'] ?? ''));
-            $account_manager_workspace_status = $updated_label !== '' ? ('Updated ' . $updated_label) : 'Updated just now';
+            $account_manager_navigation = $this->build_account_manager_shell_navigation(
+                $user_id,
+                $portal_url,
+                $account_manager_active_nav_key,
+                $account_manager_nav_badges,
+                $account_manager_nav_context
+            );
+            $account_manager_sidebar_sections = array_values(array_filter((array) ($account_manager_navigation['sections'] ?? []), 'is_array'));
+            $account_manager_sidebar_status = is_array($account_manager_navigation['status'] ?? null) ? $account_manager_navigation['status'] : [];
         }
 
         $render_staff_nav_icon = static function ($icon_key) {
@@ -24006,15 +24475,6 @@ global $wpdb;
             <div class="cmn-portal-topbar<?php echo $is_account_manager_workspace ? ' cmn-portal-topbar--am-crm' : ''; ?>">
                 <div class="cmn-topbar-left">
                     <a class="cmn-topbar-brand-link" href="<?php echo esc_url($dashboard_url); ?>"><?php echo $this->render_portal_branding(); ?></a>
-                    <?php if ($is_account_manager_workspace && $account_manager_toolbar_links) : ?>
-                        <nav class="cmn-am-topbar-links" aria-label="Account manager quick links">
-                            <?php foreach ($account_manager_toolbar_links as $toolbar_link) : ?>
-                                <a class="cmn-am-topbar-link<?php echo !empty($toolbar_link['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($toolbar_link['url'] ?? $portal_url)); ?>">
-                                    <?php echo esc_html((string) ($toolbar_link['label'] ?? 'Open')); ?>
-                                </a>
-                            <?php endforeach; ?>
-                        </nav>
-                    <?php endif; ?>
                 </div>
                 <div class="cmn-topbar-right">
                     <?php if ($is_account_manager_workspace) : ?>
@@ -24069,27 +24529,57 @@ global $wpdb;
                     </div>
                     <nav class="cmn-school-nav-links cmn-staff-nav-links">
                         <?php if ($is_account_manager_workspace) : ?>
-                            <div class="cmn-am-nav-list">
-                                <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="Home">
-                                    <?php echo $render_staff_nav_icon('dashboard'); ?>
-                                    <span class="cmn-school-nav-label">Home</span>
-                                </a>
-                                <button type="button" class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--work-queue" data-am-task-panel-toggle aria-expanded="false" aria-controls="cmn-am-task-panel" data-tooltip="My Tasks / Follow-Up">
-                                    <?php echo $render_staff_nav_icon('logs'); ?>
-                                    <span class="cmn-school-nav-label">My Tasks / Follow-Up</span>
-                                    <?php if (!empty($account_manager_nav_badges['task_follow_up'])) : ?>
-                                        <span class="cmn-nav-badge" data-nav-badge-key="task_follow_up"><?php echo esc_html(number_format_i18n((int) $account_manager_nav_badges['task_follow_up'])); ?></span>
-                                    <?php endif; ?>
-                                </button>
-                                <?php foreach ($account_manager_sidebar_shortcuts as $shortcut_link) : ?>
-                                    <a class="cmn-school-nav-link cmn-staff-nav-link<?php echo !empty($shortcut_link['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($shortcut_link['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr((string) ($shortcut_link['label'] ?? 'Open')); ?>">
-                                        <?php echo $render_staff_nav_icon((string) ($shortcut_link['icon_key'] ?? 'schools')); ?>
-                                        <span class="cmn-school-nav-label"><?php echo esc_html((string) ($shortcut_link['label'] ?? 'Open')); ?></span>
-                                    </a>
-                                <?php endforeach; ?>
-                                <div class="<?php echo $account_manager_nav_context ? '' : 'is-loading '; ?>cmn-am-nav-context-anchor" data-am-nav-context hidden aria-live="polite" aria-busy="<?php echo $account_manager_nav_context ? 'false' : 'true'; ?>">
-                                    <p class="cmn-am-nav-workspace-status" data-am-nav-context-status hidden><?php echo esc_html($account_manager_workspace_status); ?></p>
+                            <div class="cmn-am-sidebar">
+                                <div class="cmn-am-sidebar-head">
+                                    <span class="cmn-am-sidebar-eyebrow">Account Manager CRM</span>
+                                    <div class="cmn-am-sidebar-head-copy">
+                                        <h2>Operations shell</h2>
+                                        <p>Use the sidebar as the primary AM navigation for live portfolio work.</p>
+                                    </div>
                                 </div>
+                                <?php foreach ($account_manager_sidebar_sections as $sidebar_section) : ?>
+                                    <?php $sidebar_items = array_values(array_filter((array) ($sidebar_section['items'] ?? []), 'is_array')); ?>
+                                    <?php if (!$sidebar_items) { continue; } ?>
+                                    <section class="cmn-am-sidebar-section" aria-label="<?php echo esc_attr((string) ($sidebar_section['label'] ?? 'Navigation')); ?>">
+                                        <p class="cmn-am-sidebar-section-title"><?php echo esc_html((string) ($sidebar_section['label'] ?? 'Navigation')); ?></p>
+                                        <div class="cmn-am-sidebar-list">
+                                            <?php foreach ($sidebar_items as $sidebar_item) : ?>
+                                                <a class="cmn-school-nav-link cmn-staff-nav-link cmn-am-sidebar-link<?php echo !empty($sidebar_item['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($sidebar_item['url'] ?? $portal_url)); ?>" data-tooltip="<?php echo esc_attr((string) ($sidebar_item['label'] ?? 'Open')); ?>">
+                                                    <?php echo $render_staff_nav_icon((string) ($sidebar_item['icon_key'] ?? 'dashboard')); ?>
+                                                    <span class="cmn-school-nav-label cmn-am-sidebar-link-copy">
+                                                        <span class="cmn-am-sidebar-link-label"><?php echo esc_html((string) ($sidebar_item['label'] ?? 'Open')); ?></span>
+                                                        <?php if (!empty($sidebar_item['detail'])) : ?>
+                                                            <small class="cmn-am-sidebar-link-detail"><?php echo esc_html((string) ($sidebar_item['detail'] ?? '')); ?></small>
+                                                        <?php endif; ?>
+                                                    </span>
+                                                    <?php if (!empty($sidebar_item['count'])) : ?>
+                                                        <span class="cmn-nav-badge cmn-am-sidebar-link-count"><?php echo esc_html(number_format_i18n((int) ($sidebar_item['count'] ?? 0))); ?></span>
+                                                    <?php endif; ?>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </section>
+                                <?php endforeach; ?>
+                                <?php if ($account_manager_sidebar_status) : ?>
+                                    <section class="cmn-am-nav-workspace" data-am-nav-context aria-live="polite" aria-busy="false">
+                                        <div class="cmn-am-nav-workspace-head">
+                                            <span class="cmn-am-nav-eyebrow"><?php echo esc_html((string) ($account_manager_sidebar_status['eyebrow'] ?? 'Live portfolio')); ?></span>
+                                            <h3><?php echo esc_html((string) ($account_manager_sidebar_status['title'] ?? 'AM workspace')); ?></h3>
+                                            <?php if (!empty($account_manager_sidebar_status['detail'])) : ?>
+                                                <p class="cmn-muted"><?php echo esc_html((string) ($account_manager_sidebar_status['detail'] ?? '')); ?></p>
+                                            <?php endif; ?>
+                                            <p class="cmn-am-nav-workspace-status" data-am-nav-context-status><?php echo esc_html('Updated ' . (string) ($account_manager_sidebar_status['updated_label'] ?? 'just now')); ?></p>
+                                        </div>
+                                        <div class="cmn-am-nav-workspace-metrics">
+                                            <?php foreach ((array) ($account_manager_sidebar_status['metrics'] ?? []) as $status_metric) : ?>
+                                                <a class="cmn-am-nav-metric" href="<?php echo esc_url((string) ($status_metric['url'] ?? $portal_url)); ?>">
+                                                    <strong><?php echo esc_html((string) ($status_metric['value'] ?? '0')); ?></strong>
+                                                    <span><?php echo esc_html((string) ($status_metric['label'] ?? 'Metric')); ?></span>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </section>
+                                <?php endif; ?>
                             </div>
                         <?php else : ?>
                             <a class="cmn-school-nav-link cmn-staff-nav-link cmn-staff-nav-link--dashboard-root<?php echo $is_dashboard_active ? ' is-active' : ''; ?>" href="<?php echo esc_url($dashboard_url); ?>" data-tooltip="<?php echo esc_attr($is_account_manager_workspace ? 'Home' : 'Dashboard'); ?>">
@@ -43007,6 +43497,18 @@ global $wpdb;
         }
         if ($view === 'schools') {
             return $this->render_staff_schools_shortcode();
+        }
+        if ($view === 'tasks') {
+            if (!$this->is_staff_user()) {
+                return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to staff users only.</p></div></section>';
+            }
+            return $this->render_account_manager_tasks_workspace((int) get_current_user_id());
+        }
+        if ($view === 'activity') {
+            if (!$this->is_staff_user()) {
+                return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to staff users only.</p></div></section>';
+            }
+            return $this->render_account_manager_activity_workspace((int) get_current_user_id());
         }
         if ($view === 'candidates') {
             return $this->render_staff_candidates_shortcode();
@@ -67866,6 +68368,123 @@ global $wpdb;
      * 6) Real module emails written through wp_mail are logged via wrapper or wp_mail hook token correlation.
      */
 
+    private function render_account_manager_settings_workspace($user_id = 0) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This settings workspace is available to account managers only.</p></div></section>';
+        }
+
+        $portal_url = $this->get_portal_base_url();
+        $staff_presence_flags = $this->get_staff_presence_flags($user_id);
+        $staff_cover_user_id = (int) ($staff_presence_flags['cover_user_id'] ?? 0);
+        $staff_cover_options = $this->get_cover_delegate_users($user_id);
+        $staff_presence_status = sanitize_key((string) ($_GET['cmn_staff_presence_status'] ?? ''));
+        $staff_presence_msg = sanitize_text_field(wp_unslash((string) ($_GET['cmn_staff_presence_msg'] ?? '')));
+
+        ob_start();
+        ?>
+        <section class="cmn-am-settings-workspace" data-viewer-surface="account-manager">
+            <header class="cmn-panel-card cmn-am-settings-header">
+                <div class="cmn-am-settings-header-copy">
+                    <span class="cmn-am-bookings-eyebrow">Account Manager CRM</span>
+                    <h2>Settings</h2>
+                    <p>Manage your personal workspace defaults, notifications, and cover settings without exposing broader staff or admin tooling.</p>
+                </div>
+                <div class="cmn-am-booking-thread-links">
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url)); ?>">Open Support / Issues</a>
+                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url(add_query_arg(['view' => 'tasks'], $portal_url)); ?>">Open My Tasks</a>
+                </div>
+            </header>
+
+            <div class="cmn-am-settings-grid">
+                <div class="cmn-panel-card cmn-am-settings-panel" data-theme-settings>
+                    <h3>Colour Scheme</h3>
+                    <p class="cmn-muted">Choose how the portal feels on your side of the AM workspace.</p>
+                    <label>Theme
+                        <select name="cmn_theme_scheme" data-theme-select>
+                            <?php foreach ($this->get_theme_scheme_choices() as $key => $label) : ?>
+                                <option value="<?php echo esc_attr($key); ?>"><?php echo esc_html($label); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <div class="cmn-settings-actions">
+                        <button class="cmn-primary" type="button" data-theme-save>Save scheme</button>
+                        <span class="cmn-muted" data-theme-message></span>
+                    </div>
+                </div>
+
+                <div class="cmn-panel-card cmn-am-settings-panel" data-notification-preferences>
+                    <h3>Notification Preferences</h3>
+                    <p class="cmn-muted">Control portal alerts, email notifications, and quiet hours for your AM workflow.</p>
+                    <div class="cmn-settings-grid">
+                        <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_portal_enabled"> Portal notifications</label>
+                        <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_email_enabled"> Email notifications</label>
+                        <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_quiet_hours_enabled"> Enable quiet hours</label>
+                        <label class="cmn-inline-check"><input type="checkbox" data-notify-pref="cmn_notify_allow_urgent_quiet"> Allow urgent alerts during quiet hours</label>
+                        <label>Quiet hours start
+                            <input type="time" data-notify-time="cmn_notify_quiet_start" step="300">
+                        </label>
+                        <label>Quiet hours end
+                            <input type="time" data-notify-time="cmn_notify_quiet_end" step="300">
+                        </label>
+                    </div>
+                    <div class="cmn-settings-actions">
+                        <button class="cmn-primary" type="button" data-notify-settings-save>Save notification preferences</button>
+                        <span class="cmn-muted" data-notify-settings-message></span>
+                    </div>
+                </div>
+
+                <div class="cmn-panel-card cmn-am-settings-panel">
+                    <h3>Availability & Cover</h3>
+                    <p class="cmn-muted">Tell the system when you are available and who should cover your school requests when you are offline or on leave.</p>
+                    <?php if ($staff_presence_msg !== '') : ?>
+                        <p class="<?php echo $staff_presence_status === 'success' ? 'cmn-register-success' : 'cmn-register-warning'; ?>"><?php echo esc_html($staff_presence_msg); ?></p>
+                    <?php endif; ?>
+                    <form class="cmn-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php wp_nonce_field('cmn_save_staff_availability_settings', 'cmn_save_staff_availability_settings_nonce'); ?>
+                        <input type="hidden" name="action" value="cmn_save_staff_availability_settings">
+                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_url(add_query_arg(['view' => 'settings'], $portal_url)); ?>">
+                        <label class="cmn-inline-check">
+                            <input type="checkbox" name="cmn_available_online" value="1"<?php checked(!empty($staff_presence_flags['available_online'])); ?>>
+                            I am online and available
+                        </label>
+                        <label class="cmn-inline-check">
+                            <input type="checkbox" name="cmn_on_annual_leave" value="1"<?php checked(!empty($staff_presence_flags['on_annual_leave'])); ?>>
+                            I am currently on annual leave
+                        </label>
+                        <label>Cover delegate
+                            <select name="cmn_cover_user_id">
+                                <option value="0">No delegate selected</option>
+                                <?php foreach ($staff_cover_options as $cover_user) : ?>
+                                    <option value="<?php echo esc_attr((string) ((int) $cover_user->ID)); ?>"<?php selected($staff_cover_user_id, (int) $cover_user->ID); ?>>
+                                        <?php echo esc_html((string) $cover_user->display_name . ' (' . (string) $cover_user->user_email . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <p class="cmn-muted">When unavailable, your selected delegate and admins are notified so the portfolio keeps moving cleanly.</p>
+                        <button class="cmn-primary" type="submit">Save availability</button>
+                    </form>
+                </div>
+
+                <div class="cmn-panel-card cmn-am-settings-panel">
+                    <h3>Workspace shortcuts</h3>
+                    <p class="cmn-muted">Jump back into the AM modules you are most likely to use after updating personal settings.</p>
+                    <div class="cmn-actions-grid">
+                        <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'bookings'], $portal_url)); ?>">Open Bookings</a>
+                        <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'schools', 'cmn_status' => 'all', 'cmn_work_queue' => 'follow_up'], $portal_url)); ?>">Open Follow-Up</a>
+                        <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'activity'], $portal_url)); ?>">Open Activity</a>
+                        <a class="cmn-ghost" href="<?php echo esc_url(add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url)); ?>">Open Support / Issues</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <?php
+        $inner = ob_get_clean();
+
+        return $this->render_staff_shell('settings', $inner);
+    }
+
     public function render_staff_settings_shortcode() {
         if (!is_user_logged_in()) {
             return $this->render_login_shortcode();
@@ -67875,6 +68494,9 @@ global $wpdb;
         }
         $can_manage_admin_tools = $this->is_admin_user();
         $current_user_id = (int) get_current_user_id();
+        if ($this->is_restricted_account_manager($current_user_id)) {
+            return $this->render_account_manager_settings_workspace($current_user_id);
+        }
         $staff_presence_flags = $this->get_staff_presence_flags($current_user_id);
         $staff_cover_user_id = (int) ($staff_presence_flags['cover_user_id'] ?? 0);
         $staff_cover_options = $this->get_cover_delegate_users($current_user_id);
