@@ -1689,13 +1689,15 @@ document.addEventListener('DOMContentLoaded', function () {
     var staffNavUserId = staffNav.getAttribute('data-user-id') || '0';
     var staffNavEditable = staffNav.getAttribute('data-nav-editable') !== '0';
     var staffNavStorageKey = 'cmn_staff_nav_state_v2_' + staffNavUserId;
-    var staffNavCompactKey = 'cmn_staff_nav_compact_v1_' + staffNavUserId;
+    var isAccountManagerNav = staffNav.classList.contains('is-account-manager-nav');
+    var staffNavCompactKey = (isAccountManagerNav ? 'cmn_am_staff_nav_compact_v2_' : 'cmn_staff_nav_compact_v1_') + staffNavUserId;
+    var staffNavScrollKey = (isAccountManagerNav ? 'cmn_am_staff_nav_scroll_v1_' : 'cmn_staff_nav_scroll_v1_') + staffNavUserId;
     var staffNavEditModeKey = 'cmn_sidebar_edit_mode';
     var staffShell = staffNav.closest('.cmn-staff-shell');
-    var isAccountManagerNav = staffNav.classList.contains('is-account-manager-nav');
     var isAmPipelineOverlayNav = !!(staffShell && staffShell.querySelector('.cmn-am-pipeline-page'));
-    var usePeekOpenStaffNav = isAmPipelineOverlayNav || isAccountManagerNav;
+    var usePeekOpenStaffNav = !!(isAmPipelineOverlayNav && !isAccountManagerNav);
     var shouldPersistStaffNavCompactState = !usePeekOpenStaffNav;
+    var staffNavLinks = staffNav.querySelector('.cmn-staff-nav-links');
     var amNavContext = staffNav.querySelector('[data-am-nav-context]');
     var staffNavMinimizeBtn = staffNav.querySelector('[data-staff-nav-minimize]');
     var staffNavEditToggleBtn = staffNav.querySelector('[data-staff-nav-edit-toggle]');
@@ -1713,6 +1715,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var dragType = '';
     var dragNode = null;
     var dragGroupKey = '';
+    var staffNavScrollSaveTimer = 0;
 
     var cloneJson = function (value, fallback) {
       try {
@@ -1902,6 +1905,66 @@ document.addEventListener('DOMContentLoaded', function () {
         // Ignore storage failures.
       }
     };
+    var readStaffNavScrollState = function () {
+      var defaultState = { nav: 0, links: 0 };
+      try {
+        var raw = window.sessionStorage.getItem(staffNavScrollKey);
+        if (!raw) {
+          return defaultState;
+        }
+        var parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') {
+          return defaultState;
+        }
+        return {
+          nav: Math.max(0, parseInt(parsed.nav || 0, 10) || 0),
+          links: Math.max(0, parseInt(parsed.links || 0, 10) || 0)
+        };
+      } catch (e) {
+        return defaultState;
+      }
+    };
+    var writeStaffNavScrollState = function (state) {
+      var normalized = state && typeof state === 'object' ? state : {};
+      try {
+        window.sessionStorage.setItem(staffNavScrollKey, JSON.stringify({
+          nav: Math.max(0, parseInt(normalized.nav || 0, 10) || 0),
+          links: Math.max(0, parseInt(normalized.links || 0, 10) || 0)
+        }));
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    };
+    var captureStaffNavScrollState = function () {
+      writeStaffNavScrollState({
+        nav: staffNav ? staffNav.scrollTop : 0,
+        links: staffNavLinks ? staffNavLinks.scrollTop : 0
+      });
+    };
+    var scheduleStaffNavScrollStateSave = function () {
+      if (staffNavScrollSaveTimer) {
+        window.clearTimeout(staffNavScrollSaveTimer);
+      }
+      staffNavScrollSaveTimer = window.setTimeout(function () {
+        staffNavScrollSaveTimer = 0;
+        captureStaffNavScrollState();
+      }, 60);
+    };
+    var restoreStaffNavScrollState = function () {
+      var scrollState = readStaffNavScrollState();
+      var applyScrollState = function () {
+        if (staffNav) {
+          staffNav.scrollTop = scrollState.nav;
+        }
+        if (staffNavLinks) {
+          staffNavLinks.scrollTop = scrollState.links;
+        }
+      };
+      applyScrollState();
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(applyScrollState);
+      }
+    };
     var readStaffNavEditModeState = function () {
       if (!staffNavEditable) {
         return false;
@@ -1958,9 +2021,11 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       setStaffNavPeekState(false);
-      setStaffNavCompactState(false);
-      if (shouldPersistStaffNavCompactState) {
-        writeStaffNavCompactState(false);
+      if (usePeekOpenStaffNav) {
+        setStaffNavCompactState(false);
+        if (shouldPersistStaffNavCompactState) {
+          writeStaffNavCompactState(false);
+        }
       }
     };
     var persistStaffNavState = function (state) {
@@ -2207,6 +2272,14 @@ document.addEventListener('DOMContentLoaded', function () {
       setStaffNavPeekState(false);
       setStaffNavCompactState(true);
     }
+    restoreStaffNavScrollState();
+    if (staffNav) {
+      staffNav.addEventListener('scroll', scheduleStaffNavScrollStateSave, { passive: true });
+    }
+    if (staffNavLinks && staffNavLinks !== staffNav) {
+      staffNavLinks.addEventListener('scroll', scheduleStaffNavScrollStateSave, { passive: true });
+    }
+    window.addEventListener('pagehide', captureStaffNavScrollState);
     window.addEventListener('resize', function () {
       enforceStaffNavMobileState();
       if (usePeekOpenStaffNav && !isStaffNavMobileViewport()) {
@@ -2216,7 +2289,8 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     if (staffNavMinimizeBtn) {
       staffNavMinimizeBtn.addEventListener('click', function () {
-        if (isStaffNavMobileViewport()) {
+        captureStaffNavScrollState();
+        if (isStaffNavMobileViewport() && usePeekOpenStaffNav) {
           setStaffNavPeekState(false);
           setStaffNavCompactState(false);
           if (shouldPersistStaffNavCompactState) {
@@ -2238,6 +2312,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (shouldPersistStaffNavCompactState) {
           writeStaffNavCompactState(willCompact);
         }
+        if (!willCompact) {
+          restoreStaffNavScrollState();
+        }
       });
     }
     staffNav.querySelectorAll('.cmn-school-nav-link').forEach(function (linkEl) {
@@ -2246,7 +2323,8 @@ document.addEventListener('DOMContentLoaded', function () {
           event.preventDefault();
           return;
         }
-        if (staffNav.classList.contains('is-collapsed')) {
+        captureStaffNavScrollState();
+        if (usePeekOpenStaffNav && staffNav.classList.contains('is-collapsed')) {
           setStaffNavPeekState(false);
         }
       });

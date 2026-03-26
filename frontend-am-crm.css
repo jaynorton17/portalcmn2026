@@ -4079,6 +4079,11 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm > .cmn-s
   position: sticky;
   top: 24px;
   align-self: start;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
   z-index: 20;
 }
 
