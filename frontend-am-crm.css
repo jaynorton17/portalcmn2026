@@ -7357,6 +7357,142 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-school-detail-list-item-t
   gap: 10px;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-control-bar .cmn-filter-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-detail-shell,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail.cmn-am-records-detail-shell {
+  display: grid;
+  gap: 16px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-detail-panel,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-linked-list,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-form {
+  display: grid;
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-detail-head,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-detail-section {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-linked-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-linked-item {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-linked-item strong {
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-linked-item span,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-linked-item small {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-card {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(219, 234, 254, 0.54), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.96) 100%) !important;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-card h4 {
+  margin: 0 0 6px;
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-card p,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-card span {
+  color: var(--cmn-am-muted) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-grid :is(input, select, textarea) {
+  border-radius: 14px;
+  border: 1px solid var(--cmn-am-border-strong) !important;
+  background: #ffffff !important;
+  color: var(--cmn-am-text) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-grid textarea {
+  min-height: 120px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-field--wide {
+  grid-column: span 2;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-lifecycle-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-lifecycle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  color: var(--cmn-am-text) !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-lifecycle-chip strong {
+  color: var(--cmn-am-text) !important;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-lifecycle-chip span {
+  color: var(--cmn-am-muted) !important;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @media (max-width: 1240px) {
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-records-layout {
     grid-template-columns: 1fr;
@@ -7380,7 +7516,9 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-school-detail-list-item-t
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-record-card-grid,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-school-detail-stats,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-school-detail-definition-list,
-  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-records-control-bar .cmn-filter-grid {
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-records-control-bar .cmn-filter-grid,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-linked-list,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -7392,6 +7530,8 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-school-detail-list-item-t
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-school-detail-head,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-school-detail-section-head,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-record-card-top,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-detail-head,
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-task-composer-head,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-record-card-actions,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-thread-links,
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-school-detail-list-item-top,

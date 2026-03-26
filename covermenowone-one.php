@@ -20796,16 +20796,49 @@ global $wpdb;
         return ob_get_clean();
     }
 
-    private function render_account_manager_tasks_workspace($user_id = 0) {
+    private function get_account_manager_task_workspace_filters($user_id = 0, $source = null) {
+        $source = is_array($source) ? $source : $_GET;
         $user_id = (int) ($user_id ?: get_current_user_id());
-        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
-            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This task workspace is available to account managers only.</p></div></section>';
+
+        $state = sanitize_key((string) ($source['cmn_task_state'] ?? 'all'));
+        if (!in_array($state, ['all', 'overdue', 'due_today', 'this_week', 'upcoming', 'no_date', 'booking_linked'], true)) {
+            $state = 'all';
         }
 
+        $type = sanitize_key((string) ($source['cmn_task_type'] ?? 'all'));
+        if (!in_array($type, ['all', 'call', 'email', 'internal', 'other'], true)) {
+            $type = 'all';
+        }
+
+        $priority = sanitize_key((string) ($source['cmn_task_priority'] ?? 'all'));
+        if (!in_array($priority, ['all', 'urgent', 'high', 'normal', 'low'], true)) {
+            $priority = 'all';
+        }
+
+        $sort = sanitize_key((string) ($source['cmn_task_sort'] ?? 'due_asc'));
+        if (!in_array($sort, ['due_asc', 'priority', 'updated_desc'], true)) {
+            $sort = 'due_asc';
+        }
+
+        return [
+            'user_id' => $user_id,
+            'state' => $state,
+            'type' => $type,
+            'priority' => $priority,
+            'sort' => $sort,
+            'query' => sanitize_text_field((string) wp_unslash($source['cmn_task_q'] ?? '')),
+            'selected_task_id' => max(0, (int) ($source['cmn_task_id'] ?? 0)),
+            'compose' => !empty($source['cmn_task_compose']) ? '1' : '',
+        ];
+    }
+
+    private function build_account_manager_tasks_workspace_payload($user_id = 0) {
+        global $wpdb;
+
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        $filters = $this->get_account_manager_task_workspace_filters($user_id);
         $portal_url = $this->get_portal_base_url();
-        $current_url = $this->get_current_url();
-        $payload = $this->get_account_manager_task_panel_payload($user_id, 18, $current_url);
-        $counts = is_array($payload['counts'] ?? null) ? $payload['counts'] : [];
+        $clear_filters_url = add_query_arg(['view' => 'tasks'], $portal_url);
         $follow_up_url = add_query_arg([
             'view' => 'schools',
             'cmn_status' => 'all',
@@ -20818,40 +20851,1124 @@ global $wpdb;
             'cmn_booking_scope' => false,
             'cmn_status' => false,
         ], $portal_url);
+        $state_options = [
+            'all' => 'All open tasks',
+            'overdue' => 'Overdue',
+            'due_today' => 'Due today',
+            'this_week' => 'This week',
+            'upcoming' => 'Upcoming',
+            'no_date' => 'No due date',
+            'booking_linked' => 'Booking-linked',
+        ];
+        $type_options = [
+            'all' => 'All types',
+            'call' => 'Call',
+            'email' => 'Email',
+            'internal' => 'Internal',
+            'other' => 'Other',
+        ];
+        $priority_options = [
+            'all' => 'All priorities',
+            'urgent' => 'Urgent',
+            'high' => 'High',
+            'normal' => 'Normal',
+            'low' => 'Low',
+        ];
+        $sort_links = [];
+        $payload = [
+            'filters' => $filters,
+            'rows' => [],
+            'selected_task' => [],
+            'counts' => [
+                'open' => 0,
+                'overdue' => 0,
+                'due_today' => 0,
+                'this_week' => 0,
+                'no_date' => 0,
+                'booking_linked' => 0,
+            ],
+            'total_count' => 0,
+            'visible_count' => 0,
+            'quick_presets' => [],
+            'state_options' => $state_options,
+            'type_options' => $type_options,
+            'priority_options' => $priority_options,
+            'sort_links' => [],
+            'filter_chips' => [],
+            'filter_count' => 0,
+            'school_options' => [],
+            'clear_filters_url' => $clear_filters_url,
+            'clear_focus_url' => $clear_filters_url,
+            'follow_up_url' => $follow_up_url,
+            'bookings_url' => $bookings_url,
+            'compose_url' => esc_url_raw($clear_filters_url . '#cmn-am-task-composer'),
+            'compose_cancel_url' => esc_url_raw($clear_filters_url . '#cmn-am-task-detail'),
+            'submit_redirect_url' => esc_url_raw($clear_filters_url . '#cmn-am-task-detail'),
+            'result_summary_label' => 'No open tasks are currently visible.',
+        ];
+
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return $payload;
+        }
+
+        $build_tasks_url = function (array $overrides = []) use ($portal_url, $filters) {
+            $query_args = ['view' => 'tasks'];
+            if (($filters['state'] ?? 'all') !== 'all') {
+                $query_args['cmn_task_state'] = (string) $filters['state'];
+            }
+            if (($filters['type'] ?? 'all') !== 'all') {
+                $query_args['cmn_task_type'] = (string) $filters['type'];
+            }
+            if (($filters['priority'] ?? 'all') !== 'all') {
+                $query_args['cmn_task_priority'] = (string) $filters['priority'];
+            }
+            if (($filters['sort'] ?? 'due_asc') !== 'due_asc') {
+                $query_args['cmn_task_sort'] = (string) $filters['sort'];
+            }
+            if (!empty($filters['query'])) {
+                $query_args['cmn_task_q'] = (string) $filters['query'];
+            }
+            if (!empty($filters['selected_task_id'])) {
+                $query_args['cmn_task_id'] = (int) $filters['selected_task_id'];
+            }
+            if (!empty($filters['compose'])) {
+                $query_args['cmn_task_compose'] = '1';
+            }
+            foreach ($overrides as $key => $value) {
+                if ($value === false || $value === null || $value === '') {
+                    unset($query_args[$key]);
+                } else {
+                    $query_args[$key] = $value;
+                }
+            }
+            return add_query_arg($query_args, $portal_url);
+        };
+
+        $payload['clear_focus_url'] = esc_url_raw($build_tasks_url([
+            'cmn_task_id' => false,
+        ]) . '#cmn-am-task-detail');
+        $payload['compose_url'] = esc_url_raw($build_tasks_url([
+            'cmn_task_compose' => '1',
+        ]) . '#cmn-am-task-composer');
+        $payload['compose_cancel_url'] = esc_url_raw($build_tasks_url([
+            'cmn_task_compose' => false,
+        ]) . '#cmn-am-task-detail');
+        $payload['submit_redirect_url'] = esc_url_raw($build_tasks_url([
+            'cmn_task_compose' => false,
+        ]) . '#cmn-am-task-detail');
+        $payload['sort_links'] = [
+            [
+                'label' => 'Due soonest',
+                'url' => $build_tasks_url([
+                    'cmn_task_sort' => false,
+                    'cmn_task_id' => false,
+                    'cmn_task_compose' => false,
+                ]),
+                'is_active' => ($filters['sort'] ?? 'due_asc') === 'due_asc',
+            ],
+            [
+                'label' => 'Priority',
+                'url' => $build_tasks_url([
+                    'cmn_task_sort' => 'priority',
+                    'cmn_task_id' => false,
+                    'cmn_task_compose' => false,
+                ]),
+                'is_active' => ($filters['sort'] ?? '') === 'priority',
+            ],
+            [
+                'label' => 'Latest update',
+                'url' => $build_tasks_url([
+                    'cmn_task_sort' => 'updated_desc',
+                    'cmn_task_id' => false,
+                    'cmn_task_compose' => false,
+                ]),
+                'is_active' => ($filters['sort'] ?? '') === 'updated_desc',
+            ],
+        ];
+
+        $school_ids = array_values(array_unique(array_map('intval', $this->get_manageable_school_ids_for_user($user_id))));
+        $scope_refs = [];
+        $school_lookup = [];
+        foreach ($school_ids as $school_id) {
+            if ($school_id < 1 || get_post_type($school_id) !== 'cmn_school') {
+                continue;
+            }
+            $school_domain = sanitize_text_field((string) get_post_meta($school_id, 'cmn_school_email_domain', true));
+            if ($school_domain === '') {
+                $school_email = sanitize_email((string) get_post_meta($school_id, 'cmn_email', true));
+                $school_domain = $this->get_email_domain($school_email);
+            }
+            $school_context = [
+                'school_id' => $school_id,
+                'school_code' => sanitize_text_field((string) get_post_meta($school_id, 'cmn_school_id', true)),
+                'school_name' => sanitize_text_field((string) get_the_title($school_id)),
+                'school_domain' => sanitize_text_field((string) $school_domain),
+                'activity_url' => $this->get_school_profile_tab_url($school_id, 'activity', '#cmn-school-task-system'),
+                'overview_url' => $this->get_school_profile_tab_url($school_id, 'overview'),
+            ];
+            if ($school_domain !== '') {
+                $scope_refs[] = $school_domain;
+                $school_lookup[$school_domain] = $school_context;
+            }
+            $scope_ref = 'school_post_' . $school_id;
+            $scope_refs[] = $scope_ref;
+            $school_lookup[$scope_ref] = $school_context;
+            $payload['school_options'][] = [
+                'id' => $school_id,
+                'label' => sanitize_text_field((string) get_the_title($school_id)),
+            ];
+        }
+        usort($payload['school_options'], static function ($left, $right) {
+            return strnatcasecmp((string) ($left['label'] ?? ''), (string) ($right['label'] ?? ''));
+        });
+        $scope_refs = array_values(array_unique(array_filter(array_map('strval', $scope_refs))));
+
+        $raw_rows = [];
+        $columns = $this->get_activity_table_columns();
+        $table = $this->get_activity_table();
+        if ($scope_refs && $this->candidate_rewards_table_exists($table)) {
+            $select_fields = ['id', 'entity_ref', 'subject', 'notes', 'due_date', 'completed_at', 'created_at'];
+            foreach (['updated_at', 'school_id', 'candidate_id', 'booking_id', 'follow_up_type', 'priority', 'assigned_to_school_domain'] as $optional_column) {
+                if (in_array($optional_column, $columns, true)) {
+                    $select_fields[] = $optional_column;
+                }
+            }
+            $ref_placeholders = implode(', ', array_fill(0, count($scope_refs), '%s'));
+            $raw_rows = (array) $wpdb->get_results($wpdb->prepare(
+                "SELECT " . implode(', ', array_unique($select_fields)) . "
+                 FROM {$table}
+                 WHERE entity_type = 'school'
+                   AND activity_type = 'task'
+                   AND completed_at IS NULL
+                   AND entity_ref IN ({$ref_placeholders})
+                   AND (assigned_to_user_id = %d OR assigned_to_user_id IS NULL)
+                 ORDER BY CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END ASC,
+                          due_date ASC,
+                          COALESCE(updated_at, created_at) DESC
+                 LIMIT %d",
+                array_merge($scope_refs, [$user_id, 280])
+            ), ARRAY_A);
+            foreach ($raw_rows as $row_index => $row) {
+                if (is_array($row)) {
+                    $raw_rows[$row_index]['dashboard_source'] = 'activity';
+                }
+            }
+        }
+
+        if (!$raw_rows && $school_ids) {
+            foreach ($school_ids as $school_id) {
+                foreach ((array) $this->get_legacy_school_task_rows($school_id, 60) as $legacy_row) {
+                    if (!is_array($legacy_row)) {
+                        continue;
+                    }
+                    $legacy_row['dashboard_source'] = 'legacy';
+                    $legacy_row['entity_ref'] = 'school_post_' . $school_id;
+                    $legacy_row['assigned_to_school_domain'] = sanitize_text_field((string) ($school_lookup['school_post_' . $school_id]['school_domain'] ?? ''));
+                    $raw_rows[] = $legacy_row;
+                }
+            }
+        }
+
+        $priority_weights = ['urgent' => 4, 'high' => 3, 'normal' => 2, 'low' => 1];
+        $status_rank_map = ['overdue' => 5, 'due_today' => 4, 'this_week' => 3, 'upcoming' => 2, 'no_date' => 1];
+        $today_date = current_time('Y-m-d');
+        $week_end_date = date('Y-m-d', strtotime('+7 days', strtotime($today_date)));
+        $all_rows = [];
+        $booking_ids = [];
+
+        foreach ($raw_rows as $task_row) {
+            if (!is_array($task_row)) {
+                continue;
+            }
+
+            $source_key = sanitize_key((string) ($task_row['dashboard_source'] ?? 'activity'));
+            $task_source = $source_key === 'legacy' ? 'legacy_post' : 'activity';
+            $task_id = max(0, (int) ($task_row['id'] ?? 0));
+            if ($task_id < 1) {
+                $task_id = max(0, (int) ($task_row['activity_id'] ?? 0));
+            }
+            if ($task_id < 1) {
+                continue;
+            }
+
+            $direct_school_id = max(0, (int) ($task_row['school_id'] ?? 0));
+            $school_context = [];
+            if ($direct_school_id > 0 && get_post_type($direct_school_id) === 'cmn_school') {
+                $school_domain = sanitize_text_field((string) get_post_meta($direct_school_id, 'cmn_school_email_domain', true));
+                if ($school_domain === '') {
+                    $school_email = sanitize_email((string) get_post_meta($direct_school_id, 'cmn_email', true));
+                    $school_domain = $this->get_email_domain($school_email);
+                }
+                $school_context = [
+                    'school_id' => $direct_school_id,
+                    'school_code' => sanitize_text_field((string) get_post_meta($direct_school_id, 'cmn_school_id', true)),
+                    'school_name' => sanitize_text_field((string) get_the_title($direct_school_id)),
+                    'school_domain' => sanitize_text_field((string) $school_domain),
+                    'activity_url' => $this->get_school_profile_tab_url($direct_school_id, 'activity', '#cmn-school-task-system'),
+                    'overview_url' => $this->get_school_profile_tab_url($direct_school_id, 'overview'),
+                ];
+            } else {
+                $school_context = $this->resolve_school_context_from_dashboard_task_row($task_row, $school_lookup);
+            }
+            if (empty($school_context['school_id'])) {
+                continue;
+            }
+
+            $booking_id = max(0, (int) ($task_row['booking_id'] ?? 0));
+            if ($booking_id > 0 && !$this->user_can_access_booking($booking_id, $user_id)) {
+                $booking_id = 0;
+            }
+            $candidate_id = max(0, (int) ($task_row['candidate_id'] ?? 0));
+            if ($booking_id > 0) {
+                $booking_ids[$booking_id] = $booking_id;
+                if ($candidate_id < 1) {
+                    $candidate_id = max(0, (int) get_post_meta($booking_id, 'cmn_candidate_id', true));
+                }
+            }
+
+            $due_date = sanitize_text_field((string) ($task_row['due_date'] ?? ''));
+            $updated_raw = sanitize_text_field((string) ($task_row['updated_at'] ?? $task_row['created_at'] ?? ''));
+            $updated_ts = $updated_raw !== '' ? (int) strtotime($updated_raw) : 0;
+            $status_key = 'no_date';
+            $status_label = 'No due date';
+            $status_chip_class = 'is-muted';
+            $due_display = 'No due date';
+            $due_detail = 'Add a due date so this follow-up stays visible in the queue.';
+            if ($due_date !== '' && strtotime($due_date)) {
+                $due_display = date_i18n('M j, Y', strtotime($due_date));
+                if ($due_date < $today_date) {
+                    $status_key = 'overdue';
+                    $status_label = 'Overdue';
+                    $status_chip_class = 'is-warning';
+                    $due_detail = 'Task is already past due.';
+                } elseif ($due_date === $today_date) {
+                    $status_key = 'due_today';
+                    $status_label = 'Due today';
+                    $status_chip_class = 'is-warning';
+                    $due_detail = 'Task should be completed today.';
+                } elseif ($due_date <= $week_end_date) {
+                    $status_key = 'this_week';
+                    $status_label = 'This week';
+                    $status_chip_class = 'is-info';
+                    $due_detail = 'Task lands inside the current week.';
+                } else {
+                    $status_key = 'upcoming';
+                    $status_label = 'Upcoming';
+                    $status_chip_class = 'is-info';
+                    $due_detail = 'Future dated follow-up already queued.';
+                }
+            }
+
+            $priority_key = $this->normalize_work_item_priority((string) ($task_row['priority'] ?? 'normal'));
+            $follow_up_type = $this->normalize_follow_up_type((string) ($task_row['follow_up_type'] ?? 'internal'));
+            $subject = sanitize_text_field((string) ($task_row['subject'] ?? 'Task'));
+            if ($subject === '') {
+                $subject = 'Task';
+            }
+            $notes = sanitize_textarea_field((string) ($task_row['notes'] ?? ''));
+            $notes_excerpt = $notes !== '' ? sanitize_text_field(wp_trim_words($notes, 18, '...')) : 'No additional task notes are stored.';
+
+            $booking_reference = '';
+            $booking_status_label = '';
+            $booking_status_class = 'is-muted';
+            $booking_url = '';
+            if ($booking_id > 0) {
+                $booking_reference = sanitize_text_field((string) get_the_title($booking_id));
+                if ($booking_reference === '') {
+                    $booking_reference = 'Booking #' . $booking_id;
+                }
+                $booking_status_key = sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
+                if ($booking_status_key === '') {
+                    $booking_status_key = self::BOOKING_STATUS_REQUESTED;
+                }
+                $booking_status_label = $this->get_booking_status_label($booking_status_key);
+                $booking_status_class = $this->get_booking_status_chip_class($booking_status_key);
+                $booking_url = add_query_arg([
+                    'view' => 'bookings',
+                    'booking_id' => $booking_id,
+                ], $portal_url);
+            }
+
+            $candidate_name = '';
+            $candidate_url = '';
+            if ($candidate_id > 0 && $this->user_can_view_candidate($candidate_id, $user_id)) {
+                $candidate_name = sanitize_text_field((string) get_the_title($candidate_id));
+                $candidate_url = add_query_arg([
+                    'view' => 'candidates',
+                    'candidate_id' => $candidate_id,
+                ], $portal_url);
+            }
+
+            $task_editor_url = $this->get_school_task_editor_url(
+                (int) ($school_context['school_id'] ?? 0),
+                $task_id,
+                $task_source,
+                (string) ($school_context['activity_url'] ?? $follow_up_url)
+            );
+            if ($task_editor_url === '') {
+                $task_editor_url = (string) ($school_context['activity_url'] ?? $follow_up_url);
+            }
+
+            $row = [
+                'task_id' => $task_id,
+                'task_source' => $task_source,
+                'label' => $subject,
+                'notes' => $notes,
+                'notes_excerpt' => $notes_excerpt,
+                'status_key' => $status_key,
+                'status_label' => $status_label,
+                'status_chip_class' => $status_chip_class,
+                'due_date' => $due_date,
+                'due_display' => $due_display,
+                'due_detail' => $due_detail,
+                'due_sort_key' => $due_date !== '' ? $due_date : '9999-12-31',
+                'priority_key' => $priority_key,
+                'priority_label' => $this->get_work_item_priority_label($priority_key),
+                'priority_weight' => (int) ($priority_weights[$priority_key] ?? 2),
+                'follow_up_type' => $follow_up_type,
+                'follow_up_type_label' => $this->get_follow_up_type_label($follow_up_type),
+                'school_id' => (int) ($school_context['school_id'] ?? 0),
+                'school_name' => sanitize_text_field((string) ($school_context['school_name'] ?? 'School relationship')),
+                'school_code' => sanitize_text_field((string) ($school_context['school_code'] ?? '')),
+                'school_overview_url' => esc_url_raw((string) ($school_context['overview_url'] ?? '')),
+                'school_activity_url' => esc_url_raw((string) ($school_context['activity_url'] ?? '')),
+                'task_editor_url' => esc_url_raw((string) $task_editor_url),
+                'booking_id' => $booking_id,
+                'booking_reference' => $booking_reference,
+                'booking_status_label' => $booking_status_label,
+                'booking_status_chip_class' => $booking_status_class,
+                'booking_url' => esc_url_raw((string) $booking_url),
+                'candidate_id' => $candidate_id,
+                'candidate_name' => $candidate_name,
+                'candidate_url' => esc_url_raw((string) $candidate_url),
+                'is_booking_linked' => $booking_id > 0,
+                'updated_label' => $updated_ts > 0 ? date_i18n('M j, g:ia', $updated_ts) : '',
+                'updated_ts' => $updated_ts,
+                'status_rank' => (int) ($status_rank_map[$status_key] ?? 0),
+                'can_complete' => true,
+            ];
+            $row['search_text'] = strtolower(trim(implode(' ', array_filter([
+                $row['label'],
+                $row['notes'],
+                $row['school_name'],
+                $row['school_code'],
+                $row['booking_reference'],
+                $row['candidate_name'],
+                $row['follow_up_type_label'],
+                $row['priority_label'],
+                $row['status_label'],
+            ]))));
+            $all_rows[] = $row;
+            $payload['counts']['open']++;
+            if ($status_key === 'overdue') {
+                $payload['counts']['overdue']++;
+            } elseif ($status_key === 'due_today') {
+                $payload['counts']['due_today']++;
+            } elseif ($status_key === 'this_week') {
+                $payload['counts']['this_week']++;
+            } elseif ($status_key === 'no_date') {
+                $payload['counts']['no_date']++;
+            }
+            if ($booking_id > 0) {
+                $payload['counts']['booking_linked']++;
+            }
+        }
+
+        $issue_map = $booking_ids ? $this->get_account_manager_booking_issue_map(array_values($booking_ids), $user_id) : [];
+        foreach ($all_rows as $row_index => $row) {
+            $issue_snapshot = is_array($issue_map[(int) ($row['booking_id'] ?? 0)] ?? null) ? (array) $issue_map[(int) ($row['booking_id'] ?? 0)] : [];
+            $issue_open_count = max(0, (int) ($issue_snapshot['open_count'] ?? 0));
+            $all_rows[$row_index]['issue_open_count'] = $issue_open_count;
+            $all_rows[$row_index]['issue_label'] = $issue_open_count > 0
+                ? ($issue_open_count === 1 ? '1 open issue' : (number_format_i18n($issue_open_count) . ' open issues'))
+                : 'No linked issues';
+            $all_rows[$row_index]['issue_url'] = !empty($issue_snapshot['latest_ticket_url'])
+                ? esc_url_raw((string) $issue_snapshot['latest_ticket_url'])
+                : esc_url_raw(add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url));
+            $all_rows[$row_index]['focus_url'] = esc_url_raw($build_tasks_url([
+                'cmn_task_id' => (int) ($row['task_id'] ?? 0),
+                'cmn_task_compose' => false,
+            ]) . '#cmn-am-task-detail');
+            $all_rows[$row_index]['redirect_url'] = $all_rows[$row_index]['focus_url'];
+        }
+
+        $payload['total_count'] = count($all_rows);
+        $payload['quick_presets'] = [
+            [
+                'label' => 'All',
+                'count' => (int) ($payload['counts']['open'] ?? 0),
+                'description' => 'Every open task currently assigned to this workspace.',
+                'is_active' => ($filters['state'] ?? 'all') === 'all',
+                'url' => $build_tasks_url([
+                    'cmn_task_state' => false,
+                    'cmn_task_id' => false,
+                    'cmn_task_compose' => false,
+                ]),
+            ],
+            [
+                'label' => 'Overdue',
+                'count' => (int) ($payload['counts']['overdue'] ?? 0),
+                'description' => 'Follow-up that is already late.',
+                'is_active' => ($filters['state'] ?? '') === 'overdue',
+                'url' => $build_tasks_url([
+                    'cmn_task_state' => 'overdue',
+                    'cmn_task_id' => false,
+                    'cmn_task_compose' => false,
+                ]),
+            ],
+            [
+                'label' => 'Due today',
+                'count' => (int) ($payload['counts']['due_today'] ?? 0),
+                'description' => 'Tasks that should be completed today.',
+                'is_active' => ($filters['state'] ?? '') === 'due_today',
+                'url' => $build_tasks_url([
+                    'cmn_task_state' => 'due_today',
+                    'cmn_task_id' => false,
+                    'cmn_task_compose' => false,
+                ]),
+            ],
+            [
+                'label' => 'This week',
+                'count' => (int) ($payload['counts']['this_week'] ?? 0),
+                'description' => 'Open work already due inside the current week.',
+                'is_active' => ($filters['state'] ?? '') === 'this_week',
+                'url' => $build_tasks_url([
+                    'cmn_task_state' => 'this_week',
+                    'cmn_task_id' => false,
+                    'cmn_task_compose' => false,
+                ]),
+            ],
+            [
+                'label' => 'Booking-linked',
+                'count' => (int) ($payload['counts']['booking_linked'] ?? 0),
+                'description' => 'Tasks already tied to a live booking.',
+                'is_active' => ($filters['state'] ?? '') === 'booking_linked',
+                'url' => $build_tasks_url([
+                    'cmn_task_state' => 'booking_linked',
+                    'cmn_task_id' => false,
+                    'cmn_task_compose' => false,
+                ]),
+            ],
+        ];
+
+        $filtered = [];
+        foreach ($all_rows as $row) {
+            if (!empty($filters['query']) && strpos((string) ($row['search_text'] ?? ''), strtolower(trim((string) $filters['query']))) === false) {
+                continue;
+            }
+            if (($filters['state'] ?? 'all') !== 'all') {
+                if (($filters['state'] ?? '') === 'booking_linked') {
+                    if (empty($row['is_booking_linked'])) {
+                        continue;
+                    }
+                } elseif ((string) ($row['status_key'] ?? '') !== (string) ($filters['state'] ?? '')) {
+                    continue;
+                }
+            }
+            if (($filters['type'] ?? 'all') !== 'all' && (string) ($row['follow_up_type'] ?? '') !== (string) $filters['type']) {
+                continue;
+            }
+            if (($filters['priority'] ?? 'all') !== 'all' && (string) ($row['priority_key'] ?? '') !== (string) $filters['priority']) {
+                continue;
+            }
+            $filtered[] = $row;
+        }
+
+        $sort_mode = (string) ($filters['sort'] ?? 'due_asc');
+        usort($filtered, static function ($a, $b) use ($sort_mode) {
+            if ($sort_mode === 'priority') {
+                $priority_compare = (int) ($b['priority_weight'] ?? 0) <=> (int) ($a['priority_weight'] ?? 0);
+                if ($priority_compare !== 0) {
+                    return $priority_compare;
+                }
+            } elseif ($sort_mode === 'updated_desc') {
+                $updated_compare = (int) ($b['updated_ts'] ?? 0) <=> (int) ($a['updated_ts'] ?? 0);
+                if ($updated_compare !== 0) {
+                    return $updated_compare;
+                }
+            }
+
+            $status_compare = (int) ($b['status_rank'] ?? 0) <=> (int) ($a['status_rank'] ?? 0);
+            if ($status_compare !== 0) {
+                return $status_compare;
+            }
+
+            $date_compare = strcmp((string) ($a['due_sort_key'] ?? '9999-12-31'), (string) ($b['due_sort_key'] ?? '9999-12-31'));
+            if ($date_compare !== 0) {
+                return $date_compare;
+            }
+
+            return strnatcasecmp((string) ($a['school_name'] ?? ''), (string) ($b['school_name'] ?? ''));
+        });
+
+        $payload['rows'] = $filtered;
+        $payload['visible_count'] = count($filtered);
+        if ($payload['total_count'] < 1) {
+            $payload['result_summary_label'] = 'No open tasks are currently in AM scope.';
+        } elseif ($payload['visible_count'] === $payload['total_count']) {
+            $payload['result_summary_label'] = number_format_i18n($payload['visible_count']) . ' open task' . ($payload['visible_count'] === 1 ? '' : 's') . ' in scope.';
+        } else {
+            $payload['result_summary_label'] = number_format_i18n($payload['visible_count']) . ' visible of ' . number_format_i18n($payload['total_count']) . ' open tasks.';
+        }
+
+        $filter_chips = [];
+        if (!empty($filters['query'])) {
+            $filter_chips[] = [
+                'label' => 'Search: ' . sanitize_text_field((string) $filters['query']),
+                'remove_url' => $build_tasks_url([
+                    'cmn_task_q' => false,
+                    'cmn_task_id' => false,
+                ]),
+            ];
+        }
+        if (($filters['type'] ?? 'all') !== 'all') {
+            $filter_chips[] = [
+                'label' => 'Type: ' . (string) ($type_options[(string) $filters['type']] ?? ucwords((string) $filters['type'])),
+                'remove_url' => $build_tasks_url([
+                    'cmn_task_type' => false,
+                    'cmn_task_id' => false,
+                ]),
+            ];
+        }
+        if (($filters['priority'] ?? 'all') !== 'all') {
+            $filter_chips[] = [
+                'label' => 'Priority: ' . (string) ($priority_options[(string) $filters['priority']] ?? ucwords((string) $filters['priority'])),
+                'remove_url' => $build_tasks_url([
+                    'cmn_task_priority' => false,
+                    'cmn_task_id' => false,
+                ]),
+            ];
+        }
+        if (($filters['state'] ?? 'all') !== 'all') {
+            $filter_chips[] = [
+                'label' => 'Queue: ' . (string) ($state_options[(string) $filters['state']] ?? ucwords(str_replace('_', ' ', (string) $filters['state']))),
+                'remove_url' => $build_tasks_url([
+                    'cmn_task_state' => false,
+                    'cmn_task_id' => false,
+                ]),
+            ];
+        }
+        $payload['filter_chips'] = $filter_chips;
+        $payload['filter_count'] = count($filter_chips);
+
+        $selected_task_id = max(0, (int) ($filters['selected_task_id'] ?? 0));
+        $task_lookup = [];
+        foreach ($filtered as $row) {
+            $task_lookup[(int) ($row['task_id'] ?? 0)] = $row;
+        }
+        if ($selected_task_id < 1 || !isset($task_lookup[$selected_task_id])) {
+            $selected_task_id = !empty($filtered[0]['task_id']) ? (int) $filtered[0]['task_id'] : 0;
+        }
+        if ($selected_task_id > 0 && isset($task_lookup[$selected_task_id])) {
+            $selected = $task_lookup[$selected_task_id];
+            $selected['focus_url'] = esc_url_raw($build_tasks_url([
+                'cmn_task_id' => $selected_task_id,
+                'cmn_task_compose' => false,
+            ]) . '#cmn-am-task-detail');
+            $selected['redirect_url'] = $selected['focus_url'];
+            $selected['compose_url'] = esc_url_raw($build_tasks_url([
+                'cmn_task_id' => $selected_task_id,
+                'cmn_task_compose' => '1',
+            ]) . '#cmn-am-task-composer');
+            $selected['compose_cancel_url'] = esc_url_raw($build_tasks_url([
+                'cmn_task_id' => $selected_task_id,
+                'cmn_task_compose' => false,
+            ]) . '#cmn-am-task-detail');
+            $payload['selected_task'] = $selected;
+            $payload['clear_focus_url'] = esc_url_raw($build_tasks_url([
+                'cmn_task_id' => false,
+                'cmn_task_compose' => false,
+            ]) . '#cmn-am-task-detail');
+            $payload['compose_url'] = $selected['compose_url'];
+            $payload['compose_cancel_url'] = $selected['compose_cancel_url'];
+            $payload['submit_redirect_url'] = $selected['focus_url'];
+        }
+
+        return $payload;
+    }
+
+    private function render_account_manager_tasks_workspace($user_id = 0) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This task workspace is available to account managers only.</p></div></section>';
+        }
+
+        $payload = $this->build_account_manager_tasks_workspace_payload($user_id);
+        $filters = (array) ($payload['filters'] ?? []);
+        $rows = array_values(array_filter((array) ($payload['rows'] ?? []), 'is_array'));
+        $selected_task = is_array($payload['selected_task'] ?? null) ? (array) $payload['selected_task'] : [];
+        $counts = is_array($payload['counts'] ?? null) ? (array) $payload['counts'] : [];
+        $state_options = (array) ($payload['state_options'] ?? []);
+        $type_options = (array) ($payload['type_options'] ?? []);
+        $priority_options = (array) ($payload['priority_options'] ?? []);
+        $sort_links = array_values(array_filter((array) ($payload['sort_links'] ?? []), 'is_array'));
+        $quick_presets = array_values(array_filter((array) ($payload['quick_presets'] ?? []), 'is_array'));
+        $filter_chips = array_values(array_filter((array) ($payload['filter_chips'] ?? []), 'is_array'));
+        $filter_count = max(0, (int) ($payload['filter_count'] ?? 0));
+        $school_options = array_values(array_filter((array) ($payload['school_options'] ?? []), 'is_array'));
+        $visible_count = max(0, (int) ($payload['visible_count'] ?? 0));
+        $total_count = max(0, (int) ($payload['total_count'] ?? 0));
+        $result_summary_label = sanitize_text_field((string) ($payload['result_summary_label'] ?? 'No open tasks are currently visible.'));
+        $clear_filters_url = esc_url((string) ($payload['clear_filters_url'] ?? $this->get_portal_base_url()));
+        $clear_focus_url = esc_url((string) ($payload['clear_focus_url'] ?? $clear_filters_url));
+        $follow_up_url = esc_url((string) ($payload['follow_up_url'] ?? $clear_filters_url));
+        $bookings_url = esc_url((string) ($payload['bookings_url'] ?? $clear_filters_url));
+        $compose_url = esc_url((string) ($payload['compose_url'] ?? ($clear_filters_url . '#cmn-am-task-composer')));
+        $compose_cancel_url = esc_url((string) ($payload['compose_cancel_url'] ?? ($clear_filters_url . '#cmn-am-task-detail')));
+        $submit_redirect_url = esc_url((string) ($payload['submit_redirect_url'] ?? ($clear_filters_url . '#cmn-am-task-detail')));
+        $current_request_url = isset($_SERVER['REQUEST_URI']) ? wp_unslash((string) $_SERVER['REQUEST_URI']) : '';
+        $notice = $this->get_task_notice_payload_from_url($current_request_url);
+        $notice_message = sanitize_text_field((string) ($notice['message'] ?? ''));
+        $notice_label = sanitize_text_field((string) ($notice['label'] ?? 'Task'));
+        $notice_chip_class = sanitize_html_class((string) ($notice['chip_class'] ?? 'is-info'));
+        $show_composer = !empty($filters['compose']) || !$rows;
+        $selected_school_id = max(0, (int) ($selected_task['school_id'] ?? 0));
+        $scope_label = sanitize_text_field((string) ($state_options[(string) ($filters['state'] ?? 'all')] ?? 'All open tasks'));
 
         ob_start();
         ?>
-        <section class="cmn-am-tasks-workspace" data-viewer-surface="account-manager">
-            <header class="cmn-panel-card cmn-am-tasks-header">
-                <div class="cmn-am-tasks-header-copy">
-                    <span class="cmn-am-bookings-eyebrow">Account Manager CRM</span>
-                    <h2>My Tasks</h2>
-                    <p>Work the assigned relationship tasks, complete overdue actions, and create the next follow-up without leaving the AM workspace.</p>
-                    <div class="cmn-am-booking-thread-links">
-                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($follow_up_url); ?>">Open Follow-Up queue</a>
-                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($bookings_url); ?>">Open Bookings</a>
+        <section class="cmn-am-tasks-workspace cmn-am-records-workspace" data-viewer-surface="account-manager">
+            <header class="cmn-panel-card cmn-am-records-header cmn-am-tasks-header">
+                <div class="cmn-am-records-header-copy">
+                    <span class="cmn-am-records-eyebrow">Core Operations</span>
+                    <div class="cmn-am-records-title-row">
+                        <h2>My Tasks</h2>
+                        <span class="cmn-am-records-count"><?php echo esc_html(number_format_i18n($visible_count)); ?></span>
                     </div>
+                    <p>Work the live follow-up queue, clear overdue actions, and keep booking-linked and relationship tasks moving inside the AM shell.</p>
                 </div>
-                <div class="cmn-am-tasks-header-metrics" aria-label="Task queue metrics">
-                    <article class="cmn-am-tasks-metric">
+                <div class="cmn-am-records-header-meta">
+                    <div class="cmn-am-records-header-chips">
+                        <span class="cmn-status-chip is-info"><?php echo esc_html($result_summary_label); ?></span>
+                        <span class="cmn-status-chip is-muted"><?php echo esc_html($scope_label); ?></span>
+                        <?php if ($filter_count > 0) : ?>
+                            <span class="cmn-status-chip is-muted"><?php echo esc_html(number_format_i18n($filter_count)); ?> active filter<?php echo $filter_count === 1 ? '' : 's'; ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <a class="cmn-primary" href="<?php echo $compose_url; ?>">Create task</a>
+                </div>
+                <div class="cmn-am-records-header-metrics" aria-label="Task queue metrics">
+                    <article class="cmn-am-records-metric">
                         <span>Open tasks</span>
                         <strong><?php echo esc_html(number_format_i18n((int) ($counts['open'] ?? 0))); ?></strong>
-                        <small>Assigned school tasks currently in scope.</small>
+                        <small>Open AM follow-up tasks currently in scope.</small>
                     </article>
-                    <article class="cmn-am-tasks-metric">
+                    <article class="cmn-am-records-metric">
                         <span>Due today</span>
                         <strong><?php echo esc_html(number_format_i18n((int) ($counts['due_today'] ?? 0))); ?></strong>
-                        <small>Tasks that should be completed today.</small>
+                        <small>Tasks that should be completed before today closes.</small>
                     </article>
-                    <article class="cmn-am-tasks-metric">
+                    <article class="cmn-am-records-metric">
                         <span>Overdue</span>
                         <strong><?php echo esc_html(number_format_i18n((int) ($counts['overdue'] ?? 0))); ?></strong>
                         <small>Existing backlog already past due.</small>
                     </article>
                 </div>
             </header>
-            <div class="cmn-panel-card cmn-am-tasks-body">
-                <?php echo $this->render_account_manager_task_panel_html($payload); ?>
+
+            <form method="get"
+                  class="cmn-panel-card cmn-school-toolbar cmn-school-toolbar--crm cmn-filter-bar cmn-am-records-control-bar cmn-am-task-control-bar"
+                  data-school-toolbar
+                  data-toolbar-storage="cmnSchoolToolbar:am_tasks"
+                  data-filter-default-open="<?php echo $filter_count ? '1' : '0'; ?>">
+                <input type="hidden" name="view" value="tasks">
+                <?php if (!empty($filters['sort']) && (string) $filters['sort'] !== 'due_asc') : ?>
+                    <input type="hidden" name="cmn_task_sort" value="<?php echo esc_attr((string) $filters['sort']); ?>">
+                <?php endif; ?>
+                <?php if (!empty($selected_task['task_id'])) : ?>
+                    <input type="hidden" name="cmn_task_id" value="<?php echo esc_attr((string) ($selected_task['task_id'] ?? 0)); ?>">
+                <?php endif; ?>
+                <?php if ($show_composer) : ?>
+                    <input type="hidden" name="cmn_task_compose" value="1">
+                <?php endif; ?>
+
+                <div class="cmn-school-toolbar-head">
+                    <div class="cmn-school-toolbar-head-copy">
+                        <p class="cmn-school-toolbar-eyebrow">My Tasks Workspace</p>
+                        <h3>Assigned operational queue</h3>
+                        <p class="cmn-muted">Search, preset, and sort the real AM task queue while keeping a pinned task detail on the right.</p>
+                        <p class="cmn-muted cmn-school-inline-help">Task editor still opens the existing school task flow, and booking-linked tasks keep their links back to Bookings, Clients, and candidate records.</p>
+                    </div>
+                    <div class="cmn-school-toolbar-head-meta">
+                        <div class="cmn-am-records-sort">
+                            <?php foreach ($sort_links as $sort_link) : ?>
+                                <a class="cmn-chip cmn-am-records-preset<?php echo !empty($sort_link['is_active']) ? ' is-active' : ''; ?>"
+                                   href="<?php echo esc_url((string) ($sort_link['url'] ?? $clear_filters_url)); ?>"><?php echo esc_html((string) ($sort_link['label'] ?? 'Sort')); ?></a>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cmn-am-records-preset-row">
+                    <span class="cmn-am-records-preset-label">Quick presets</span>
+                    <div class="cmn-am-records-preset-list" role="list" aria-label="Task quick presets">
+                        <?php foreach ($quick_presets as $preset) : ?>
+                            <a class="cmn-chip cmn-am-records-preset<?php echo !empty($preset['is_active']) ? ' is-active' : ''; ?>"
+                               href="<?php echo esc_url((string) ($preset['url'] ?? $clear_filters_url)); ?>"
+                               role="listitem"><?php echo esc_html((string) ($preset['label'] ?? 'Preset')); ?> · <?php echo esc_html(number_format_i18n((int) ($preset['count'] ?? 0))); ?></a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <?php if ($filter_chips) : ?>
+                    <div class="cmn-school-toolbar-active">
+                        <span class="cmn-school-toolbar-active-label">Active filters</span>
+                        <div class="cmn-school-toolbar-active-list">
+                            <?php foreach ($filter_chips as $chip) : ?>
+                                <a class="cmn-chip cmn-school-toolbar-active-chip" href="<?php echo esc_url((string) ($chip['remove_url'] ?? $clear_filters_url)); ?>">
+                                    <span><?php echo esc_html((string) ($chip['label'] ?? 'Filter')); ?></span>
+                                    <strong aria-hidden="true">×</strong>
+                                </a>
+                            <?php endforeach; ?>
+                            <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo $clear_filters_url; ?>">Clear all</a>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <div class="cmn-toolbar-row">
+                    <div class="cmn-toolbar-search">
+                        <input type="search" name="cmn_task_q" placeholder="Search by task, client, booking, candidate, notes, or school ID" value="<?php echo esc_attr((string) ($filters['query'] ?? '')); ?>" aria-label="Search tasks">
+                        <button class="cmn-btn-secondary cmn-btn-mini" type="submit">Search</button>
+                    </div>
+                    <div class="cmn-toolbar-controls">
+                        <button class="cmn-btn-secondary cmn-btn-mini" type="button" data-filter-toggle aria-expanded="<?php echo $filter_count ? 'true' : 'false'; ?>">Filters</button>
+                        <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo $clear_filters_url; ?>">Clear</a>
+                        <?php if (!empty($selected_task['task_id'])) : ?>
+                            <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo $clear_focus_url; ?>">Close detail</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="cmn-filter-panel<?php echo $filter_count ? ' is-open' : ''; ?>" data-filter-panel>
+                    <div class="cmn-filter-panel-head">
+                        <div>
+                            <h4>Refine task results</h4>
+                            <p class="cmn-muted">Use queue state, follow-up type, and priority filters to focus the live AM task backlog.</p>
+                        </div>
+                    </div>
+                    <div class="cmn-filter-grid">
+                        <label>Queue state
+                            <select name="cmn_task_state">
+                                <?php foreach ($state_options as $state_key => $state_label) : ?>
+                                    <option value="<?php echo esc_attr((string) $state_key); ?>"<?php selected((string) ($filters['state'] ?? 'all'), (string) $state_key); ?>><?php echo esc_html((string) $state_label); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Type
+                            <select name="cmn_task_type">
+                                <?php foreach ($type_options as $type_key => $type_label) : ?>
+                                    <option value="<?php echo esc_attr((string) $type_key); ?>"<?php selected((string) ($filters['type'] ?? 'all'), (string) $type_key); ?>><?php echo esc_html((string) $type_label); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Priority
+                            <select name="cmn_task_priority">
+                                <?php foreach ($priority_options as $priority_key => $priority_label) : ?>
+                                    <option value="<?php echo esc_attr((string) $priority_key); ?>"<?php selected((string) ($filters['priority'] ?? 'all'), (string) $priority_key); ?>><?php echo esc_html((string) $priority_label); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="cmn-filter-actions">
+                        <button class="cmn-ghost" type="submit">Apply Filters</button>
+                    </div>
+                </div>
+            </form>
+
+            <?php if ($notice_message !== '') : ?>
+                <section class="cmn-panel-card cmn-am-booking-notice" role="status" aria-live="polite">
+                    <span class="cmn-status-chip <?php echo esc_attr($notice_chip_class); ?>"><?php echo esc_html($notice_label); ?></span>
+                    <strong><?php echo esc_html($notice_message); ?></strong>
+                </section>
+            <?php endif; ?>
+
+            <div class="cmn-am-records-layout cmn-am-task-layout">
+                <section class="cmn-panel-card cmn-am-records-main cmn-am-task-records-main">
+                    <div class="cmn-am-records-main-head">
+                        <div>
+                            <h3>Task Queue</h3>
+                            <p class="cmn-muted"><?php echo esc_html($result_summary_label); ?></p>
+                        </div>
+                        <div class="cmn-am-booking-thread-links">
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo $follow_up_url; ?>">Open Follow-Up queue</a>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo $bookings_url; ?>">Open Bookings</a>
+                        </div>
+                    </div>
+
+                    <?php if ($rows) : ?>
+                        <div class="cmn-am-record-card-list cmn-am-task-card-list">
+                            <?php foreach ($rows as $row) : ?>
+                                <?php
+                                $task_id = (int) ($row['task_id'] ?? 0);
+                                $is_selected = $task_id > 0 && $task_id === (int) ($selected_task['task_id'] ?? 0);
+                                ?>
+                                <article class="cmn-am-record-card cmn-am-task-card<?php echo $is_selected ? ' is-selected' : ''; ?>">
+                                    <div class="cmn-am-record-card-top">
+                                        <div class="cmn-am-record-card-title-wrap">
+                                            <span class="cmn-am-record-card-kicker"><?php echo !empty($row['is_booking_linked']) ? 'Booking-linked task' : 'Relationship task'; ?></span>
+                                            <h3 class="cmn-am-record-card-title"><a href="<?php echo esc_url((string) ($row['focus_url'] ?? $clear_filters_url)); ?>"><?php echo esc_html((string) ($row['label'] ?? 'Task')); ?></a></h3>
+                                            <div class="cmn-am-record-card-meta">
+                                                <span><?php echo esc_html((string) ($row['school_name'] ?? 'School relationship')); ?></span>
+                                                <?php if (!empty($row['candidate_name'])) : ?>
+                                                    <span><?php echo esc_html((string) ($row['candidate_name'] ?? '')); ?></span>
+                                                <?php endif; ?>
+                                                <?php if (!empty($row['booking_reference'])) : ?>
+                                                    <span><?php echo esc_html((string) ($row['booking_reference'] ?? '')); ?><?php echo !empty($row['booking_status_label']) ? ' · ' . esc_html((string) $row['booking_status_label']) : ''; ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                        <div class="cmn-am-record-card-chip-row">
+                                            <span class="cmn-status-chip <?php echo esc_attr((string) ($row['status_chip_class'] ?? 'is-info')); ?>"><?php echo esc_html((string) ($row['status_label'] ?? 'Open')); ?></span>
+                                            <span class="cmn-am-booking-inline-chip"><?php echo esc_html((string) ($row['follow_up_type_label'] ?? 'Internal')); ?></span>
+                                            <span class="cmn-am-booking-inline-chip"><?php echo esc_html((string) ($row['priority_label'] ?? 'Normal')); ?></span>
+                                            <?php if ((int) ($row['issue_open_count'] ?? 0) > 0) : ?>
+                                                <span class="cmn-status-chip is-critical"><?php echo esc_html((string) ($row['issue_label'] ?? 'Open issue')); ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+
+                                    <div class="cmn-am-record-card-grid">
+                                        <div class="cmn-am-record-card-field">
+                                            <span>Due</span>
+                                            <strong><?php echo esc_html((string) ($row['due_display'] ?? 'No due date')); ?></strong>
+                                            <small><?php echo esc_html((string) ($row['due_detail'] ?? '')); ?></small>
+                                        </div>
+                                        <div class="cmn-am-record-card-field">
+                                            <span>Client</span>
+                                            <strong><?php echo esc_html((string) ($row['school_name'] ?? 'School relationship')); ?></strong>
+                                            <small><?php echo !empty($row['school_code']) ? esc_html('School ID ' . (string) $row['school_code']) : 'Portfolio relationship task'; ?></small>
+                                        </div>
+                                        <div class="cmn-am-record-card-field">
+                                            <span>Candidate</span>
+                                            <strong><?php echo esc_html(!empty($row['candidate_name']) ? (string) $row['candidate_name'] : 'Not linked'); ?></strong>
+                                            <small><?php echo !empty($row['booking_reference'])
+                                                ? esc_html((string) ($row['booking_reference'] ?? ''))
+                                                : 'Standalone relationship follow-up'; ?></small>
+                                        </div>
+                                        <div class="cmn-am-record-card-field">
+                                            <span>Next action / notes</span>
+                                            <strong><?php echo esc_html((string) ($row['label'] ?? 'Task')); ?></strong>
+                                            <small><?php echo esc_html((string) ($row['notes_excerpt'] ?? 'No additional task notes are stored.')); ?></small>
+                                        </div>
+                                    </div>
+
+                                    <div class="cmn-am-record-card-actions">
+                                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($row['focus_url'] ?? $clear_filters_url)); ?>"><?php echo $is_selected ? 'Detail open' : 'View detail'; ?></a>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($row['task_editor_url'] ?? $row['school_activity_url'] ?? $follow_up_url)); ?>">Open task editor</a>
+                                        <?php if (!empty($row['can_complete'])) : ?>
+                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                                <?php wp_nonce_field('cmn_complete_activity', 'cmn_complete_activity_nonce'); ?>
+                                                <input type="hidden" name="action" value="cmn_complete_activity">
+                                                <input type="hidden" name="cmn_activity_id" value="<?php echo esc_attr((string) ($row['task_id'] ?? 0)); ?>">
+                                                <input type="hidden" name="cmn_activity_source" value="<?php echo esc_attr((string) ($row['task_source'] ?? 'activity')); ?>">
+                                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr((string) ($row['redirect_url'] ?? $clear_filters_url)); ?>">
+                                                <button class="cmn-ghost cmn-btn-mini" type="submit">Mark done</button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </div>
+                                </article>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else : ?>
+                        <section class="cmn-am-records-empty">
+                            <h3><?php echo $total_count > 0 ? 'No tasks match these filters' : 'No open tasks in scope yet'; ?></h3>
+                            <p><?php echo $total_count > 0
+                                ? 'Broaden the search, clear the queue filters, or switch back to All to pull more tasks into view.'
+                                : 'Create a follow-up task from here or from a school / booking record and it will appear in this AM queue.'; ?></p>
+                            <div class="cmn-am-booking-thread-links">
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $clear_filters_url; ?>">Clear filters</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $follow_up_url; ?>">Open Follow-Up queue</a>
+                                <a class="cmn-primary cmn-btn-mini" href="<?php echo $compose_url; ?>">Create task</a>
+                            </div>
+                        </section>
+                    <?php endif; ?>
+                </section>
+
+                <aside class="cmn-panel-card cmn-am-records-detail-shell cmn-am-task-detail-shell" id="cmn-am-task-detail">
+                    <?php if ($selected_task) : ?>
+                        <div class="cmn-am-records-detail-head">
+                            <span class="cmn-am-records-eyebrow">Pinned Detail</span>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo $clear_focus_url; ?>">Close</a>
+                        </div>
+
+                        <div class="cmn-am-task-detail-panel">
+                            <div class="cmn-am-task-detail-head">
+                                <div class="cmn-am-school-detail-head-copy">
+                                    <span class="cmn-am-records-eyebrow"><?php echo !empty($selected_task['is_booking_linked']) ? 'Booking-linked follow-up' : 'Relationship task'; ?></span>
+                                    <h3><?php echo esc_html((string) ($selected_task['label'] ?? 'Task')); ?></h3>
+                                    <p class="cmn-muted"><?php echo esc_html((string) ($selected_task['school_name'] ?? 'School relationship')); ?><?php echo !empty($selected_task['candidate_name']) ? ' · ' . esc_html((string) $selected_task['candidate_name']) : ''; ?></p>
+                                </div>
+                                <div class="cmn-am-school-detail-chip-row">
+                                    <span class="cmn-status-chip <?php echo esc_attr((string) ($selected_task['status_chip_class'] ?? 'is-info')); ?>"><?php echo esc_html((string) ($selected_task['status_label'] ?? 'Open')); ?></span>
+                                    <span class="cmn-am-booking-inline-chip"><?php echo esc_html((string) ($selected_task['follow_up_type_label'] ?? 'Internal')); ?></span>
+                                    <span class="cmn-am-booking-inline-chip"><?php echo esc_html((string) ($selected_task['priority_label'] ?? 'Normal')); ?></span>
+                                </div>
+                            </div>
+
+                            <div class="cmn-am-school-detail-stats">
+                                <article class="cmn-am-school-detail-stat">
+                                    <span>Due state</span>
+                                    <strong><?php echo esc_html((string) ($selected_task['due_display'] ?? 'No due date')); ?></strong>
+                                    <small><?php echo esc_html((string) ($selected_task['due_detail'] ?? '')); ?></small>
+                                </article>
+                                <article class="cmn-am-school-detail-stat">
+                                    <span>Priority</span>
+                                    <strong><?php echo esc_html((string) ($selected_task['priority_label'] ?? 'Normal')); ?></strong>
+                                    <small><?php echo esc_html((string) ($selected_task['updated_label'] ?? 'Task is live in the AM queue.')); ?></small>
+                                </article>
+                                <article class="cmn-am-school-detail-stat">
+                                    <span>Linked booking</span>
+                                    <strong><?php echo esc_html(!empty($selected_task['booking_reference']) ? (string) $selected_task['booking_reference'] : 'Not linked'); ?></strong>
+                                    <small><?php echo esc_html(!empty($selected_task['booking_status_label']) ? (string) $selected_task['booking_status_label'] : 'Standalone relationship task'); ?></small>
+                                </article>
+                                <article class="cmn-am-school-detail-stat">
+                                    <span>Linked issues</span>
+                                    <strong><?php echo esc_html(number_format_i18n((int) ($selected_task['issue_open_count'] ?? 0))); ?></strong>
+                                    <small><?php echo esc_html((string) ($selected_task['issue_label'] ?? 'No linked issues')); ?></small>
+                                </article>
+                            </div>
+
+                            <div class="cmn-am-booking-thread-links">
+                                <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($selected_task['task_editor_url'] ?? $selected_task['school_activity_url'] ?? $follow_up_url)); ?>">Open task editor</a>
+                                <?php if (!empty($selected_task['school_overview_url'])) : ?>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_task['school_overview_url'] ?? '')); ?>">Open client</a>
+                                <?php endif; ?>
+                                <?php if (!empty($selected_task['booking_url'])) : ?>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_task['booking_url'] ?? '')); ?>">Open booking</a>
+                                <?php endif; ?>
+                                <?php if (!empty($selected_task['candidate_url'])) : ?>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_task['candidate_url'] ?? '')); ?>">Open candidate</a>
+                                <?php endif; ?>
+                                <?php if (!empty($selected_task['issue_url'])) : ?>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_task['issue_url'] ?? '')); ?>">Open issues</a>
+                                <?php endif; ?>
+                                <?php if (!empty($selected_task['can_complete'])) : ?>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                        <?php wp_nonce_field('cmn_complete_activity', 'cmn_complete_activity_nonce'); ?>
+                                        <input type="hidden" name="action" value="cmn_complete_activity">
+                                        <input type="hidden" name="cmn_activity_id" value="<?php echo esc_attr((string) ($selected_task['task_id'] ?? 0)); ?>">
+                                        <input type="hidden" name="cmn_activity_source" value="<?php echo esc_attr((string) ($selected_task['task_source'] ?? 'activity')); ?>">
+                                        <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr((string) ($selected_task['redirect_url'] ?? $clear_filters_url)); ?>">
+                                        <button class="cmn-ghost cmn-btn-mini" type="submit">Mark done</button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+
+                            <section class="cmn-am-task-detail-section">
+                                <div class="cmn-am-school-detail-section-head">
+                                    <h4>Task context</h4>
+                                </div>
+                                <div class="cmn-am-school-detail-definition-list">
+                                    <div class="cmn-am-school-detail-definition">
+                                        <span>Task type</span>
+                                        <strong><?php echo esc_html((string) ($selected_task['follow_up_type_label'] ?? 'Internal')); ?></strong>
+                                        <small><?php echo esc_html((string) ($selected_task['status_label'] ?? 'Open')); ?><?php echo !empty($selected_task['updated_label']) ? ' · ' . esc_html((string) $selected_task['updated_label']) : ''; ?></small>
+                                    </div>
+                                    <div class="cmn-am-school-detail-definition">
+                                        <span>Notes</span>
+                                        <strong><?php echo esc_html((string) ($selected_task['label'] ?? 'Task')); ?></strong>
+                                        <small><?php echo esc_html(!empty($selected_task['notes']) ? (string) $selected_task['notes'] : 'No additional task notes are stored yet.'); ?></small>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="cmn-am-task-detail-section">
+                                <div class="cmn-am-school-detail-section-head">
+                                    <h4>Linked entities</h4>
+                                </div>
+                                <div class="cmn-am-task-linked-list">
+                                    <div class="cmn-am-task-linked-item">
+                                        <strong>Client</strong>
+                                        <span><?php echo esc_html((string) ($selected_task['school_name'] ?? 'School relationship')); ?></span>
+                                        <?php if (!empty($selected_task['school_code'])) : ?>
+                                            <small><?php echo esc_html('School ID ' . (string) ($selected_task['school_code'] ?? '')); ?></small>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="cmn-am-task-linked-item">
+                                        <strong>Candidate</strong>
+                                        <span><?php echo esc_html(!empty($selected_task['candidate_name']) ? (string) $selected_task['candidate_name'] : 'Not linked'); ?></span>
+                                        <small><?php echo esc_html(!empty($selected_task['candidate_url']) ? 'Candidate record available in AM scope.' : 'No candidate is currently linked to this task.'); ?></small>
+                                    </div>
+                                    <div class="cmn-am-task-linked-item">
+                                        <strong>Booking</strong>
+                                        <span><?php echo esc_html(!empty($selected_task['booking_reference']) ? (string) $selected_task['booking_reference'] : 'Not linked'); ?></span>
+                                        <small><?php echo esc_html(!empty($selected_task['booking_status_label']) ? (string) $selected_task['booking_status_label'] : 'This task is not tied to a booking.'); ?></small>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    <?php else : ?>
+                        <div class="cmn-am-records-detail-empty">
+                            <span class="cmn-am-records-eyebrow">Task Detail</span>
+                            <h3><?php echo $total_count > 0 ? 'No task matches the current filters' : 'Create your next AM task'; ?></h3>
+                            <p><?php echo $total_count > 0
+                                ? 'Reset the filters or switch queue preset to reopen a pinned task detail panel.'
+                                : 'Use the composer below to create a real follow-up task that will surface here and in the Follow-Up workspace.'; ?></p>
+                            <div class="cmn-am-booking-thread-links">
+                                <a class="cmn-primary cmn-btn-mini" href="<?php echo $compose_url; ?>">Create task</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $follow_up_url; ?>">Open Follow-Up queue</a>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($show_composer) : ?>
+                        <section class="cmn-am-task-composer-card" id="cmn-am-task-composer">
+                            <div class="cmn-am-booking-composer-head">
+                                <div>
+                                    <span class="cmn-am-bookings-eyebrow">Quick create</span>
+                                    <h4>Create a task</h4>
+                                    <p>Use the existing shared activity/task handler. New tasks appear in My Tasks and the Follow-Up queue without leaving the AM shell.</p>
+                                </div>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $compose_cancel_url; ?>">Close composer</a>
+                            </div>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-am-task-composer-form">
+                                <?php wp_nonce_field('cmn_add_activity', 'cmn_add_activity_nonce'); ?>
+                                <input type="hidden" name="action" value="cmn_add_activity">
+                                <input type="hidden" name="cmn_activity_type" value="task">
+                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr($submit_redirect_url); ?>">
+                                <div class="cmn-am-task-composer-grid">
+                                    <label>Client
+                                        <select name="cmn_school_id" required>
+                                            <option value="">Choose a client</option>
+                                            <?php foreach ($school_options as $school_option) : ?>
+                                                <option value="<?php echo esc_attr((string) ($school_option['id'] ?? 0)); ?>"<?php selected($selected_school_id, (int) ($school_option['id'] ?? 0)); ?>><?php echo esc_html((string) ($school_option['label'] ?? 'School')); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
+                                    <label>Due date
+                                        <input type="date" name="cmn_activity_date">
+                                    </label>
+                                    <label>Type
+                                        <select name="cmn_follow_up_type">
+                                            <option value="call">Call</option>
+                                            <option value="email">Email</option>
+                                            <option value="internal" selected>Internal</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                    </label>
+                                    <label>Priority
+                                        <select name="cmn_priority">
+                                            <option value="normal" selected>Normal</option>
+                                            <option value="high">High</option>
+                                            <option value="urgent">Urgent</option>
+                                            <option value="low">Low</option>
+                                        </select>
+                                    </label>
+                                    <label class="cmn-am-task-composer-field--wide">Task title
+                                        <input type="text" name="cmn_activity_title" placeholder="e.g. Call school after booking issue update" required>
+                                    </label>
+                                    <label class="cmn-am-task-composer-field--wide">Details
+                                        <textarea name="cmn_activity_content" rows="4" placeholder="Add the next action, operational context, and anything the next AM touchpoint needs."></textarea>
+                                    </label>
+                                </div>
+                                <div class="cmn-am-booking-composer-actions">
+                                    <button class="cmn-primary cmn-btn-mini" type="submit">Create task</button>
+                                    <span class="cmn-muted">The earliest open task still drives the visible next action on that client record.</span>
+                                </div>
+                            </form>
+                        </section>
+                    <?php endif; ?>
+                </aside>
             </div>
         </section>
         <?php
@@ -21293,6 +22410,10 @@ global $wpdb;
         if (!in_array($compose, ['', 'follow_up', 'issue'], true)) {
             $compose = '';
         }
+        $sort = sanitize_key((string) ($source['cmn_booking_sort'] ?? 'priority'));
+        if (!in_array($sort, ['priority', 'date_asc', 'school'], true)) {
+            $sort = 'priority';
+        }
 
         return [
             'user_id' => $user_id,
@@ -21302,6 +22423,7 @@ global $wpdb;
             'school_id' => max(0, (int) ($source['cmn_booking_school'] ?? 0)),
             'candidate_id' => max(0, (int) ($source['cmn_booking_candidate'] ?? 0)),
             'query' => sanitize_text_field((string) wp_unslash($source['cmn_booking_q'] ?? '')),
+            'sort' => $sort,
             'selected_booking_id' => max(0, (int) ($source['booking_id'] ?? 0)),
             'compose' => $compose,
         ];
@@ -21758,6 +22880,11 @@ global $wpdb;
             'quick_views' => [],
             'lifecycle_counts' => [],
             'clear_filters_url' => $clear_filters_url,
+            'clear_focus_url' => $clear_filters_url,
+            'sort_links' => [],
+            'filter_chips' => [],
+            'filter_count' => 0,
+            'result_summary_label' => 'No bookings are currently visible.',
         ];
         foreach ($lifecycle_groups as $key => $group) {
             $payload['lifecycle_counts'][$key] = [
@@ -21819,6 +22946,15 @@ global $wpdb;
             if (!empty($filters['query'])) {
                 $query_args['cmn_booking_q'] = (string) $filters['query'];
             }
+            if (($filters['sort'] ?? 'priority') !== 'priority') {
+                $query_args['cmn_booking_sort'] = (string) $filters['sort'];
+            }
+            if (!empty($filters['selected_booking_id'])) {
+                $query_args['booking_id'] = (int) $filters['selected_booking_id'];
+            }
+            if (!empty($filters['compose'])) {
+                $query_args['cmn_booking_compose'] = (string) $filters['compose'];
+            }
             foreach ($overrides as $key => $value) {
                 if ($value === false || $value === null || $value === '') {
                     unset($query_args[$key]);
@@ -21828,6 +22964,35 @@ global $wpdb;
             }
             return add_query_arg($query_args, $portal_url);
         };
+        $payload['sort_links'] = [
+            [
+                'label' => 'Action priority',
+                'url' => $build_bookings_url([
+                    'cmn_booking_sort' => false,
+                    'booking_id' => false,
+                    'cmn_booking_compose' => false,
+                ]),
+                'is_active' => ($filters['sort'] ?? 'priority') === 'priority',
+            ],
+            [
+                'label' => 'Date soonest',
+                'url' => $build_bookings_url([
+                    'cmn_booking_sort' => 'date_asc',
+                    'booking_id' => false,
+                    'cmn_booking_compose' => false,
+                ]),
+                'is_active' => ($filters['sort'] ?? '') === 'date_asc',
+            ],
+            [
+                'label' => 'Client',
+                'url' => $build_bookings_url([
+                    'cmn_booking_sort' => 'school',
+                    'booking_id' => false,
+                    'cmn_booking_compose' => false,
+                ]),
+                'is_active' => ($filters['sort'] ?? '') === 'school',
+            ],
+        ];
 
         $date_in_range = static function ($target_date, $start_date, $end_date) {
             $target_date = trim((string) $target_date);
@@ -22128,34 +23293,109 @@ global $wpdb;
             $filtered[] = $row;
         }
 
-        usort($filtered, static function ($a, $b) use ($today_key) {
+        $sort_mode = (string) ($filters['sort'] ?? 'priority');
+        usort($filtered, static function ($a, $b) use ($today_key, $sort_mode) {
             $a_priority = (!empty($a['unresolved']) ? 4 : 0) + (!empty($a['needs_attention']) ? 2 : 0) + (!empty($a['action_needed']) ? 1 : 0);
             $b_priority = (!empty($b['unresolved']) ? 4 : 0) + (!empty($b['needs_attention']) ? 2 : 0) + (!empty($b['action_needed']) ? 1 : 0);
-            if ($a_priority !== $b_priority) {
+            if ($sort_mode === 'priority' && $a_priority !== $b_priority) {
                 return $b_priority <=> $a_priority;
             }
+            if ($sort_mode === 'school') {
+                $school_compare = strnatcasecmp((string) ($a['school_name'] ?? ''), (string) ($b['school_name'] ?? ''));
+                if ($school_compare !== 0) {
+                    return $school_compare;
+                }
+            }
+
             $a_date = (string) ($a['start_date'] ?? '');
             $b_date = (string) ($b['start_date'] ?? '');
-            $a_future = ($a_date !== '' && strcmp($a_date, $today_key) >= 0) ? 1 : 0;
-            $b_future = ($b_date !== '' && strcmp($b_date, $today_key) >= 0) ? 1 : 0;
-            if ($a_future !== $b_future) {
-                return $b_future <=> $a_future;
-            }
-            if ($a_date !== $b_date) {
-                return $a_future === 1 ? strcmp($a_date, $b_date) : strcmp($b_date, $a_date);
+            if ($sort_mode === 'date_asc') {
+                $a_sort = $a_date !== '' ? $a_date : '9999-12-31';
+                $b_sort = $b_date !== '' ? $b_date : '9999-12-31';
+                if ($a_sort !== $b_sort) {
+                    return strcmp($a_sort, $b_sort);
+                }
+            } else {
+                $a_future = ($a_date !== '' && strcmp($a_date, $today_key) >= 0) ? 1 : 0;
+                $b_future = ($b_date !== '' && strcmp($b_date, $today_key) >= 0) ? 1 : 0;
+                if ($a_priority !== $b_priority) {
+                    return $b_priority <=> $a_priority;
+                }
+                if ($a_future !== $b_future) {
+                    return $b_future <=> $a_future;
+                }
+                if ($a_date !== $b_date) {
+                    return $a_future === 1 ? strcmp($a_date, $b_date) : strcmp($b_date, $a_date);
+                }
             }
             return strcasecmp((string) ($a['reference_label'] ?? ''), (string) ($b['reference_label'] ?? ''));
         });
 
         $payload['rows'] = $filtered;
         $payload['visible_count'] = count($filtered);
+        if ($payload['total_count'] < 1) {
+            $payload['result_summary_label'] = 'No bookings are currently in AM scope.';
+        } elseif ($payload['visible_count'] === $payload['total_count']) {
+            $payload['result_summary_label'] = number_format_i18n($payload['visible_count']) . ' booking' . ($payload['visible_count'] === 1 ? '' : 's') . ' in scope.';
+        } else {
+            $payload['result_summary_label'] = number_format_i18n($payload['visible_count']) . ' visible of ' . number_format_i18n($payload['total_count']) . ' portfolio bookings.';
+        }
         $payload['quick_views'] = [
-            'all' => ['label' => 'All', 'count' => (int) ($quick_counts['all'] ?? 0), 'description' => 'Every booking in your account portfolio.', 'is_active' => ($filters['scope'] ?? 'all') === 'all', 'url' => $build_bookings_url(['cmn_booking_scope' => false, 'booking_id' => false])],
-            'today' => ['label' => 'Today', 'count' => (int) ($quick_counts['today'] ?? 0), 'description' => 'Bookings happening today.', 'is_active' => ($filters['scope'] ?? '') === 'today', 'url' => $build_bookings_url(['cmn_booking_scope' => 'today', 'booking_id' => false])],
-            'tomorrow' => ['label' => 'Tomorrow', 'count' => (int) ($quick_counts['tomorrow'] ?? 0), 'description' => 'Bookings happening tomorrow.', 'is_active' => ($filters['scope'] ?? '') === 'tomorrow', 'url' => $build_bookings_url(['cmn_booking_scope' => 'tomorrow', 'booking_id' => false])],
-            'needs_attention' => ['label' => 'Needs attention', 'count' => (int) ($quick_counts['needs_attention'] ?? 0), 'description' => 'Bookings that still need an AM action.', 'is_active' => ($filters['scope'] ?? '') === 'needs_attention', 'url' => $build_bookings_url(['cmn_booking_scope' => 'needs_attention', 'booking_id' => false])],
-            'unresolved' => ['label' => 'Unresolved', 'count' => (int) ($quick_counts['unresolved'] ?? 0), 'description' => 'Bookings with open issues, no-shows, or disputes.', 'is_active' => ($filters['scope'] ?? '') === 'unresolved', 'url' => $build_bookings_url(['cmn_booking_scope' => 'unresolved', 'booking_id' => false])],
+            'all' => ['label' => 'All', 'count' => (int) ($quick_counts['all'] ?? 0), 'description' => 'Every booking in your account portfolio.', 'is_active' => ($filters['scope'] ?? 'all') === 'all', 'url' => $build_bookings_url(['cmn_booking_scope' => false, 'booking_id' => false, 'cmn_booking_compose' => false])],
+            'today' => ['label' => 'Today', 'count' => (int) ($quick_counts['today'] ?? 0), 'description' => 'Bookings happening today.', 'is_active' => ($filters['scope'] ?? '') === 'today', 'url' => $build_bookings_url(['cmn_booking_scope' => 'today', 'booking_id' => false, 'cmn_booking_compose' => false])],
+            'tomorrow' => ['label' => 'Tomorrow', 'count' => (int) ($quick_counts['tomorrow'] ?? 0), 'description' => 'Bookings happening tomorrow.', 'is_active' => ($filters['scope'] ?? '') === 'tomorrow', 'url' => $build_bookings_url(['cmn_booking_scope' => 'tomorrow', 'booking_id' => false, 'cmn_booking_compose' => false])],
+            'needs_attention' => ['label' => 'Needs attention', 'count' => (int) ($quick_counts['needs_attention'] ?? 0), 'description' => 'Bookings that still need an AM action.', 'is_active' => ($filters['scope'] ?? '') === 'needs_attention', 'url' => $build_bookings_url(['cmn_booking_scope' => 'needs_attention', 'booking_id' => false, 'cmn_booking_compose' => false])],
+            'unresolved' => ['label' => 'Unresolved', 'count' => (int) ($quick_counts['unresolved'] ?? 0), 'description' => 'Bookings with open issues, no-shows, or disputes.', 'is_active' => ($filters['scope'] ?? '') === 'unresolved', 'url' => $build_bookings_url(['cmn_booking_scope' => 'unresolved', 'booking_id' => false, 'cmn_booking_compose' => false])],
         ];
+
+        $filter_chips = [];
+        if (!empty($filters['query'])) {
+            $filter_chips[] = [
+                'label' => 'Search: ' . sanitize_text_field((string) $filters['query']),
+                'remove_url' => $build_bookings_url([
+                    'cmn_booking_q' => false,
+                    'booking_id' => false,
+                ]),
+            ];
+        }
+        if (!empty($filters['status'])) {
+            $filter_chips[] = [
+                'label' => 'Status: ' . (string) ($status_options[(string) $filters['status']] ?? ucwords(str_replace('_', ' ', (string) $filters['status']))),
+                'remove_url' => $build_bookings_url([
+                    'cmn_status' => false,
+                    'booking_id' => false,
+                ]),
+            ];
+        }
+        if (!empty($filters['date']) && strtotime((string) $filters['date'])) {
+            $filter_chips[] = [
+                'label' => 'Date: ' . date_i18n('M j, Y', strtotime((string) $filters['date'])),
+                'remove_url' => $build_bookings_url([
+                    'cmn_booking_date' => false,
+                    'booking_id' => false,
+                ]),
+            ];
+        }
+        if (!empty($filters['school_id']) && !empty($school_options[(int) $filters['school_id']])) {
+            $filter_chips[] = [
+                'label' => 'Client: ' . sanitize_text_field((string) $school_options[(int) $filters['school_id']]),
+                'remove_url' => $build_bookings_url([
+                    'cmn_booking_school' => false,
+                    'booking_id' => false,
+                ]),
+            ];
+        }
+        if (!empty($filters['candidate_id']) && !empty($candidate_options[(int) $filters['candidate_id']])) {
+            $filter_chips[] = [
+                'label' => 'Candidate: ' . sanitize_text_field((string) $candidate_options[(int) $filters['candidate_id']]),
+                'remove_url' => $build_bookings_url([
+                    'cmn_booking_candidate' => false,
+                    'booking_id' => false,
+                ]),
+            ];
+        }
+        $payload['filter_chips'] = $filter_chips;
+        $payload['filter_count'] = count($filter_chips);
 
         $selected_booking_id = max(0, (int) ($filters['selected_booking_id'] ?? 0));
         $lookup = [];
@@ -22185,6 +23425,10 @@ global $wpdb;
                 ['label' => 'Candidate reassign / offer routing', 'detail' => 'The current candidate-invite / reassign handler is still guarded behind admin permissions.'],
             ];
             $payload['selected_booking'] = $selected;
+            $payload['clear_focus_url'] = $build_bookings_url([
+                'booking_id' => false,
+                'cmn_booking_compose' => false,
+            ]) . '#cmn-am-booking-detail';
         }
 
         return $payload;
@@ -22201,13 +23445,20 @@ global $wpdb;
         $status_options = (array) ($payload['status_options'] ?? []);
         $quick_views = (array) ($payload['quick_views'] ?? []);
         $lifecycle_counts = (array) ($payload['lifecycle_counts'] ?? []);
+        $sort_links = array_values(array_filter((array) ($payload['sort_links'] ?? []), 'is_array'));
+        $filter_chips = array_values(array_filter((array) ($payload['filter_chips'] ?? []), 'is_array'));
+        $filter_count = max(0, (int) ($payload['filter_count'] ?? 0));
         $total_count = max(0, (int) ($payload['total_count'] ?? 0));
         $visible_count = max(0, (int) ($payload['visible_count'] ?? 0));
+        $result_summary_label = sanitize_text_field((string) ($payload['result_summary_label'] ?? 'No bookings are currently visible.'));
         $clear_filters_url = esc_url_raw((string) ($payload['clear_filters_url'] ?? $this->get_portal_base_url()));
+        $clear_focus_url = esc_url((string) ($payload['clear_focus_url'] ?? ($clear_filters_url . '#cmn-am-booking-detail')));
         $portal_url = $this->get_portal_base_url();
         $clients_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url);
         $pipeline_url = add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url);
+        $issues_url = add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url);
         $scope_label_map = ['all' => 'All', 'today' => 'Today', 'tomorrow' => 'Tomorrow', 'needs_attention' => 'Needs attention', 'unresolved' => 'Unresolved'];
+        $scope_label = sanitize_text_field((string) ($scope_label_map[(string) ($filters['scope'] ?? 'all')] ?? 'All'));
         $composer_state = sanitize_key((string) ($filters['compose'] ?? ''));
         if (!in_array($composer_state, ['', 'follow_up', 'issue'], true)) {
             $composer_state = '';
@@ -22220,52 +23471,175 @@ global $wpdb;
 
         ob_start();
         ?>
-        <section class="cmn-am-bookings-workspace" data-viewer-surface="account-manager">
-            <header class="cmn-panel-card cmn-am-bookings-header">
-                <div class="cmn-am-bookings-header-copy">
-                    <span class="cmn-am-bookings-eyebrow">Account Manager CRM</span>
-                    <h2>Bookings</h2>
-                    <p>Manage live booking movement, delivery risk, and booking communication without leaving the AM workspace.</p>
+        <section class="cmn-am-bookings-workspace cmn-am-records-workspace" data-viewer-surface="account-manager">
+            <header class="cmn-panel-card cmn-am-records-header cmn-am-bookings-header">
+                <div class="cmn-am-records-header-copy">
+                    <span class="cmn-am-records-eyebrow">Core Operations</span>
+                    <div class="cmn-am-records-title-row">
+                        <h2>Bookings</h2>
+                        <span class="cmn-am-records-count"><?php echo esc_html(number_format_i18n($visible_count)); ?></span>
+                    </div>
+                    <p>Manage live booking movement, delivery risk, and booking communication inside the same AM shell pattern used across the rest of the workspace.</p>
                 </div>
-                <div class="cmn-am-bookings-header-metrics">
-                    <div class="cmn-am-bookings-metric">
+                <div class="cmn-am-records-header-meta">
+                    <div class="cmn-am-records-header-chips">
+                        <span class="cmn-status-chip is-info"><?php echo esc_html($result_summary_label); ?></span>
+                        <span class="cmn-status-chip is-muted"><?php echo esc_html($scope_label); ?></span>
+                        <?php if ($filter_count > 0) : ?>
+                            <span class="cmn-status-chip is-muted"><?php echo esc_html(number_format_i18n($filter_count)); ?> active filter<?php echo $filter_count === 1 ? '' : 's'; ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <a class="cmn-primary" href="<?php echo esc_url($issues_url); ?>">Open Support / Issues</a>
+                </div>
+                <div class="cmn-am-records-header-metrics">
+                    <article class="cmn-am-records-metric">
                         <span>Visible now</span>
                         <strong><?php echo esc_html(number_format_i18n($visible_count)); ?></strong>
-                        <small><?php echo esc_html(number_format_i18n($total_count)); ?> total in AM scope</small>
-                    </div>
-                    <div class="cmn-am-bookings-metric">
+                        <small><?php echo esc_html(number_format_i18n($total_count)); ?> total booking<?php echo $total_count === 1 ? '' : 's'; ?> in AM scope.</small>
+                    </article>
+                    <article class="cmn-am-records-metric">
                         <span>Needs attention</span>
                         <strong><?php echo esc_html(number_format_i18n((int) ($quick_views['needs_attention']['count'] ?? 0))); ?></strong>
-                        <small>Statuses, onboarding gaps, and delivery pressure</small>
-                    </div>
-                    <div class="cmn-am-bookings-metric">
+                        <small>Statuses, onboarding gaps, and delivery pressure already surfaced.</small>
+                    </article>
+                    <article class="cmn-am-records-metric">
                         <span>Unresolved</span>
                         <strong><?php echo esc_html(number_format_i18n((int) ($quick_views['unresolved']['count'] ?? 0))); ?></strong>
-                        <small>Open issues, no-shows, and disputed completion</small>
-                    </div>
+                        <small>Open issues, no-shows, and disputed completion.</small>
+                    </article>
                 </div>
             </header>
 
-            <section class="cmn-am-bookings-lifecycle" aria-label="Booking lifecycle summary">
-                <?php foreach ($lifecycle_counts as $lifecycle_count) : ?>
-                    <?php if (!is_array($lifecycle_count)) { continue; } ?>
-                    <article class="cmn-panel-card cmn-am-bookings-lifecycle-card">
-                        <span><?php echo esc_html((string) ($lifecycle_count['label'] ?? 'State')); ?></span>
-                        <strong><?php echo esc_html(number_format_i18n((int) ($lifecycle_count['count'] ?? 0))); ?></strong>
-                    </article>
-                <?php endforeach; ?>
-            </section>
+            <form method="get"
+                  class="cmn-panel-card cmn-school-toolbar cmn-school-toolbar--crm cmn-filter-bar cmn-am-records-control-bar cmn-am-bookings-control-bar"
+                  data-school-toolbar
+                  data-toolbar-storage="cmnSchoolToolbar:am_bookings"
+                  data-filter-default-open="<?php echo $filter_count ? '1' : '0'; ?>">
+                <input type="hidden" name="view" value="bookings">
+                <?php if (($filters['scope'] ?? 'all') !== 'all') : ?>
+                    <input type="hidden" name="cmn_booking_scope" value="<?php echo esc_attr((string) ($filters['scope'] ?? 'all')); ?>">
+                <?php endif; ?>
+                <?php if (($filters['sort'] ?? 'priority') !== 'priority') : ?>
+                    <input type="hidden" name="cmn_booking_sort" value="<?php echo esc_attr((string) ($filters['sort'] ?? 'priority')); ?>">
+                <?php endif; ?>
+                <?php if (!empty($selected_booking['booking_id'])) : ?>
+                    <input type="hidden" name="booking_id" value="<?php echo esc_attr((string) ($selected_booking['booking_id'] ?? 0)); ?>">
+                <?php endif; ?>
+                <?php if ($composer_state !== '') : ?>
+                    <input type="hidden" name="cmn_booking_compose" value="<?php echo esc_attr($composer_state); ?>">
+                <?php endif; ?>
 
-            <section class="cmn-am-bookings-quickviews" aria-label="Booking quick views">
-                <?php foreach ($quick_views as $quick_view) : ?>
-                    <?php if (!is_array($quick_view)) { continue; } ?>
-                    <a class="cmn-panel-card cmn-am-bookings-quickview<?php echo !empty($quick_view['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($quick_view['url'] ?? $clear_filters_url)); ?>">
-                        <span><?php echo esc_html((string) ($quick_view['label'] ?? 'Scope')); ?></span>
-                        <strong><?php echo esc_html(number_format_i18n((int) ($quick_view['count'] ?? 0))); ?></strong>
-                        <small><?php echo esc_html((string) ($quick_view['description'] ?? '')); ?></small>
-                    </a>
-                <?php endforeach; ?>
-            </section>
+                <div class="cmn-school-toolbar-head">
+                    <div class="cmn-school-toolbar-head-copy">
+                        <p class="cmn-school-toolbar-eyebrow">Bookings Workspace</p>
+                        <h3>Live booking queue</h3>
+                        <p class="cmn-muted">Search, preset, and filter the real AM booking lifecycle while keeping the booking detail and actions pinned on the right.</p>
+                    </div>
+                    <div class="cmn-school-toolbar-head-meta">
+                        <div class="cmn-am-records-sort">
+                            <?php foreach ($sort_links as $sort_link) : ?>
+                                <a class="cmn-chip cmn-am-records-preset<?php echo !empty($sort_link['is_active']) ? ' is-active' : ''; ?>"
+                                   href="<?php echo esc_url((string) ($sort_link['url'] ?? $clear_filters_url)); ?>"><?php echo esc_html((string) ($sort_link['label'] ?? 'Sort')); ?></a>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cmn-am-records-preset-row">
+                    <span class="cmn-am-records-preset-label">Quick presets</span>
+                    <div class="cmn-am-records-preset-list" role="list" aria-label="Booking quick presets">
+                        <?php foreach ($quick_views as $quick_view) : ?>
+                            <?php if (!is_array($quick_view)) { continue; } ?>
+                            <a class="cmn-chip cmn-am-records-preset<?php echo !empty($quick_view['is_active']) ? ' is-active' : ''; ?>"
+                               href="<?php echo esc_url((string) ($quick_view['url'] ?? $clear_filters_url)); ?>"
+                               role="listitem"><?php echo esc_html((string) ($quick_view['label'] ?? 'Preset')); ?> · <?php echo esc_html(number_format_i18n((int) ($quick_view['count'] ?? 0))); ?></a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <div class="cmn-am-records-preset-row">
+                    <span class="cmn-am-records-preset-label">Lifecycle</span>
+                    <div class="cmn-am-bookings-lifecycle-pills" role="list" aria-label="Booking lifecycle counts">
+                        <?php foreach ($lifecycle_counts as $lifecycle_count) : ?>
+                            <?php if (!is_array($lifecycle_count)) { continue; } ?>
+                            <span class="cmn-am-bookings-lifecycle-chip" role="listitem">
+                                <strong><?php echo esc_html((string) ($lifecycle_count['label'] ?? 'State')); ?></strong>
+                                <span><?php echo esc_html(number_format_i18n((int) ($lifecycle_count['count'] ?? 0))); ?></span>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <?php if ($filter_chips) : ?>
+                    <div class="cmn-school-toolbar-active">
+                        <span class="cmn-school-toolbar-active-label">Active filters</span>
+                        <div class="cmn-school-toolbar-active-list">
+                            <?php foreach ($filter_chips as $chip) : ?>
+                                <a class="cmn-chip cmn-school-toolbar-active-chip" href="<?php echo esc_url((string) ($chip['remove_url'] ?? $clear_filters_url)); ?>">
+                                    <span><?php echo esc_html((string) ($chip['label'] ?? 'Filter')); ?></span>
+                                    <strong aria-hidden="true">×</strong>
+                                </a>
+                            <?php endforeach; ?>
+                            <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo esc_url($clear_filters_url); ?>">Clear all</a>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <div class="cmn-toolbar-row">
+                    <div class="cmn-toolbar-search">
+                        <input type="search" name="cmn_booking_q" value="<?php echo esc_attr((string) ($filters['query'] ?? '')); ?>" placeholder="Search booking ref, client, candidate, role, or notes" aria-label="Search bookings">
+                        <button class="cmn-btn-secondary cmn-btn-mini" type="submit">Search</button>
+                    </div>
+                    <div class="cmn-toolbar-controls">
+                        <button class="cmn-btn-secondary cmn-btn-mini" type="button" data-filter-toggle aria-expanded="<?php echo $filter_count ? 'true' : 'false'; ?>">Filters</button>
+                        <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo esc_url($clear_filters_url); ?>">Clear</a>
+                        <?php if (!empty($selected_booking['booking_id'])) : ?>
+                            <a class="cmn-btn-ghost cmn-btn-mini" href="<?php echo $clear_focus_url; ?>">Close detail</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="cmn-filter-panel<?php echo $filter_count ? ' is-open' : ''; ?>" data-filter-panel>
+                    <div class="cmn-filter-panel-head">
+                        <div>
+                            <h4>Refine booking results</h4>
+                            <p class="cmn-muted">Use real status, date, client, and candidate filters without leaving the booking workspace shell.</p>
+                        </div>
+                    </div>
+                    <div class="cmn-filter-grid">
+                        <label>Status
+                            <select name="cmn_status">
+                                <option value="">All statuses</option>
+                                <?php foreach ($status_options as $status_key => $status_label) : ?>
+                                    <option value="<?php echo esc_attr((string) $status_key); ?>"<?php selected((string) ($filters['status'] ?? ''), (string) $status_key); ?>><?php echo esc_html((string) $status_label); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Date
+                            <input type="date" name="cmn_booking_date" value="<?php echo esc_attr((string) ($filters['date'] ?? '')); ?>">
+                        </label>
+                        <label>School / Client
+                            <select name="cmn_booking_school">
+                                <option value="0">All schools</option>
+                                <?php foreach ($school_options as $school_id => $school_name) : ?>
+                                    <option value="<?php echo esc_attr((string) $school_id); ?>"<?php selected((int) ($filters['school_id'] ?? 0), (int) $school_id); ?>><?php echo esc_html((string) $school_name); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>Candidate
+                            <select name="cmn_booking_candidate">
+                                <option value="0">All candidates</option>
+                                <?php foreach ($candidate_options as $candidate_id => $candidate_name) : ?>
+                                    <option value="<?php echo esc_attr((string) $candidate_id); ?>"<?php selected((int) ($filters['candidate_id'] ?? 0), (int) $candidate_id); ?>><?php echo esc_html((string) $candidate_name); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="cmn-filter-actions">
+                        <button class="cmn-ghost" type="submit">Apply Filters</button>
+                    </div>
+                </div>
+            </form>
 
             <?php if ($notice_message !== '') : ?>
                 <section class="cmn-panel-card cmn-am-booking-notice" role="status" aria-live="polite">
@@ -22274,101 +23648,83 @@ global $wpdb;
                 </section>
             <?php endif; ?>
 
-            <form method="get" class="cmn-panel-card cmn-am-bookings-filters">
-                <input type="hidden" name="view" value="bookings">
-                <?php if (($filters['scope'] ?? 'all') !== 'all') : ?>
-                    <input type="hidden" name="cmn_booking_scope" value="<?php echo esc_attr((string) ($filters['scope'] ?? 'all')); ?>">
-                <?php endif; ?>
-                <label>
-                    <span>Search</span>
-                    <input type="search" name="cmn_booking_q" value="<?php echo esc_attr((string) ($filters['query'] ?? '')); ?>" placeholder="Booking ref, school, candidate, role">
-                </label>
-                <label>
-                    <span>Status</span>
-                    <select name="cmn_status">
-                        <option value="">All statuses</option>
-                        <?php foreach ($status_options as $status_key => $status_label) : ?>
-                            <option value="<?php echo esc_attr((string) $status_key); ?>"<?php selected((string) ($filters['status'] ?? ''), (string) $status_key); ?>><?php echo esc_html((string) $status_label); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-                <label>
-                    <span>Date</span>
-                    <input type="date" name="cmn_booking_date" value="<?php echo esc_attr((string) ($filters['date'] ?? '')); ?>">
-                </label>
-                <label>
-                    <span>School / Client</span>
-                    <select name="cmn_booking_school">
-                        <option value="0">All schools</option>
-                        <?php foreach ($school_options as $school_id => $school_name) : ?>
-                            <option value="<?php echo esc_attr((string) $school_id); ?>"<?php selected((int) ($filters['school_id'] ?? 0), (int) $school_id); ?>><?php echo esc_html((string) $school_name); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-                <label>
-                    <span>Candidate</span>
-                    <select name="cmn_booking_candidate">
-                        <option value="0">All candidates</option>
-                        <?php foreach ($candidate_options as $candidate_id => $candidate_name) : ?>
-                            <option value="<?php echo esc_attr((string) $candidate_id); ?>"<?php selected((int) ($filters['candidate_id'] ?? 0), (int) $candidate_id); ?>><?php echo esc_html((string) $candidate_name); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-                <div class="cmn-am-bookings-filter-actions">
-                    <button class="cmn-primary" type="submit">Apply filters</button>
-                    <a class="cmn-ghost" href="<?php echo esc_url($clear_filters_url); ?>">Clear filters</a>
-                </div>
-            </form>
-
-            <?php if ($total_count < 1) : ?>
-                <section class="cmn-panel-card cmn-am-bookings-empty">
-                    <h3>No bookings in your AM scope yet</h3>
-                    <p>Bookings appear here automatically when they belong to a school in your manageable account portfolio. You can keep working from client records and pipeline while booking demand builds.</p>
-                    <div class="cmn-am-bookings-empty-actions">
-                        <a class="cmn-primary" href="<?php echo esc_url($clients_url); ?>">Open clients</a>
-                        <a class="cmn-ghost" href="<?php echo esc_url($pipeline_url); ?>">Open pipeline</a>
-                    </div>
-                </section>
-            <?php else : ?>
-                <div class="cmn-am-bookings-layout">
-                    <section class="cmn-am-bookings-list">
-                        <div class="cmn-panel-card cmn-am-bookings-list-head">
-                            <div>
-                                <h3>Bookings in scope</h3>
-                                <p><?php echo esc_html(number_format_i18n($visible_count)); ?> visible of <?php echo esc_html(number_format_i18n($total_count)); ?> portfolio bookings.</p>
-                            </div>
-                            <span class="cmn-am-bookings-inline-chip">Quick view: <?php echo esc_html((string) ($scope_label_map[(string) ($filters['scope'] ?? 'all')] ?? 'All')); ?></span>
+            <div class="cmn-am-records-layout cmn-am-bookings-layout">
+                <section class="cmn-panel-card cmn-am-records-main cmn-am-bookings-list">
+                    <div class="cmn-am-records-main-head">
+                        <div>
+                            <h3>Bookings in Scope</h3>
+                            <p class="cmn-muted"><?php echo esc_html($result_summary_label); ?></p>
                         </div>
+                        <div class="cmn-am-booking-thread-links">
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($clients_url); ?>">Open clients</a>
+                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($issues_url); ?>">Open issues</a>
+                        </div>
+                    </div>
 
-                        <?php if (!$rows) : ?>
-                            <article class="cmn-panel-card cmn-am-bookings-empty cmn-am-bookings-empty--filtered">
-                                <h3>No bookings match these filters</h3>
-                                <p>Try broadening the date, clearing the candidate/school filter, or switching back to the All quick view.</p>
-                                <a class="cmn-ghost" href="<?php echo esc_url($clear_filters_url); ?>">Reset bookings filters</a>
-                            </article>
-                        <?php else : ?>
+                    <?php if ($total_count < 1) : ?>
+                        <section class="cmn-am-records-empty">
+                            <h3>No bookings in your AM scope yet</h3>
+                            <p>Bookings appear here automatically when they belong to a school in your manageable account portfolio. You can keep working from client records and pipeline while booking demand builds.</p>
+                            <div class="cmn-am-booking-thread-links">
+                                <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($clients_url); ?>">Open clients</a>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($pipeline_url); ?>">Open pipeline</a>
+                            </div>
+                        </section>
+                    <?php elseif (!$rows) : ?>
+                        <section class="cmn-am-records-empty">
+                            <h3>No bookings match these filters</h3>
+                            <p>Try broadening the date, clearing the client or candidate filter, or switching back to the All quick view.</p>
+                            <div class="cmn-am-booking-thread-links">
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($clear_filters_url); ?>">Reset bookings filters</a>
+                            </div>
+                        </section>
+                    <?php else : ?>
+                        <div class="cmn-am-record-card-list">
                             <?php foreach ($rows as $row) : ?>
                                 <?php
                                 $booking_id = (int) ($row['booking_id'] ?? 0);
                                 $is_selected = $booking_id > 0 && $booking_id === (int) ($selected_booking['booking_id'] ?? 0);
                                 $issue_snapshot = is_array($row['issue_snapshot'] ?? null) ? (array) $row['issue_snapshot'] : [];
+                                $open_issue_count = max(0, (int) ($issue_snapshot['open_count'] ?? 0));
                                 ?>
-                                <article class="cmn-am-booking-card<?php echo $is_selected ? ' is-selected' : ''; ?>">
-                                    <div class="cmn-am-booking-card-top">
-                                        <div class="cmn-am-booking-card-copy">
-                                            <span class="cmn-am-booking-ref"><?php echo esc_html((string) ($row['reference_id_label'] ?? 'Booking')); ?></span>
-                                            <h3><a href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>"><?php echo esc_html((string) ($row['reference_label'] ?? 'Booking')); ?></a></h3>
-                                            <p><?php echo esc_html(implode(' · ', array_filter([(string) ($row['school_name'] ?? ''), (string) ($row['candidate_name'] ?? '')]))); ?></p>
+                                <article class="cmn-am-record-card cmn-am-booking-card<?php echo $is_selected ? ' is-selected' : ''; ?>">
+                                    <div class="cmn-am-record-card-top cmn-am-booking-card-top">
+                                        <div class="cmn-am-record-card-title-wrap cmn-am-booking-card-copy">
+                                            <span class="cmn-am-record-card-kicker"><?php echo esc_html((string) ($row['reference_id_label'] ?? 'Booking')); ?></span>
+                                            <h3 class="cmn-am-record-card-title"><a href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>"><?php echo esc_html((string) ($row['reference_label'] ?? 'Booking')); ?></a></h3>
+                                            <div class="cmn-am-record-card-meta">
+                                                <span><?php echo esc_html((string) ($row['school_name'] ?? '')); ?></span>
+                                                <?php if (!empty($row['candidate_name'])) : ?>
+                                                    <span><?php echo esc_html((string) ($row['candidate_name'] ?? '')); ?></span>
+                                                <?php endif; ?>
+                                            </div>
                                         </div>
-                                        <div class="cmn-am-booking-card-status">
+                                        <div class="cmn-am-record-card-chip-row cmn-am-booking-card-status">
                                             <span class="cmn-status-chip <?php echo esc_attr((string) ($row['status_chip_class'] ?? 'is-pending')); ?>"><?php echo esc_html((string) ($row['status_label'] ?? 'Unknown')); ?></span>
                                             <span class="cmn-am-booking-lifecycle-pill"><?php echo esc_html((string) ($row['lifecycle_label'] ?? '')); ?></span>
                                         </div>
                                     </div>
-                                    <div class="cmn-am-booking-card-meta">
-                                        <span><?php echo esc_html((string) ($row['date_label'] ?? '')); ?></span>
-                                        <span><?php echo esc_html((string) ($row['time_label'] ?? '')); ?></span>
-                                        <span><?php echo esc_html((string) ($row['role_label'] ?? '')); ?><?php echo !empty($row['booking_type_label']) ? ' · ' . esc_html((string) $row['booking_type_label']) : ''; ?></span>
+                                    <div class="cmn-am-record-card-grid">
+                                        <div class="cmn-am-record-card-field">
+                                            <span>Schedule</span>
+                                            <strong><?php echo esc_html((string) ($row['date_label'] ?? 'Date not set')); ?></strong>
+                                            <small><?php echo esc_html((string) ($row['time_label'] ?? 'Time not set')); ?></small>
+                                        </div>
+                                        <div class="cmn-am-record-card-field">
+                                            <span>Role / type</span>
+                                            <strong><?php echo esc_html((string) ($row['role_label'] ?? 'Booking')); ?></strong>
+                                            <small><?php echo esc_html(!empty($row['booking_type_label']) ? (string) $row['booking_type_label'] : 'Type not set'); ?></small>
+                                        </div>
+                                        <div class="cmn-am-record-card-field">
+                                            <span>Action</span>
+                                            <strong><?php echo esc_html((string) ($row['action_label'] ?? 'Monitoring')); ?></strong>
+                                            <small><?php echo esc_html((string) ($row['action_reason'] ?? '')); ?></small>
+                                        </div>
+                                        <div class="cmn-am-record-card-field">
+                                            <span>Linked work</span>
+                                            <strong><?php echo esc_html($open_issue_count > 0 ? number_format_i18n($open_issue_count) . ' open issue' . ($open_issue_count === 1 ? '' : 's') : 'No linked issues'); ?></strong>
+                                            <small><?php echo esc_html(!empty($row['onboarding_label']) ? (string) $row['onboarding_label'] : 'Operational context available in detail.'); ?></small>
+                                        </div>
                                     </div>
                                     <?php if (!empty($row['badges'])) : ?>
                                         <div class="cmn-am-booking-badges">
@@ -22378,30 +23734,31 @@ global $wpdb;
                                             <?php endforeach; ?>
                                         </div>
                                     <?php endif; ?>
-                                    <div class="cmn-am-booking-card-foot">
-                                        <div class="cmn-am-booking-action-summary">
-                                            <strong><?php echo esc_html(!empty($row['action_needed']) ? 'Action needed' : 'Watching'); ?></strong>
-                                            <span><?php echo esc_html((string) ($row['action_label'] ?? '')); ?></span>
-                                            <small><?php echo esc_html((string) ($row['action_reason'] ?? '')); ?></small>
-                                        </div>
-                                        <div class="cmn-am-booking-card-actions">
-                                            <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>">Open booking</a>
-                                            <?php if ((int) ($issue_snapshot['open_count'] ?? 0) > 0) : ?>
-                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($row['primary_issue_url'] ?? $clear_filters_url)); ?>">View issue</a>
-                                            <?php endif; ?>
-                                        </div>
+                                    <div class="cmn-am-record-card-actions cmn-am-booking-card-actions">
+                                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>"><?php echo $is_selected ? 'Detail open' : 'Open booking'; ?></a>
+                                        <?php if ($open_issue_count > 0) : ?>
+                                            <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($row['primary_issue_url'] ?? $clear_filters_url)); ?>">View issue</a>
+                                        <?php endif; ?>
                                     </div>
                                 </article>
                             <?php endforeach; ?>
-                        <?php endif; ?>
-                    </section>
+                        </div>
+                    <?php endif; ?>
+                </section>
 
-                    <aside class="cmn-am-booking-detail" id="cmn-am-booking-detail">
+                    <aside class="cmn-panel-card cmn-am-records-detail-shell cmn-am-booking-detail" id="cmn-am-booking-detail">
                         <?php if (!$selected_booking) : ?>
-                            <section class="cmn-panel-card cmn-am-bookings-empty">
-                                <h3>Select a booking to inspect the detail panel</h3>
-                                <p>Pick any booking card to open school details, candidate details, communication history, issue state, and the safe actions supported from the AM surface.</p>
-                            </section>
+                            <div class="cmn-am-records-detail-empty">
+                                <span class="cmn-am-records-eyebrow">Booking Detail</span>
+                                <h3><?php echo $total_count > 0 ? 'Select a booking' : 'No booking detail available yet'; ?></h3>
+                                <p><?php echo $total_count > 0
+                                    ? 'Choose a booking from the list to keep school details, candidate context, issue state, and live booking actions pinned on the right.'
+                                    : 'Once bookings land in your portfolio scope, their full operational context will open here.'; ?></p>
+                                <div class="cmn-am-booking-thread-links">
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url($clear_filters_url); ?>">Clear filters</a>
+                                    <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url($clients_url); ?>">Open clients</a>
+                                </div>
+                            </div>
                         <?php else : ?>
                             <?php
                             $selected_issue_snapshot = is_array($selected_booking['issue_snapshot'] ?? null) ? (array) $selected_booking['issue_snapshot'] : [];
@@ -22414,7 +23771,11 @@ global $wpdb;
                             $school_contact_lines = array_filter([(string) ($school_contact['role'] ?? ''), (string) ($school_contact['email'] ?? ''), (string) ($school_contact['phone'] ?? '')]);
                             $linked_follow_ups = array_values(array_filter((array) ($selected_booking['linked_follow_ups'] ?? []), 'is_array'));
                             ?>
-                            <section class="cmn-panel-card cmn-am-booking-detail-card">
+                            <div class="cmn-am-records-detail-head">
+                                <span class="cmn-am-records-eyebrow">Pinned Detail</span>
+                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo $clear_focus_url; ?>">Close</a>
+                            </div>
+                            <section class="cmn-am-booking-detail-card">
                                 <div class="cmn-am-booking-detail-head">
                                     <div>
                                         <span class="cmn-am-booking-ref"><?php echo esc_html((string) ($selected_booking['reference_id_label'] ?? 'Booking')); ?></span>
@@ -22783,7 +24144,6 @@ global $wpdb;
                         <?php endif; ?>
                     </aside>
                 </div>
-            <?php endif; ?>
         </section>
         <?php
         $inner = ob_get_clean();
