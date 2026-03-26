@@ -2791,6 +2791,154 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var accountManagerRecordWorkspaces = document.querySelectorAll('.cmn-am-records-workspace[data-viewer-surface="account-manager"]');
+  if (accountManagerRecordWorkspaces.length) {
+    var isPlainPrimaryClick = function (event) {
+      if (!event) {
+        return false;
+      }
+      return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+    };
+    var escapeSelectionHtml = function (value) {
+      return String(value || '').replace(/[&<>"']/g, function (char) {
+        if (char === '&') {
+          return '&amp;';
+        }
+        if (char === '<') {
+          return '&lt;';
+        }
+        if (char === '>') {
+          return '&gt;';
+        }
+        if (char === '"') {
+          return '&quot;';
+        }
+        return '&#39;';
+      });
+    };
+    var readSelectionUrlParts = function (url) {
+      if (!url || !window.URL) {
+        return null;
+      }
+      try {
+        var parsed = new window.URL(url, window.location.href);
+        return {
+          href: parsed.toString(),
+          pathSearch: parsed.pathname + parsed.search,
+          hash: parsed.hash || ''
+        };
+      } catch (e) {
+        return null;
+      }
+    };
+    var updateSelectionHash = function (hash) {
+      if (!hash) {
+        return;
+      }
+      if (window.history && typeof window.history.replaceState === 'function') {
+        window.history.replaceState({}, '', hash.charAt(0) === '#' ? hash : ('#' + hash));
+        return;
+      }
+      window.location.hash = hash;
+    };
+
+    accountManagerRecordWorkspaces.forEach(function (workspace) {
+      var detailShell = workspace.querySelector('.cmn-am-records-detail-shell');
+      var cards = Array.prototype.slice.call(workspace.querySelectorAll('.cmn-am-record-card'));
+      if (!detailShell || !cards.length) {
+        return;
+      }
+
+      var readCardSelection = function (card) {
+        if (!card) {
+          return { link: null, url: '', label: 'record' };
+        }
+        var selectionLink = card.querySelector('.cmn-am-record-card-title a[href], .cmn-am-record-card-actions a.cmn-primary[href]');
+        var titleEl = card.querySelector('.cmn-am-record-card-title');
+        var label = titleEl ? String(titleEl.textContent || '').trim() : '';
+        if (!label) {
+          label = 'record';
+        }
+        return {
+          link: selectionLink,
+          url: selectionLink ? String(selectionLink.getAttribute('href') || '').trim() : '',
+          label: label
+        };
+      };
+
+      var setSelectedCard = function (targetCard) {
+        cards.forEach(function (card) {
+          card.classList.toggle('is-selected', card === targetCard);
+        });
+      };
+
+      var showDetailLoadingState = function (selection) {
+        var label = selection && selection.label ? selection.label : 'record';
+        var minHeight = Math.max(detailShell.offsetHeight || 0, 220);
+        if (minHeight > 0) {
+          detailShell.style.minHeight = String(minHeight) + 'px';
+        }
+        detailShell.classList.add('is-loading');
+        detailShell.setAttribute('aria-busy', 'true');
+        detailShell.innerHTML = ''
+          + '<div class="cmn-am-records-detail-loading" role="status" aria-live="polite">'
+          + '<span class="cmn-am-records-eyebrow">Pinned Detail</span>'
+          + '<div class="cmn-am-records-detail-loading-bar" aria-hidden="true"></div>'
+          + '<h3>Loading ' + escapeSelectionHtml(label) + '</h3>'
+          + '<p>Refreshing the selected record details now.</p>'
+          + '</div>';
+      };
+
+      var navigateToSelection = function (card, selection, event) {
+        var selectionUrl = selection && selection.url ? selection.url : '';
+        if (!selectionUrl) {
+          return;
+        }
+        var targetParts = readSelectionUrlParts(selectionUrl);
+        if (!targetParts) {
+          return;
+        }
+        var currentParts = readSelectionUrlParts(window.location.href);
+        var sameRecord = !!(currentParts && currentParts.pathSearch === targetParts.pathSearch);
+        var alreadySelected = card.classList.contains('is-selected');
+        if (sameRecord && alreadySelected) {
+          if (event) {
+            event.preventDefault();
+          }
+          if (targetParts.hash && (!currentParts || currentParts.hash !== targetParts.hash)) {
+            updateSelectionHash(targetParts.hash);
+          }
+          return;
+        }
+        if (event) {
+          event.preventDefault();
+        }
+        setSelectedCard(card);
+        showDetailLoadingState(selection);
+        window.location.assign(targetParts.href);
+      };
+
+      cards.forEach(function (card) {
+        card.addEventListener('click', function (event) {
+          if (!isPlainPrimaryClick(event)) {
+            return;
+          }
+          var selection = readCardSelection(card);
+          if (!selection.url) {
+            return;
+          }
+          var interactiveTarget = event.target && event.target.closest
+            ? event.target.closest('a, button, input, select, textarea, label, summary, form, [role="button"], [role="link"]')
+            : null;
+          if (interactiveTarget && interactiveTarget !== selection.link) {
+            return;
+          }
+          navigateToSelection(card, selection, event);
+        });
+      });
+    });
+  }
+
   var otherToggle = document.querySelector('[data-other-toggle]');
   var otherField = document.querySelector('.cmn-other-field');
   if (otherToggle && otherField) {
@@ -5261,6 +5409,9 @@ document.addEventListener('DOMContentLoaded', function () {
       var storageKey = 'cmnSchoolLeadsViewMode:' + String(workspaceIndex);
       var dragState = null;
       var previewCache = {};
+      var previewRequestToken = 0;
+      var previewRequestController = null;
+      var leadCards = Array.prototype.slice.call(workspace.querySelectorAll('[data-school-lead-card]'));
 
       var setBoardStatus = function (message, isError) {
         if (!statusEl) {
@@ -5344,13 +5495,22 @@ document.addEventListener('DOMContentLoaded', function () {
       applyViewMode(readViewMode());
 
       var closePreviewPanel = function () {
+        previewRequestToken += 1;
+        if (previewRequestController && typeof previewRequestController.abort === 'function') {
+          previewRequestController.abort();
+        }
+        previewRequestController = null;
         if (previewPanel) {
           previewPanel.hidden = true;
+          previewPanel.removeAttribute('aria-busy');
           previewPanel.removeAttribute('data-school-pid');
         }
         if (previewBackdrop) {
           previewBackdrop.hidden = true;
         }
+        leadCards.forEach(function (card) {
+          card.classList.remove('is-selected');
+        });
         document.body.classList.remove('cmn-school-lead-preview-open');
       };
 
@@ -5364,8 +5524,20 @@ document.addEventListener('DOMContentLoaded', function () {
         document.body.classList.add('cmn-school-lead-preview-open');
       };
 
-      var setPreviewLoadingState = function (title, message) {
+      var setPreviewActiveCard = function (schoolPid) {
+        var activePid = String(schoolPid || '').trim();
+        leadCards.forEach(function (card) {
+          var cardPid = String(card.getAttribute('data-school-pid') || '').trim();
+          card.classList.toggle('is-selected', activePid !== '' && cardPid === activePid);
+        });
+      };
+
+      var setPreviewLoadingState = function (title, message, schoolPid) {
         openPreviewPanel();
+        setPreviewActiveCard(schoolPid);
+        if (previewPanel) {
+          previewPanel.setAttribute('aria-busy', 'true');
+        }
         if (previewTitle) {
           previewTitle.textContent = title || 'Relationship context';
         }
@@ -5378,8 +5550,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       };
 
-      var setPreviewErrorState = function (title, message) {
+      var setPreviewErrorState = function (title, message, schoolPid) {
         openPreviewPanel();
+        setPreviewActiveCard(schoolPid);
+        if (previewPanel) {
+          previewPanel.removeAttribute('aria-busy');
+        }
         if (previewTitle) {
           previewTitle.textContent = title || 'Relationship context';
         }
@@ -5397,6 +5573,10 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         openPreviewPanel();
+        if (previewPanel) {
+          previewPanel.removeAttribute('aria-busy');
+        }
+        setPreviewActiveCard(String(payload.school_post_id || payload.pid || ''));
         if (previewTitle) {
           previewTitle.textContent = String(payload.title || 'Relationship context');
         }
@@ -5420,24 +5600,35 @@ document.addEventListener('DOMContentLoaded', function () {
         var schoolPid = String(button.getAttribute('data-school-pid') || '').trim();
         var schoolTitle = String(button.getAttribute('data-school-title') || 'Relationship context').trim();
         if (!schoolId || !schoolPid) {
-          setPreviewErrorState(schoolTitle, 'Lead details are missing.');
+          setPreviewErrorState(schoolTitle, 'Lead details are missing.', schoolPid);
           return;
         }
+        previewRequestToken += 1;
+        var requestToken = previewRequestToken;
+        if (previewRequestController && typeof previewRequestController.abort === 'function') {
+          previewRequestController.abort();
+        }
+        previewRequestController = typeof window.AbortController === 'function' ? new window.AbortController() : null;
         if (Object.prototype.hasOwnProperty.call(previewCache, schoolPid)) {
+          previewRequestController = null;
           renderPreviewPayload(previewCache[schoolPid]);
           return;
         }
-        setPreviewLoadingState(schoolTitle, 'Loading stage history, notes, tasks, and activity...');
+        setPreviewLoadingState(schoolTitle, 'Loading stage history, notes, tasks, and activity...', schoolPid);
         var fd = new FormData();
         fd.append('action', 'cmn_get_school_lead_activity_preview');
         fd.append('nonce', nonce);
         fd.append('school_id', schoolId);
         fd.append('pid', schoolPid);
-        fetch(ajaxUrl, {
+        var fetchOptions = {
           method: 'POST',
           credentials: 'same-origin',
           body: fd
-        }).then(function (response) {
+        };
+        if (previewRequestController) {
+          fetchOptions.signal = previewRequestController.signal;
+        }
+        fetch(ajaxUrl, fetchOptions).then(function (response) {
           return response.text().then(function (text) {
             var data;
             try {
@@ -5460,10 +5651,27 @@ document.addEventListener('DOMContentLoaded', function () {
             return data.data || {};
           });
         }).then(function (payload) {
+          if (requestToken !== previewRequestToken) {
+            return;
+          }
           previewCache[schoolPid] = payload;
           renderPreviewPayload(payload);
         }).catch(function (err) {
-          setPreviewErrorState(schoolTitle, (err && err.message) ? err.message : 'Unable to load lead activity.');
+          if (err && err.name === 'AbortError') {
+            return;
+          }
+          if (requestToken !== previewRequestToken) {
+            return;
+          }
+          setPreviewErrorState(schoolTitle, (err && err.message) ? err.message : 'Unable to load lead activity.', schoolPid);
+        }).finally(function () {
+          if (requestToken !== previewRequestToken) {
+            return;
+          }
+          previewRequestController = null;
+          if (previewPanel) {
+            previewPanel.removeAttribute('aria-busy');
+          }
         });
       };
 
