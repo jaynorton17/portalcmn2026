@@ -6613,7 +6613,9 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-detail-statuses {
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-lifecycle-pill,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-inline-chip,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-inline-chip,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-record-secondary-chip,
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-inline-meta {
   display: inline-flex;
   align-items: center;
@@ -6625,6 +6627,36 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-inline-meta {
   color: var(--cmn-am-muted) !important;
   font-size: 11px;
   font-weight: 700;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-record-secondary-chip.is-info,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-inline-chip.is-info,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-inline-chip.is-info {
+  background: rgba(219, 234, 254, 0.82);
+  border-color: rgba(96, 165, 250, 0.26);
+  color: #1d4ed8 !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-record-secondary-chip.is-warning,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-inline-chip.is-warning,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-inline-chip.is-warning {
+  background: rgba(254, 249, 195, 0.88);
+  border-color: rgba(234, 179, 8, 0.24);
+  color: #92400e !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-record-secondary-chip.is-critical,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-inline-chip.is-critical,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-inline-chip.is-critical {
+  background: rgba(254, 226, 226, 0.92);
+  border-color: rgba(239, 68, 68, 0.24);
+  color: #b91c1c !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-record-secondary-chip.is-muted,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-inline-chip.is-muted,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-bookings-inline-chip.is-muted {
+  color: var(--cmn-am-muted) !important;
 }
 
 body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-booking-card-meta {

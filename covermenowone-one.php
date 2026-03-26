@@ -21734,6 +21734,9 @@ global $wpdb;
                                 <?php
                                 $task_id = (int) ($row['task_id'] ?? 0);
                                 $is_selected = $task_id > 0 && $task_id === (int) ($selected_task['task_id'] ?? 0);
+                                $task_status_display = $this->get_account_manager_task_status_display($row);
+                                $primary_task_status = is_array($task_status_display['primary'] ?? null) ? (array) $task_status_display['primary'] : [];
+                                $secondary_task_statuses = array_values(array_filter((array) ($task_status_display['secondary'] ?? []), 'is_array'));
                                 ?>
                                 <article class="cmn-am-record-card cmn-am-task-card<?php echo $is_selected ? ' is-selected' : ''; ?>">
                                     <div class="cmn-am-record-card-top">
@@ -21746,17 +21749,16 @@ global $wpdb;
                                                     <span><?php echo esc_html((string) ($row['candidate_name'] ?? '')); ?></span>
                                                 <?php endif; ?>
                                                 <?php if (!empty($row['booking_reference'])) : ?>
-                                                    <span><?php echo esc_html((string) ($row['booking_reference'] ?? '')); ?><?php echo !empty($row['booking_status_label']) ? ' · ' . esc_html((string) $row['booking_status_label']) : ''; ?></span>
+                                                    <span><?php echo esc_html((string) ($row['booking_reference'] ?? '')); ?></span>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
                                         <div class="cmn-am-record-card-chip-row">
-                                            <span class="cmn-status-chip <?php echo esc_attr((string) ($row['status_chip_class'] ?? 'is-info')); ?>"><?php echo esc_html((string) ($row['status_label'] ?? 'Open')); ?></span>
-                                            <span class="cmn-am-booking-inline-chip"><?php echo esc_html((string) ($row['follow_up_type_label'] ?? 'Internal')); ?></span>
-                                            <span class="cmn-am-booking-inline-chip"><?php echo esc_html((string) ($row['priority_label'] ?? 'Normal')); ?></span>
-                                            <?php if ((int) ($row['issue_open_count'] ?? 0) > 0) : ?>
-                                                <span class="cmn-status-chip is-critical"><?php echo esc_html((string) ($row['issue_label'] ?? 'Open issue')); ?></span>
-                                            <?php endif; ?>
+                                            <span class="cmn-status-chip <?php echo esc_attr((string) ($primary_task_status['class'] ?? ($row['status_chip_class'] ?? 'is-info'))); ?>"><?php echo esc_html((string) ($primary_task_status['label'] ?? ($row['status_label'] ?? 'Open'))); ?></span>
+                                            <?php foreach ($secondary_task_statuses as $secondary_status) : ?>
+                                                <?php if (empty($secondary_status['label'])) { continue; } ?>
+                                                <span class="<?php echo esc_attr((string) ($secondary_status['class'] ?? 'cmn-am-record-secondary-chip is-muted')); ?>"><?php echo esc_html((string) $secondary_status['label']); ?></span>
+                                            <?php endforeach; ?>
                                         </div>
                                     </div>
 
@@ -21819,6 +21821,11 @@ global $wpdb;
 
                 <aside class="cmn-panel-card cmn-am-records-detail-shell cmn-am-task-detail-shell" id="cmn-am-task-detail">
                     <?php if ($selected_task) : ?>
+                        <?php
+                        $selected_task_status_display = $this->get_account_manager_task_status_display($selected_task);
+                        $selected_task_primary_status = is_array($selected_task_status_display['primary'] ?? null) ? (array) $selected_task_status_display['primary'] : [];
+                        $selected_task_secondary_statuses = array_values(array_filter((array) ($selected_task_status_display['secondary'] ?? []), 'is_array'));
+                        ?>
                         <div class="cmn-am-records-detail-head">
                             <span class="cmn-am-records-eyebrow">Pinned Detail</span>
                             <a class="cmn-ghost cmn-btn-mini" href="<?php echo $clear_focus_url; ?>">Close</a>
@@ -21832,9 +21839,11 @@ global $wpdb;
                                     <p class="cmn-muted"><?php echo esc_html((string) ($selected_task['school_name'] ?? 'School relationship')); ?><?php echo !empty($selected_task['candidate_name']) ? ' · ' . esc_html((string) $selected_task['candidate_name']) : ''; ?></p>
                                 </div>
                                 <div class="cmn-am-school-detail-chip-row">
-                                    <span class="cmn-status-chip <?php echo esc_attr((string) ($selected_task['status_chip_class'] ?? 'is-info')); ?>"><?php echo esc_html((string) ($selected_task['status_label'] ?? 'Open')); ?></span>
-                                    <span class="cmn-am-booking-inline-chip"><?php echo esc_html((string) ($selected_task['follow_up_type_label'] ?? 'Internal')); ?></span>
-                                    <span class="cmn-am-booking-inline-chip"><?php echo esc_html((string) ($selected_task['priority_label'] ?? 'Normal')); ?></span>
+                                    <span class="cmn-status-chip <?php echo esc_attr((string) ($selected_task_primary_status['class'] ?? ($selected_task['status_chip_class'] ?? 'is-info'))); ?>"><?php echo esc_html((string) ($selected_task_primary_status['label'] ?? ($selected_task['status_label'] ?? 'Open'))); ?></span>
+                                    <?php foreach ($selected_task_secondary_statuses as $secondary_status) : ?>
+                                        <?php if (empty($secondary_status['label'])) { continue; } ?>
+                                        <span class="<?php echo esc_attr((string) ($secondary_status['class'] ?? 'cmn-am-record-secondary-chip is-muted')); ?>"><?php echo esc_html((string) $secondary_status['label']); ?></span>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
 
@@ -23720,6 +23729,10 @@ global $wpdb;
                                 $is_selected = $booking_id > 0 && $booking_id === (int) ($selected_booking['booking_id'] ?? 0);
                                 $issue_snapshot = is_array($row['issue_snapshot'] ?? null) ? (array) $row['issue_snapshot'] : [];
                                 $open_issue_count = max(0, (int) ($issue_snapshot['open_count'] ?? 0));
+                                $booking_status_display = $this->get_account_manager_booking_status_display($row);
+                                $primary_booking_status = is_array($booking_status_display['primary'] ?? null) ? (array) $booking_status_display['primary'] : [];
+                                $secondary_booking_statuses = array_values(array_filter((array) ($booking_status_display['secondary'] ?? []), 'is_array'));
+                                $visible_booking_badges = $this->get_account_manager_visible_booking_badges($row, 2);
                                 ?>
                                 <article class="cmn-am-record-card cmn-am-booking-card<?php echo $is_selected ? ' is-selected' : ''; ?>">
                                     <div class="cmn-am-record-card-top cmn-am-booking-card-top">
@@ -23734,8 +23747,11 @@ global $wpdb;
                                             </div>
                                         </div>
                                         <div class="cmn-am-record-card-chip-row cmn-am-booking-card-status">
-                                            <span class="cmn-status-chip <?php echo esc_attr((string) ($row['status_chip_class'] ?? 'is-pending')); ?>"><?php echo esc_html((string) ($row['status_label'] ?? 'Unknown')); ?></span>
-                                            <span class="cmn-am-booking-lifecycle-pill"><?php echo esc_html((string) ($row['lifecycle_label'] ?? '')); ?></span>
+                                            <span class="cmn-status-chip <?php echo esc_attr((string) ($primary_booking_status['class'] ?? ($row['status_chip_class'] ?? 'is-pending'))); ?>"><?php echo esc_html((string) ($primary_booking_status['label'] ?? ($row['status_label'] ?? 'Unknown'))); ?></span>
+                                            <?php foreach ($secondary_booking_statuses as $secondary_status) : ?>
+                                                <?php if (empty($secondary_status['label'])) { continue; } ?>
+                                                <span class="<?php echo esc_attr((string) ($secondary_status['class'] ?? 'cmn-am-record-secondary-chip is-muted')); ?>"><?php echo esc_html((string) $secondary_status['label']); ?></span>
+                                            <?php endforeach; ?>
                                         </div>
                                     </div>
                                     <div class="cmn-am-record-card-grid">
@@ -23760,9 +23776,9 @@ global $wpdb;
                                             <small><?php echo esc_html(!empty($row['onboarding_label']) ? (string) $row['onboarding_label'] : 'Operational context available in detail.'); ?></small>
                                         </div>
                                     </div>
-                                    <?php if (!empty($row['badges'])) : ?>
+                                    <?php if ($visible_booking_badges) : ?>
                                         <div class="cmn-am-booking-badges">
-                                            <?php foreach ((array) $row['badges'] as $badge) : ?>
+                                            <?php foreach ($visible_booking_badges as $badge) : ?>
                                                 <?php if (!is_array($badge) || empty($badge['label'])) { continue; } ?>
                                                 <span class="cmn-am-booking-badge is-<?php echo esc_attr(sanitize_key((string) ($badge['tone'] ?? 'neutral'))); ?>" title="<?php echo esc_attr((string) ($badge['detail'] ?? '')); ?>"><?php echo esc_html((string) $badge['label']); ?></span>
                                             <?php endforeach; ?>
@@ -23804,6 +23820,10 @@ global $wpdb;
                             $school_contact = is_array($selected_booking['school_contact'] ?? null) ? (array) $selected_booking['school_contact'] : [];
                             $school_contact_lines = array_filter([(string) ($school_contact['role'] ?? ''), (string) ($school_contact['email'] ?? ''), (string) ($school_contact['phone'] ?? '')]);
                             $linked_follow_ups = array_values(array_filter((array) ($selected_booking['linked_follow_ups'] ?? []), 'is_array'));
+                            $selected_booking_status_display = $this->get_account_manager_booking_status_display($selected_booking);
+                            $selected_booking_primary_status = is_array($selected_booking_status_display['primary'] ?? null) ? (array) $selected_booking_status_display['primary'] : [];
+                            $selected_booking_secondary_statuses = array_values(array_filter((array) ($selected_booking_status_display['secondary'] ?? []), 'is_array'));
+                            $selected_booking_badges = $this->get_account_manager_visible_booking_badges($selected_booking, 2);
                             ?>
                             <div class="cmn-am-records-detail-head">
                                 <span class="cmn-am-records-eyebrow">Pinned Detail</span>
@@ -23817,9 +23837,11 @@ global $wpdb;
                                         <p><?php echo esc_html(implode(' · ', array_filter([(string) ($selected_booking['school_name'] ?? ''), (string) ($selected_booking['candidate_name'] ?? ''), (string) ($selected_booking['role_label'] ?? '')]))); ?></p>
                                     </div>
                                     <div class="cmn-am-booking-detail-statuses">
-                                        <span class="cmn-status-chip <?php echo esc_attr((string) ($selected_booking['status_chip_class'] ?? 'is-pending')); ?>"><?php echo esc_html((string) ($selected_booking['status_label'] ?? 'Unknown')); ?></span>
-                                        <span class="cmn-am-booking-lifecycle-pill"><?php echo esc_html((string) ($selected_booking['lifecycle_label'] ?? '')); ?></span>
-                                        <span class="cmn-am-booking-inline-meta">Raw status: <?php echo esc_html((string) ($selected_booking['status_key'] ?? '')); ?></span>
+                                        <span class="cmn-status-chip <?php echo esc_attr((string) ($selected_booking_primary_status['class'] ?? ($selected_booking['status_chip_class'] ?? 'is-pending'))); ?>"><?php echo esc_html((string) ($selected_booking_primary_status['label'] ?? ($selected_booking['status_label'] ?? 'Unknown'))); ?></span>
+                                        <?php foreach ($selected_booking_secondary_statuses as $secondary_status) : ?>
+                                            <?php if (empty($secondary_status['label'])) { continue; } ?>
+                                            <span class="<?php echo esc_attr((string) ($secondary_status['class'] ?? 'cmn-am-record-secondary-chip is-muted')); ?>"><?php echo esc_html((string) $secondary_status['label']); ?></span>
+                                        <?php endforeach; ?>
                                     </div>
                                 </div>
                                 <div class="cmn-am-booking-detail-summary">
@@ -23839,9 +23861,9 @@ global $wpdb;
                                         <small><?php echo esc_html(($selected_booking['candidate_pay_rate'] ?? 0) > 0 ? ('Candidate pay GBP ' . number_format((float) ($selected_booking['candidate_pay_rate'] ?? 0), 2)) : 'Candidate pay not set'); ?></small>
                                     </div>
                                 </div>
-                                <?php if (!empty($selected_booking['badges'])) : ?>
+                                <?php if ($selected_booking_badges) : ?>
                                     <div class="cmn-am-booking-badges">
-                                        <?php foreach ((array) $selected_booking['badges'] as $badge) : ?>
+                                        <?php foreach ($selected_booking_badges as $badge) : ?>
                                             <?php if (!is_array($badge) || empty($badge['label'])) { continue; } ?>
                                             <span class="cmn-am-booking-badge is-<?php echo esc_attr(sanitize_key((string) ($badge['tone'] ?? 'neutral'))); ?>" title="<?php echo esc_attr((string) ($badge['detail'] ?? '')); ?>"><?php echo esc_html((string) $badge['label']); ?></span>
                                         <?php endforeach; ?>
@@ -45299,6 +45321,278 @@ global $wpdb;
         ];
     }
 
+    private function normalize_account_manager_display_label($label) {
+        $label = strtolower(trim(wp_strip_all_tags((string) $label)));
+        if ($label === '') {
+            return '';
+        }
+
+        $replacements = [
+            'follow-up' => 'followup',
+            'follow up' => 'followup',
+            'no follow-up' => 'nofollowup',
+            'no follow up' => 'nofollowup',
+            'at risk' => 'atrisk',
+            'due today' => 'duetoday',
+            'due soon' => 'duesoon',
+            'needs attention' => 'needsattention',
+            'candidate accepted' => 'candidateaccepted',
+            'completed attended' => 'completedattended',
+        ];
+        $label = str_replace(array_keys($replacements), array_values($replacements), $label);
+        $label = preg_replace('/[^a-z0-9]+/', '', $label);
+
+        return is_string($label) ? $label : '';
+    }
+
+    private function account_manager_display_labels_match($left, $right) {
+        $left = $this->normalize_account_manager_display_label($left);
+        $right = $this->normalize_account_manager_display_label($right);
+        if ($left === '' || $right === '') {
+            return false;
+        }
+        if ($left === $right) {
+            return true;
+        }
+
+        $equivalent_groups = [
+            ['new', 'requested'],
+            ['accepted', 'candidateaccepted'],
+            ['confirmed', 'approved'],
+            ['completed', 'completedattended'],
+        ];
+        foreach ($equivalent_groups as $group) {
+            if (in_array($left, $group, true) && in_array($right, $group, true)) {
+                return true;
+            }
+        }
+
+        if (strlen($left) >= 8 && strpos($right, $left) === 0) {
+            return true;
+        }
+        if (strlen($right) >= 8 && strpos($left, $right) === 0) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function get_account_manager_secondary_indicator_tone($raw_tone = '') {
+        $raw_tone = sanitize_key((string) $raw_tone);
+        if (in_array($raw_tone, ['critical', 'danger', 'declined', 'at_risk'], true)) {
+            return 'critical';
+        }
+        if (in_array($raw_tone, ['warning', 'watch', 'pending', 'urgent', 'high'], true)) {
+            return 'warning';
+        }
+        if (in_array($raw_tone, ['info', 'positive', 'verified', 'approved'], true)) {
+            return 'info';
+        }
+
+        return 'muted';
+    }
+
+    private function append_account_manager_secondary_indicator(array &$indicators, $label, $tone = 'muted', array $skip_labels = [], $limit = 2) {
+        $label = sanitize_text_field((string) $label);
+        if ($label === '' || count($indicators) >= max(0, (int) $limit)) {
+            return;
+        }
+
+        foreach ($skip_labels as $skip_label) {
+            if ($this->account_manager_display_labels_match($label, (string) $skip_label)) {
+                return;
+            }
+        }
+
+        foreach ($indicators as $indicator) {
+            if ($this->account_manager_display_labels_match($label, (string) ($indicator['label'] ?? ''))) {
+                return;
+            }
+        }
+
+        $tone = $this->get_account_manager_secondary_indicator_tone($tone);
+        $indicators[] = [
+            'label' => $label,
+            'class' => 'cmn-am-record-secondary-chip is-' . $tone,
+        ];
+    }
+
+    private function get_account_manager_school_status_display(array $row = []) {
+        $status_value = sanitize_key((string) ($row['status_value'] ?? ''));
+        $pipeline_value = sanitize_key((string) ($row['pipeline_value'] ?? $row['stage_value'] ?? ''));
+        $sales_stage_label = sanitize_text_field((string) ($row['sales_stage_label'] ?? $this->get_account_manager_sales_stage_label(
+            $status_value,
+            $pipeline_value,
+            $status_value === 'lead'
+        )));
+        $status_payload = is_array($row['status_payload'] ?? null)
+            ? (array) $row['status_payload']
+            : $this->get_account_manager_list_status_payload($row);
+        $follow_up_key = sanitize_key((string) ($row['follow_up_state_key'] ?? ''));
+        $follow_up_label = sanitize_text_field((string) ($row['follow_up_state_label'] ?? ''));
+        $follow_up_class = sanitize_html_class((string) ($row['follow_up_chip_class'] ?? $this->get_school_follow_up_clarity_chip_class((string) ($row['follow_up_tone'] ?? 'neutral'))));
+        $risk_key = sanitize_key((string) ($row['account_risk_key'] ?? 'clear'));
+        $risk_label = sanitize_text_field((string) ($row['account_risk_label'] ?? ''));
+        $risk_class = sanitize_html_class((string) ($row['account_risk_chip_class'] ?? $this->get_school_follow_up_clarity_chip_class((string) ($row['account_risk_tone'] ?? 'positive'))));
+
+        $primary = [
+            'label' => sanitize_text_field((string) ($status_payload['label'] ?? 'Active')),
+            'class' => sanitize_html_class((string) ($status_payload['class'] ?? 'is-verified')),
+        ];
+
+        if (in_array($follow_up_key, ['overdue', 'due_today', 'due_soon', 'none'], true) && $follow_up_label !== '') {
+            $primary = [
+                'label' => $follow_up_label,
+                'class' => $follow_up_class !== '' ? $follow_up_class : 'is-info',
+            ];
+        } elseif ($risk_key === 'at_risk' && $risk_label !== '') {
+            $primary = [
+                'label' => $risk_label,
+                'class' => $risk_class !== '' ? $risk_class : 'is-declined',
+            ];
+        } elseif ($status_value === 'lead' && $sales_stage_label !== '') {
+            $primary = [
+                'label' => $sales_stage_label,
+                'class' => 'is-info',
+            ];
+        }
+
+        $secondary = [];
+        if ($status_value === 'lead' && $sales_stage_label !== '') {
+            $this->append_account_manager_secondary_indicator($secondary, $sales_stage_label, 'info', [$primary['label']]);
+        }
+        if ($risk_key !== 'clear' && $risk_label !== '') {
+            $this->append_account_manager_secondary_indicator($secondary, $risk_label, (string) ($row['account_risk_tone'] ?? 'warning'), [$primary['label']]);
+        }
+        if (in_array($follow_up_key, ['overdue', 'due_today', 'due_soon', 'none'], true) && $follow_up_label !== '') {
+            $this->append_account_manager_secondary_indicator($secondary, $follow_up_label, (string) ($row['follow_up_tone'] ?? 'neutral'), [$primary['label']]);
+        }
+
+        return [
+            'primary' => $primary,
+            'secondary' => $secondary,
+        ];
+    }
+
+    private function get_account_manager_task_status_display(array $row = []) {
+        $primary = [
+            'label' => sanitize_text_field((string) ($row['status_label'] ?? 'Open')),
+            'class' => sanitize_html_class((string) ($row['status_chip_class'] ?? 'is-info')),
+        ];
+
+        $secondary = [];
+        if ((int) ($row['issue_open_count'] ?? 0) > 0) {
+            $this->append_account_manager_secondary_indicator($secondary, (string) ($row['issue_label'] ?? 'Open issue'), 'critical', [$primary['label']]);
+        }
+
+        $priority_key = sanitize_key((string) ($row['priority_key'] ?? 'normal'));
+        if ($priority_key !== '' && $priority_key !== 'normal') {
+            $priority_tone = in_array($priority_key, ['urgent', 'high'], true) ? 'warning' : 'muted';
+            $this->append_account_manager_secondary_indicator($secondary, (string) ($row['priority_label'] ?? ucfirst($priority_key)), $priority_tone, [$primary['label']]);
+        }
+
+        $follow_up_type = sanitize_key((string) ($row['follow_up_type'] ?? 'internal'));
+        if ($follow_up_type !== '' && $follow_up_type !== 'internal') {
+            $this->append_account_manager_secondary_indicator($secondary, (string) ($row['follow_up_type_label'] ?? ucfirst($follow_up_type)), 'info', [$primary['label']]);
+        }
+
+        return [
+            'primary' => $primary,
+            'secondary' => $secondary,
+        ];
+    }
+
+    private function get_account_manager_booking_status_display(array $row = [], $include_status_secondary = true) {
+        $primary_label = sanitize_text_field((string) ($row['lifecycle_label'] ?? $row['status_label'] ?? 'Unknown'));
+        if ($primary_label === '') {
+            $primary_label = 'Unknown';
+        }
+
+        $primary = [
+            'label' => $primary_label,
+            'class' => sanitize_html_class((string) ($row['status_chip_class'] ?? 'is-pending')),
+        ];
+
+        $secondary = [];
+        if ($include_status_secondary) {
+            $status_label = sanitize_text_field((string) ($row['status_label'] ?? ''));
+            if ($status_label !== '') {
+                $this->append_account_manager_secondary_indicator($secondary, $status_label, 'info', [$primary_label], 1);
+            }
+        }
+
+        return [
+            'primary' => $primary,
+            'secondary' => $secondary,
+        ];
+    }
+
+    private function get_account_manager_visible_booking_badges(array $row = [], $limit = 2) {
+        $visible = [];
+        $limit = max(0, (int) $limit);
+        if ($limit < 1) {
+            return $visible;
+        }
+
+        $skip_labels = [
+            (string) ($row['lifecycle_label'] ?? ''),
+            (string) ($row['status_label'] ?? ''),
+            (string) ($row['action_label'] ?? ''),
+        ];
+
+        foreach ((array) ($row['badges'] ?? []) as $badge) {
+            if (!is_array($badge)) {
+                continue;
+            }
+
+            $label = sanitize_text_field((string) ($badge['label'] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+
+            $normalized_label = $this->normalize_account_manager_display_label($label);
+            if ($normalized_label === '') {
+                continue;
+            }
+
+            if (strpos($normalized_label, 'issue') !== false || strpos($normalized_label, 'onboarding') !== false) {
+                continue;
+            }
+
+            $already_present = false;
+            foreach ($skip_labels as $skip_label) {
+                if ($this->account_manager_display_labels_match($label, $skip_label)) {
+                    $already_present = true;
+                    break;
+                }
+            }
+            if ($already_present) {
+                continue;
+            }
+
+            foreach ($visible as $visible_badge) {
+                if ($this->account_manager_display_labels_match($label, (string) ($visible_badge['label'] ?? ''))) {
+                    $already_present = true;
+                    break;
+                }
+            }
+            if ($already_present) {
+                continue;
+            }
+
+            $visible[] = [
+                'label' => $label,
+                'tone' => sanitize_key((string) ($badge['tone'] ?? 'neutral')),
+                'detail' => sanitize_text_field((string) ($badge['detail'] ?? '')),
+            ];
+            if (count($visible) >= $limit) {
+                break;
+            }
+        }
+
+        return $visible;
+    }
+
     private function build_account_manager_school_light_context_payload($school_id, array $context = []) {
         $school_id = (int) $school_id;
         if ($school_id < 1) {
@@ -45500,12 +45794,15 @@ global $wpdb;
             'status_value' => $status_value,
             'status_payload' => $status_payload,
             'sales_stage_label' => sanitize_text_field((string) ($sales_stage_label !== '' ? $sales_stage_label : 'Active')),
+            'pipeline_value' => sanitize_key((string) ($row_card['pipeline_value'] ?? '')),
             'last_touch_summary' => $last_touch_summary,
             'primary_contact' => $primary_contact,
             'manager_summary' => $manager_summary,
             'manager_display' => $manager_display,
+            'follow_up_state_key' => sanitize_key((string) ($row_card['follow_up_state_key'] ?? 'none')),
             'follow_up_state_label' => sanitize_text_field((string) ($row_card['follow_up_state_label'] ?? 'No follow-up logged')),
             'follow_up_state_detail' => sanitize_text_field((string) ($row_card['follow_up_state_detail'] ?? 'Create the next follow-up task to keep this relationship moving.')),
+            'follow_up_tone' => sanitize_key((string) ($row_card['follow_up_tone'] ?? 'neutral')),
             'follow_up_chip_class' => $this->get_school_follow_up_clarity_chip_class((string) ($row_card['follow_up_tone'] ?? 'neutral')),
             'relationship_health_label' => sanitize_text_field((string) ($row_card['relationship_health_label'] ?? 'Healthy')),
             'relationship_health_detail' => sanitize_text_field((string) ($row_card['relationship_health_detail'] ?? 'No immediate relationship drift is surfaced.')),
@@ -45513,6 +45810,7 @@ global $wpdb;
             'account_risk_label' => sanitize_text_field((string) ($row_card['account_risk_label'] ?? 'Clear')),
             'account_risk_detail' => sanitize_text_field((string) ($row_card['account_risk_detail'] ?? 'No immediate operational risk is surfaced.')),
             'account_risk_key' => sanitize_key((string) ($row_card['account_risk_key'] ?? 'clear')),
+            'account_risk_tone' => sanitize_key((string) ($row_card['account_risk_tone'] ?? 'positive')),
             'account_risk_chip_class' => $this->get_school_follow_up_clarity_chip_class((string) ($row_card['account_risk_tone'] ?? 'positive')),
             'next_action_label' => sanitize_text_field((string) ($row_card['next_action_label'] ?? 'Review relationship')),
             'next_action_detail' => sanitize_text_field((string) ($row_card['next_action_detail'] ?? '')),
@@ -45541,12 +45839,16 @@ global $wpdb;
 
         $school_title = sanitize_text_field((string) ($payload['title'] ?? 'Account detail'));
         $school_location = sanitize_text_field((string) ($payload['location'] ?? 'Location not saved'));
+        $status_value = sanitize_key((string) ($payload['status_value'] ?? ''));
         $status_payload = is_array($payload['status_payload'] ?? null) ? $payload['status_payload'] : [];
         $status_label = sanitize_text_field((string) ($status_payload['label'] ?? 'Active'));
         $status_class = sanitize_html_class((string) ($status_payload['class'] ?? 'is-verified'));
         $sales_stage_label = sanitize_text_field((string) ($payload['sales_stage_label'] ?? 'Active'));
+        $pipeline_value = sanitize_key((string) ($payload['pipeline_value'] ?? ''));
+        $follow_up_state_key = sanitize_key((string) ($payload['follow_up_state_key'] ?? 'none'));
         $follow_up_label = sanitize_text_field((string) ($payload['follow_up_state_label'] ?? 'No follow-up logged'));
         $follow_up_detail = sanitize_text_field((string) ($payload['follow_up_state_detail'] ?? ''));
+        $follow_up_tone = sanitize_key((string) ($payload['follow_up_tone'] ?? 'neutral'));
         $follow_up_chip_class = sanitize_html_class((string) ($payload['follow_up_chip_class'] ?? 'is-info'));
         $health_label = sanitize_text_field((string) ($payload['relationship_health_label'] ?? 'Healthy'));
         $health_detail = sanitize_text_field((string) ($payload['relationship_health_detail'] ?? ''));
@@ -45554,6 +45856,7 @@ global $wpdb;
         $risk_key = sanitize_key((string) ($payload['account_risk_key'] ?? 'clear'));
         $risk_label = sanitize_text_field((string) ($payload['account_risk_label'] ?? 'Clear'));
         $risk_detail = sanitize_text_field((string) ($payload['account_risk_detail'] ?? ''));
+        $risk_tone = sanitize_key((string) ($payload['account_risk_tone'] ?? 'positive'));
         $risk_chip_class = sanitize_html_class((string) ($payload['account_risk_chip_class'] ?? 'is-verified'));
         $next_action_label = sanitize_text_field((string) ($payload['next_action_label'] ?? 'Review relationship'));
         $next_action_detail = sanitize_text_field((string) ($payload['next_action_detail'] ?? ''));
@@ -45587,6 +45890,22 @@ global $wpdb;
         $open_task_count = count($open_tasks);
         $booking_total = max(0, (int) ($booking_counts['total'] ?? 0));
         $booking_live = max(0, (int) ($booking_counts['requested'] ?? 0)) + max(0, (int) ($booking_counts['accepted'] ?? 0));
+        $status_display = $this->get_account_manager_school_status_display([
+            'status_value' => $status_value,
+            'pipeline_value' => $pipeline_value,
+            'sales_stage_label' => $sales_stage_label,
+            'status_payload' => $status_payload,
+            'follow_up_state_key' => $follow_up_state_key,
+            'follow_up_state_label' => $follow_up_label,
+            'follow_up_tone' => $follow_up_tone,
+            'follow_up_chip_class' => $follow_up_chip_class,
+            'account_risk_key' => $risk_key,
+            'account_risk_label' => $risk_label,
+            'account_risk_tone' => $risk_tone,
+            'account_risk_chip_class' => $risk_chip_class,
+        ]);
+        $primary_status = is_array($status_display['primary'] ?? null) ? (array) $status_display['primary'] : [];
+        $secondary_statuses = array_values(array_filter((array) ($status_display['secondary'] ?? []), 'is_array'));
 
         ob_start();
         ?>
@@ -45598,9 +45917,11 @@ global $wpdb;
                     <p class="cmn-muted"><?php echo esc_html($school_location); ?></p>
                 </div>
                 <div class="cmn-am-school-detail-chip-row">
-                    <span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($sales_stage_label); ?></span>
-                    <span class="cmn-status-chip <?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span>
-                    <span class="cmn-status-chip <?php echo esc_attr($follow_up_chip_class); ?>"><?php echo esc_html($follow_up_label); ?></span>
+                    <span class="cmn-status-chip <?php echo esc_attr((string) ($primary_status['class'] ?? $status_class)); ?>"><?php echo esc_html((string) ($primary_status['label'] ?? $status_label)); ?></span>
+                    <?php foreach ($secondary_statuses as $secondary_status) : ?>
+                        <?php if (empty($secondary_status['label'])) { continue; } ?>
+                        <span class="<?php echo esc_attr((string) ($secondary_status['class'] ?? 'cmn-am-record-secondary-chip is-muted')); ?>"><?php echo esc_html((string) $secondary_status['label']); ?></span>
+                    <?php endforeach; ?>
                 </div>
             </div>
 
@@ -50552,6 +50873,21 @@ global $wpdb;
                                     $relationship_detail = sanitize_text_field((string) ($row_card['relationship_health_detail'] ?? ''));
                                     $risk_detail = sanitize_text_field((string) ($row_card['account_risk_detail'] ?? ''));
                                     $portfolio_signal_summary = sanitize_text_field((string) ($row_card['portfolio_signal_summary'] ?? ''));
+                                    $status_display = $this->get_account_manager_school_status_display([
+                                        'status_value' => (string) ($row_card['status_value'] ?? ''),
+                                        'pipeline_value' => (string) ($row_card['pipeline_value'] ?? ''),
+                                        'sales_stage_label' => $sales_stage_label,
+                                        'status_payload' => $list_status,
+                                        'follow_up_state_key' => (string) ($row_card['follow_up_state_key'] ?? ''),
+                                        'follow_up_state_label' => $follow_up_state_label,
+                                        'follow_up_tone' => (string) ($row_card['follow_up_tone'] ?? 'neutral'),
+                                        'follow_up_chip_class' => $follow_up_chip_class,
+                                        'account_risk_key' => $account_risk_key,
+                                        'account_risk_label' => $account_risk_label,
+                                        'account_risk_tone' => (string) ($row_card['account_risk_tone'] ?? 'positive'),
+                                    ]);
+                                    $primary_status = is_array($status_display['primary'] ?? null) ? (array) $status_display['primary'] : [];
+                                    $secondary_statuses = array_values(array_filter((array) ($status_display['secondary'] ?? []), 'is_array'));
                                     $view_url = esc_url((string) ($row_card['view_url'] ?? ''));
                                     if ($view_url === '') {
                                         $view_url = esc_url($this->get_school_profile_tab_url($school_post_id, 'overview'));
@@ -50579,9 +50915,11 @@ global $wpdb;
                                                 </div>
                                             </div>
                                             <div class="cmn-am-record-card-chip-row">
-                                                <span class="cmn-pill cmn-pill--pipeline"><?php echo esc_html($sales_stage_label !== '' ? $sales_stage_label : 'Active'); ?></span>
-                                                <span class="cmn-status-chip <?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span>
-                                                <span class="cmn-status-chip <?php echo esc_attr($follow_up_chip_class); ?>"><?php echo esc_html($follow_up_state_label); ?></span>
+                                                <span class="cmn-status-chip <?php echo esc_attr((string) ($primary_status['class'] ?? $status_class)); ?>"><?php echo esc_html((string) ($primary_status['label'] ?? $status_label)); ?></span>
+                                                <?php foreach ($secondary_statuses as $secondary_status) : ?>
+                                                    <?php if (empty($secondary_status['label'])) { continue; } ?>
+                                                    <span class="<?php echo esc_attr((string) ($secondary_status['class'] ?? 'cmn-am-record-secondary-chip is-muted')); ?>"><?php echo esc_html((string) $secondary_status['label']); ?></span>
+                                                <?php endforeach; ?>
                                             </div>
                                         </div>
 
