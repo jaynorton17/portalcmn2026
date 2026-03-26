@@ -7752,6 +7752,7 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
   .cmn-am-activity-workspace[data-viewer-surface=account-manager],
   .cmn-am-settings-workspace[data-viewer-surface=account-manager],
   .cmn-am-candidate-profile-shell[data-viewer-surface=account-manager],
+  .cmn-am-reference-dashboard,
   .cmn-am-dashboard-container,
   .cmn-am-dashboard-container--minimal
 ) {
@@ -7765,6 +7766,12 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
   .cmn-am-overview-panels,
   .cmn-am-sales-kpi-strip,
   .cmn-am-sales-dashboard-stack,
+  .cmn-am-reference-frame,
+  .cmn-am-reference-metric-row,
+  .cmn-am-reference-layout,
+  .cmn-am-reference-main,
+  .cmn-am-reference-rail,
+  .cmn-am-reference-week-strip,
   .cmn-am-home-section,
   .cmn-am-home-grid,
   .cmn-am-activity-stream,
@@ -7799,6 +7806,9 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
   .cmn-email-template-preview,
   .cmn-email-test-console,
   .cmn-email-test-results,
+  .cmn-am-reference-topbar,
+  .cmn-am-reference-week-strip,
+  .cmn-am-reference-card,
   .cmn-board-card,
   .cmn-school-work-queue-card
 ) {
@@ -7815,6 +7825,9 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
   .cmn-am-records-detail-shell,
   .cmn-am-activity-panel,
   .cmn-am-settings-panel,
+  .cmn-am-reference-topbar,
+  .cmn-am-reference-week-strip,
+  .cmn-am-reference-card,
   .cmn-am-home-section-shell,
   .cmn-am-overview-panel,
   .cmn-am-candidate-header,
@@ -7832,6 +7845,9 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
   .cmn-am-booking-notice,
   .cmn-am-activity-panel,
   .cmn-am-settings-panel,
+  .cmn-am-reference-topbar,
+  .cmn-am-reference-week-strip,
+  .cmn-am-reference-card,
   .cmn-am-home-section-shell,
   .cmn-am-overview-panel,
   .cmn-am-overview-tile,
@@ -7855,6 +7871,90 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
   box-shadow: none !important;
 }
 
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) {
+  width: min(1680px, calc(100% - 32px));
+  margin: 0 auto 28px;
+  grid-template-columns: 296px minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  border-radius: var(--cmn-am-shell-radius);
+  border: 1px solid var(--cmn-am-shell-border);
+  background: var(--cmn-am-shell-surface) !important;
+  box-shadow: var(--cmn-am-shell-shadow) !important;
+  overflow: hidden;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) > .cmn-staff-nav {
+  align-self: stretch;
+  min-height: 100%;
+  padding: 24px 18px 24px 22px;
+  border: 0 !important;
+  border-right: 1px solid rgba(226, 232, 240, 0.92) !important;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at top right, rgba(219, 234, 254, 0.44), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%) !important;
+  box-shadow: none !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) .cmn-am-nav-workspace--home {
+  margin: 0 !important;
+  padding: 16px !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 20px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: none !important;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-dashboard {
+  width: 100%;
+  margin: 0;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-frame {
+  gap: var(--cmn-am-shell-gap);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-topbar {
+  align-items: flex-start;
+  padding: var(--cmn-am-shell-pad-compact);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-metric-row,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-layout,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-main,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-rail,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-week-strip {
+  gap: var(--cmn-am-shell-gap);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-week-strip-head,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-card-head {
+  align-items: flex-start;
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-card-head {
+  padding-bottom: 0;
+  border-bottom-color: rgba(226, 232, 240, 0.88);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-metric-card {
+  min-height: 116px;
+  border-radius: 20px;
+  border-color: rgba(226, 232, 240, 0.94);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-card,
+body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content .cmn-am-reference-week-strip {
+  gap: 16px;
+}
+
 @media (max-width: 1180px) {
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm {
     width: calc(100% - 24px);
@@ -7869,6 +7969,11 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
   body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content {
     width: 100%;
     padding: var(--cmn-am-shell-pad-compact);
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) {
+    width: calc(100% - 24px);
+    grid-template-columns: 1fr;
   }
 }
 
@@ -7897,6 +8002,19 @@ body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
     .cmn-am-overview-panel,
     .cmn-am-candidate-header,
     .cmn-am-candidate-profile-main
+  ) {
+    padding: 18px !important;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-staff-shell--am-crm:has(.cmn-am-reference-dashboard) {
+    width: calc(100% - 16px);
+    border-radius: 24px;
+  }
+
+  body.cmn-portal-page .cmn-portal-light--am-crm .cmn-am-shell-content :is(
+    .cmn-am-reference-topbar,
+    .cmn-am-reference-week-strip,
+    .cmn-am-reference-card
   ) {
     padding: 18px !important;
   }
