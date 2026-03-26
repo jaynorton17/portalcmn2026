@@ -15656,6 +15656,13 @@ global $wpdb;
                     <?php endif; ?>
                     <div class="cmn-school-task-inline-form-actions">
                         <button class="cmn-primary cmn-btn-mini" type="submit"><?php echo esc_html($composer_submit_label); ?></button>
+                        <?php if ($composer_mode === 'edit' && $composer_activity_id > 0) : ?>
+                            <button class="cmn-ghost cmn-btn-mini"
+                                    type="submit"
+                                    name="cmn_task_editor_intent"
+                                    value="complete"
+                                    formnovalidate>Mark done</button>
+                        <?php endif; ?>
                         <?php if ($composer_cancel_url !== '') : ?>
                             <a class="cmn-ghost cmn-btn-mini" href="<?php echo $composer_cancel_url; ?>">Cancel edit</a>
                         <?php endif; ?>
@@ -75292,6 +75299,10 @@ global $wpdb;
                             $task_date = $task['due_date'] ?? '';
                             $task_label = $task_date ? $this->maybe_format_account_manager_date($task_date) : 'No date';
                             $is_overdue = $task_date && strtotime($task_date) < strtotime(date('Y-m-d'));
+                            $task_source = sanitize_key((string) ($task['storage_source'] ?? (!empty($task['entity_ref']) ? 'activity' : 'legacy_post')));
+                            if (!in_array($task_source, ['activity', 'legacy_post'], true)) {
+                                $task_source = '';
+                            }
                             ?>
                             <div class="cmn-task-item<?php echo $is_overdue ? ' is-overdue' : ''; ?>">
                                 <div>
@@ -75303,6 +75314,7 @@ global $wpdb;
                                     <?php wp_nonce_field('cmn_complete_activity', 'cmn_complete_activity_nonce'); ?>
                                     <input type="hidden" name="action" value="cmn_complete_activity">
                                     <input type="hidden" name="cmn_activity_id" value="<?php echo esc_attr($task['id'] ?? 0); ?>">
+                                    <input type="hidden" name="cmn_activity_source" value="<?php echo esc_attr($task_source); ?>">
                                     <input type="hidden" name="cmn_redirect" value="<?php echo esc_url($redirect_url); ?>">
                                     <button class="cmn-ghost" type="submit">Mark Done</button>
                                 </form>
@@ -119538,6 +119550,26 @@ global $wpdb;
         if (!$this->can_mutate_school_task_record($task_record, get_current_user_id())) {
             $this->redirect_with_task_notice_or_fail($fallback_redirect, 'You cannot update tasks for this school.', 'error', 403);
         }
+        $task_editor_intent = sanitize_key((string) ($_POST['cmn_task_editor_intent'] ?? 'update'));
+        if ($task_editor_intent === 'complete') {
+            $complete_redirect = $fallback_redirect !== ''
+                ? esc_url_raw((string) remove_query_arg(['cmn_task_msg', 'cmn_task_msg_tone'], $fallback_redirect))
+                : '';
+            if (!$this->complete_school_task_record($task_record)) {
+                $this->redirect_with_task_notice_or_fail($complete_redirect !== '' ? $complete_redirect : $fallback_redirect, 'Task could not be completed.', 'error', 500);
+            }
+
+            if ($complete_redirect !== '') {
+                wp_safe_redirect($this->add_task_notice_to_url($complete_redirect, 'Task completed.', 'success'));
+            } else {
+                if ($school_id > 0) {
+                    wp_safe_redirect($this->add_task_notice_to_url($this->get_school_profile_tab_url($school_id, 'overview', '#cmn-school-task-inline-composer'), 'Task completed.', 'success'));
+                } else {
+                    wp_safe_redirect($this->add_task_notice_to_url($this->get_portal_base_url(), 'Task completed.', 'success'));
+                }
+            }
+            exit;
+        }
         $subject = sanitize_text_field((string) ($_POST['cmn_activity_title'] ?? ''));
         if ($subject === '') {
             $this->redirect_with_task_notice_or_fail($fallback_redirect, 'Task title is required.', 'warning', 400);
@@ -126670,6 +126702,11 @@ p{margin:0;line-height:1.5}
             $rows = [];
         }
         if ($rows) {
+            foreach ($rows as $row_index => $row) {
+                if (is_array($row)) {
+                    $rows[$row_index]['storage_source'] = 'activity';
+                }
+            }
             return $rows;
         }
         if ($school_post_id < 1 && $school_domain !== '') {
@@ -126752,6 +126789,7 @@ p{margin:0;line-height:1.5}
                 'created_at' => get_post_time('Y-m-d H:i:s', true, $activity),
                 'updated_at' => get_post_modified_time('Y-m-d H:i:s', true, $activity),
                 'completed_at' => null,
+                'storage_source' => 'legacy_post',
             ];
         }
         return $rows;
