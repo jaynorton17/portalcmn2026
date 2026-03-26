@@ -26001,7 +26001,13 @@ global $wpdb;
                     </nav>
                 </aside>
                 <main class="cmn-school-main cmn-staff-main<?php echo $is_account_manager_workspace ? ' cmn-staff-main--am-crm' : ''; ?>">
-                    <?php echo $inner_html; ?>
+                    <?php if ($is_account_manager_workspace) : ?>
+                        <div class="cmn-am-shell-content" data-viewer-surface="account-manager-shell">
+                            <?php echo $inner_html; ?>
+                        </div>
+                    <?php else : ?>
+                        <?php echo $inner_html; ?>
+                    <?php endif; ?>
                 </main>
             </div>
         </section>
