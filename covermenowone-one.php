@@ -605,7 +605,7 @@ final class CmnFeedbackInsights {
 final class CMN_One_Plugin {
     const VERSION = '0.1.31';
     const SCHEMA_BASE_VERSION = 38;
-    const SCHEMA_VERSION = 80;
+    const SCHEMA_VERSION = 81;
     const OFFER_EXPIRY_SECONDS = 900;
     const EMAIL_CANDIDATE_DECLINED = false;
     const AUTOMATION_DEFAULT_COOLDOWN_HOURS = 24;
@@ -816,6 +816,8 @@ final class CMN_One_Plugin {
         add_action('admin_post_cmn_add_activity', [$this, 'handle_add_activity']);
         add_action('admin_post_cmn_update_activity', [$this, 'handle_update_activity']);
         add_action('admin_post_cmn_complete_activity', [$this, 'handle_complete_activity']);
+        add_action('admin_post_cmn_create_booking_follow_up', [$this, 'handle_account_manager_create_booking_follow_up']);
+        add_action('admin_post_cmn_create_booking_issue', [$this, 'handle_account_manager_create_booking_issue']);
         add_action('admin_post_cmn_save_admin_recipient_email', [$this, 'handle_save_admin_recipient_email']);
         add_action('admin_post_nopriv_cmn_register_school', [$this, 'handle_register_school']);
         add_action('admin_post_cmn_register_school', [$this, 'handle_register_school']);
@@ -2349,6 +2351,12 @@ final class CMN_One_Plugin {
                 $mark_schema_step($from_version, 80, 'v80');
             }
 
+            if ($installed < 81) {
+                $from_version = $installed;
+                self::migrate_schema_v81_activity_booking_follow_up_linkage();
+                $mark_schema_step($from_version, 81, 'v81');
+            }
+
             if ($installed < self::SCHEMA_VERSION) {
                 $mark_schema_step($installed, self::SCHEMA_VERSION, 'schema_version_align');
             }
@@ -2764,13 +2772,21 @@ final class CMN_One_Plugin {
             duration_minutes int NULL,
             assigned_to_user_id bigint(20) unsigned NULL,
             assigned_to_school_domain varchar(190) NULL,
+            school_id bigint(20) unsigned NULL,
+            candidate_id bigint(20) unsigned NULL,
+            booking_id bigint(20) unsigned NULL,
+            follow_up_type varchar(20) NULL,
+            priority varchar(20) NULL,
             completed_at datetime NULL,
             created_by bigint(20) unsigned NULL,
             created_at datetime NOT NULL,
             updated_at datetime NOT NULL,
             PRIMARY KEY  (id),
             KEY entity_lookup (entity_type, entity_ref),
-            KEY due_date (due_date)
+            KEY due_date (due_date),
+            KEY school_id (school_id),
+            KEY candidate_id (candidate_id),
+            KEY booking_id (booking_id)
         ) {$charset};
 
         CREATE TABLE {$client_profiles} (
@@ -6461,6 +6477,33 @@ global $wpdb;
         }
 
         self::maybe_add_missing_column($table, 'booking_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_index($table, 'booking_id', "KEY booking_id (booking_id)");
+    }
+
+    /*
+     * v81 activity booking follow-up linkage checks:
+     * 1) Activities can keep direct school, candidate, and booking links without changing existing entity_ref behavior.
+     * 2) Follow-up type and priority fields are additive and nullable for older flows.
+     * 3) Booking-linked follow-ups can be queried directly from the bookings workspace and still appear in shared task queues.
+     */
+    private static function migrate_schema_v81_activity_booking_follow_up_linkage() {
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cmn_activities';
+        if (!self::table_exists($table)) {
+            return;
+        }
+
+        self::maybe_add_missing_column($table, 'school_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($table, 'candidate_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($table, 'booking_id', "bigint(20) unsigned NULL");
+        self::maybe_add_missing_column($table, 'follow_up_type', "varchar(20) NULL");
+        self::maybe_add_missing_column($table, 'priority', "varchar(20) NULL");
+        self::maybe_add_missing_index($table, 'school_id', "KEY school_id (school_id)");
+        self::maybe_add_missing_index($table, 'candidate_id', "KEY candidate_id (candidate_id)");
         self::maybe_add_missing_index($table, 'booking_id', "KEY booking_id (booking_id)");
     }
 
@@ -20735,6 +20778,10 @@ global $wpdb;
         if (!in_array($scope, ['all', 'today', 'tomorrow', 'needs_attention', 'unresolved'], true)) {
             $scope = 'all';
         }
+        $compose = sanitize_key((string) ($source['cmn_booking_compose'] ?? ''));
+        if (!in_array($compose, ['', 'follow_up', 'issue'], true)) {
+            $compose = '';
+        }
 
         return [
             'user_id' => $user_id,
@@ -20745,6 +20792,7 @@ global $wpdb;
             'candidate_id' => max(0, (int) ($source['cmn_booking_candidate'] ?? 0)),
             'query' => sanitize_text_field((string) wp_unslash($source['cmn_booking_q'] ?? '')),
             'selected_booking_id' => max(0, (int) ($source['booking_id'] ?? 0)),
+            'compose' => $compose,
         ];
     }
 
@@ -21072,6 +21120,110 @@ global $wpdb;
                 'cmn_thread_type' => $thread_type,
             ], $this->get_portal_base_url()) . '#cmn-request-chat',
         ];
+    }
+
+    private function get_account_manager_booking_follow_up_rows($booking_id, $user_id = 0, $limit = 8) {
+        $booking_id = max(0, (int) $booking_id);
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        $limit = max(1, min(20, (int) $limit));
+        if ($booking_id < 1 || !$this->user_can_access_booking($booking_id, $user_id)) {
+            return [];
+        }
+        if (!$this->activity_table_has_column('booking_id')) {
+            return [];
+        }
+
+        global $wpdb;
+        $table = $this->get_activity_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return [];
+        }
+
+        $columns = $this->get_activity_table_columns();
+        $select_fields = ['id', 'entity_type', 'entity_ref', 'subject', 'notes', 'due_date', 'completed_at', 'created_at'];
+        foreach (['school_id', 'candidate_id', 'booking_id', 'follow_up_type', 'priority', 'assigned_to_user_id', 'assigned_to_school_domain'] as $optional_column) {
+            if (in_array($optional_column, $columns, true)) {
+                $select_fields[] = $optional_column;
+            }
+        }
+
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT " . implode(', ', array_unique($select_fields)) . "
+             FROM {$table}
+             WHERE booking_id = %d
+               AND activity_type = %s
+             ORDER BY CASE WHEN completed_at IS NULL OR completed_at = '' THEN 0 ELSE 1 END ASC,
+                      CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END ASC,
+                      due_date ASC,
+                      created_at DESC
+             LIMIT %d",
+            $booking_id,
+            'task',
+            $limit
+        ), ARRAY_A);
+        if (!$rows) {
+            return [];
+        }
+
+        $today_date = current_time('Y-m-d');
+        $formatted = [];
+        foreach ($rows as $row) {
+            $activity_id = max(0, (int) ($row['id'] ?? 0));
+            if ($activity_id < 1) {
+                continue;
+            }
+
+            $school_id = max(0, (int) ($row['school_id'] ?? 0));
+            if ($school_id < 1) {
+                $school_id = $this->resolve_school_id_from_activity_entity_ref(
+                    (string) ($row['entity_ref'] ?? ''),
+                    (string) ($row['assigned_to_school_domain'] ?? '')
+                );
+            }
+            $school_activity_url = $school_id > 0 ? $this->get_school_profile_tab_url($school_id, 'activity', '#cmn-school-task-system') : '';
+            $edit_url = $school_id > 0
+                ? $this->get_school_task_editor_url($school_id, $activity_id, 'activity', $school_activity_url)
+                : $school_activity_url;
+            $due_date = sanitize_text_field((string) ($row['due_date'] ?? ''));
+            $completed_at = sanitize_text_field((string) ($row['completed_at'] ?? ''));
+            $status_label = 'Open';
+            $status_chip_class = 'is-info';
+            if ($completed_at !== '') {
+                $status_label = 'Completed';
+                $status_chip_class = 'is-verified';
+            } elseif ($due_date !== '' && $due_date < $today_date) {
+                $status_label = 'Overdue';
+                $status_chip_class = 'is-warning';
+            } elseif ($due_date !== '' && $due_date === $today_date) {
+                $status_label = 'Due today';
+                $status_chip_class = 'is-warning';
+            } elseif ($due_date === '') {
+                $status_label = 'Open';
+                $status_chip_class = 'is-muted';
+            }
+
+            $due_label = $due_date !== '' && strtotime($due_date) ? date_i18n('M j, Y', strtotime($due_date)) : 'No due date';
+            $formatted[] = [
+                'activity_id' => $activity_id,
+                'label' => sanitize_text_field((string) ($row['subject'] ?? 'Follow-up task')),
+                'notes' => sanitize_textarea_field((string) ($row['notes'] ?? '')),
+                'notes_excerpt' => sanitize_text_field(wp_trim_words((string) ($row['notes'] ?? ''), 18, '...')),
+                'status_label' => $status_label,
+                'status_chip_class' => $status_chip_class,
+                'due_label' => $due_label,
+                'priority_key' => $this->normalize_work_item_priority((string) ($row['priority'] ?? 'normal')),
+                'priority_label' => $this->get_work_item_priority_label((string) ($row['priority'] ?? 'normal')),
+                'follow_up_type' => $this->normalize_follow_up_type((string) ($row['follow_up_type'] ?? 'internal')),
+                'follow_up_type_label' => $this->get_follow_up_type_label((string) ($row['follow_up_type'] ?? 'internal')),
+                'updated_label' => $completed_at !== '' && strtotime($completed_at)
+                    ? ('Completed ' . date_i18n('M j, g:ia', strtotime($completed_at)))
+                    : ($due_date !== '' ? ('Due ' . $due_label) : 'Open task'),
+                'edit_url' => $edit_url,
+                'activity_url' => $school_activity_url,
+            ];
+        }
+
+        return $formatted;
     }
 
     private function build_account_manager_bookings_workspace_payload($user_id = 0) {
@@ -21510,12 +21662,15 @@ global $wpdb;
                 'school' => $this->get_account_manager_booking_thread_snapshot($selected_booking_id, self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION, 4),
                 'candidate' => $this->get_account_manager_booking_thread_snapshot($selected_booking_id, self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION, 4),
             ];
+            $selected['linked_follow_ups'] = $this->get_account_manager_booking_follow_up_rows($selected_booking_id, $user_id, 8);
+            $selected['detail_url'] = $build_bookings_url(['booking_id' => $selected_booking_id]);
             $selected['redirect_url'] = $build_bookings_url(['booking_id' => $selected_booking_id]) . '#cmn-am-booking-detail';
+            $selected['follow_up_compose_url'] = $build_bookings_url(['booking_id' => $selected_booking_id, 'cmn_booking_compose' => 'follow_up']) . '#cmn-am-booking-composer';
+            $selected['issue_compose_url'] = $build_bookings_url(['booking_id' => $selected_booking_id, 'cmn_booking_compose' => 'issue']) . '#cmn-am-booking-composer';
+            $selected['composer_cancel_url'] = $build_bookings_url(['booking_id' => $selected_booking_id, 'cmn_booking_compose' => false]) . '#cmn-am-booking-detail';
             $selected['can_approve'] = ($selected['status_key'] ?? '') === self::BOOKING_STATUS_CANDIDATE_ACCEPTED;
             $selected['can_decline'] = in_array((string) ($selected['status_key'] ?? ''), [self::BOOKING_STATUS_REQUESTED, self::BOOKING_STATUS_OFFERED, 'candidate_invited', 'pending', self::BOOKING_STATUS_CANDIDATE_ACCEPTED, self::BOOKING_STATUS_ACCEPTED, self::BOOKING_STATUS_CONFIRMED, 'approved', self::BOOKING_STATUS_CANDIDATE_DECLINED, self::BOOKING_STATUS_EXPIRED], true);
             $selected['deferred_actions'] = [
-                ['label' => 'Booking-linked follow-up creation', 'detail' => 'The current follow-up composer is school-scoped. It does not yet persist booking-linked follow-up records safely.'],
-                ['label' => 'Direct issue creation from Bookings', 'detail' => 'Support ticket creation exists in the backend, but the AM-safe booking escalation composer is not exposed in this workspace yet.'],
                 ['label' => 'Candidate reassign / offer routing', 'detail' => 'The current candidate-invite / reassign handler is still guarded behind admin permissions.'],
             ];
             $payload['selected_booking'] = $selected;
@@ -21542,6 +21697,15 @@ global $wpdb;
         $clients_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url);
         $pipeline_url = add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url);
         $scope_label_map = ['all' => 'All', 'today' => 'Today', 'tomorrow' => 'Tomorrow', 'needs_attention' => 'Needs attention', 'unresolved' => 'Unresolved'];
+        $composer_state = sanitize_key((string) ($filters['compose'] ?? ''));
+        if (!in_array($composer_state, ['', 'follow_up', 'issue'], true)) {
+            $composer_state = '';
+        }
+        $current_request_url = isset($_SERVER['REQUEST_URI']) ? wp_unslash((string) $_SERVER['REQUEST_URI']) : '';
+        $notice = $this->get_task_notice_payload_from_url($current_request_url);
+        $notice_message = sanitize_text_field((string) ($notice['message'] ?? ''));
+        $notice_label = sanitize_text_field((string) ($notice['label'] ?? 'Saved'));
+        $notice_chip_class = sanitize_html_class((string) ($notice['chip_class'] ?? 'is-info'));
 
         ob_start();
         ?>
@@ -21591,6 +21755,13 @@ global $wpdb;
                     </a>
                 <?php endforeach; ?>
             </section>
+
+            <?php if ($notice_message !== '') : ?>
+                <section class="cmn-panel-card cmn-am-booking-notice" role="status" aria-live="polite">
+                    <span class="cmn-status-chip <?php echo esc_attr($notice_chip_class); ?>"><?php echo esc_html($notice_label); ?></span>
+                    <strong><?php echo esc_html($notice_message); ?></strong>
+                </section>
+            <?php endif; ?>
 
             <form method="get" class="cmn-panel-card cmn-am-bookings-filters">
                 <input type="hidden" name="view" value="bookings">
@@ -21730,6 +21901,7 @@ global $wpdb;
                             $candidate_thread = is_array($selected_threads['candidate'] ?? null) ? (array) $selected_threads['candidate'] : [];
                             $school_contact = is_array($selected_booking['school_contact'] ?? null) ? (array) $selected_booking['school_contact'] : [];
                             $school_contact_lines = array_filter([(string) ($school_contact['role'] ?? ''), (string) ($school_contact['email'] ?? ''), (string) ($school_contact['phone'] ?? '')]);
+                            $linked_follow_ups = array_values(array_filter((array) ($selected_booking['linked_follow_ups'] ?? []), 'is_array'));
                             ?>
                             <section class="cmn-panel-card cmn-am-booking-detail-card">
                                 <div class="cmn-am-booking-detail-head">
@@ -21772,6 +21944,10 @@ global $wpdb;
                                 <div class="cmn-am-booking-detail-actions">
                                     <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['shared_chat_url'] ?? $clear_filters_url)); ?>">Open shared booking chat</a>
                                     <?php if (!empty($selected_booking['school_id'])) : ?>
+                                        <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['follow_up_compose_url'] ?? ($selected_booking['composer_cancel_url'] ?? $clear_filters_url))); ?>">Create Follow-Up</a>
+                                    <?php endif; ?>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['issue_compose_url'] ?? ($selected_booking['composer_cancel_url'] ?? $clear_filters_url))); ?>">Create Issue / Escalation</a>
+                                    <?php if (!empty($selected_booking['school_id'])) : ?>
                                         <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['school_chat_url'] ?? $clear_filters_url)); ?>">Message school</a>
                                     <?php endif; ?>
                                     <?php if (!empty($selected_booking['candidate_id'])) : ?>
@@ -21812,6 +21988,108 @@ global $wpdb;
                                 </div>
                             </section>
 
+                            <?php if ($composer_state === 'follow_up' || $composer_state === 'issue') : ?>
+                                <section class="cmn-panel-card cmn-am-booking-composer" id="cmn-am-booking-composer">
+                                    <div class="cmn-am-booking-composer-head">
+                                        <div>
+                                            <span class="cmn-am-bookings-eyebrow"><?php echo $composer_state === 'follow_up' ? 'Booking follow-up' : 'Booking issue'; ?></span>
+                                            <h4><?php echo $composer_state === 'follow_up' ? 'Create booking-linked follow-up' : 'Create booking-linked issue / escalation'; ?></h4>
+                                            <p><?php echo $composer_state === 'follow_up'
+                                                ? 'This creates a real task in the shared follow-up system, links it to this booking, and keeps it visible in My Tasks / Follow-Up.'
+                                                : 'This creates a real support ticket linked to the booking so it surfaces in Support / Issues and on this booking record.'; ?></p>
+                                        </div>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['composer_cancel_url'] ?? $clear_filters_url)); ?>">Close composer</a>
+                                    </div>
+                                    <div class="cmn-am-booking-composer-context">
+                                        <span><strong>Booking</strong><?php echo esc_html((string) ($selected_booking['reference_label'] ?? 'Booking')); ?></span>
+                                        <span><strong>Client</strong><?php echo esc_html((string) ($selected_booking['school_name'] ?? 'Unassigned school')); ?></span>
+                                        <span><strong>Candidate</strong><?php echo esc_html(!empty($selected_booking['candidate_name']) ? (string) $selected_booking['candidate_name'] : 'Not assigned'); ?></span>
+                                    </div>
+                                    <?php if ($composer_state === 'follow_up') : ?>
+                                        <?php if (empty($selected_booking['school_id'])) : ?>
+                                            <div class="cmn-am-booking-thread-empty">
+                                                <strong>Follow-up creation is blocked</strong>
+                                                <p>This booking does not currently have school context, so it cannot be written into the shared school follow-up queue yet.</p>
+                                            </div>
+                                        <?php else : ?>
+                                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-am-booking-composer-form">
+                                                <?php wp_nonce_field('cmn_create_booking_follow_up', 'cmn_create_booking_follow_up_nonce'); ?>
+                                                <input type="hidden" name="action" value="cmn_create_booking_follow_up">
+                                                <input type="hidden" name="cmn_booking_id" value="<?php echo esc_attr((string) ($selected_booking['booking_id'] ?? 0)); ?>">
+                                                <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr((string) ($selected_booking['composer_cancel_url'] ?? $clear_filters_url)); ?>">
+                                                <div class="cmn-am-booking-composer-grid">
+                                                    <label>
+                                                        <span>Type</span>
+                                                        <select name="cmn_follow_up_type" required>
+                                                            <option value="call">Call</option>
+                                                            <option value="email">Email</option>
+                                                            <option value="internal">Internal</option>
+                                                            <option value="other">Other</option>
+                                                        </select>
+                                                    </label>
+                                                    <label>
+                                                        <span>Due date</span>
+                                                        <input type="date" name="cmn_follow_up_due_date" required>
+                                                    </label>
+                                                    <label>
+                                                        <span>Priority</span>
+                                                        <select name="cmn_follow_up_priority" required>
+                                                            <option value="normal">Normal</option>
+                                                            <option value="high">High</option>
+                                                            <option value="urgent">Urgent</option>
+                                                            <option value="low">Low</option>
+                                                        </select>
+                                                    </label>
+                                                    <label class="cmn-am-booking-composer-field--full">
+                                                        <span>Notes</span>
+                                                        <textarea name="cmn_follow_up_notes" rows="4" placeholder="What needs to happen next, what the account manager should do, and any booking-specific context."></textarea>
+                                                    </label>
+                                                </div>
+                                                <div class="cmn-am-booking-composer-actions">
+                                                    <button class="cmn-primary cmn-btn-mini" type="submit">Create Follow-Up</button>
+                                                    <span class="cmn-muted">This writes into the shared activity/task flow, assigns the task to you, and links the task back to this booking.</span>
+                                                </div>
+                                            </form>
+                                        <?php endif; ?>
+                                    <?php else : ?>
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-am-booking-composer-form">
+                                            <?php wp_nonce_field('cmn_create_booking_issue', 'cmn_create_booking_issue_nonce'); ?>
+                                            <input type="hidden" name="action" value="cmn_create_booking_issue">
+                                            <input type="hidden" name="cmn_booking_id" value="<?php echo esc_attr((string) ($selected_booking['booking_id'] ?? 0)); ?>">
+                                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_attr((string) ($selected_booking['composer_cancel_url'] ?? $clear_filters_url)); ?>">
+                                            <div class="cmn-am-booking-composer-grid">
+                                                <label>
+                                                    <span>Issue type</span>
+                                                    <select name="cmn_issue_type" required>
+                                                        <option value="no_show">No-show</option>
+                                                        <option value="late">Late</option>
+                                                        <option value="cancellation">Cancellation</option>
+                                                        <option value="other">Other</option>
+                                                    </select>
+                                                </label>
+                                                <label>
+                                                    <span>Priority</span>
+                                                    <select name="cmn_issue_priority" required>
+                                                        <option value="normal">Normal</option>
+                                                        <option value="high">High</option>
+                                                        <option value="urgent">Urgent</option>
+                                                        <option value="low">Low</option>
+                                                    </select>
+                                                </label>
+                                                <label class="cmn-am-booking-composer-field--full">
+                                                    <span>Description</span>
+                                                    <textarea name="cmn_issue_description" rows="5" required placeholder="Describe the operational issue, what happened, and what follow-up or escalation is needed."></textarea>
+                                                </label>
+                                            </div>
+                                            <div class="cmn-am-booking-composer-actions">
+                                                <button class="cmn-primary cmn-btn-mini" type="submit">Create Issue / Escalation</button>
+                                                <span class="cmn-muted">This writes a real support ticket linked to the booking so it shows up in Support / Issues and in this booking detail view.</span>
+                                            </div>
+                                        </form>
+                                    <?php endif; ?>
+                                </section>
+                            <?php endif; ?>
+
                             <div class="cmn-am-booking-detail-grid">
                                 <section class="cmn-panel-card cmn-am-booking-detail-section">
                                     <h4>School / Client</h4>
@@ -21844,6 +22122,26 @@ global $wpdb;
                                             <a class="cmn-am-booking-inline-link" href="<?php echo esc_url((string) ($selected_booking['candidate_profile_url'] ?? '')); ?>">Open candidate profile</a>
                                         <?php endif; ?>
                                     </div>
+                                </section>
+
+                                <section class="cmn-panel-card cmn-am-booking-detail-section">
+                                    <h4>Linked follow-ups</h4>
+                                    <?php if ($linked_follow_ups) : ?>
+                                        <div class="cmn-am-booking-linked-items">
+                                            <?php foreach ($linked_follow_ups as $follow_up_row) : ?>
+                                                <a class="cmn-am-booking-linked-item" href="<?php echo esc_url((string) ($follow_up_row['edit_url'] ?? ($follow_up_row['activity_url'] ?? $clear_filters_url))); ?>">
+                                                    <strong><?php echo esc_html((string) ($follow_up_row['label'] ?? 'Follow-up task')); ?></strong>
+                                                    <span><?php echo esc_html((string) ($follow_up_row['status_label'] ?? 'Open')); ?> · <?php echo esc_html((string) ($follow_up_row['follow_up_type_label'] ?? 'Internal')); ?> · <?php echo esc_html((string) ($follow_up_row['priority_label'] ?? 'Normal')); ?></span>
+                                                    <span><?php echo esc_html((string) ($follow_up_row['updated_label'] ?? '')); ?></span>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else : ?>
+                                        <div class="cmn-am-booking-thread-empty">
+                                            <strong>No booking-linked follow-ups yet</strong>
+                                            <p>Create a follow-up from this booking to place a real task into My Tasks / Follow-Up while keeping it linked back to the booking.</p>
+                                        </div>
+                                    <?php endif; ?>
                                 </section>
 
                                 <section class="cmn-panel-card cmn-am-booking-detail-section">
@@ -115467,8 +115765,11 @@ global $wpdb;
         $school_domain = sanitize_text_field($_POST['cmn_school_domain'] ?? '');
         $school_id = intval($_POST['cmn_school_id'] ?? 0);
         $candidate_id = intval($_POST['cmn_candidate_id'] ?? 0);
+        $booking_id = max(0, (int) ($_POST['cmn_booking_id'] ?? 0));
         $title = sanitize_text_field($_POST['cmn_activity_title'] ?? '');
         $type = sanitize_key((string) ($_POST['cmn_activity_type'] ?? 'note'));
+        $follow_up_type = $this->normalize_follow_up_type($_POST['cmn_follow_up_type'] ?? 'internal');
+        $priority = $this->normalize_work_item_priority($_POST['cmn_priority'] ?? 'normal');
         $content = sanitize_textarea_field($_POST['cmn_activity_content'] ?? '');
         $date = sanitize_text_field($_POST['cmn_activity_date'] ?? '');
         $duration = sanitize_text_field($_POST['cmn_activity_duration'] ?? '');
@@ -115495,6 +115796,9 @@ global $wpdb;
         if ($type === 'task' && $title === '') {
             $this->redirect_with_task_notice_or_fail($fallback_redirect, 'Task title is required.', 'warning', 400);
         }
+        if ($booking_id > 0 && !$this->user_can_access_booking($booking_id, get_current_user_id())) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'You cannot use that booking for this follow-up.', 'error', 403);
+        }
         $validated_date = $this->validate_task_due_date_input($date);
         if (is_wp_error($validated_date)) {
             $this->redirect_with_task_notice_or_fail($fallback_redirect, (string) $validated_date->get_error_message(), 'warning', 400);
@@ -115516,6 +115820,11 @@ global $wpdb;
                 'created_by' => get_current_user_id(),
                 'assigned_to_user_id' => get_current_user_id(),
                 'assigned_to_school_domain' => $school_domain,
+                'school_id' => $school_id,
+                'candidate_id' => $candidate_id,
+                'booking_id' => $booking_id,
+                'follow_up_type' => $follow_up_type,
+                'priority' => $priority,
             ]);
             if ($inserted_activity_id < 1) {
                 $this->redirect_with_task_notice_or_fail($fallback_redirect, 'Task could not be created.', 'error', 500);
@@ -115533,6 +115842,10 @@ global $wpdb;
                 'due_date' => $date,
                 'duration_minutes' => $duration,
                 'created_by' => get_current_user_id(),
+                'candidate_id' => $candidate_id,
+                'booking_id' => $booking_id,
+                'follow_up_type' => $follow_up_type,
+                'priority' => $priority,
             ]);
             if ($inserted_activity_id < 1) {
                 $this->redirect_with_task_notice_or_fail($fallback_redirect, 'Activity could not be saved.', 'error', 500);
@@ -115655,6 +115968,190 @@ global $wpdb;
             $portal_url = $portal_page ? get_permalink($portal_page) : home_url('/portal');
             wp_safe_redirect($this->add_task_notice_to_url(add_query_arg(['view' => 'schools'], $portal_url), 'Task completed.', 'success'));
         }
+        exit;
+    }
+
+    public function handle_account_manager_create_booking_follow_up() {
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        $referer = esc_url_raw((string) (wp_get_referer() ?: ''));
+        $fallback_redirect = $redirect !== '' ? $redirect : $referer;
+        if (!$this->is_restricted_account_manager()) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'You do not have permission to create booking follow-ups from this workspace.', 'error', 403);
+        }
+        if (
+            !isset($_POST['cmn_create_booking_follow_up_nonce']) ||
+            !wp_verify_nonce((string) $_POST['cmn_create_booking_follow_up_nonce'], 'cmn_create_booking_follow_up')
+        ) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'Follow-up request could not be verified. Refresh and try again.', 'error', 403);
+        }
+
+        $user_id = (int) get_current_user_id();
+        $booking_id = max(0, (int) ($_POST['cmn_booking_id'] ?? 0));
+        if ($booking_id < 1 || !$this->user_can_access_booking($booking_id, $user_id)) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'That booking is outside your account manager scope.', 'error', 403);
+        }
+
+        $school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
+        $candidate_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+        $school_domain = $school_id > 0 ? $this->get_school_domain_for_post_id($school_id) : '';
+        if ($school_id < 1 || $school_domain === '') {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'This booking is missing school context, so a follow-up cannot be created yet.', 'warning', 400);
+        }
+
+        $due_date = $this->validate_task_due_date_input((string) ($_POST['cmn_follow_up_due_date'] ?? ''));
+        if (is_wp_error($due_date)) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, (string) $due_date->get_error_message(), 'warning', 400);
+        }
+
+        $follow_up_type = $this->normalize_follow_up_type((string) ($_POST['cmn_follow_up_type'] ?? 'internal'));
+        $priority = $this->normalize_work_item_priority((string) ($_POST['cmn_follow_up_priority'] ?? 'normal'));
+        $notes = sanitize_textarea_field((string) ($_POST['cmn_follow_up_notes'] ?? ''));
+        $school_name = $school_id > 0 ? sanitize_text_field((string) get_the_title($school_id)) : 'School';
+        $candidate_name = $candidate_id > 0 ? sanitize_text_field((string) get_the_title($candidate_id)) : '';
+        $type_label = $this->get_follow_up_type_label($follow_up_type);
+        $title_parts = [$type_label . ' follow-up', 'Booking #' . $booking_id, $school_name];
+        if ($candidate_name !== '') {
+            $title_parts[] = $candidate_name;
+        }
+        $subject = substr(implode(' - ', array_filter($title_parts)), 0, 255);
+        $context_lines = [
+            'Booking follow-up created from the AM Bookings workspace.',
+            'Booking: #' . $booking_id,
+            'Type: ' . $type_label,
+            'Priority: ' . $this->get_work_item_priority_label($priority),
+            'School: ' . $school_name,
+        ];
+        if ($candidate_name !== '') {
+            $context_lines[] = 'Candidate: ' . $candidate_name;
+        }
+        if ($notes !== '') {
+            $context_lines[] = '';
+            $context_lines[] = 'Notes:';
+            $context_lines[] = $notes;
+        }
+
+        $inserted_activity_id = $this->insert_activity_row([
+            'entity_type' => 'school',
+            'entity_ref' => $school_domain,
+            'activity_type' => 'task',
+            'subject' => $subject !== '' ? $subject : 'Booking follow-up',
+            'notes' => implode("\n", $context_lines),
+            'due_date' => (string) $due_date,
+            'assigned_to_user_id' => $user_id,
+            'assigned_to_school_domain' => $school_domain,
+            'school_id' => $school_id,
+            'candidate_id' => $candidate_id,
+            'booking_id' => $booking_id,
+            'follow_up_type' => $follow_up_type,
+            'priority' => $priority,
+            'created_by' => $user_id,
+        ]);
+        if ($inserted_activity_id < 1) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'Follow-up could not be created.', 'error', 500);
+        }
+
+        $target_redirect = $fallback_redirect !== '' ? $fallback_redirect : add_query_arg(['view' => 'bookings', 'booking_id' => $booking_id], $this->get_portal_base_url());
+        wp_safe_redirect($this->add_task_notice_to_url($target_redirect, 'Booking follow-up created.', 'success'));
+        exit;
+    }
+
+    public function handle_account_manager_create_booking_issue() {
+        $redirect = esc_url_raw((string) ($_POST['cmn_redirect'] ?? ''));
+        $referer = esc_url_raw((string) (wp_get_referer() ?: ''));
+        $fallback_redirect = $redirect !== '' ? $redirect : $referer;
+        if (!$this->is_restricted_account_manager()) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'You do not have permission to create booking issues from this workspace.', 'error', 403);
+        }
+        if (
+            !isset($_POST['cmn_create_booking_issue_nonce']) ||
+            !wp_verify_nonce((string) $_POST['cmn_create_booking_issue_nonce'], 'cmn_create_booking_issue')
+        ) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'Issue request could not be verified. Refresh and try again.', 'error', 403);
+        }
+
+        $user_id = (int) get_current_user_id();
+        $booking_id = max(0, (int) ($_POST['cmn_booking_id'] ?? 0));
+        if ($booking_id < 1 || !$this->user_can_access_booking($booking_id, $user_id)) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'That booking is outside your account manager scope.', 'error', 403);
+        }
+
+        $issue_type = $this->normalize_booking_issue_type((string) ($_POST['cmn_issue_type'] ?? 'other'));
+        $priority = $this->normalize_work_item_priority((string) ($_POST['cmn_issue_priority'] ?? 'normal'));
+        $description = trim(sanitize_textarea_field((string) ($_POST['cmn_issue_description'] ?? '')));
+        if ($description === '') {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, 'Issue description is required.', 'warning', 400);
+        }
+
+        $school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
+        $candidate_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+        $school_name = $school_id > 0 ? sanitize_text_field((string) get_the_title($school_id)) : 'School';
+        $candidate_name = $candidate_id > 0 ? sanitize_text_field((string) get_the_title($candidate_id)) : '';
+        $booking_label = sanitize_text_field((string) get_the_title($booking_id));
+        if ($booking_label === '') {
+            $booking_label = 'Booking #' . $booking_id;
+        }
+        $role_label = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_role', true));
+        $date_label = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_start_date', true));
+        if ($date_label === '') {
+            $date_label = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_date', true));
+        }
+        $issue_type_label = $this->get_booking_issue_type_label($issue_type);
+        $subject = substr($issue_type_label . ' issue - ' . $booking_label . ' - ' . $school_name, 0, 255);
+        $message_lines = [
+            'Booking issue created from the AM Bookings workspace.',
+            'Issue type: ' . $issue_type_label,
+            'Priority: ' . $this->get_work_item_priority_label($priority),
+            'Booking: ' . $booking_label . ' (ID ' . $booking_id . ')',
+            'School: ' . $school_name,
+        ];
+        if ($candidate_name !== '') {
+            $message_lines[] = 'Candidate: ' . $candidate_name;
+        }
+        if ($role_label !== '') {
+            $message_lines[] = 'Role: ' . $role_label;
+        }
+        if ($date_label !== '') {
+            $message_lines[] = 'Date: ' . $date_label;
+        }
+        $message_lines[] = '';
+        $message_lines[] = 'Description:';
+        $message_lines[] = $description;
+
+        $created_ticket = $this->create_support_ticket_record([
+            'user_id' => $user_id,
+            'category' => 'Booking - ' . $issue_type_label,
+            'subject' => $subject,
+            'message' => implode("\n", $message_lines),
+            'booking_id' => $booking_id,
+            'priority' => $priority,
+        ]);
+        if (is_wp_error($created_ticket)) {
+            $this->redirect_with_task_notice_or_fail($fallback_redirect, (string) $created_ticket->get_error_message(), 'error', 500);
+        }
+
+        $ticket_id = max(0, (int) ($created_ticket['ticket_id'] ?? 0));
+        $ticket_ref = sanitize_text_field((string) ($created_ticket['ticket_ref'] ?? ''));
+        $ticket_subject = sanitize_text_field((string) ($created_ticket['subject'] ?? $subject));
+        $this->route_payroll_support_ticket($ticket_id, [
+            'actor_user_id' => $user_id,
+            'message_preview_source' => $description,
+        ]);
+        $this->notify_admins_support($ticket_id, $ticket_ref, $ticket_subject, $description);
+        $this->trigger_automation_event('support_ticket_opened', 'support_ticket', $ticket_id, [
+            'ticket_ref' => $ticket_ref,
+            'subject' => $ticket_subject,
+            'status' => 'new',
+            'category' => 'Booking - ' . $issue_type_label,
+            'automation_meta' => [
+                'source' => 'am_booking_issue_create',
+                'booking_id' => $booking_id,
+                'issue_type' => $issue_type,
+                'priority' => $priority,
+            ],
+        ]);
+
+        $target_redirect = $fallback_redirect !== '' ? $fallback_redirect : add_query_arg(['view' => 'bookings', 'booking_id' => $booking_id], $this->get_portal_base_url());
+        wp_safe_redirect($this->add_task_notice_to_url($target_redirect, 'Booking issue created.', 'success'));
         exit;
     }
 
@@ -122016,6 +122513,32 @@ p{margin:0;line-height:1.5}
         return $wpdb->prefix . 'cmn_activities';
     }
 
+    private function get_activity_table_columns() {
+        static $cache = null;
+        if (is_array($cache)) {
+            return $cache;
+        }
+
+        global $wpdb;
+        $table = $this->get_activity_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            $cache = [];
+            return $cache;
+        }
+
+        $columns = (array) $wpdb->get_col("DESC {$table}", 0);
+        $cache = array_values(array_unique(array_filter(array_map('strval', $columns))));
+        return $cache;
+    }
+
+    private function activity_table_has_column($column) {
+        $column = sanitize_key((string) $column);
+        if ($column === '') {
+            return false;
+        }
+        return in_array($column, $this->get_activity_table_columns(), true);
+    }
+
     private function get_automation_rules_table() {
         global $wpdb;
         return $wpdb->prefix . 'cmn_automation_rules';
@@ -122135,6 +122658,63 @@ p{margin:0;line-height:1.5}
             $type = 'note';
         }
         return $type;
+    }
+
+    private function normalize_follow_up_type($type) {
+        $type = sanitize_key((string) $type);
+        if (!in_array($type, ['call', 'email', 'internal', 'other'], true)) {
+            return 'internal';
+        }
+        return $type;
+    }
+
+    private function get_follow_up_type_label($type) {
+        $type = $this->normalize_follow_up_type($type);
+        $labels = [
+            'call' => 'Call',
+            'email' => 'Email',
+            'internal' => 'Internal',
+            'other' => 'Other',
+        ];
+        return (string) ($labels[$type] ?? 'Internal');
+    }
+
+    private function normalize_work_item_priority($priority) {
+        $priority = sanitize_key((string) $priority);
+        if (!in_array($priority, ['low', 'normal', 'high', 'urgent'], true)) {
+            return 'normal';
+        }
+        return $priority;
+    }
+
+    private function get_work_item_priority_label($priority) {
+        $priority = $this->normalize_work_item_priority($priority);
+        $labels = [
+            'low' => 'Low',
+            'normal' => 'Normal',
+            'high' => 'High',
+            'urgent' => 'Urgent',
+        ];
+        return (string) ($labels[$priority] ?? 'Normal');
+    }
+
+    private function normalize_booking_issue_type($issue_type) {
+        $issue_type = sanitize_key((string) $issue_type);
+        if (!in_array($issue_type, ['no_show', 'late', 'cancellation', 'other'], true)) {
+            return 'other';
+        }
+        return $issue_type;
+    }
+
+    private function get_booking_issue_type_label($issue_type) {
+        $issue_type = $this->normalize_booking_issue_type($issue_type);
+        $labels = [
+            'no_show' => 'No-show',
+            'late' => 'Late',
+            'cancellation' => 'Cancellation',
+            'other' => 'Other',
+        ];
+        return (string) ($labels[$issue_type] ?? 'Other');
     }
 
     private function get_school_activity_entity_refs($school_domain = '', $school_post_id = 0) {
@@ -122345,12 +122925,17 @@ p{margin:0;line-height:1.5}
         $duration = isset($data['duration_minutes']) ? (int) $data['duration_minutes'] : null;
         $assigned_to = isset($data['assigned_to_user_id']) ? (int) $data['assigned_to_user_id'] : null;
         $assigned_school = sanitize_text_field($data['assigned_to_school_domain'] ?? '');
+        $school_id = isset($data['school_id']) ? max(0, (int) $data['school_id']) : 0;
+        $candidate_id = isset($data['candidate_id']) ? max(0, (int) $data['candidate_id']) : 0;
+        $booking_id = isset($data['booking_id']) ? max(0, (int) $data['booking_id']) : 0;
+        $follow_up_type = $this->normalize_follow_up_type($data['follow_up_type'] ?? 'internal');
+        $priority = $this->normalize_work_item_priority($data['priority'] ?? 'normal');
         $completed_at = sanitize_text_field($data['completed_at'] ?? '');
         $created_by = isset($data['created_by']) ? (int) $data['created_by'] : null;
         if ($entity_type === '' || $entity_ref === '' || $subject === '') {
             return 0;
         }
-        $wpdb->insert($table, [
+        $insert_data = [
             'entity_type' => $entity_type,
             'entity_ref' => $entity_ref,
             'activity_type' => $activity_type,
@@ -122364,7 +122949,29 @@ p{margin:0;line-height:1.5}
             'created_by' => $created_by ?: null,
             'created_at' => current_time('mysql'),
             'updated_at' => current_time('mysql'),
-        ], ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d', '%s', '%s']);
+        ];
+        $insert_format = ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d', '%s', '%s'];
+        if ($this->activity_table_has_column('school_id')) {
+            $insert_data['school_id'] = $school_id > 0 ? $school_id : null;
+            $insert_format[] = '%d';
+        }
+        if ($this->activity_table_has_column('candidate_id')) {
+            $insert_data['candidate_id'] = $candidate_id > 0 ? $candidate_id : null;
+            $insert_format[] = '%d';
+        }
+        if ($this->activity_table_has_column('booking_id')) {
+            $insert_data['booking_id'] = $booking_id > 0 ? $booking_id : null;
+            $insert_format[] = '%d';
+        }
+        if ($this->activity_table_has_column('follow_up_type')) {
+            $insert_data['follow_up_type'] = $activity_type === 'task' ? $follow_up_type : null;
+            $insert_format[] = '%s';
+        }
+        if ($this->activity_table_has_column('priority')) {
+            $insert_data['priority'] = $activity_type === 'task' ? $priority : null;
+            $insert_format[] = '%s';
+        }
+        $wpdb->insert($table, $insert_data, $insert_format);
         return (int) $wpdb->insert_id;
     }
 
@@ -133962,6 +134569,101 @@ p{margin:0;line-height:1.5}
         wp_send_json_success($response_payload);
     }
 
+    private function create_support_ticket_record(array $args = []) {
+        $user_id = max(0, (int) ($args['user_id'] ?? get_current_user_id()));
+        if ($user_id < 1) {
+            return new WP_Error('cmn_support_ticket_user_missing', 'Unauthorized.');
+        }
+
+        $subject = substr(sanitize_text_field((string) ($args['subject'] ?? '')), 0, 255);
+        $message = sanitize_textarea_field((string) ($args['message'] ?? ''));
+        $category = sanitize_text_field((string) ($args['category'] ?? ''));
+        $booking_id = max(0, (int) ($args['booking_id'] ?? 0));
+        $priority = $this->normalize_work_item_priority((string) ($args['priority'] ?? 'normal'));
+        $queue_key = sanitize_key((string) ($args['queue_key'] ?? ''));
+        $assigned_to_user_id = max(0, (int) ($args['assigned_to_user_id'] ?? 0));
+        $attachment_ids = array_values(array_unique(array_filter(array_map('intval', (array) ($args['attachment_ids'] ?? [])))));
+        if ($subject === '' || $message === '') {
+            return new WP_Error('cmn_support_ticket_missing_fields', 'Subject and message are required.');
+        }
+        if (
+            $booking_id > 0
+            && !$this->user_can_access_booking($booking_id, $user_id)
+            && !$this->is_admin_user($user_id)
+            && !$this->is_staff_role($user_id)
+        ) {
+            return new WP_Error('cmn_support_ticket_booking_forbidden', 'You do not have access to that booking context.');
+        }
+
+        $ticket_ref = $this->generate_support_ticket_ref();
+        $role_type = $this->get_support_user_role_type($user_id);
+        global $wpdb;
+        $ticket_table = $this->get_support_ticket_table();
+        $message_table = $this->get_support_message_table();
+        $now = current_time('mysql');
+        $ticket_data = [
+            'ticket_ref' => $ticket_ref,
+            'created_by_user_id' => $user_id,
+            'user_role_type' => $role_type,
+            'subject' => $subject,
+            'category' => $category !== '' ? $category : null,
+            'status' => 'new',
+            'is_new_for_admin' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+            'closed_at' => null,
+        ];
+        $ticket_formats = ['%s', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s'];
+        if ($queue_key !== '' && $this->support_ticket_has_column('queue_key')) {
+            $ticket_data['queue_key'] = $queue_key;
+            $ticket_formats[] = '%s';
+        }
+        if ($assigned_to_user_id > 0 && $this->support_ticket_has_column('assigned_to_user_id')) {
+            $ticket_data['assigned_to_user_id'] = $assigned_to_user_id;
+            $ticket_formats[] = '%d';
+        }
+        if ($this->support_ticket_has_column('priority')) {
+            $ticket_data['priority'] = $priority;
+            $ticket_formats[] = '%s';
+        }
+        if ($booking_id > 0 && $this->support_ticket_has_column('booking_id')) {
+            $ticket_data['booking_id'] = $booking_id;
+            $ticket_formats[] = '%d';
+        }
+        $inserted = $wpdb->insert($ticket_table, $ticket_data, $ticket_formats);
+        if (!$inserted) {
+            return new WP_Error('cmn_support_ticket_insert_failed', 'Unable to create ticket.');
+        }
+
+        $ticket_id = (int) $wpdb->insert_id;
+        if ($ticket_id < 1) {
+            return new WP_Error('cmn_support_ticket_insert_failed', 'Unable to create ticket.');
+        }
+
+        $attachment_ids_json = $attachment_ids ? wp_json_encode($attachment_ids) : null;
+        $inserted_message = $wpdb->insert($message_table, [
+            'ticket_id' => $ticket_id,
+            'sender_user_id' => $user_id,
+            'sender_type' => 'user',
+            'message' => $message,
+            'attachment_ids' => $attachment_ids_json,
+            'created_at' => $now,
+        ], ['%d', '%d', '%s', '%s', '%s', '%s']);
+        if (!$inserted_message) {
+            $wpdb->delete($ticket_table, ['id' => $ticket_id], ['%d']);
+            return new WP_Error('cmn_support_ticket_message_failed', 'Unable to create ticket message.');
+        }
+
+        return [
+            'ticket_id' => $ticket_id,
+            'ticket_ref' => $ticket_ref,
+            'subject' => $subject,
+            'status' => 'new',
+            'updated_at' => $now,
+            'priority' => $priority,
+        ];
+    }
+
     public function handle_support_create_ticket() {
         if (!check_ajax_referer('cmn_support', 'nonce', false)) {
             wp_send_json_error(['message' => 'Invalid request.'], 403);
@@ -133980,44 +134682,22 @@ p{margin:0;line-height:1.5}
         if ($booking_id > 0 && !$this->user_can_access_booking($booking_id, $user_id)) {
             wp_send_json_error(['message' => 'You do not have access to that booking context.'], 403);
         }
-        $ticket_ref = $this->generate_support_ticket_ref();
-        $role_type = $this->get_support_user_role_type($user_id);
-        global $wpdb;
-        $ticket_table = $this->get_support_ticket_table();
-        $message_table = $this->get_support_message_table();
-        $now = current_time('mysql');
-        $ticket_data = [
-            'ticket_ref' => $ticket_ref,
-            'created_by_user_id' => $user_id,
-            'user_role_type' => $role_type,
-            'subject' => $subject,
-            'category' => $category ?: null,
-            'status' => 'new',
-            'is_new_for_admin' => 1,
-            'created_at' => $now,
-            'updated_at' => $now,
-            'closed_at' => null,
-        ];
-        $ticket_formats = ['%s', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s'];
-        if ($booking_id > 0 && $this->support_ticket_has_column('booking_id')) {
-            $ticket_data['booking_id'] = $booking_id;
-            $ticket_formats[] = '%d';
-        }
-        $inserted = $wpdb->insert($ticket_table, $ticket_data, $ticket_formats);
-        if (!$inserted) {
-            wp_send_json_error(['message' => 'Unable to create ticket.'], 500);
-        }
-        $ticket_id = (int) $wpdb->insert_id;
         $uploaded = $this->handle_support_attachments_upload('attachments');
-        $attachment_ids = !empty($uploaded['ids']) ? wp_json_encode(array_values(array_unique(array_map('intval', $uploaded['ids'])))) : null;
-        $wpdb->insert($message_table, [
-            'ticket_id' => $ticket_id,
-            'sender_user_id' => $user_id,
-            'sender_type' => 'user',
+        $created_ticket = $this->create_support_ticket_record([
+            'user_id' => $user_id,
+            'category' => $category,
+            'subject' => $subject,
             'message' => $message,
-            'attachment_ids' => $attachment_ids,
-            'created_at' => $now,
-        ], ['%d', '%d', '%s', '%s', '%s', '%s']);
+            'booking_id' => $booking_id,
+            'attachment_ids' => (array) ($uploaded['ids'] ?? []),
+            'priority' => 'normal',
+        ]);
+        if (is_wp_error($created_ticket)) {
+            wp_send_json_error(['message' => (string) $created_ticket->get_error_message()], 500);
+        }
+        $ticket_id = (int) ($created_ticket['ticket_id'] ?? 0);
+        $ticket_ref = sanitize_text_field((string) ($created_ticket['ticket_ref'] ?? ''));
+        $now = sanitize_text_field((string) ($created_ticket['updated_at'] ?? current_time('mysql')));
 
         $this->route_payroll_support_ticket($ticket_id, [
             'actor_user_id' => $user_id,
