@@ -20689,6 +20689,1298 @@ global $wpdb;
         return $cache[$cache_key];
     }
 
+    private function get_account_manager_booking_lifecycle_groups() {
+        return [
+            'new' => [
+                'label' => 'NEW',
+                'statuses' => [self::BOOKING_STATUS_REQUESTED],
+            ],
+            'offered' => [
+                'label' => 'OFFERED',
+                'statuses' => [self::BOOKING_STATUS_OFFERED, 'candidate_invited', 'pending'],
+            ],
+            'accepted' => [
+                'label' => 'ACCEPTED',
+                'statuses' => [self::BOOKING_STATUS_CANDIDATE_ACCEPTED, self::BOOKING_STATUS_ACCEPTED],
+            ],
+            'confirmed' => [
+                'label' => 'CONFIRMED',
+                'statuses' => [self::BOOKING_STATUS_CONFIRMED, 'approved'],
+            ],
+            'completed' => [
+                'label' => 'COMPLETED',
+                'statuses' => [self::BOOKING_STATUS_COMPLETED, 'completed_attended'],
+            ],
+            'exceptions' => [
+                'label' => 'Exceptions',
+                'statuses' => [self::BOOKING_STATUS_CANCELLED, self::BOOKING_STATUS_CANDIDATE_DECLINED, self::BOOKING_STATUS_DECLINED, self::BOOKING_STATUS_EXPIRED, 'no_show', 'noshow'],
+            ],
+        ];
+    }
+
+    private function get_account_manager_booking_lifecycle_key($status) {
+        $status = sanitize_key((string) $status);
+        foreach ($this->get_account_manager_booking_lifecycle_groups() as $group_key => $group) {
+            if (in_array($status, (array) ($group['statuses'] ?? []), true)) {
+                return $group_key;
+            }
+        }
+        return 'exceptions';
+    }
+
+    private function get_account_manager_booking_workspace_filters($user_id = 0, $source = null) {
+        $source = is_array($source) ? $source : $_GET;
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        $scope = sanitize_key((string) ($source['cmn_booking_scope'] ?? 'all'));
+        if (!in_array($scope, ['all', 'today', 'tomorrow', 'needs_attention', 'unresolved'], true)) {
+            $scope = 'all';
+        }
+
+        return [
+            'user_id' => $user_id,
+            'scope' => $scope,
+            'status' => sanitize_key((string) ($source['cmn_status'] ?? '')),
+            'date' => $this->normalize_invoice_date((string) ($source['cmn_booking_date'] ?? '')),
+            'school_id' => max(0, (int) ($source['cmn_booking_school'] ?? 0)),
+            'candidate_id' => max(0, (int) ($source['cmn_booking_candidate'] ?? 0)),
+            'query' => sanitize_text_field((string) wp_unslash($source['cmn_booking_q'] ?? '')),
+            'selected_booking_id' => max(0, (int) ($source['booking_id'] ?? 0)),
+        ];
+    }
+
+    private function get_account_manager_booking_issue_map(array $booking_ids, $user_id = 0) {
+        $booking_ids = array_values(array_unique(array_filter(array_map('intval', $booking_ids))));
+        $map = [];
+        foreach ($booking_ids as $booking_id) {
+            $map[$booking_id] = [
+                'total_count' => 0,
+                'open_count' => 0,
+                'closed_count' => 0,
+                'has_unresolved' => false,
+                'latest_ticket_label' => '',
+                'latest_ticket_url' => '',
+                'tickets' => [],
+            ];
+        }
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        if (!$booking_ids || $user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return $map;
+        }
+
+        $ticket_ids = array_values(array_unique(array_map('intval', $this->get_manageable_support_ticket_ids_for_user($user_id))));
+        if (!$ticket_ids) {
+            return $map;
+        }
+
+        global $wpdb;
+        $table = $this->get_support_ticket_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return $map;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($ticket_ids), '%d'));
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$table} WHERE id IN ({$placeholders}) ORDER BY updated_at DESC, id DESC LIMIT 1200",
+            $ticket_ids
+        ), ARRAY_A);
+        if (!$rows) {
+            return $map;
+        }
+
+        $booking_lookup = array_fill_keys($booking_ids, true);
+        $portal_url = $this->get_portal_base_url();
+        foreach ($rows as $row) {
+            $ticket_id = max(0, (int) ($row['id'] ?? 0));
+            if ($ticket_id < 1) {
+                continue;
+            }
+            $booking_id = max(0, (int) ($row['booking_id'] ?? 0));
+            if ($booking_id < 1 || !isset($booking_lookup[$booking_id])) {
+                $booking_id = (int) $this->resolve_support_ticket_booking_id($row, true);
+            }
+            if ($booking_id < 1 || !isset($booking_lookup[$booking_id])) {
+                continue;
+            }
+
+            $normalized = $this->normalize_support_ticket_for_view($row, true);
+            $status_key = sanitize_key((string) ($normalized['status'] ?? 'open'));
+            $ticket_ref = sanitize_text_field((string) ($row['ticket_ref'] ?? ''));
+            $ticket_subject = sanitize_text_field((string) ($row['subject'] ?? ''));
+            $ticket_label = $ticket_subject !== '' ? $ticket_subject : ($ticket_ref !== '' ? $ticket_ref : ('Ticket #' . $ticket_id));
+            $ticket_url = add_query_arg([
+                'view' => 'support',
+                'support_filter' => $this->map_support_filter_for_status($status_key),
+                'ticket_id' => $ticket_id,
+            ], $portal_url);
+
+            $entry = &$map[$booking_id];
+            $entry['total_count']++;
+            if (in_array($status_key, ['new', 'open'], true)) {
+                $entry['open_count']++;
+            } else {
+                $entry['closed_count']++;
+            }
+            if ($entry['latest_ticket_label'] === '') {
+                $entry['latest_ticket_label'] = $ticket_label;
+                $entry['latest_ticket_url'] = $ticket_url;
+            }
+            if (count($entry['tickets']) < 4) {
+                $entry['tickets'][] = [
+                    'ticket_id' => $ticket_id,
+                    'ticket_ref' => $ticket_ref !== '' ? $ticket_ref : ('#' . $ticket_id),
+                    'subject' => $ticket_label,
+                    'status_key' => $status_key,
+                    'status_label' => $status_key === 'new' ? 'New' : ($status_key === 'closed' ? 'Closed' : 'Open'),
+                    'updated_label' => !empty($row['updated_at']) ? date_i18n('M j, g:ia', strtotime((string) $row['updated_at'])) : '',
+                    'url' => $ticket_url,
+                ];
+            }
+            unset($entry);
+        }
+
+        foreach ($map as &$entry) {
+            $entry['has_unresolved'] = (int) ($entry['open_count'] ?? 0) > 0;
+        }
+        unset($entry);
+        return $map;
+    }
+
+    private function get_account_manager_booking_conduct_map(array $booking_ids) {
+        $booking_ids = array_values(array_unique(array_filter(array_map('intval', $booking_ids))));
+        $map = [];
+        foreach ($booking_ids as $booking_id) {
+            $map[$booking_id] = [
+                'no_show' => false,
+                'appeal_open' => false,
+                'signals' => [],
+            ];
+        }
+        if (!$booking_ids) {
+            return $map;
+        }
+
+        global $wpdb;
+        $table = $this->get_candidate_conduct_events_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return $map;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($booking_ids), '%d'));
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT booking_id, event_type, notes, occurred_at
+             FROM {$table}
+             WHERE booking_id IN ({$placeholders})
+               AND status = %s
+               AND event_type IN (%s, %s)
+             ORDER BY occurred_at DESC, id DESC",
+            array_merge($booking_ids, ['active', 'no_show', 'appeal_opened'])
+        ), ARRAY_A);
+        if (!$rows) {
+            return $map;
+        }
+
+        foreach ($rows as $row) {
+            $booking_id = max(0, (int) ($row['booking_id'] ?? 0));
+            $event_type = sanitize_key((string) ($row['event_type'] ?? ''));
+            if ($booking_id < 1 || !isset($map[$booking_id])) {
+                continue;
+            }
+            if ($event_type === 'no_show' && !empty($map[$booking_id]['no_show'])) {
+                continue;
+            }
+            if ($event_type === 'appeal_opened' && !empty($map[$booking_id]['appeal_open'])) {
+                continue;
+            }
+            if (!in_array($event_type, ['no_show', 'appeal_opened'], true)) {
+                continue;
+            }
+            $signal_label = $event_type === 'no_show' ? 'No-show flagged' : 'Appeal opened';
+            if (!empty($row['occurred_at'])) {
+                $signal_label .= ' ' . date_i18n('M j, g:ia', strtotime((string) $row['occurred_at']));
+            }
+            if ($event_type === 'no_show') {
+                $map[$booking_id]['no_show'] = true;
+            } else {
+                $map[$booking_id]['appeal_open'] = true;
+            }
+            $map[$booking_id]['signals'][] = [
+                'event_type' => $event_type,
+                'label' => $signal_label,
+                'note' => sanitize_text_field((string) ($row['notes'] ?? '')),
+            ];
+        }
+
+        return $map;
+    }
+
+    private function get_account_manager_booking_completion_confirmation_map(array $booking_ids) {
+        $booking_ids = array_values(array_unique(array_filter(array_map('intval', $booking_ids))));
+        $map = [];
+        foreach ($booking_ids as $booking_id) {
+            $map[$booking_id] = [
+                'total' => 0,
+                'pending' => 0,
+                'confirmed' => 0,
+                'disputed' => 0,
+                'auto_confirmed' => 0,
+                'has_unresolved' => false,
+                'rows' => [],
+            ];
+        }
+        if (!$booking_ids) {
+            return $map;
+        }
+
+        global $wpdb;
+        $table = $this->get_booking_completion_confirmations_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return $map;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($booking_ids), '%d'));
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT booking_id, booking_day_date, status, updated_at
+             FROM {$table}
+             WHERE booking_id IN ({$placeholders})
+             ORDER BY updated_at DESC, id DESC",
+            $booking_ids
+        ), ARRAY_A);
+        if (!$rows) {
+            return $map;
+        }
+
+        foreach ($rows as $row) {
+            $booking_id = max(0, (int) ($row['booking_id'] ?? 0));
+            if ($booking_id < 1 || !isset($map[$booking_id])) {
+                continue;
+            }
+            $status_key = $this->normalize_booking_completion_confirmation_status((string) ($row['status'] ?? 'pending'));
+            $entry = &$map[$booking_id];
+            $entry['total']++;
+            if (!isset($entry[$status_key])) {
+                $entry[$status_key] = 0;
+            }
+            $entry[$status_key]++;
+            if (count($entry['rows']) < 4) {
+                $entry['rows'][] = [
+                    'date_label' => !empty($row['booking_day_date']) ? date_i18n('M j, Y', strtotime((string) $row['booking_day_date'])) : 'Booking day',
+                    'status_key' => $status_key,
+                    'status_label' => ucwords(str_replace('_', ' ', $status_key)),
+                    'updated_label' => !empty($row['updated_at']) ? date_i18n('M j, g:ia', strtotime((string) $row['updated_at'])) : '',
+                ];
+            }
+            unset($entry);
+        }
+
+        foreach ($map as &$entry) {
+            $entry['has_unresolved'] = ((int) ($entry['pending'] ?? 0) > 0 || (int) ($entry['disputed'] ?? 0) > 0);
+        }
+        unset($entry);
+        return $map;
+    }
+
+    private function get_account_manager_booking_timeline($booking_id, $limit = 12) {
+        $booking_id = (int) $booking_id;
+        $limit = max(1, min(20, (int) $limit));
+        if ($booking_id < 1 || get_post_type($booking_id) !== 'cmn_booking') {
+            return [];
+        }
+
+        global $wpdb;
+        $table = $this->get_audit_log_table();
+        if (!$this->candidate_rewards_table_exists($table)) {
+            return [];
+        }
+
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT id, user_id, action_type, details_json, created_at
+             FROM {$table}
+             WHERE reference_type = %s
+               AND reference_id = %s
+             ORDER BY id DESC
+             LIMIT %d",
+            'booking',
+            (string) $booking_id,
+            $limit
+        ), ARRAY_A);
+        if (!$rows) {
+            return [];
+        }
+
+        $timeline = [];
+        foreach ($rows as $row) {
+            $actor_name = 'System';
+            $user_id = max(0, (int) ($row['user_id'] ?? 0));
+            if ($user_id > 0) {
+                $user = get_user_by('id', $user_id);
+                if ($user instanceof WP_User) {
+                    $actor_name = (string) ($user->display_name ?: $user->user_login);
+                }
+            }
+            $action = sanitize_key((string) ($row['action_type'] ?? 'updated'));
+            $details = $this->decode_json_payload((string) ($row['details_json'] ?? ''), []);
+            $detail_parts = [];
+            foreach (['status' => 'Status', 'source' => 'Source', 'shift_date' => 'Shift date', 'reason' => 'Reason'] as $detail_key => $label) {
+                $value = sanitize_text_field((string) ($details[$detail_key] ?? ''));
+                if ($value !== '') {
+                    $detail_parts[] = $label . ': ' . $value;
+                }
+            }
+            $timeline[] = [
+                'title' => ucwords(str_replace('_', ' ', $action)),
+                'detail' => implode(' · ', $detail_parts),
+                'actor_name' => $actor_name,
+                'created_label' => !empty($row['created_at']) ? date_i18n('M j, g:ia', strtotime((string) $row['created_at'])) : '',
+            ];
+        }
+
+        return $timeline;
+    }
+
+    private function get_account_manager_booking_thread_snapshot($booking_id, $thread_type = self::BOOKING_THREAD_TYPE_BOOKING_DETAILS, $limit = 6) {
+        $booking_id = (int) $booking_id;
+        $thread_type = $this->normalize_booking_thread_type((string) $thread_type);
+        $limit = max(1, min(10, (int) $limit));
+        if ($booking_id < 1 || $thread_type === '') {
+            return [];
+        }
+
+        $thread = $this->get_booking_thread_by_booking($booking_id, $thread_type);
+        $thread_id = max(0, (int) ($thread['id'] ?? 0));
+        $messages = $thread_id > 0 ? (array) $this->get_booking_thread_messages($thread_id) : [];
+        $preview = $messages ? array_slice($messages, -$limit) : [];
+        $thread_copy = $this->get_booking_thread_ui_copy($thread_type);
+
+        $formatted = [];
+        foreach ($preview as $message_row) {
+            $formatted[] = [
+                'sender_label' => ucwords(str_replace('_', ' ', sanitize_key((string) ($message_row['sender_role_type'] ?? self::PARTICIPANT_ROLE_SYSTEM)))),
+                'message' => sanitize_textarea_field((string) ($message_row['message'] ?? '')),
+                'created_label' => !empty($message_row['created_at']) ? date_i18n('M j, g:ia', strtotime((string) $message_row['created_at'])) : '',
+            ];
+        }
+
+        return [
+            'exists' => $thread_id > 0,
+            'title' => sanitize_text_field((string) ($thread_copy['title'] ?? 'Booking chat')),
+            'status_label' => sanitize_key((string) ($thread['status'] ?? self::BOOKING_THREAD_STATUS_ACTIVE)) === self::BOOKING_THREAD_STATUS_CLOSED ? 'Chat closed' : 'Chat open',
+            'message_count' => count($messages),
+            'messages' => $formatted,
+            'url' => add_query_arg([
+                'view' => 'requests',
+                'cmn_booking_chat' => $booking_id,
+                'cmn_thread_type' => $thread_type,
+            ], $this->get_portal_base_url()) . '#cmn-request-chat',
+        ];
+    }
+
+    private function build_account_manager_bookings_workspace_payload($user_id = 0) {
+        $user_id = (int) ($user_id ?: get_current_user_id());
+        $filters = $this->get_account_manager_booking_workspace_filters($user_id);
+        $portal_url = $this->get_portal_base_url();
+        $today_key = current_time('Y-m-d');
+        $tomorrow_key = date_i18n('Y-m-d', strtotime($today_key . ' +1 day'));
+        $lifecycle_groups = $this->get_account_manager_booking_lifecycle_groups();
+        $clear_filters_url = add_query_arg(['view' => 'bookings'], $portal_url);
+
+        $payload = [
+            'filters' => $filters,
+            'rows' => [],
+            'selected_booking' => [],
+            'total_count' => 0,
+            'visible_count' => 0,
+            'school_options' => [],
+            'candidate_options' => [],
+            'status_options' => [],
+            'quick_views' => [],
+            'lifecycle_counts' => [],
+            'clear_filters_url' => $clear_filters_url,
+        ];
+        foreach ($lifecycle_groups as $key => $group) {
+            $payload['lifecycle_counts'][$key] = [
+                'label' => sanitize_text_field((string) ($group['label'] ?? ucwords($key))),
+                'count' => 0,
+            ];
+        }
+
+        if ($user_id < 1 || !$this->is_restricted_account_manager($user_id)) {
+            return $payload;
+        }
+
+        $booking_ids = array_values(array_unique(array_map('intval', $this->get_manageable_booking_ids_for_user($user_id))));
+        if (!$booking_ids) {
+            $payload['quick_views'] = [
+                'all' => ['label' => 'All', 'count' => 0, 'description' => 'Every booking in your account portfolio.', 'is_active' => true, 'url' => $clear_filters_url],
+                'today' => ['label' => 'Today', 'count' => 0, 'description' => 'Bookings happening today.', 'is_active' => false, 'url' => add_query_arg(['view' => 'bookings', 'cmn_booking_scope' => 'today'], $portal_url)],
+                'tomorrow' => ['label' => 'Tomorrow', 'count' => 0, 'description' => 'Bookings happening tomorrow.', 'is_active' => false, 'url' => add_query_arg(['view' => 'bookings', 'cmn_booking_scope' => 'tomorrow'], $portal_url)],
+                'needs_attention' => ['label' => 'Needs attention', 'count' => 0, 'description' => 'Bookings that need an AM action.', 'is_active' => false, 'url' => add_query_arg(['view' => 'bookings', 'cmn_booking_scope' => 'needs_attention'], $portal_url)],
+                'unresolved' => ['label' => 'Unresolved', 'count' => 0, 'description' => 'Bookings with open issues, no-shows, or disputes.', 'is_active' => false, 'url' => add_query_arg(['view' => 'bookings', 'cmn_booking_scope' => 'unresolved'], $portal_url)],
+            ];
+            return $payload;
+        }
+
+        $booking_posts = get_posts([
+            'post_type' => 'cmn_booking',
+            'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
+            'post__in' => $booking_ids,
+            'posts_per_page' => -1,
+            'orderby' => 'modified',
+            'order' => 'DESC',
+        ]);
+        if (!$booking_posts) {
+            return $payload;
+        }
+
+        $issue_map = $this->get_account_manager_booking_issue_map($booking_ids, $user_id);
+        $conduct_map = $this->get_account_manager_booking_conduct_map($booking_ids);
+        $confirmation_map = $this->get_account_manager_booking_completion_confirmation_map($booking_ids);
+        $rate_rows = $this->get_booking_rate_rows_map($booking_ids);
+
+        $build_bookings_url = function (array $overrides = []) use ($portal_url, $filters) {
+            $query_args = ['view' => 'bookings'];
+            if (($filters['scope'] ?? 'all') !== 'all') {
+                $query_args['cmn_booking_scope'] = (string) $filters['scope'];
+            }
+            if (!empty($filters['status'])) {
+                $query_args['cmn_status'] = (string) $filters['status'];
+            }
+            if (!empty($filters['date'])) {
+                $query_args['cmn_booking_date'] = (string) $filters['date'];
+            }
+            if (!empty($filters['school_id'])) {
+                $query_args['cmn_booking_school'] = (int) $filters['school_id'];
+            }
+            if (!empty($filters['candidate_id'])) {
+                $query_args['cmn_booking_candidate'] = (int) $filters['candidate_id'];
+            }
+            if (!empty($filters['query'])) {
+                $query_args['cmn_booking_q'] = (string) $filters['query'];
+            }
+            foreach ($overrides as $key => $value) {
+                if ($value === false || $value === null || $value === '') {
+                    unset($query_args[$key]);
+                } else {
+                    $query_args[$key] = $value;
+                }
+            }
+            return add_query_arg($query_args, $portal_url);
+        };
+
+        $date_in_range = static function ($target_date, $start_date, $end_date) {
+            $target_date = trim((string) $target_date);
+            $start_date = trim((string) $start_date);
+            $end_date = trim((string) $end_date);
+            if ($target_date === '' || $start_date === '') {
+                return false;
+            }
+            if ($end_date === '' || strcmp($end_date, $start_date) < 0) {
+                $end_date = $start_date;
+            }
+            return strcmp($target_date, $start_date) >= 0 && strcmp($target_date, $end_date) <= 0;
+        };
+
+        $status_order = ['requested', 'offered', 'candidate_invited', 'pending', 'candidate_accepted', 'accepted', 'approved', 'confirmed', 'completed', 'completed_attended', 'candidate_declined', 'declined', 'cancelled', 'expired', 'no_show', 'noshow'];
+        $status_lookup = array_flip($status_order);
+        $status_options = [];
+        foreach ($status_order as $status_key) {
+            $status_options[$status_key] = $this->get_booking_status_label($status_key);
+        }
+        $school_options = [];
+        $candidate_options = [];
+        $all_rows = [];
+        $quick_counts = ['all' => 0, 'today' => 0, 'tomorrow' => 0, 'needs_attention' => 0, 'unresolved' => 0];
+
+        foreach ($booking_posts as $booking_post) {
+            $booking_id = max(0, (int) ($booking_post->ID ?? 0));
+            if ($booking_id < 1) {
+                continue;
+            }
+            $status_key = sanitize_key((string) get_post_meta($booking_id, 'cmn_status', true));
+            if ($status_key === '') {
+                $status_key = self::BOOKING_STATUS_REQUESTED;
+            }
+            $status_options[$status_key] = $this->get_booking_status_label($status_key);
+            $lifecycle_key = $this->get_account_manager_booking_lifecycle_key($status_key);
+            $payload['lifecycle_counts'][$lifecycle_key]['count']++;
+
+            $school_id = (int) get_post_meta($booking_id, 'cmn_school_id', true);
+            $candidate_id = (int) get_post_meta($booking_id, 'cmn_candidate_id', true);
+            $school_name = $school_id > 0 ? sanitize_text_field((string) get_the_title($school_id)) : 'Unassigned school';
+            $candidate_name = $candidate_id > 0 ? sanitize_text_field((string) get_the_title($candidate_id)) : 'Candidate unassigned';
+            if ($school_id > 0) {
+                $school_options[$school_id] = $school_name;
+            }
+            if ($candidate_id > 0) {
+                $candidate_options[$candidate_id] = $candidate_name;
+            }
+
+            $start_date = $this->normalize_invoice_date((string) get_post_meta($booking_id, 'cmn_start_date', true));
+            if ($start_date === '') {
+                $start_date = $this->normalize_invoice_date((string) get_post_meta($booking_id, 'cmn_date', true));
+            }
+            $end_date = $this->normalize_invoice_date((string) get_post_meta($booking_id, 'cmn_end_date', true));
+            if ($end_date === '' || ($start_date !== '' && strcmp($end_date, $start_date) < 0)) {
+                $end_date = $start_date;
+            }
+            $date_label = $start_date !== '' ? date_i18n('M j, Y', strtotime($start_date)) : 'Date not set';
+            if ($end_date !== '' && $start_date !== '' && $end_date !== $start_date) {
+                $date_label .= ' to ' . date_i18n('M j, Y', strtotime($end_date));
+            }
+
+            $start_time = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_start_time', true));
+            $end_time = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_end_time', true));
+            $time_label = trim($start_time . ($end_time !== '' ? ' - ' . $end_time : ''));
+            if ($time_label === '') {
+                $time_label = 'Time not set';
+            }
+            $role_label = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_role', true));
+            if ($role_label === '') {
+                $role_label = 'Booking';
+            }
+            $booking_type = sanitize_key((string) get_post_meta($booking_id, 'cmn_booking_type', true));
+            $booking_type_label = $booking_type !== '' ? ucwords(str_replace('_', ' ', $booking_type)) : '';
+            $location = sanitize_text_field((string) get_post_meta($booking_id, 'cmn_location', true));
+            $reference_label = sanitize_text_field((string) get_the_title($booking_id));
+            if ($reference_label === '') {
+                $reference_label = 'Booking #' . $booking_id;
+            }
+            $request_id = (int) get_post_meta($booking_id, 'cmn_request_id', true);
+            $notes = trim((string) get_post_meta($booking_id, 'cmn_notes', true));
+            if ($notes === '' && $request_id > 0) {
+                $request = (array) $this->get_candidate_request_by_id($request_id);
+                $notes = trim((string) ($request['internal_note'] ?? ''));
+            }
+            $notes_excerpt = $notes !== '' ? sanitize_text_field(wp_trim_words($notes, 24, '...')) : '';
+            $school_contact = $school_id > 0 ? (array) $this->get_school_primary_contact_summary($school_id) : ['name' => '', 'phone' => '', 'email' => '', 'role' => ''];
+            $school_address = $school_id > 0 ? $this->format_school_address($school_id) : '';
+            $candidate_email = $candidate_id > 0 ? sanitize_email((string) get_post_meta($candidate_id, 'cmn_email', true)) : '';
+            $candidate_phone = $candidate_id > 0 ? sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_phone', true)) : '';
+            if ($candidate_phone === '' && $candidate_id > 0) {
+                $candidate_phone = sanitize_text_field((string) get_post_meta($candidate_id, 'cmn_mobile', true));
+            }
+
+            $issue_snapshot = (array) ($issue_map[$booking_id] ?? []);
+            $conduct_snapshot = (array) ($conduct_map[$booking_id] ?? []);
+            $confirmation_snapshot = (array) ($confirmation_map[$booking_id] ?? []);
+            $rate_row = (array) ($rate_rows[$booking_id] ?? []);
+            $onboarding_state = $this->get_booking_onboarding_details_state($booking_id);
+            $deadline_ts = (int) get_post_meta($booking_id, 'cmn_candidate_deadline', true);
+            $deadline_label = ($deadline_ts > 0 && $deadline_ts > time()) ? human_time_diff(time(), $deadline_ts) : '';
+
+            $is_today = $date_in_range($today_key, $start_date, $end_date);
+            $is_tomorrow = $date_in_range($tomorrow_key, $start_date, $end_date);
+            $unresolved = !empty($issue_snapshot['has_unresolved']) || !empty($conduct_snapshot['no_show']) || !empty($conduct_snapshot['appeal_open']) || !empty($confirmation_snapshot['has_unresolved']);
+            $needs_attention = $unresolved
+                || in_array($status_key, [self::BOOKING_STATUS_REQUESTED, self::BOOKING_STATUS_OFFERED, 'candidate_invited', 'pending', self::BOOKING_STATUS_CANDIDATE_ACCEPTED, self::BOOKING_STATUS_CANDIDATE_DECLINED, self::BOOKING_STATUS_DECLINED, self::BOOKING_STATUS_CANCELLED, self::BOOKING_STATUS_EXPIRED, 'no_show', 'noshow'], true)
+                || (empty($onboarding_state['provided']) && in_array($status_key, [self::BOOKING_STATUS_ACCEPTED, self::BOOKING_STATUS_CONFIRMED, 'approved'], true));
+
+            $action_label = 'Monitoring';
+            $action_reason = 'No immediate booking pressure is surfaced.';
+            $action_needed = false;
+            if (!empty($conduct_snapshot['no_show'])) {
+                $action_needed = true;
+                $action_label = 'Investigate no-show';
+                $action_reason = 'A no-show has been recorded for this booking and needs follow-up.';
+            } elseif (!empty($conduct_snapshot['appeal_open'])) {
+                $action_needed = true;
+                $action_label = 'Review open appeal';
+                $action_reason = 'A no-show appeal is active for this booking.';
+            } elseif ((int) ($confirmation_snapshot['disputed'] ?? 0) > 0) {
+                $action_needed = true;
+                $action_label = 'Resolve completion dispute';
+                $action_reason = 'Completion is disputed and needs operational review.';
+            } elseif (!empty($issue_snapshot['has_unresolved'])) {
+                $action_needed = true;
+                $action_label = 'Work linked issue';
+                $action_reason = number_format_i18n((int) ($issue_snapshot['open_count'] ?? 0)) . ' linked issue' . (((int) ($issue_snapshot['open_count'] ?? 0) === 1) ? '' : 's') . ' are still open.';
+            } elseif ($status_key === self::BOOKING_STATUS_CANDIDATE_ACCEPTED) {
+                $action_needed = true;
+                $action_label = 'Approve booking';
+                $action_reason = 'Candidate accepted and the booking still needs AM approval.';
+            } elseif (in_array($status_key, [self::BOOKING_STATUS_REQUESTED, self::BOOKING_STATUS_OFFERED, 'candidate_invited', 'pending'], true)) {
+                $action_needed = true;
+                $action_label = 'Keep booking moving';
+                $action_reason = $deadline_label !== '' ? ('Offer window closes in ' . $deadline_label . '.') : 'Booking is still in the live offer stage.';
+            } elseif (in_array($status_key, [self::BOOKING_STATUS_CANDIDATE_DECLINED, self::BOOKING_STATUS_DECLINED, self::BOOKING_STATUS_CANCELLED, self::BOOKING_STATUS_EXPIRED, 'no_show', 'noshow'], true)) {
+                $action_needed = true;
+                $action_label = 'Recover or close out';
+                $action_reason = 'Booking is in an exception state and needs AM review.';
+            } elseif (empty($onboarding_state['provided']) && in_array($status_key, [self::BOOKING_STATUS_ACCEPTED, self::BOOKING_STATUS_CONFIRMED, 'approved'], true)) {
+                $action_needed = true;
+                $action_label = 'Share onboarding details';
+                $action_reason = 'Arrival / onboarding details are not marked as provided yet.';
+            } elseif ((int) ($confirmation_snapshot['pending'] ?? 0) > 0 && in_array($status_key, [self::BOOKING_STATUS_COMPLETED, 'completed_attended'], true)) {
+                $action_needed = true;
+                $action_label = 'Chase completion confirmation';
+                $action_reason = 'Completed work is still waiting for school confirmation.';
+            }
+
+            $badges = [];
+            if (!empty($rate_row['override_flag'])) {
+                $badges[] = ['label' => 'Rate override', 'tone' => 'warning', 'detail' => sanitize_text_field((string) ($rate_row['override_reason'] ?? ''))];
+            }
+            if ((int) ($issue_snapshot['open_count'] ?? 0) > 0) {
+                $issue_count = (int) ($issue_snapshot['open_count'] ?? 0);
+                $badges[] = ['label' => $issue_count === 1 ? 'Open issue' : (number_format_i18n($issue_count) . ' open issues'), 'tone' => 'critical', 'detail' => sanitize_text_field((string) ($issue_snapshot['latest_ticket_label'] ?? ''))];
+            }
+            foreach ((array) ($conduct_snapshot['signals'] ?? []) as $signal) {
+                if (!is_array($signal)) {
+                    continue;
+                }
+                $badges[] = ['label' => sanitize_text_field((string) ($signal['label'] ?? 'Conduct flag')), 'tone' => (($signal['event_type'] ?? '') === 'no_show') ? 'critical' : 'warning', 'detail' => sanitize_text_field((string) ($signal['note'] ?? ''))];
+            }
+            if ((int) ($confirmation_snapshot['disputed'] ?? 0) > 0) {
+                $badges[] = ['label' => 'Completion disputed', 'tone' => 'critical', 'detail' => number_format_i18n((int) ($confirmation_snapshot['disputed'] ?? 0)) . ' disputed day' . (((int) ($confirmation_snapshot['disputed'] ?? 0) === 1) ? '' : 's')];
+            } elseif ((int) ($confirmation_snapshot['pending'] ?? 0) > 0 && in_array($status_key, [self::BOOKING_STATUS_CONFIRMED, self::BOOKING_STATUS_COMPLETED, 'completed_attended'], true)) {
+                $badges[] = ['label' => 'Completion pending', 'tone' => 'warning', 'detail' => number_format_i18n((int) ($confirmation_snapshot['pending'] ?? 0)) . ' day' . (((int) ($confirmation_snapshot['pending'] ?? 0) === 1) ? '' : 's') . ' still awaiting confirmation'];
+            }
+            if ($status_key === 'candidate_invited' && $deadline_label !== '') {
+                $badges[] = ['label' => 'Offer expires soon', 'tone' => 'warning', 'detail' => 'Response window closes in ' . $deadline_label];
+            }
+            if (empty($onboarding_state['provided']) && in_array($status_key, [self::BOOKING_STATUS_ACCEPTED, self::BOOKING_STATUS_CONFIRMED, 'approved'], true)) {
+                $badges[] = ['label' => 'Onboarding details outstanding', 'tone' => 'warning', 'detail' => 'Arrival / onboarding details are not yet marked as provided.'];
+            }
+
+            $quick_counts['all']++;
+            if ($is_today) {
+                $quick_counts['today']++;
+            }
+            if ($is_tomorrow) {
+                $quick_counts['tomorrow']++;
+            }
+            if ($needs_attention) {
+                $quick_counts['needs_attention']++;
+            }
+            if ($unresolved) {
+                $quick_counts['unresolved']++;
+            }
+
+            $school_overview_url = $school_id > 0 ? $this->get_school_profile_tab_url($school_id, 'overview') : '';
+            $candidate_profile_url = $candidate_id > 0 ? add_query_arg(['view' => 'candidates', 'candidate_id' => $candidate_id], $portal_url) : '';
+            $detail_url = $build_bookings_url(['booking_id' => $booking_id]);
+            $shared_chat_url = add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_BOOKING_DETAILS], $portal_url) . '#cmn-request-chat';
+            $school_chat_url = add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION], $portal_url) . '#cmn-request-chat';
+            $candidate_chat_url = add_query_arg(['view' => 'requests', 'cmn_booking_chat' => $booking_id, 'cmn_thread_type' => self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION], $portal_url) . '#cmn-request-chat';
+            $issue_workspace_url = add_query_arg(['view' => 'support', 'support_filter' => 'open'], $portal_url);
+            $primary_issue_url = !empty($issue_snapshot['latest_ticket_url']) ? (string) $issue_snapshot['latest_ticket_url'] : $issue_workspace_url;
+            $search_text = strtolower(trim(implode(' ', array_filter([$reference_label, $school_name, $candidate_name, $role_label, $booking_type_label, $location, $status_key, $notes_excerpt]))));
+
+            $all_rows[] = [
+                'booking_id' => $booking_id,
+                'reference_label' => $reference_label,
+                'reference_id_label' => 'Booking #' . $booking_id,
+                'status_key' => $status_key,
+                'status_label' => $this->get_booking_status_label($status_key),
+                'status_chip_class' => $this->get_booking_status_chip_class($status_key),
+                'lifecycle_label' => sanitize_text_field((string) ($lifecycle_groups[$lifecycle_key]['label'] ?? 'Exceptions')),
+                'school_id' => $school_id,
+                'school_name' => $school_name,
+                'school_contact' => $school_contact,
+                'school_address' => $school_address,
+                'school_overview_url' => $school_overview_url,
+                'school_bookings_url' => $school_id > 0 ? $this->get_school_profile_tab_url($school_id, 'bookings') : '',
+                'school_task_url' => $school_id > 0 ? $this->get_school_task_editor_url($school_id, 0, '', $school_overview_url) : '',
+                'candidate_id' => $candidate_id,
+                'candidate_name' => $candidate_name,
+                'candidate_email' => $candidate_email,
+                'candidate_phone' => $candidate_phone,
+                'candidate_profile_url' => $candidate_profile_url,
+                'role_label' => $role_label,
+                'booking_type_label' => $booking_type_label,
+                'location' => $location,
+                'start_date' => $start_date,
+                'end_date' => $end_date,
+                'date_label' => $date_label,
+                'time_label' => $time_label,
+                'notes' => $notes,
+                'notes_excerpt' => $notes_excerpt,
+                'issue_snapshot' => $issue_snapshot,
+                'confirmation_snapshot' => $confirmation_snapshot,
+                'badges' => $badges,
+                'unresolved' => $unresolved,
+                'needs_attention' => $needs_attention,
+                'action_needed' => $action_needed,
+                'action_label' => $action_label,
+                'action_reason' => $action_reason,
+                'onboarding_label' => !empty($onboarding_state['provided']) ? ('Provided' . (!empty($onboarding_state['provided_at']) ? (' ' . date_i18n('M j, g:ia', strtotime((string) $onboarding_state['provided_at']))) : '')) : 'Not yet provided',
+                'school_charge_rate' => round(max(0, (float) ($rate_row['school_charge_rate'] ?? get_post_meta($booking_id, 'cmn_school_charge_rate', true))), 2),
+                'candidate_pay_rate' => round(max(0, (float) ($rate_row['candidate_pay_rate'] ?? get_post_meta($booking_id, 'cmn_candidate_pay_rate', true))), 2),
+                'detail_anchor_url' => $detail_url . '#cmn-am-booking-detail',
+                'shared_chat_url' => $shared_chat_url,
+                'school_chat_url' => $school_chat_url,
+                'candidate_chat_url' => $candidate_chat_url,
+                'primary_issue_url' => $primary_issue_url,
+                'issue_workspace_url' => $issue_workspace_url,
+                'search_text' => $search_text,
+            ];
+        }
+
+        $payload['total_count'] = count($all_rows);
+        natcasesort($school_options);
+        natcasesort($candidate_options);
+        uksort($status_options, static function ($a, $b) use ($status_lookup) {
+            $a_index = isset($status_lookup[$a]) ? (int) $status_lookup[$a] : 999;
+            $b_index = isset($status_lookup[$b]) ? (int) $status_lookup[$b] : 999;
+            if ($a_index === $b_index) {
+                return strcasecmp((string) $a, (string) $b);
+            }
+            return $a_index <=> $b_index;
+        });
+        $payload['school_options'] = $school_options;
+        $payload['candidate_options'] = $candidate_options;
+        $payload['status_options'] = $status_options;
+
+        $filtered = [];
+        foreach ($all_rows as $row) {
+            if (!empty($filters['query'])) {
+                $needle = strtolower(trim((string) $filters['query']));
+                if ($needle !== '' && strpos((string) ($row['search_text'] ?? ''), $needle) === false) {
+                    continue;
+                }
+            }
+            if (!empty($filters['status']) && (string) ($row['status_key'] ?? '') !== (string) $filters['status']) {
+                continue;
+            }
+            if (!empty($filters['date']) && !$date_in_range((string) $filters['date'], (string) ($row['start_date'] ?? ''), (string) ($row['end_date'] ?? ''))) {
+                continue;
+            }
+            if (!empty($filters['school_id']) && (int) ($row['school_id'] ?? 0) !== (int) $filters['school_id']) {
+                continue;
+            }
+            if (!empty($filters['candidate_id']) && (int) ($row['candidate_id'] ?? 0) !== (int) $filters['candidate_id']) {
+                continue;
+            }
+            if (($filters['scope'] ?? 'all') === 'today' && !$date_in_range($today_key, (string) ($row['start_date'] ?? ''), (string) ($row['end_date'] ?? ''))) {
+                continue;
+            }
+            if (($filters['scope'] ?? 'all') === 'tomorrow' && !$date_in_range($tomorrow_key, (string) ($row['start_date'] ?? ''), (string) ($row['end_date'] ?? ''))) {
+                continue;
+            }
+            if (($filters['scope'] ?? 'all') === 'needs_attention' && empty($row['needs_attention'])) {
+                continue;
+            }
+            if (($filters['scope'] ?? 'all') === 'unresolved' && empty($row['unresolved'])) {
+                continue;
+            }
+            $filtered[] = $row;
+        }
+
+        usort($filtered, static function ($a, $b) use ($today_key) {
+            $a_priority = (!empty($a['unresolved']) ? 4 : 0) + (!empty($a['needs_attention']) ? 2 : 0) + (!empty($a['action_needed']) ? 1 : 0);
+            $b_priority = (!empty($b['unresolved']) ? 4 : 0) + (!empty($b['needs_attention']) ? 2 : 0) + (!empty($b['action_needed']) ? 1 : 0);
+            if ($a_priority !== $b_priority) {
+                return $b_priority <=> $a_priority;
+            }
+            $a_date = (string) ($a['start_date'] ?? '');
+            $b_date = (string) ($b['start_date'] ?? '');
+            $a_future = ($a_date !== '' && strcmp($a_date, $today_key) >= 0) ? 1 : 0;
+            $b_future = ($b_date !== '' && strcmp($b_date, $today_key) >= 0) ? 1 : 0;
+            if ($a_future !== $b_future) {
+                return $b_future <=> $a_future;
+            }
+            if ($a_date !== $b_date) {
+                return $a_future === 1 ? strcmp($a_date, $b_date) : strcmp($b_date, $a_date);
+            }
+            return strcasecmp((string) ($a['reference_label'] ?? ''), (string) ($b['reference_label'] ?? ''));
+        });
+
+        $payload['rows'] = $filtered;
+        $payload['visible_count'] = count($filtered);
+        $payload['quick_views'] = [
+            'all' => ['label' => 'All', 'count' => (int) ($quick_counts['all'] ?? 0), 'description' => 'Every booking in your account portfolio.', 'is_active' => ($filters['scope'] ?? 'all') === 'all', 'url' => $build_bookings_url(['cmn_booking_scope' => false, 'booking_id' => false])],
+            'today' => ['label' => 'Today', 'count' => (int) ($quick_counts['today'] ?? 0), 'description' => 'Bookings happening today.', 'is_active' => ($filters['scope'] ?? '') === 'today', 'url' => $build_bookings_url(['cmn_booking_scope' => 'today', 'booking_id' => false])],
+            'tomorrow' => ['label' => 'Tomorrow', 'count' => (int) ($quick_counts['tomorrow'] ?? 0), 'description' => 'Bookings happening tomorrow.', 'is_active' => ($filters['scope'] ?? '') === 'tomorrow', 'url' => $build_bookings_url(['cmn_booking_scope' => 'tomorrow', 'booking_id' => false])],
+            'needs_attention' => ['label' => 'Needs attention', 'count' => (int) ($quick_counts['needs_attention'] ?? 0), 'description' => 'Bookings that still need an AM action.', 'is_active' => ($filters['scope'] ?? '') === 'needs_attention', 'url' => $build_bookings_url(['cmn_booking_scope' => 'needs_attention', 'booking_id' => false])],
+            'unresolved' => ['label' => 'Unresolved', 'count' => (int) ($quick_counts['unresolved'] ?? 0), 'description' => 'Bookings with open issues, no-shows, or disputes.', 'is_active' => ($filters['scope'] ?? '') === 'unresolved', 'url' => $build_bookings_url(['cmn_booking_scope' => 'unresolved', 'booking_id' => false])],
+        ];
+
+        $selected_booking_id = max(0, (int) ($filters['selected_booking_id'] ?? 0));
+        $lookup = [];
+        foreach ($filtered as $row) {
+            $lookup[(int) ($row['booking_id'] ?? 0)] = $row;
+        }
+        if ($selected_booking_id < 1 || !isset($lookup[$selected_booking_id])) {
+            $selected_booking_id = !empty($filtered[0]['booking_id']) ? (int) $filtered[0]['booking_id'] : 0;
+        }
+        if ($selected_booking_id > 0 && isset($lookup[$selected_booking_id])) {
+            $selected = $lookup[$selected_booking_id];
+            $selected['timeline'] = $this->get_account_manager_booking_timeline($selected_booking_id, 12);
+            $selected['threads'] = [
+                'shared' => $this->get_account_manager_booking_thread_snapshot($selected_booking_id, self::BOOKING_THREAD_TYPE_BOOKING_DETAILS, 6),
+                'school' => $this->get_account_manager_booking_thread_snapshot($selected_booking_id, self::BOOKING_THREAD_TYPE_SCHOOL_COORDINATION, 4),
+                'candidate' => $this->get_account_manager_booking_thread_snapshot($selected_booking_id, self::BOOKING_THREAD_TYPE_CANDIDATE_COORDINATION, 4),
+            ];
+            $selected['redirect_url'] = $build_bookings_url(['booking_id' => $selected_booking_id]) . '#cmn-am-booking-detail';
+            $selected['can_approve'] = ($selected['status_key'] ?? '') === self::BOOKING_STATUS_CANDIDATE_ACCEPTED;
+            $selected['can_decline'] = in_array((string) ($selected['status_key'] ?? ''), [self::BOOKING_STATUS_REQUESTED, self::BOOKING_STATUS_OFFERED, 'candidate_invited', 'pending', self::BOOKING_STATUS_CANDIDATE_ACCEPTED, self::BOOKING_STATUS_ACCEPTED, self::BOOKING_STATUS_CONFIRMED, 'approved', self::BOOKING_STATUS_CANDIDATE_DECLINED, self::BOOKING_STATUS_EXPIRED], true);
+            $selected['deferred_actions'] = [
+                ['label' => 'Booking-linked follow-up creation', 'detail' => 'The current follow-up composer is school-scoped. It does not yet persist booking-linked follow-up records safely.'],
+                ['label' => 'Direct issue creation from Bookings', 'detail' => 'Support ticket creation exists in the backend, but the AM-safe booking escalation composer is not exposed in this workspace yet.'],
+                ['label' => 'Candidate reassign / offer routing', 'detail' => 'The current candidate-invite / reassign handler is still guarded behind admin permissions.'],
+            ];
+            $payload['selected_booking'] = $selected;
+        }
+
+        return $payload;
+    }
+
+    private function render_account_manager_bookings_workspace($current_user_id) {
+        $current_user_id = (int) $current_user_id;
+        $payload = $this->build_account_manager_bookings_workspace_payload($current_user_id);
+        $filters = (array) ($payload['filters'] ?? []);
+        $rows = array_values(array_filter((array) ($payload['rows'] ?? []), 'is_array'));
+        $selected_booking = is_array($payload['selected_booking'] ?? null) ? (array) $payload['selected_booking'] : [];
+        $school_options = (array) ($payload['school_options'] ?? []);
+        $candidate_options = (array) ($payload['candidate_options'] ?? []);
+        $status_options = (array) ($payload['status_options'] ?? []);
+        $quick_views = (array) ($payload['quick_views'] ?? []);
+        $lifecycle_counts = (array) ($payload['lifecycle_counts'] ?? []);
+        $total_count = max(0, (int) ($payload['total_count'] ?? 0));
+        $visible_count = max(0, (int) ($payload['visible_count'] ?? 0));
+        $clear_filters_url = esc_url_raw((string) ($payload['clear_filters_url'] ?? $this->get_portal_base_url()));
+        $portal_url = $this->get_portal_base_url();
+        $clients_url = add_query_arg(['view' => 'schools', 'cmn_status' => 'client', 'cmn_bucket' => false], $portal_url);
+        $pipeline_url = add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url);
+        $scope_label_map = ['all' => 'All', 'today' => 'Today', 'tomorrow' => 'Tomorrow', 'needs_attention' => 'Needs attention', 'unresolved' => 'Unresolved'];
+
+        ob_start();
+        ?>
+        <section class="cmn-am-bookings-workspace" data-viewer-surface="account-manager">
+            <header class="cmn-panel-card cmn-am-bookings-header">
+                <div class="cmn-am-bookings-header-copy">
+                    <span class="cmn-am-bookings-eyebrow">Account Manager CRM</span>
+                    <h2>Bookings</h2>
+                    <p>Manage live booking movement, delivery risk, and booking communication without leaving the AM workspace.</p>
+                </div>
+                <div class="cmn-am-bookings-header-metrics">
+                    <div class="cmn-am-bookings-metric">
+                        <span>Visible now</span>
+                        <strong><?php echo esc_html(number_format_i18n($visible_count)); ?></strong>
+                        <small><?php echo esc_html(number_format_i18n($total_count)); ?> total in AM scope</small>
+                    </div>
+                    <div class="cmn-am-bookings-metric">
+                        <span>Needs attention</span>
+                        <strong><?php echo esc_html(number_format_i18n((int) ($quick_views['needs_attention']['count'] ?? 0))); ?></strong>
+                        <small>Statuses, onboarding gaps, and delivery pressure</small>
+                    </div>
+                    <div class="cmn-am-bookings-metric">
+                        <span>Unresolved</span>
+                        <strong><?php echo esc_html(number_format_i18n((int) ($quick_views['unresolved']['count'] ?? 0))); ?></strong>
+                        <small>Open issues, no-shows, and disputed completion</small>
+                    </div>
+                </div>
+            </header>
+
+            <section class="cmn-am-bookings-lifecycle" aria-label="Booking lifecycle summary">
+                <?php foreach ($lifecycle_counts as $lifecycle_count) : ?>
+                    <?php if (!is_array($lifecycle_count)) { continue; } ?>
+                    <article class="cmn-panel-card cmn-am-bookings-lifecycle-card">
+                        <span><?php echo esc_html((string) ($lifecycle_count['label'] ?? 'State')); ?></span>
+                        <strong><?php echo esc_html(number_format_i18n((int) ($lifecycle_count['count'] ?? 0))); ?></strong>
+                    </article>
+                <?php endforeach; ?>
+            </section>
+
+            <section class="cmn-am-bookings-quickviews" aria-label="Booking quick views">
+                <?php foreach ($quick_views as $quick_view) : ?>
+                    <?php if (!is_array($quick_view)) { continue; } ?>
+                    <a class="cmn-panel-card cmn-am-bookings-quickview<?php echo !empty($quick_view['is_active']) ? ' is-active' : ''; ?>" href="<?php echo esc_url((string) ($quick_view['url'] ?? $clear_filters_url)); ?>">
+                        <span><?php echo esc_html((string) ($quick_view['label'] ?? 'Scope')); ?></span>
+                        <strong><?php echo esc_html(number_format_i18n((int) ($quick_view['count'] ?? 0))); ?></strong>
+                        <small><?php echo esc_html((string) ($quick_view['description'] ?? '')); ?></small>
+                    </a>
+                <?php endforeach; ?>
+            </section>
+
+            <form method="get" class="cmn-panel-card cmn-am-bookings-filters">
+                <input type="hidden" name="view" value="bookings">
+                <?php if (($filters['scope'] ?? 'all') !== 'all') : ?>
+                    <input type="hidden" name="cmn_booking_scope" value="<?php echo esc_attr((string) ($filters['scope'] ?? 'all')); ?>">
+                <?php endif; ?>
+                <label>
+                    <span>Search</span>
+                    <input type="search" name="cmn_booking_q" value="<?php echo esc_attr((string) ($filters['query'] ?? '')); ?>" placeholder="Booking ref, school, candidate, role">
+                </label>
+                <label>
+                    <span>Status</span>
+                    <select name="cmn_status">
+                        <option value="">All statuses</option>
+                        <?php foreach ($status_options as $status_key => $status_label) : ?>
+                            <option value="<?php echo esc_attr((string) $status_key); ?>"<?php selected((string) ($filters['status'] ?? ''), (string) $status_key); ?>><?php echo esc_html((string) $status_label); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>
+                    <span>Date</span>
+                    <input type="date" name="cmn_booking_date" value="<?php echo esc_attr((string) ($filters['date'] ?? '')); ?>">
+                </label>
+                <label>
+                    <span>School / Client</span>
+                    <select name="cmn_booking_school">
+                        <option value="0">All schools</option>
+                        <?php foreach ($school_options as $school_id => $school_name) : ?>
+                            <option value="<?php echo esc_attr((string) $school_id); ?>"<?php selected((int) ($filters['school_id'] ?? 0), (int) $school_id); ?>><?php echo esc_html((string) $school_name); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>
+                    <span>Candidate</span>
+                    <select name="cmn_booking_candidate">
+                        <option value="0">All candidates</option>
+                        <?php foreach ($candidate_options as $candidate_id => $candidate_name) : ?>
+                            <option value="<?php echo esc_attr((string) $candidate_id); ?>"<?php selected((int) ($filters['candidate_id'] ?? 0), (int) $candidate_id); ?>><?php echo esc_html((string) $candidate_name); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <div class="cmn-am-bookings-filter-actions">
+                    <button class="cmn-primary" type="submit">Apply filters</button>
+                    <a class="cmn-ghost" href="<?php echo esc_url($clear_filters_url); ?>">Clear filters</a>
+                </div>
+            </form>
+
+            <?php if ($total_count < 1) : ?>
+                <section class="cmn-panel-card cmn-am-bookings-empty">
+                    <h3>No bookings in your AM scope yet</h3>
+                    <p>Bookings appear here automatically when they belong to a school in your manageable account portfolio. You can keep working from client records and pipeline while booking demand builds.</p>
+                    <div class="cmn-am-bookings-empty-actions">
+                        <a class="cmn-primary" href="<?php echo esc_url($clients_url); ?>">Open clients</a>
+                        <a class="cmn-ghost" href="<?php echo esc_url($pipeline_url); ?>">Open pipeline</a>
+                    </div>
+                </section>
+            <?php else : ?>
+                <div class="cmn-am-bookings-layout">
+                    <section class="cmn-am-bookings-list">
+                        <div class="cmn-panel-card cmn-am-bookings-list-head">
+                            <div>
+                                <h3>Bookings in scope</h3>
+                                <p><?php echo esc_html(number_format_i18n($visible_count)); ?> visible of <?php echo esc_html(number_format_i18n($total_count)); ?> portfolio bookings.</p>
+                            </div>
+                            <span class="cmn-am-bookings-inline-chip">Quick view: <?php echo esc_html((string) ($scope_label_map[(string) ($filters['scope'] ?? 'all')] ?? 'All')); ?></span>
+                        </div>
+
+                        <?php if (!$rows) : ?>
+                            <article class="cmn-panel-card cmn-am-bookings-empty cmn-am-bookings-empty--filtered">
+                                <h3>No bookings match these filters</h3>
+                                <p>Try broadening the date, clearing the candidate/school filter, or switching back to the All quick view.</p>
+                                <a class="cmn-ghost" href="<?php echo esc_url($clear_filters_url); ?>">Reset bookings filters</a>
+                            </article>
+                        <?php else : ?>
+                            <?php foreach ($rows as $row) : ?>
+                                <?php
+                                $booking_id = (int) ($row['booking_id'] ?? 0);
+                                $is_selected = $booking_id > 0 && $booking_id === (int) ($selected_booking['booking_id'] ?? 0);
+                                $issue_snapshot = is_array($row['issue_snapshot'] ?? null) ? (array) $row['issue_snapshot'] : [];
+                                ?>
+                                <article class="cmn-am-booking-card<?php echo $is_selected ? ' is-selected' : ''; ?>">
+                                    <div class="cmn-am-booking-card-top">
+                                        <div class="cmn-am-booking-card-copy">
+                                            <span class="cmn-am-booking-ref"><?php echo esc_html((string) ($row['reference_id_label'] ?? 'Booking')); ?></span>
+                                            <h3><a href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>"><?php echo esc_html((string) ($row['reference_label'] ?? 'Booking')); ?></a></h3>
+                                            <p><?php echo esc_html(implode(' · ', array_filter([(string) ($row['school_name'] ?? ''), (string) ($row['candidate_name'] ?? '')]))); ?></p>
+                                        </div>
+                                        <div class="cmn-am-booking-card-status">
+                                            <span class="cmn-status-chip <?php echo esc_attr((string) ($row['status_chip_class'] ?? 'is-pending')); ?>"><?php echo esc_html((string) ($row['status_label'] ?? 'Unknown')); ?></span>
+                                            <span class="cmn-am-booking-lifecycle-pill"><?php echo esc_html((string) ($row['lifecycle_label'] ?? '')); ?></span>
+                                        </div>
+                                    </div>
+                                    <div class="cmn-am-booking-card-meta">
+                                        <span><?php echo esc_html((string) ($row['date_label'] ?? '')); ?></span>
+                                        <span><?php echo esc_html((string) ($row['time_label'] ?? '')); ?></span>
+                                        <span><?php echo esc_html((string) ($row['role_label'] ?? '')); ?><?php echo !empty($row['booking_type_label']) ? ' · ' . esc_html((string) $row['booking_type_label']) : ''; ?></span>
+                                    </div>
+                                    <?php if (!empty($row['badges'])) : ?>
+                                        <div class="cmn-am-booking-badges">
+                                            <?php foreach ((array) $row['badges'] as $badge) : ?>
+                                                <?php if (!is_array($badge) || empty($badge['label'])) { continue; } ?>
+                                                <span class="cmn-am-booking-badge is-<?php echo esc_attr(sanitize_key((string) ($badge['tone'] ?? 'neutral'))); ?>" title="<?php echo esc_attr((string) ($badge['detail'] ?? '')); ?>"><?php echo esc_html((string) $badge['label']); ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    <div class="cmn-am-booking-card-foot">
+                                        <div class="cmn-am-booking-action-summary">
+                                            <strong><?php echo esc_html(!empty($row['action_needed']) ? 'Action needed' : 'Watching'); ?></strong>
+                                            <span><?php echo esc_html((string) ($row['action_label'] ?? '')); ?></span>
+                                            <small><?php echo esc_html((string) ($row['action_reason'] ?? '')); ?></small>
+                                        </div>
+                                        <div class="cmn-am-booking-card-actions">
+                                            <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($row['detail_anchor_url'] ?? $clear_filters_url)); ?>">Open booking</a>
+                                            <?php if ((int) ($issue_snapshot['open_count'] ?? 0) > 0) : ?>
+                                                <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($row['primary_issue_url'] ?? $clear_filters_url)); ?>">View issue</a>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </article>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </section>
+
+                    <aside class="cmn-am-booking-detail" id="cmn-am-booking-detail">
+                        <?php if (!$selected_booking) : ?>
+                            <section class="cmn-panel-card cmn-am-bookings-empty">
+                                <h3>Select a booking to inspect the detail panel</h3>
+                                <p>Pick any booking card to open school details, candidate details, communication history, issue state, and the safe actions supported from the AM surface.</p>
+                            </section>
+                        <?php else : ?>
+                            <?php
+                            $selected_issue_snapshot = is_array($selected_booking['issue_snapshot'] ?? null) ? (array) $selected_booking['issue_snapshot'] : [];
+                            $selected_confirmation_snapshot = is_array($selected_booking['confirmation_snapshot'] ?? null) ? (array) $selected_booking['confirmation_snapshot'] : [];
+                            $selected_threads = is_array($selected_booking['threads'] ?? null) ? (array) $selected_booking['threads'] : [];
+                            $shared_thread = is_array($selected_threads['shared'] ?? null) ? (array) $selected_threads['shared'] : [];
+                            $school_thread = is_array($selected_threads['school'] ?? null) ? (array) $selected_threads['school'] : [];
+                            $candidate_thread = is_array($selected_threads['candidate'] ?? null) ? (array) $selected_threads['candidate'] : [];
+                            $school_contact = is_array($selected_booking['school_contact'] ?? null) ? (array) $selected_booking['school_contact'] : [];
+                            $school_contact_lines = array_filter([(string) ($school_contact['role'] ?? ''), (string) ($school_contact['email'] ?? ''), (string) ($school_contact['phone'] ?? '')]);
+                            ?>
+                            <section class="cmn-panel-card cmn-am-booking-detail-card">
+                                <div class="cmn-am-booking-detail-head">
+                                    <div>
+                                        <span class="cmn-am-booking-ref"><?php echo esc_html((string) ($selected_booking['reference_id_label'] ?? 'Booking')); ?></span>
+                                        <h3><?php echo esc_html((string) ($selected_booking['reference_label'] ?? 'Booking')); ?></h3>
+                                        <p><?php echo esc_html(implode(' · ', array_filter([(string) ($selected_booking['school_name'] ?? ''), (string) ($selected_booking['candidate_name'] ?? ''), (string) ($selected_booking['role_label'] ?? '')]))); ?></p>
+                                    </div>
+                                    <div class="cmn-am-booking-detail-statuses">
+                                        <span class="cmn-status-chip <?php echo esc_attr((string) ($selected_booking['status_chip_class'] ?? 'is-pending')); ?>"><?php echo esc_html((string) ($selected_booking['status_label'] ?? 'Unknown')); ?></span>
+                                        <span class="cmn-am-booking-lifecycle-pill"><?php echo esc_html((string) ($selected_booking['lifecycle_label'] ?? '')); ?></span>
+                                        <span class="cmn-am-booking-inline-meta">Raw status: <?php echo esc_html((string) ($selected_booking['status_key'] ?? '')); ?></span>
+                                    </div>
+                                </div>
+                                <div class="cmn-am-booking-detail-summary">
+                                    <div>
+                                        <strong><?php echo esc_html(!empty($selected_booking['action_needed']) ? 'Action needed' : 'Watching'); ?></strong>
+                                        <span><?php echo esc_html((string) ($selected_booking['action_label'] ?? '')); ?></span>
+                                        <small><?php echo esc_html((string) ($selected_booking['action_reason'] ?? '')); ?></small>
+                                    </div>
+                                    <div>
+                                        <strong>Schedule</strong>
+                                        <span><?php echo esc_html((string) ($selected_booking['date_label'] ?? '')); ?></span>
+                                        <small><?php echo esc_html((string) ($selected_booking['time_label'] ?? '')); ?><?php echo !empty($selected_booking['location']) ? ' · ' . esc_html((string) $selected_booking['location']) : ''; ?></small>
+                                    </div>
+                                    <div>
+                                        <strong>Rates</strong>
+                                        <span><?php echo esc_html(($selected_booking['school_charge_rate'] ?? 0) > 0 ? ('GBP ' . number_format((float) ($selected_booking['school_charge_rate'] ?? 0), 2)) : 'Not set'); ?></span>
+                                        <small><?php echo esc_html(($selected_booking['candidate_pay_rate'] ?? 0) > 0 ? ('Candidate pay GBP ' . number_format((float) ($selected_booking['candidate_pay_rate'] ?? 0), 2)) : 'Candidate pay not set'); ?></small>
+                                    </div>
+                                </div>
+                                <?php if (!empty($selected_booking['badges'])) : ?>
+                                    <div class="cmn-am-booking-badges">
+                                        <?php foreach ((array) $selected_booking['badges'] as $badge) : ?>
+                                            <?php if (!is_array($badge) || empty($badge['label'])) { continue; } ?>
+                                            <span class="cmn-am-booking-badge is-<?php echo esc_attr(sanitize_key((string) ($badge['tone'] ?? 'neutral'))); ?>" title="<?php echo esc_attr((string) ($badge['detail'] ?? '')); ?>"><?php echo esc_html((string) $badge['label']); ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                                <div class="cmn-am-booking-detail-actions">
+                                    <a class="cmn-primary cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['shared_chat_url'] ?? $clear_filters_url)); ?>">Open shared booking chat</a>
+                                    <?php if (!empty($selected_booking['school_id'])) : ?>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['school_chat_url'] ?? $clear_filters_url)); ?>">Message school</a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($selected_booking['candidate_id'])) : ?>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['candidate_chat_url'] ?? $clear_filters_url)); ?>">Message candidate</a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($selected_booking['school_overview_url'])) : ?>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['school_overview_url'] ?? '')); ?>">Open school record</a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($selected_booking['candidate_profile_url'])) : ?>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['candidate_profile_url'] ?? '')); ?>">Open candidate profile</a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($selected_booking['school_task_url'])) : ?>
+                                        <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['school_task_url'] ?? '')); ?>">Open client follow-up workspace</a>
+                                    <?php endif; ?>
+                                    <a class="cmn-ghost cmn-btn-mini" href="<?php echo esc_url((string) ($selected_booking['primary_issue_url'] ?? ($selected_booking['issue_workspace_url'] ?? $clear_filters_url))); ?>"><?php echo !empty($selected_issue_snapshot['total_count']) ? 'View linked issue' : 'Open issue workspace'; ?></a>
+                                    <?php if (!empty($selected_booking['can_approve'])) : ?>
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                            <?php wp_nonce_field('cmn_update_status', 'cmn_update_status_nonce'); ?>
+                                            <input type="hidden" name="action" value="cmn_update_status">
+                                            <input type="hidden" name="cmn_entity_type" value="booking">
+                                            <input type="hidden" name="cmn_entity_id" value="<?php echo esc_attr((string) ($selected_booking['booking_id'] ?? 0)); ?>">
+                                            <input type="hidden" name="cmn_status" value="approved">
+                                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url((string) ($selected_booking['redirect_url'] ?? '')); ?>">
+                                            <button class="cmn-ghost cmn-btn-mini" type="submit">Approve booking</button>
+                                        </form>
+                                    <?php endif; ?>
+                                    <?php if (!empty($selected_booking['can_decline'])) : ?>
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cmn-inline">
+                                            <?php wp_nonce_field('cmn_update_status', 'cmn_update_status_nonce'); ?>
+                                            <input type="hidden" name="action" value="cmn_update_status">
+                                            <input type="hidden" name="cmn_entity_type" value="booking">
+                                            <input type="hidden" name="cmn_entity_id" value="<?php echo esc_attr((string) ($selected_booking['booking_id'] ?? 0)); ?>">
+                                            <input type="hidden" name="cmn_status" value="declined">
+                                            <input type="hidden" name="cmn_redirect" value="<?php echo esc_url((string) ($selected_booking['redirect_url'] ?? '')); ?>">
+                                            <button class="cmn-ghost cmn-btn-mini" type="submit">Decline booking</button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
+                            </section>
+
+                            <div class="cmn-am-booking-detail-grid">
+                                <section class="cmn-panel-card cmn-am-booking-detail-section">
+                                    <h4>School / Client</h4>
+                                    <div class="cmn-am-booking-detail-stack">
+                                        <strong><?php echo esc_html((string) ($selected_booking['school_name'] ?? 'Unassigned school')); ?></strong>
+                                        <?php if ($school_contact_lines) : ?>
+                                            <p><?php echo esc_html(implode(' · ', $school_contact_lines)); ?></p>
+                                        <?php else : ?>
+                                            <p>No primary contact is saved for this school yet.</p>
+                                        <?php endif; ?>
+                                        <?php if (!empty($selected_booking['school_address'])) : ?>
+                                            <p><?php echo esc_html((string) ($selected_booking['school_address'] ?? '')); ?></p>
+                                        <?php endif; ?>
+                                        <?php if (!empty($selected_booking['school_bookings_url'])) : ?>
+                                            <a class="cmn-am-booking-inline-link" href="<?php echo esc_url((string) ($selected_booking['school_bookings_url'] ?? '')); ?>">Open school booking history</a>
+                                        <?php endif; ?>
+                                    </div>
+                                </section>
+
+                                <section class="cmn-panel-card cmn-am-booking-detail-section">
+                                    <h4>Candidate</h4>
+                                    <div class="cmn-am-booking-detail-stack">
+                                        <strong><?php echo esc_html((string) ($selected_booking['candidate_name'] ?? 'Candidate unassigned')); ?></strong>
+                                        <?php if (!empty($selected_booking['candidate_id'])) : ?>
+                                            <p><?php echo esc_html(implode(' · ', array_filter([(string) ($selected_booking['candidate_email'] ?? ''), (string) ($selected_booking['candidate_phone'] ?? '')]))); ?></p>
+                                        <?php else : ?>
+                                            <p>No candidate is assigned to this booking yet.</p>
+                                        <?php endif; ?>
+                                        <?php if (!empty($selected_booking['candidate_profile_url'])) : ?>
+                                            <a class="cmn-am-booking-inline-link" href="<?php echo esc_url((string) ($selected_booking['candidate_profile_url'] ?? '')); ?>">Open candidate profile</a>
+                                        <?php endif; ?>
+                                    </div>
+                                </section>
+
+                                <section class="cmn-panel-card cmn-am-booking-detail-section">
+                                    <h4>Operational context</h4>
+                                    <div class="cmn-am-booking-detail-stack">
+                                        <div class="cmn-am-booking-detail-fact">
+                                            <strong>Onboarding details</strong>
+                                            <span><?php echo esc_html((string) ($selected_booking['onboarding_label'] ?? 'Not yet provided')); ?></span>
+                                        </div>
+                                        <div class="cmn-am-booking-detail-fact">
+                                            <strong>Linked issues</strong>
+                                            <span><?php echo esc_html(number_format_i18n((int) ($selected_issue_snapshot['total_count'] ?? 0))); ?> total<?php echo (int) ($selected_issue_snapshot['open_count'] ?? 0) > 0 ? ' · ' . esc_html(number_format_i18n((int) ($selected_issue_snapshot['open_count'] ?? 0))) . ' open' : ''; ?></span>
+                                        </div>
+                                        <div class="cmn-am-booking-detail-fact">
+                                            <strong>Completion confirmation</strong>
+                                            <span>
+                                                <?php if ((int) ($selected_confirmation_snapshot['total'] ?? 0) < 1) : ?>
+                                                    No confirmation rows recorded yet
+                                                <?php else : ?>
+                                                    <?php echo esc_html(number_format_i18n((int) ($selected_confirmation_snapshot['confirmed'] ?? 0))); ?> confirmed · <?php echo esc_html(number_format_i18n((int) ($selected_confirmation_snapshot['pending'] ?? 0))); ?> pending · <?php echo esc_html(number_format_i18n((int) ($selected_confirmation_snapshot['disputed'] ?? 0))); ?> disputed
+                                                <?php endif; ?>
+                                            </span>
+                                        </div>
+                                        <?php if (!empty($selected_booking['notes'])) : ?>
+                                            <div class="cmn-am-booking-detail-fact cmn-am-booking-detail-fact--notes">
+                                                <strong>Internal notes</strong>
+                                                <span><?php echo esc_html((string) ($selected_booking['notes'] ?? '')); ?></span>
+                                            </div>
+                                        <?php else : ?>
+                                            <div class="cmn-am-booking-detail-fact cmn-am-booking-detail-fact--notes">
+                                                <strong>Internal notes</strong>
+                                                <span>No booking notes or internal operational context are stored yet.</span>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($selected_issue_snapshot['tickets'])) : ?>
+                                            <div class="cmn-am-booking-linked-items">
+                                                <?php foreach ((array) $selected_issue_snapshot['tickets'] as $ticket) : ?>
+                                                    <?php if (!is_array($ticket)) { continue; } ?>
+                                                    <a class="cmn-am-booking-linked-item" href="<?php echo esc_url((string) ($ticket['url'] ?? $clear_filters_url)); ?>">
+                                                        <strong><?php echo esc_html((string) ($ticket['subject'] ?? 'Issue')); ?></strong>
+                                                        <span><?php echo esc_html((string) ($ticket['ticket_ref'] ?? '')); ?> · <?php echo esc_html((string) ($ticket['status_label'] ?? 'Open')); ?></span>
+                                                    </a>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($selected_confirmation_snapshot['rows'])) : ?>
+                                            <div class="cmn-am-booking-linked-items">
+                                                <?php foreach ((array) $selected_confirmation_snapshot['rows'] as $confirmation_row) : ?>
+                                                    <?php if (!is_array($confirmation_row)) { continue; } ?>
+                                                    <div class="cmn-am-booking-linked-item is-static">
+                                                        <strong><?php echo esc_html((string) ($confirmation_row['date_label'] ?? 'Booking day')); ?></strong>
+                                                        <span><?php echo esc_html((string) ($confirmation_row['status_label'] ?? 'Pending')); ?><?php echo !empty($confirmation_row['updated_label']) ? ' · ' . esc_html((string) $confirmation_row['updated_label']) : ''; ?></span>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </section>
+
+                                <section class="cmn-panel-card cmn-am-booking-detail-section">
+                                    <h4>Communications</h4>
+                                    <div class="cmn-am-booking-thread-links">
+                                        <?php foreach (['shared' => $shared_thread, 'school' => $school_thread, 'candidate' => $candidate_thread] as $thread_key => $thread) : ?>
+                                            <?php if (!is_array($thread) || empty($thread['url'])) { continue; } ?>
+                                            <?php if ($thread_key === 'school' && empty($selected_booking['school_id'])) { continue; } ?>
+                                            <?php if ($thread_key === 'candidate' && empty($selected_booking['candidate_id'])) { continue; } ?>
+                                            <a class="cmn-am-booking-thread-link" href="<?php echo esc_url((string) ($thread['url'] ?? $clear_filters_url)); ?>">
+                                                <strong><?php echo esc_html((string) ($thread['title'] ?? 'Booking chat')); ?></strong>
+                                                <span><?php echo esc_html((string) ($thread['status_label'] ?? 'Chat open')); ?> · <?php echo esc_html(number_format_i18n((int) ($thread['message_count'] ?? 0))); ?> messages</span>
+                                            </a>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <?php if (!empty($shared_thread['messages'])) : ?>
+                                        <div class="cmn-am-booking-thread-preview">
+                                            <?php foreach ((array) $shared_thread['messages'] as $message_row) : ?>
+                                                <?php if (!is_array($message_row)) { continue; } ?>
+                                                <div class="cmn-am-booking-thread-bubble">
+                                                    <strong><?php echo esc_html((string) ($message_row['sender_label'] ?? 'System')); ?></strong>
+                                                    <span><?php echo esc_html((string) ($message_row['created_label'] ?? '')); ?></span>
+                                                    <p><?php echo esc_html((string) ($message_row['message'] ?? '')); ?></p>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else : ?>
+                                        <div class="cmn-am-booking-thread-empty">
+                                            <strong>No booking chat history yet</strong>
+                                            <p>Use the chat actions above to open or continue shared, school-only, or candidate-only booking communication.</p>
+                                        </div>
+                                    <?php endif; ?>
+                                </section>
+
+                                <section class="cmn-panel-card cmn-am-booking-detail-section">
+                                    <h4>Timeline</h4>
+                                    <?php if (!empty($selected_booking['timeline'])) : ?>
+                                        <div class="cmn-am-booking-timeline">
+                                            <?php foreach ((array) $selected_booking['timeline'] as $timeline_row) : ?>
+                                                <?php if (!is_array($timeline_row)) { continue; } ?>
+                                                <div class="cmn-am-booking-timeline-item">
+                                                    <strong><?php echo esc_html((string) ($timeline_row['title'] ?? 'Update')); ?></strong>
+                                                    <span><?php echo esc_html(implode(' · ', array_filter([(string) ($timeline_row['actor_name'] ?? ''), (string) ($timeline_row['created_label'] ?? '')]))); ?></span>
+                                                    <?php if (!empty($timeline_row['detail'])) : ?>
+                                                        <p><?php echo esc_html((string) ($timeline_row['detail'] ?? '')); ?></p>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else : ?>
+                                        <div class="cmn-am-booking-thread-empty">
+                                            <strong>No booking audit timeline yet</strong>
+                                            <p>This booking does not currently expose audit history rows. Current state, issues, and communications above still reflect live backend data.</p>
+                                        </div>
+                                    <?php endif; ?>
+                                </section>
+
+                                <section class="cmn-panel-card cmn-am-booking-detail-section">
+                                    <h4>Deferred actions</h4>
+                                    <ul class="cmn-am-booking-deferred-list">
+                                        <?php foreach ((array) ($selected_booking['deferred_actions'] ?? []) as $deferred_action) : ?>
+                                            <?php if (!is_array($deferred_action) || empty($deferred_action['label'])) { continue; } ?>
+                                            <li>
+                                                <strong><?php echo esc_html((string) ($deferred_action['label'] ?? 'Deferred')); ?></strong>
+                                                <span><?php echo esc_html((string) ($deferred_action['detail'] ?? '')); ?></span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </section>
+                            </div>
+                        <?php endif; ?>
+                    </aside>
+                </div>
+            <?php endif; ?>
+        </section>
+        <?php
+        $inner = ob_get_clean();
+        return $this->render_staff_shell('bookings', $inner);
+    }
+
     private function get_account_manager_issue_scope_snapshot($user_id = 0, $limit = 6) {
         static $cache = [];
 
@@ -22313,6 +23605,12 @@ global $wpdb;
                     'icon_key' => 'pipeline',
                     'url' => add_query_arg(['view' => 'leads', 'cmn_bucket' => false], $portal_url),
                     'is_active' => ($current_view === 'leads'),
+                ],
+                [
+                    'label' => 'Bookings',
+                    'icon_key' => 'active_bookings',
+                    'url' => add_query_arg(['view' => 'bookings', 'booking_id' => false, 'cmn_booking_scope' => false, 'cmn_booking_q' => false, 'cmn_booking_date' => false, 'cmn_booking_school' => false, 'cmn_booking_candidate' => false, 'cmn_status' => false], $portal_url),
+                    'is_active' => ($current_view === 'bookings'),
                 ],
                 [
                     'label' => 'Candidates',
@@ -51547,8 +52845,11 @@ global $wpdb;
         if (!$this->is_staff_user($current_user_id)) {
             return '<section class="cmn-portal"><div class="cmn-panel-card"><h3>Access restricted</h3><p>This section is available to staff only.</p></div></section>';
         }
-        $status = isset($_GET['cmn_status']) ? sanitize_text_field($_GET['cmn_status']) : '';
         $is_restricted_am_workspace = $this->is_restricted_account_manager($current_user_id);
+        if ($is_restricted_am_workspace) {
+            return $this->render_account_manager_bookings_workspace($current_user_id);
+        }
+        $status = isset($_GET['cmn_status']) ? sanitize_text_field($_GET['cmn_status']) : '';
         $booking_scope_filter = sanitize_key((string) ($_GET['cmn_booking_scope'] ?? ''));
         if (!in_array($booking_scope_filter, ['', 'all', 'active', 'needs_attention', 'completed'], true)) {
             $booking_scope_filter = '';
