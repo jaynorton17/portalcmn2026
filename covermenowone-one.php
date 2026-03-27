@@ -605,7 +605,7 @@ final class CmnFeedbackInsights {
 final class CMN_One_Plugin {
     const VERSION = '0.1.31';
     const SCHEMA_BASE_VERSION = 38;
-    const SCHEMA_VERSION = 81;
+    const SCHEMA_VERSION = 82;
     const OFFER_EXPIRY_SECONDS = 900;
     const EMAIL_CANDIDATE_DECLINED = false;
     const AUTOMATION_DEFAULT_COOLDOWN_HOURS = 24;
@@ -2355,6 +2355,12 @@ final class CMN_One_Plugin {
                 $from_version = $installed;
                 self::migrate_schema_v81_activity_booking_follow_up_linkage();
                 $mark_schema_step($from_version, 81, 'v81');
+            }
+
+            if ($installed < 82) {
+                $from_version = $installed;
+                self::migrate_schema_v82_activity_task_queue_indexes();
+                $mark_schema_step($from_version, 82, 'v82');
             }
 
             if ($installed < self::SCHEMA_VERSION) {
@@ -6505,6 +6511,54 @@ global $wpdb;
         self::maybe_add_missing_index($table, 'school_id', "KEY school_id (school_id)");
         self::maybe_add_missing_index($table, 'candidate_id', "KEY candidate_id (candidate_id)");
         self::maybe_add_missing_index($table, 'booking_id', "KEY booking_id (booking_id)");
+    }
+
+    /*
+     * v82 activity task queue index checks:
+     * 1) Completion requests redirect back into AM task queues that filter by task scope, open state, and due date.
+     * 2) Older schemas only had broad entity/due-date indexes, which leaves open-task queue rebuilds doing much more work than needed.
+     * 3) These composite indexes keep task completion redirects and queue refreshes responsive without changing task logic.
+     */
+    private static function migrate_schema_v82_activity_task_queue_indexes() {
+        if (!self::is_schema_migration_context_active()) {
+            return;
+        }
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cmn_activities';
+        if (!self::table_exists($table)) {
+            return;
+        }
+
+        if (
+            self::table_has_column($table, 'entity_type')
+            && self::table_has_column($table, 'entity_ref')
+            && self::table_has_column($table, 'activity_type')
+            && self::table_has_column($table, 'completed_at')
+            && self::table_has_column($table, 'due_date')
+            && self::table_has_column($table, 'id')
+        ) {
+            self::maybe_add_missing_index(
+                $table,
+                'idx_task_scope_open_due',
+                "KEY idx_task_scope_open_due (entity_type, entity_ref, activity_type, completed_at, due_date, id)"
+            );
+        }
+
+        if (
+            self::table_has_column($table, 'assigned_to_user_id')
+            && self::table_has_column($table, 'entity_type')
+            && self::table_has_column($table, 'activity_type')
+            && self::table_has_column($table, 'completed_at')
+            && self::table_has_column($table, 'due_date')
+            && self::table_has_column($table, 'id')
+        ) {
+            self::maybe_add_missing_index(
+                $table,
+                'idx_task_assignee_open_due',
+                "KEY idx_task_assignee_open_due (assigned_to_user_id, entity_type, activity_type, completed_at, due_date, id)"
+            );
+        }
     }
 
     private static function ensure_candidate_email_outbox_table_schema() {
@@ -126216,21 +126270,30 @@ p{margin:0;line-height:1.5}
     }
 
     private function get_activity_table_columns() {
-        static $cache = null;
-        if (is_array($cache)) {
-            return $cache;
+        static $cache = [];
+        $table = $this->get_activity_table();
+        if (isset($cache[$table]) && is_array($cache[$table])) {
+            return $cache[$table];
         }
 
         global $wpdb;
-        $table = $this->get_activity_table();
         if (!$this->candidate_rewards_table_exists($table)) {
-            $cache = [];
-            return $cache;
+            $cache[$table] = [];
+            return $cache[$table];
+        }
+
+        $schema_version = (int) get_option('cmn_schema_version', self::SCHEMA_BASE_VERSION);
+        $cache_key = 'cmn_activity_table_columns_' . md5($table . '|' . $schema_version);
+        $cached_columns = get_transient($cache_key);
+        if (is_array($cached_columns)) {
+            $cache[$table] = array_values(array_unique(array_filter(array_map('strval', $cached_columns))));
+            return $cache[$table];
         }
 
         $columns = (array) $wpdb->get_col("DESC {$table}", 0);
-        $cache = array_values(array_unique(array_filter(array_map('strval', $columns))));
-        return $cache;
+        $cache[$table] = array_values(array_unique(array_filter(array_map('strval', $columns))));
+        set_transient($cache_key, $cache[$table], DAY_IN_SECONDS);
+        return $cache[$table];
     }
 
     private function activity_table_has_column($column) {
@@ -126630,8 +126693,33 @@ p{margin:0;line-height:1.5}
     }
 
     private function complete_school_task_record(array $task_record) {
+        global $wpdb;
+
+        $completed_at = current_time('mysql');
+        $activity_id = max(0, (int) ($task_record['activity_id'] ?? 0));
+        $storage_source = sanitize_key((string) ($task_record['storage_source'] ?? ''));
+        if ($storage_source === 'activity' && $activity_id > 0) {
+            $table = $this->get_activity_table();
+            $updated = $wpdb->update($table, [
+                'completed_at' => $completed_at,
+                'updated_at' => $completed_at,
+            ], [
+                'id' => $activity_id,
+            ], ['%s', '%s'], ['%d']);
+            if ($updated !== false) {
+                return true;
+            }
+
+            $last_error = strtolower(trim((string) $wpdb->last_error));
+            $is_unknown_column_error = $last_error !== ''
+                && (strpos($last_error, 'unknown column') !== false || strpos($last_error, "doesn't exist") !== false);
+            if ($last_error !== '' && !$is_unknown_column_error) {
+                return false;
+            }
+        }
+
         return $this->update_school_task_record($task_record, [
-            'completed_at' => current_time('mysql'),
+            'completed_at' => $completed_at,
         ]);
     }
 
